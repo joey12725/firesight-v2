@@ -1,0 +1,20 @@
+# Transcendental functions in std are not bit-identical between native libm and the
+# wasm32 build. Core must route them through `firesight_core::math` (pure-Rust libm).
+disallowed-methods = [
+    { path = "f64::ln", reason = "use firesight_core::math::ln for cross-platform determinism" },
+    { path = "f64::log10", reason = "use firesight_core::math::log10" },
+    { path = "f64::log2", reason = "use firesight_core::math (ln(x) / LN_2)" },
+    { path = "f64::log", reason = "use firesight_core::math::ln" },
+    { path = "f64::ln_1p", reason = "use firesight_core::math::ln_1p" },
+    { path = "f64::exp", reason = "use firesight_core::math::exp" },
+    { path = "f64::exp2", reason = "use firesight_core::math::pow" },
+    { path = "f64::exp_m1", reason = "use firesight_core::math::exp_m1" },
+    { path = "f64::powf", reason = "use firesight_core::math::pow" },
+    { path = "f64::powi", reason = "use firesight_core::math::powi" },
+    { path = "f64::cbrt", reason = "use firesight_core::math::pow" },
+    { path = "f64::sin", reason = "not deterministic across platforms; add a wrapper to firesight_core::math" },
+    { path = "f64::cos", reason = "not deterministic across platforms; add a wrapper to firesight_core::math" },
+    { path = "f64::tan", reason = "not deterministic across platforms; add a wrapper to firesight_core::math" },
+    { path = "f64::tanh", reason = "not deterministic across platforms; add a wrapper to firesight_core::math" },
+    { path = "f64::mul_add", reason = "fused multiply-add changes rounding between targets" },
+]

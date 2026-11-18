@@ -1,0 +1,2396 @@
+{
+  "meta": {
+    "title": "FIRESight v2 stochastic life-model parameters",
+    "generated": "2026-11-17",
+    "model_tax_year": 2026,
+    "currency": "USD; nominal dollars of the year stated beside each figure. The engine should convert to simulation-start dollars and then index with simulated inflation (plus any stated excess).",
+    "confidence_scale": "high = read directly from the cited primary source during this research pass; medium = well-known value quoted from memory or a secondary source, or a mild derivation; low = judgement call.",
+    "companion_doc": "docs/research/stochastic-models.md",
+    "data_files": [
+      "data/actuarial/ssa-life-table.csv",
+      "data/actuarial/ssa-mortality-improvement.csv"
+    ],
+    "access_note": "ssa.gov, bls.gov and fred.stlouisfed.org refuse scripted downloads; SSA material was read from Internet Archive captures of the same URLs."
+  },
+  "sources": {
+    "ssa_life_table": "https://www.ssa.gov/oact/STATS/table4c6.html",
+    "ssa_tr2026_demo": "https://www.ssa.gov/oact/TR/2026/V_A_demo.html",
+    "ssa_lr_demo_2026": "https://www.ssa.gov/oact/TR/2026/2026_Long-Range_Demographic_Assumptions.pdf",
+    "chetty2016": "https://jamanetwork.com/journals/jama/fullarticle/2513561",
+    "cgm2005": "https://doi.org/10.1093/rfs/hhi017",
+    "gkos2021": "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr710.pdf",
+    "sty2004": "https://doi.org/10.1086/383105",
+    "kmp2016": "https://www.nber.org/papers/w22319",
+    "guvenen2009": "https://doi.org/10.1016/j.red.2008.06.004",
+    "gos2014": "https://doi.org/10.1086/675535",
+    "cairo_cajner": "https://www.federalreserve.gov/pubs/feds/2014/201409/index.html",
+    "bls_a12": "https://www.bls.gov/web/empsit/cpseea12.htm",
+    "bls_empsit_oct2026": "https://www.bls.gov/news.release/archives/empsit_11062026.htm",
+    "ehs2010": "https://www.brookings.edu/articles/the-labor-market-in-the-great-recession/",
+    "davis_von_wachter": "https://www.nber.org/system/files/working_papers/w17638/w17638.pdf",
+    "jls1993": "https://www.jstor.org/stable/2117574",
+    "couch_placzek": "https://doi.org/10.1257/aer.100.1.572",
+    "farber2017": "https://doi.org/10.1086/690054",
+    "dol_sigpros_2026": "https://oui.doleta.gov/unemploy/content/sigpros/2020-2029/January2026.pdf",
+    "kff_ehbs_2026": "https://www.kff.org/health-costs/report/2026-employer-health-benefits-survey/",
+    "kff_ehbs_2026_pdf": "https://files.kff.org/attachment/Employer-Health-Benefits-Survey-2026-Annual-Survey.pdf",
+    "kff_aca_2027": "https://kff.org/affordable-care-act/9-things-to-watch-for-the-2027-aca-open-enrollment-period/",
+    "kff_partd": "https://www.kff.org/medicare/issue-brief/a-current-snapshot-of-the-medicare-part-d-prescription-drug-benefit/",
+    "kff_ma_2026": "https://www.kff.org/medicare/medicare-advantage-premiums-out-of-pocket-limits-supplemental-benefits-and-prior-authorization/",
+    "cms_partb_2026": "https://www.govinfo.gov/content/pkg/FR-2025-11-19/html/2025-20251.htm",
+    "fidelity_2026": "https://www.foxbusiness.com/economy/fidelity-estimates-retirees-spend-185500-healthcare-medical-expenses-retirement",
+    "french_jones_2004": "https://doi.org/10.1002/jae.790",
+    "meps": "https://meps.ahrq.gov/mepsweb/data_stats/quick_tables.jsp",
+    "cms_age_curve": "https://www.cms.gov/cciio/programs-and-initiatives/health-insurance-market-reforms/state-rating",
+    "carescout_2025": "https://investor.genworth.com/news-events/press-releases/detail/1054",
+    "carescout_tables": "https://assets.carescout.com/x/8fcb50422f/282102.pdf",
+    "aspe_johnson_2019": "https://aspe.hhs.gov/sites/default/files/migrated_legacy_files//188046/LifetimeRisk.pdf",
+    "aspe_dynasim_2021": "https://aspe.hhs.gov/sites/default/files/private/pdf/265066/MostLikelyIB.pdf",
+    "jpmci_coping": "https://www.jpmorganchase.com/institute/all-topics/household-financial-health/report-coping-with-costs",
+    "pew_2015": "https://www.pew.org/en/research-and-analysis/articles/2015/10/the-role-of-emergency-savings-in-family-financial-security",
+    "shed_2025": "https://www.federalreserve.gov/publications/2026-economic-well-being-of-us-households-in-2025-executive-summary.htm",
+    "usda_2015": "https://fns-prod.azureedge.us/sites/default/files/crc2015_March2017.pdf",
+    "brookings_2022": "https://www.brookings.edu/wp-content/uploads/2022/08/Brookings_Cost-to-raise-a-child_inflation-adjusted-2.pdf",
+    "ccaoa_2025": "https://info.childcareaware.org/price-and-supply-2025",
+    "college_board_2026": "https://research.collegeboard.org/trends/college-pricing/highlights",
+    "college_board_2025_news": "https://newsroom.collegeboard.org/trends-college-pricing-and-student-aid-report-published-tuition-prices-public-institutions-and",
+    "ihe_2026": "https://www.insidehighered.com/node/223046",
+    "blanchett_2014": "https://www.financialplanningassociation.org/article/journal/MAY14-exploring-retirement-consumption-puzzle",
+    "blanchett_2013_wp": "https://www.morningstar.com/content/dam/marketing/shared/research/foundational/677785-EstimatingTrueCostRetirement.pdf",
+    "ces_2024": "https://www.bls.gov/opub/reports/consumer-expenditures/2024/",
+    "fred_ces_age": "https://fred.stlouisfed.org/series/CXUTOTALEXPLB0408M",
+    "flavin_yamashita": "https://doi.org/10.1257/000282802760015757",
+    "case_shiller_1989": "https://www.jstor.org/stable/1804778",
+    "giacoletti_2021": "https://doi.org/10.1093/rfs/hhab033",
+    "hrs_depr_2007": "https://doi.org/10.1016/j.jue.2006.07.007",
+    "urban_hfaag": "https://www.urban.org/sites/default/files/2026-09/Housing_Finance_at_a_Glance_A_Monthly_Chartbook_September_2026.pdf",
+    "cfpb_closing": "https://www.consumerfinance.gov/ask-cfpb/what-fees-or-charges-are-paid-when-closing-on-a-mortgage-and-who-pays-them-en-1845/",
+    "cfpb_pmi": "https://www.consumerfinance.gov/ask-cfpb/when-can-i-remove-private-mortgage-insurance-pmi-from-my-loan-en-202/",
+    "correlation_ventures": "https://medium.com/correlation-ventures/venture-capital-no-were-not-normal-32a26edea7c7",
+    "seth_levine_2014": "https://sethlevine.com/archives/2014/08/venture-outcomes-are-even-more-skewed-than-you-think.html",
+    "hall_woodward_2010": "https://doi.org/10.1257/aer.100.3.1163",
+    "ritter_ipo": "https://site.warrington.ufl.edu/ritter/ipo-data/",
+    "bessembinder_2018": "https://doi.org/10.1016/j.jfineco.2018.06.004",
+    "bessembinder_asu": "https://wpcarey.asu.edu/department-finance/faculty-research/do-stocks-outperform-treasury-bills",
+    "clmx_2001": "https://doi.org/10.1111/0022-1082.00318",
+    "bengen_1994": "https://www.financialplanningassociation.org/sites/default/files/2021-04/MAR04%20Determining%20Withdrawal%20Rates%20Using%20Historical%20Data.pdf",
+    "guyton_klinger_2006": "https://www.financialplanningassociation.org/sites/default/files/2021-11/2006%20-%20Guyton%20and%20Klinger%20-%20Decision%20Rules%20and%20SWR%20%281%29.PDF",
+    "vanguard_dynamic": "https://corporate.vanguard.com/content/dam/corp/research/pdf/from_assets_to_income_a_goals_based_approach_to_retirement_spending.pdf",
+    "vpw": "https://www.bogleheads.org/wiki/Variable_percentage_withdrawal",
+    "pfau_floor_ceiling": "https://retirementresearcher.com/floor-ceiling-retirement-spending-strategy/",
+    "pfau_kitces_2014": "https://www.financialplanningassociation.org/article/journal/JAN14-reducing-retirement-risk-rising-equity-glide-path",
+    "kitces_bond_tent": "https://www.kitces.com/blog/managing-portfolio-size-effect-with-bond-tent-in-retirement-red-zone/",
+    "ssa_pia": "https://www.ssa.gov/oact/cola/piaformula.html",
+    "ssa_early_late": "https://www.ssa.gov/oact/quickcalc/early_late.html",
+    "ssa_bendpoints": "https://www.ssa.gov/oact/cola/bendpoints.html",
+    "ssa_rtea": "https://www.ssa.gov/oact/cola/rtea.html",
+    "ssa_tr_2026": "https://www.ssa.gov/oact/TR/2026/"
+  },
+  "mortality": {
+    "summary": "Stochastic longevity per person from the SSA 2023 period life table (as used in the 2026 Trustees Report), projected forward with the Trustees' intermediate mortality-improvement rates by age band and sex, times a user health multiplier.",
+    "base_table": {
+      "file": "data/actuarial/ssa-life-table.csv",
+      "columns": "age, male_qx, female_qx, male_lx, female_lx, male_ex, female_ex",
+      "description": "Period life table, 2023, Social Security area population, ages 0-119. qx = probability of dying within one year at exact age x.",
+      "base_year": 2023,
+      "trustees_report": 2026,
+      "retrieved": "2026-11-17 (ssa.gov blocks scripted clients; parsed from the Internet Archive capture of this URL dated 2026-11-16; life expectancies recomputed from qx match the published ex column to 0.01)",
+      "check": {
+        "male_e0": 75.79,
+        "female_e0": 81.06,
+        "male_e65": 18.12,
+        "female_e65": 20.66
+      },
+      "source": "https://www.ssa.gov/oact/STATS/table4c6.html",
+      "confidence": "high"
+    },
+    "improvement": {
+      "file": "data/actuarial/ssa-mortality-improvement.csv",
+      "age_bands": [
+        "0-14",
+        "15-49",
+        "50-64",
+        "65-84",
+        "85+"
+      ],
+      "annual_percent_reduction_in_central_death_rates": {
+        "male": {
+          "2024_2050": [
+            1.43,
+            0.51,
+            0.85,
+            0.85,
+            0.67
+          ],
+          "2050_2100": [
+            1.5,
+            0.82,
+            0.92,
+            0.73,
+            0.59
+          ]
+        },
+        "female": {
+          "2024_2050": [
+            1.45,
+            0.67,
+            0.86,
+            0.8,
+            0.61
+          ],
+          "2050_2100": [
+            1.53,
+            0.89,
+            0.96,
+            0.66,
+            0.54
+          ]
+        },
+        "unisex": {
+          "2024_2050": [
+            1.44,
+            0.56,
+            0.86,
+            0.82,
+            0.63
+          ],
+          "2050_2100": [
+            1.51,
+            0.84,
+            0.94,
+            0.7,
+            0.56
+          ]
+        }
+      },
+      "definition": "Average annual percent reduction in age-adjusted central death rates, 2026 Trustees Report intermediate alternative. '2024_2050' is the average over the transition period; '2050_2100' is the ultimate rate.",
+      "headline": {
+        "total_age_sex_adjusted_intermediate_2035_2100": 0.73,
+        "low_cost": 0.27,
+        "high_cost": 1.24,
+        "historical_1900_2024": 1.0,
+        "historical_1979_2024": 0.82,
+        "derived_from_table_V_A1_2035_2100": {
+          "under_65": 0.93,
+          "65_and_over": 0.66
+        }
+      },
+      "scenario_scalers": {
+        "note": "SSA sets low-cost improvement at about 1/3 and high-cost at about 2x the intermediate cause-specific rates (Table 2.3 footnote).",
+        "slow": 0.33,
+        "base": 1.0,
+        "fast": 2.0
+      },
+      "formula": "q(sex, age, year) = q2023(sex, age) * (1 - r_near(sex, band(age)))^(min(year, 2050) - 2023) * (1 - r_ult(sex, band(age)))^max(0, year - 2050); r in decimal. Evaluate at year = start_year + (age - start_age) so each simulated person ages along a cohort diagonal.",
+      "simple_fallback": {
+        "note": "If band detail is not wanted: 1.0%/yr under age 85 and 0.5%/yr at 85+ (slightly more optimistic than the Trustees at 65-84).",
+        "under_85": 1.0,
+        "85_plus": 0.5
+      },
+      "sources": [
+        "https://www.ssa.gov/oact/TR/2026/2026_Long-Range_Demographic_Assumptions.pdf",
+        "https://www.ssa.gov/oact/TR/2026/V_A_demo.html"
+      ],
+      "source_detail": "2026 Long-Range Demographic Assumptions, Tables 2.2 and 2.3 (Mortality pp. 18-20); TR Table V.A1.",
+      "confidence": "high for the values; they are trustees' judgement about the future, and both Technical Panels (2015, 2019) recommended a faster 1.0%/yr"
+    },
+    "health_multiplier": {
+      "model": "q_person = min(1, q(sex, age, year) * m). One draw per person per year: dies in year if U < q_person.",
+      "presets": {
+        "poor_health": 1.5,
+        "average": 1.0,
+        "healthy_high_income": 0.75,
+        "very_healthy": 0.6
+      },
+      "default": 0.75,
+      "default_reasoning": "FIRE planners are overwhelmingly upper-income non-smokers. Chetty et al. (2016) find a 14.6-year (men) / 10.1-year (women) gap in life expectancy at 40 between the top and bottom 1% of income, and several years between the top quartile and the mean. A 0.75 multiplier adds about 2.5 years at 65, similar to annuitant-vs-population gaps in SOA tables. Using the unadjusted population table would understate longevity risk for this audience.",
+      "sources": [
+        "https://jamanetwork.com/journals/jama/fullarticle/2513561"
+      ],
+      "confidence": "medium (multiplier is a judgement call)"
+    },
+    "derived_life_expectancy_for_person_alive_in_2026": {
+      "note": "Computed from the files above. le_cohort uses improvement; le_period freezes 2023 rates. p90/p95/p100 = probability of being alive at that age (cohort basis).",
+      "male": {
+        "30": {
+          "average_health_x1.00": {
+            "le_cohort": 51.0,
+            "le_period": 47.5,
+            "p90": 0.327,
+            "p95": 0.162,
+            "p100": 0.053
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 54.6,
+            "le_period": 50.8,
+            "p90": 0.435,
+            "p95": 0.259,
+            "p100": 0.115
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 57.3,
+            "le_period": 53.4,
+            "p90": 0.515,
+            "p95": 0.342,
+            "p100": 0.181
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 46.0,
+            "le_period": 42.7,
+            "p90": 0.183,
+            "p95": 0.061,
+            "p100": 0.01
+          }
+        },
+        "40": {
+          "average_health_x1.00": {
+            "le_cohort": 41.3,
+            "le_period": 38.6,
+            "p90": 0.31,
+            "p95": 0.146,
+            "p100": 0.045
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 44.7,
+            "le_period": 41.7,
+            "p90": 0.418,
+            "p95": 0.24,
+            "p100": 0.101
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 47.3,
+            "le_period": 44.1,
+            "p90": 0.499,
+            "p95": 0.322,
+            "p100": 0.164
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 36.7,
+            "le_period": 34.2,
+            "p90": 0.168,
+            "p95": 0.052,
+            "p100": 0.008
+          }
+        },
+        "50": {
+          "average_health_x1.00": {
+            "le_cohort": 31.9,
+            "le_period": 29.9,
+            "p90": 0.296,
+            "p95": 0.133,
+            "p100": 0.037
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 35.0,
+            "le_period": 32.8,
+            "p90": 0.403,
+            "p95": 0.224,
+            "p100": 0.089
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 37.4,
+            "le_period": 35.0,
+            "p90": 0.485,
+            "p95": 0.305,
+            "p100": 0.148
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 27.7,
+            "le_period": 25.9,
+            "p90": 0.156,
+            "p95": 0.044,
+            "p100": 0.006
+          }
+        },
+        "65": {
+          "average_health_x1.00": {
+            "le_cohort": 19.2,
+            "le_period": 18.1,
+            "p90": 0.295,
+            "p95": 0.122,
+            "p100": 0.03
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 21.7,
+            "le_period": 20.5,
+            "p90": 0.404,
+            "p95": 0.212,
+            "p100": 0.077
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 23.7,
+            "le_period": 22.4,
+            "p90": 0.486,
+            "p95": 0.292,
+            "p100": 0.132
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 15.9,
+            "le_period": 15.0,
+            "p90": 0.155,
+            "p95": 0.039,
+            "p100": 0.004
+          }
+        }
+      },
+      "female": {
+        "30": {
+          "average_health_x1.00": {
+            "le_cohort": 55.4,
+            "le_period": 52.1,
+            "p90": 0.439,
+            "p95": 0.243,
+            "p100": 0.093
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 58.5,
+            "le_period": 55.0,
+            "p90": 0.541,
+            "p95": 0.35,
+            "p100": 0.173
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 60.9,
+            "le_period": 57.3,
+            "p90": 0.613,
+            "p95": 0.434,
+            "p100": 0.249
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 51.0,
+            "le_period": 47.9,
+            "p90": 0.287,
+            "p95": 0.115,
+            "p100": 0.025
+          }
+        },
+        "40": {
+          "average_health_x1.00": {
+            "le_cohort": 45.2,
+            "le_period": 42.6,
+            "p90": 0.421,
+            "p95": 0.225,
+            "p100": 0.081
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 48.2,
+            "le_period": 45.5,
+            "p90": 0.524,
+            "p95": 0.33,
+            "p100": 0.156
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 50.6,
+            "le_period": 47.7,
+            "p90": 0.598,
+            "p95": 0.414,
+            "p100": 0.23
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 41.0,
+            "le_period": 38.6,
+            "p90": 0.269,
+            "p95": 0.102,
+            "p100": 0.02
+          }
+        },
+        "50": {
+          "average_health_x1.00": {
+            "le_cohort": 35.4,
+            "le_period": 33.5,
+            "p90": 0.406,
+            "p95": 0.209,
+            "p100": 0.07
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 38.2,
+            "le_period": 36.1,
+            "p90": 0.511,
+            "p95": 0.313,
+            "p100": 0.142
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 40.5,
+            "le_period": 38.3,
+            "p90": 0.585,
+            "p95": 0.397,
+            "p100": 0.213
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 31.5,
+            "le_period": 29.7,
+            "p90": 0.254,
+            "p95": 0.091,
+            "p100": 0.016
+          }
+        },
+        "65": {
+          "average_health_x1.00": {
+            "le_cohort": 21.7,
+            "le_period": 20.7,
+            "p90": 0.402,
+            "p95": 0.195,
+            "p100": 0.059
+          },
+          "healthy_high_income_x0.75": {
+            "le_cohort": 24.1,
+            "le_period": 23.0,
+            "p90": 0.507,
+            "p95": 0.298,
+            "p100": 0.125
+          },
+          "very_healthy_x0.60": {
+            "le_cohort": 26.1,
+            "le_period": 24.8,
+            "p90": 0.582,
+            "p95": 0.382,
+            "p100": 0.193
+          },
+          "poor_health_x1.50": {
+            "le_cohort": 18.5,
+            "le_period": 17.6,
+            "p90": 0.25,
+            "p95": 0.081,
+            "p100": 0.012
+          }
+        }
+      }
+    },
+    "couples": "Deaths are drawn independently for each spouse. P(at least one of a 65-year-old healthy couple alive at 95) = 1 - (1 - 0.212)(1 - 0.298) = 0.45.",
+    "knobs": [
+      "health (poor / average / healthy / very healthy)",
+      "mortality improvement scenario (slow / base / fast) - advanced"
+    ],
+    "left_out": [
+      "cause-of-death modelling",
+      "broken-heart (widowhood) correlation between spouses",
+      "race/education/geography differentials other than the single health multiplier",
+      "pandemic-style mortality shocks"
+    ]
+  },
+  "earnings": {
+    "summary": "Real log earnings = user's current pay, grown along a deterministic age profile, plus a persistent AR(1) shock and a transitory shock. Unemployment spells are layered on top by the unemployment module, so the shock variances here are deliberately smaller than literature values that fold job loss into the residual.",
+    "model": {
+      "equation": "ln Y(t) = ln Y0 + [f(age_t) - f(age_0)] + z(t) + e(t) - var_correction;  z(t) = rho * z(t-1) + eta(t), eta ~ N(0, sigma_eta^2), z(0) = 0;  e(t) ~ N(0, sigma_eps^2);  var_correction = 0.5*Var[z(t)] + 0.5*sigma_eps^2 so that E[Y(t)] equals the deterministic profile.",
+      "time_step": "annual (apply the same z within the year; the unemployment module removes months of pay)",
+      "f": "cubic age polynomial by education (Cocco-Gomes-Maenhout 2005, Table 2): f(age) = const + b1*age + b2*age^2/10 + b3*age^3/100, log of real annual labour income, ages 20-65.",
+      "note_on_aggregate_growth": "CGM profiles are estimated with household fixed effects on PSID 1970-1992, so within-household time effects (economy-wide real wage growth of roughly 1%/yr) are absorbed into the age profile. Do NOT add a separate productivity trend on top. If a different macro wage scenario is wanted, apply only the difference from 1.0%."
+    },
+    "age_profile": {
+      "cgm_coefficients": {
+        "no_high_school": {
+          "const": -2.1361,
+          "age": 0.1684,
+          "age2_over_10": -0.0353,
+          "age3_over_100": 0.0023,
+          "permanent_shock_variance": 0.0105,
+          "transitory_shock_variance": 0.1056,
+          "retirement_replacement_ratio": 0.88983
+        },
+        "high_school": {
+          "const": -2.17,
+          "age": 0.1682,
+          "age2_over_10": -0.0323,
+          "age3_over_100": 0.002,
+          "permanent_shock_variance": 0.0106,
+          "transitory_shock_variance": 0.0738,
+          "retirement_replacement_ratio": 0.68212
+        },
+        "college": {
+          "const": -4.3148,
+          "age": 0.3194,
+          "age2_over_10": -0.0577,
+          "age3_over_100": 0.0033,
+          "permanent_shock_variance": 0.0169,
+          "transitory_shock_variance": 0.0584,
+          "retirement_replacement_ratio": 0.938873
+        }
+      },
+      "implied_annual_real_growth_by_age": {
+        "no_high_school": {
+          "22": 0.0465,
+          "23": 0.0425,
+          "24": 0.0387,
+          "25": 0.035,
+          "26": 0.0315,
+          "27": 0.0281,
+          "28": 0.0248,
+          "29": 0.0217,
+          "30": 0.0187,
+          "31": 0.0158,
+          "32": 0.0131,
+          "33": 0.0106,
+          "34": 0.0081,
+          "35": 0.0058,
+          "36": 0.0037,
+          "37": 0.0016,
+          "38": -0.0002,
+          "39": -0.002,
+          "40": -0.0036,
+          "41": -0.0051,
+          "42": -0.0064,
+          "43": -0.0076,
+          "44": -0.0087,
+          "45": -0.0096,
+          "46": -0.0104,
+          "47": -0.011,
+          "48": -0.0115,
+          "49": -0.0119,
+          "50": -0.0121,
+          "51": -0.0122,
+          "52": -0.0121,
+          "53": -0.012,
+          "54": -0.0116,
+          "55": -0.0112,
+          "56": -0.0106,
+          "57": -0.0098,
+          "58": -0.009,
+          "59": -0.008,
+          "60": -0.0068,
+          "61": -0.0055,
+          "62": -0.0041,
+          "63": -0.0025,
+          "64": -0.0008,
+          "65": 0.001
+        },
+        "high_school": {
+          "22": 0.0551,
+          "23": 0.0514,
+          "24": 0.0477,
+          "25": 0.0442,
+          "26": 0.0408,
+          "27": 0.0375,
+          "28": 0.0344,
+          "29": 0.0313,
+          "30": 0.0284,
+          "31": 0.0256,
+          "32": 0.0229,
+          "33": 0.0204,
+          "34": 0.0179,
+          "35": 0.0156,
+          "36": 0.0134,
+          "37": 0.0113,
+          "38": 0.0094,
+          "39": 0.0075,
+          "40": 0.0058,
+          "41": 0.0042,
+          "42": 0.0027,
+          "43": 0.0014,
+          "44": 0.0001,
+          "45": -0.001,
+          "46": -0.002,
+          "47": -0.0029,
+          "48": -0.0036,
+          "49": -0.0043,
+          "50": -0.0048,
+          "51": -0.0052,
+          "52": -0.0055,
+          "53": -0.0056,
+          "54": -0.0057,
+          "55": -0.0056,
+          "56": -0.0054,
+          "57": -0.0051,
+          "58": -0.0046,
+          "59": -0.0041,
+          "60": -0.0034,
+          "61": -0.0026,
+          "62": -0.0017,
+          "63": -0.0006,
+          "64": 0.0005,
+          "65": 0.0018
+        },
+        "college": {
+          "22": 0.1134,
+          "23": 0.1064,
+          "24": 0.0995,
+          "25": 0.0928,
+          "26": 0.0863,
+          "27": 0.08,
+          "28": 0.0739,
+          "29": 0.068,
+          "30": 0.0623,
+          "31": 0.0568,
+          "32": 0.0515,
+          "33": 0.0464,
+          "34": 0.0415,
+          "35": 0.0368,
+          "36": 0.0323,
+          "37": 0.028,
+          "38": 0.0238,
+          "39": 0.0199,
+          "40": 0.0162,
+          "41": 0.0127,
+          "42": 0.0094,
+          "43": 0.0062,
+          "44": 0.0033,
+          "45": 0.0006,
+          "46": -0.002,
+          "47": -0.0043,
+          "48": -0.0064,
+          "49": -0.0084,
+          "50": -0.0101,
+          "51": -0.0116,
+          "52": -0.013,
+          "53": -0.0141,
+          "54": -0.0151,
+          "55": -0.0158,
+          "56": -0.0164,
+          "57": -0.0167,
+          "58": -0.0169,
+          "59": -0.0168,
+          "60": -0.0166,
+          "61": -0.0162,
+          "62": -0.0155,
+          "63": -0.0147,
+          "64": -0.0137,
+          "65": -0.0124
+        }
+      },
+      "implied_ratio_age55_to_age25": {
+        "no_high_school": 1.05,
+        "high_school": 1.36,
+        "college": 2.03
+      },
+      "peak_age": {
+        "no_high_school": 38,
+        "high_school": 44,
+        "college": 45
+      },
+      "source": "https://doi.org/10.1093/rfs/hhi017",
+      "confidence": "medium-high (coefficients quoted from the published table from memory of widely replicated values; verify against Table 2 of the paper before release). Profiles are for household labour income, 1992 dollars, cohorts born 1905-1972; modern high earners in tech/finance are steeper."
+    },
+    "guvenen_lifecycle_facts": {
+      "note": "Guvenen, Karahan, Ozkan, Song (Econometrica 2021), SSA administrative data on men 1978-2013. Growth in average earnings from age 25 to 55 by lifetime-earnings (LE) percentile.",
+      "median_LE": "+60% (about 1.6%/yr)",
+      "pooled_mean_deaton_paxson": "+150%",
+      "LE80": "x2.5 (91 log points)",
+      "LE95": "x4.8 (157 log points)",
+      "LE99_top1pct": "x27.9 (333 log points)",
+      "shock_shape": "Earnings changes are strongly non-Gaussian: negative skew and kurtosis far above 3; most years almost no change, occasionally a very large one. Shocks to high earners are asymmetric (large falls persistent, large rises transitory).",
+      "gaussian_misfit": "A pure linear-Gaussian fit to their moments gives rho = 1.02, sigma_eps = 0.76; their preferred process with explicit nonemployment shocks gives rho = 0.97, sigma_eps = 0.135, sigma_alpha = 0.594. This is the main justification for modelling job loss explicitly and keeping the Gaussian part small.",
+      "source": "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr710.pdf",
+      "confidence": "high (read from the paper)"
+    },
+    "trajectory_presets": {
+      "note": "User-facing 'career trajectory'. The profile is always anchored to the user's current pay; presets only change the slope from now on.",
+      "flat": "0% real growth at all ages",
+      "typical": "CGM profile for the user's education (default)",
+      "fast_track": "CGM college profile with growth multiplied by 1.5 while positive (approximates LE90-95 in Guvenen et al.)",
+      "custom": "user enters real raise %/yr and the age at which raises stop"
+    },
+    "shock_process": {
+      "default_rho": 0.97,
+      "career_volatility": {
+        "low": {
+          "sigma_eta": 0.05,
+          "sigma_eps": 0.05,
+          "description": "tenured / government / unionised salaried work"
+        },
+        "medium": {
+          "sigma_eta": 0.1,
+          "sigma_eps": 0.1,
+          "description": "typical private-sector salaried employee (default)"
+        },
+        "high": {
+          "sigma_eta": 0.17,
+          "sigma_eps": 0.25,
+          "description": "commission, bonus-heavy, self-employed, startup"
+        }
+      },
+      "implied_sd_of_log_earnings_after_20_years_persistent_only": {
+        "low": 0.17,
+        "medium": 0.34,
+        "high": 0.59
+      },
+      "bonus_or_variable_pay": "If the user splits pay into base and variable, apply sigma_eps only to the variable part and correlate it 0.5 with the equity return of the same year (judgement).",
+      "literature_calibrations": [
+        {
+          "paper": "Cocco, Gomes, Maenhout (2005)",
+          "rho": 1.0,
+          "sigma_eta": "0.103 (HS) / 0.130 (college)",
+          "sigma_eps": "0.272 (HS) / 0.242 (college), includes measurement error",
+          "source": "https://doi.org/10.1093/rfs/hhi017"
+        },
+        {
+          "paper": "Storesletten, Telmer, Yaron (2004)",
+          "rho": 0.952,
+          "sigma_eta": "0.125 in expansions, 0.211 in contractions",
+          "sigma_eps": 0.255,
+          "source": "https://doi.org/10.1086/383105"
+        },
+        {
+          "paper": "Krueger, Mitman, Perri (2016)",
+          "rho": 0.9695,
+          "sigma_eta": 0.196,
+          "sigma_eps": 0.228,
+          "source": "https://www.nber.org/papers/w22319"
+        },
+        {
+          "paper": "Guvenen (2009) RIP / HIP",
+          "rho": "0.988 / 0.821",
+          "sigma_eta": "0.122 / 0.170",
+          "sigma_eps": "0.247 / 0.217",
+          "source": "https://doi.org/10.1016/j.red.2008.06.004"
+        },
+        {
+          "paper": "Guvenen, Karahan, Ozkan, Song (2021) with nonemployment shocks",
+          "rho": 0.97,
+          "sigma_eps": 0.135,
+          "source": "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr710.pdf"
+        }
+      ],
+      "cyclicality": "Keep sigma_eta constant over the cycle. Guvenen, Ozkan, Song (2014) show the variance of earnings shocks is not countercyclical; what changes in recessions is the left tail (skewness), which the job-loss module produces.",
+      "cyclicality_source": "https://doi.org/10.1086/675535",
+      "confidence": "medium. rho = 0.97 is well supported. The medium sigma values are a judgement: roughly half of the literature's variance, because (a) job loss and scarring are modelled explicitly and (b) a large part of measured transitory variance is measurement error."
+    },
+    "couples": "Each earner gets an independent z and e. Correlation of spouses' persistent shocks defaults to 0.15; if both work in the same industry/employer use 0.5 (judgement).",
+    "knobs": [
+      "education (sets profile and job-loss risk)",
+      "career trajectory (flat / typical / fast-track / custom raise)",
+      "career volatility (low / medium / high)"
+    ],
+    "left_out": [
+      "heterogeneous income profiles drawn at random (the user knows their own trajectory better)",
+      "occupation-specific processes",
+      "endogenous labour supply / hours",
+      "disability (long-term disability incidence is about 0.5%/yr at 50; candidate for a later version)"
+    ]
+  },
+  "unemployment": {
+    "summary": "Monthly two-state (employed / unemployed) process per earner. Job-loss hazard depends on education, age and the macro regime from the scenario generator; spell length is lognormal and longer in recessions; re-employment brings a persistent pay cut; state UI partly replaces pay.",
+    "separation_hazard": {
+      "definition": "Probability per month that an employed person involuntarily loses the job and starts an unemployment spell (expansion regime).",
+      "base_monthly_prob_by_education_at_age_35_44": {
+        "less_than_high_school": 0.018,
+        "high_school": 0.012,
+        "some_college": 0.009,
+        "bachelors": 0.005,
+        "advanced_degree": 0.0035
+      },
+      "age_multiplier": {
+        "20-24": 2.0,
+        "25-34": 1.3,
+        "35-44": 1.0,
+        "45-54": 0.9,
+        "55-64": 0.9,
+        "65+": 0.9
+      },
+      "implied_annual_prob_of_at_least_one_spell_bachelors_35_44": 0.058,
+      "job_security_knob": {
+        "very_secure": 0.4,
+        "typical": 1.0,
+        "volatile_industry": 2.0,
+        "note": "multiplies the hazard"
+      },
+      "evidence": {
+        "cairo_cajner_1976_2010_age_25_plus_monthly_percent": {
+          "less_than_high_school": {
+            "unemployment_rate": 8.96,
+            "job_finding_rate": 46.85,
+            "separation_rate": 4.45
+          },
+          "high_school": {
+            "unemployment_rate": 5.45,
+            "job_finding_rate": 45.02,
+            "separation_rate": 2.48
+          },
+          "some_college": {
+            "unemployment_rate": 4.44,
+            "job_finding_rate": 46.34,
+            "separation_rate": 2.05
+          },
+          "college_degree": {
+            "unemployment_rate": 2.56,
+            "job_finding_rate": 42.8,
+            "separation_rate": 1.09
+          },
+          "note": "Time-aggregation-corrected CPS flow hazards (Table 7). Key fact: finding rates are equal across education, separation rates differ 4:1.",
+          "source": "https://www.federalreserve.gov/pubs/feds/2014/201409/index.html"
+        },
+        "why_defaults_are_lower_than_cairo_cajner": "Their continuous-time hazards count very short spells and voluntary separations into unemployment. For household finances only spells with a real income gap matter, so the defaults are about half their level, paired with longer completed durations. Steady-state check for bachelors: 0.005 * 3.6 months = 1.8% unemployment from job loss alone vs about 2.5% measured for BA+ including entrants and quits."
+      },
+      "confidence": "medium (education ratios are well measured; absolute level is a calibration judgement)"
+    },
+    "duration": {
+      "model": "Completed spell length in months D ~ LogNormal(ln(median), sigma), floor 0.25 months, cap 36 months. Monthly pay is zero for D months (UI and severance aside).",
+      "expansion": {
+        "median_months": 2.2,
+        "sigma": 1.0,
+        "implied_mean_months": 3.6,
+        "p_longer_than_6_months": 0.16,
+        "p_longer_than_12_months": 0.045
+      },
+      "recession": {
+        "median_months": 4.0,
+        "sigma": 1.0,
+        "implied_mean_months": 6.6,
+        "p_longer_than_6_months": 0.34,
+        "p_longer_than_12_months": 0.14
+      },
+      "age_multiplier_on_median": {
+        "under_35": 0.85,
+        "35-54": 1.0,
+        "55_plus": 1.4
+      },
+      "evidence": {
+        "bls_october_2026": {
+          "mean_weeks_in_progress": 27.1,
+          "median_weeks_in_progress": 11.9,
+          "share_under_5_weeks": 0.305,
+          "share_5_14": 0.244,
+          "share_15_26": 0.175,
+          "share_27_plus": 0.276,
+          "unemployment_rate": 0.041,
+          "source": "https://www.bls.gov/web/empsit/cpseea12.htm"
+        },
+        "history_from_bls_table_a12": "Mean / median duration of in-progress spells: about 17 / 8.5 weeks in 2007, peak about 40 / 21-25 weeks in 2010-11, about 21 / 9 weeks in 2019 (annual averages; quoted from memory, medium confidence).",
+        "note": "BLS durations are for spells in progress (length-biased); completed spells are shorter, which is why the expansion mean is set to 3.6 months (about 16 weeks)."
+      },
+      "confidence": "medium"
+    },
+    "recession_shift": {
+      "regime_signal": "The economic scenario generator should expose a monthly recession flag. NBER-dated recessions cover about 13% of months since 1948 (about 9% since 1985).",
+      "separation_multiplier_in_recession": 1.6,
+      "duration_regime": "recession durations apply to spells that start during a recession or in the 12 months after it ends (labour-market slack outlasts the recession)",
+      "duration_median_multiplier": 1.8,
+      "evidence": "CPS employment-to-unemployment flow rate rose from about 1.3% to about 2.1% of employment per month in 2008-09 (x1.6); the job-finding rate fell by about 40% (Elsby, Hobijn, Sahin 2010). Mean in-progress duration roughly doubled (17 to 40 weeks).",
+      "source": "https://www.brookings.edu/articles/the-labor-market-in-the-great-recession/",
+      "confidence": "medium"
+    },
+    "reemployment_wage_loss": {
+      "model": "On re-employment add a draw L to the persistent state: z <- z - L, L ~ N(mu_L, sd_L) (a negative L, i.e. a raise, is allowed). The loss then decays at the AR(1) rate rho = 0.97 (half-life about 23 years), matching the near-permanent losses in the displacement literature.",
+      "mu_L_expansion": 0.08,
+      "mu_L_recession": 0.15,
+      "sd_L": 0.15,
+      "age_50_plus_multiplier": 1.5,
+      "long_spell_addon": "add 0.01 to mu_L per month of spell beyond 6 months, capped at +0.10 (judgement; duration dependence in re-employment wages)",
+      "evidence": {
+        "davis_von_wachter_2011": "Men under 50 with 3+ years tenure displaced in mass layoffs lose, in present value over 20 years at a 5% discount rate, 1.4 years of pre-displacement earnings when national unemployment is below 6% and 2.8 years when it is above 8% (roughly 12% vs 19% of counterfactual PV earnings). First-year earnings drop about 25-39%; 10-20 years later still about 10-20% lower.",
+        "jacobson_lalonde_sullivan_1993": "High-tenure displaced workers in Pennsylvania: about 25% lower earnings 5-6 years after displacement.",
+        "couch_placzek_2010": "Connecticut administrative data: 32-33% initial loss, 13-15% six years later.",
+        "farber_2017": "Displaced Workers Survey 1984-2016: full-time job losers re-employed full-time earn on average about 5-10% less per week (more after the Great Recession); roughly half earn as much or more; including moves to part-time and foregone growth the average loss is about 15-17%.",
+        "interpretation": "Mass-layoff, high-tenure estimates are an upper bound for a typical job loser. Defaults sit between Farber's averages and Davis-von Wachter."
+      },
+      "sources": [
+        "https://www.nber.org/system/files/working_papers/w17638/w17638.pdf",
+        "https://www.jstor.org/stable/2117574",
+        "https://doi.org/10.1257/aer.100.1.572",
+        "https://doi.org/10.1086/690054"
+      ],
+      "confidence": "medium"
+    },
+    "unemployment_insurance": {
+      "model": "weekly_benefit = min(weekly_cap, replacement_rate * prior_weekly_wage); paid for min(spell, max_weeks) after a 1-week wait; taxable for federal income tax. Cap indexed to simulated inflation (most states tie it to the state average weekly wage).",
+      "replacement_rate": 0.5,
+      "weekly_cap_default_2026": 600,
+      "max_weeks_default": 26,
+      "recession_extension_weeks": 13,
+      "state_examples_2026": {
+        "AL": {
+          "max_weekly": 275,
+          "max_weeks": 20
+        },
+        "AZ": {
+          "max_weekly": 320,
+          "max_weeks": 24
+        },
+        "CA": {
+          "max_weekly": 450,
+          "max_weeks": 26,
+          "formula": "1/23 to 1/26 of high-quarter wages"
+        },
+        "CO": {
+          "max_weekly": 767,
+          "max_weeks": 26
+        },
+        "FL": {
+          "max_weekly": 275,
+          "max_weeks": 12
+        },
+        "MI": {
+          "max_weekly": 530,
+          "max_weeks": 26
+        },
+        "NJ": {
+          "max_weekly": 905,
+          "max_weeks": 26
+        },
+        "RI": {
+          "max_weekly": 777,
+          "max_weeks": 26,
+          "note": "from 2026-07-01"
+        },
+        "TX": {
+          "max_weekly": 605,
+          "max_weeks": 26,
+          "formula": "1/25 of high-quarter wages"
+        },
+        "WA": {
+          "max_weekly": 1152,
+          "max_weeks": 26,
+          "note": "rises to 1,208 from July 2026"
+        }
+      },
+      "national_facts": "Typical formula is 1/26 of high-quarter wages = 50% of the weekly wage. Because of the caps, the average recipient's replacement rate is about 40-45% and the average weekly benefit is roughly $450-500 (DOL, medium confidence). For a household earning $150k+ the cap binds: about $600/week replaces under 20% of pay. Standard maximum duration is 26 weeks in most states; a few pay 12-20. Federal extensions in deep recessions have added 13 to 73 weeks.",
+      "source": "https://oui.doleta.gov/unemploy/content/sigpros/2020-2029/January2026.pdf",
+      "confidence": "high for state rules (DOL, January 2026); medium for the national default cap"
+    },
+    "severance": {
+      "default_weeks": 0,
+      "note": "User knob. Common private practice is 1-2 weeks of pay per year of service."
+    },
+    "knobs": [
+      "job security (very secure / typical / volatile)",
+      "state UI cap and weeks (advanced; default national typical)",
+      "severance weeks"
+    ],
+    "left_out": [
+      "voluntary quits and job-to-job moves",
+      "labour-force exit (discouraged workers)",
+      "employer-specific layoff risk correlated with employer stock (flag in equity-comp module instead)",
+      "disability"
+    ]
+  },
+  "healthcare": {
+    "summary": "Three coverage phases per person: employer plan while working, ACA marketplace between retirement and 65, Medicare from 65. Each year cost = premium (deterministic, by age) + out-of-pocket (lognormal with a persistent component, capped by the plan's out-of-pocket maximum). All health costs grow at simulated CPI plus an excess medical inflation.",
+    "employer_phase": {
+      "premiums_2026": {
+        "average_total_premium_single": 9804,
+        "average_total_premium_family": 28303,
+        "worker_share_single": 0.18,
+        "worker_share_family": 0.27,
+        "worker_contribution_single": 1765,
+        "worker_contribution_family": 7471,
+        "small_firm_worker_contribution_family": 9687,
+        "note": "worker_contribution_single is 18% x $9,804 (derived). Premium contributions are normally pre-tax (Section 125)."
+      },
+      "average_deductible_single_2026": {
+        "all_plans_with_deductible": 1955,
+        "small_firms": 2624,
+        "large_firms": 1772,
+        "hsa_qualified_hdhp": 2912
+      },
+      "premium_growth_5yr": "family premiums +28% over five years vs CPI +24.4%",
+      "source": "https://files.kff.org/attachment/Employer-Health-Benefits-Survey-2026-Annual-Survey.pdf",
+      "confidence": "high (KFF 2026 survey)"
+    },
+    "aca_phase": {
+      "benchmark_silver_monthly_age_40": {
+        "2025": 497,
+        "2026": 625,
+        "2027": 704,
+        "source": "https://kff.org/affordable-care-act/9-things-to-watch-for-the-2027-aca-open-enrollment-period/",
+        "note": "National average second-lowest-cost silver premium, KFF. +26% for 2026 and +13% for 2027."
+      },
+      "age_curve": {
+        "0-14": 0.765,
+        "15": 0.833,
+        "16": 0.859,
+        "17": 0.885,
+        "18": 0.913,
+        "19": 0.941,
+        "20": 0.97,
+        "21": 1.0,
+        "22": 1.0,
+        "23": 1.0,
+        "24": 1.0,
+        "25": 1.004,
+        "26": 1.024,
+        "27": 1.048,
+        "28": 1.087,
+        "29": 1.119,
+        "30": 1.135,
+        "31": 1.159,
+        "32": 1.183,
+        "33": 1.198,
+        "34": 1.214,
+        "35": 1.222,
+        "36": 1.23,
+        "37": 1.238,
+        "38": 1.246,
+        "39": 1.262,
+        "40": 1.278,
+        "41": 1.302,
+        "42": 1.325,
+        "43": 1.357,
+        "44": 1.397,
+        "45": 1.444,
+        "46": 1.5,
+        "47": 1.563,
+        "48": 1.635,
+        "49": 1.706,
+        "50": 1.786,
+        "51": 1.865,
+        "52": 1.952,
+        "53": 2.04,
+        "54": 2.135,
+        "55": 2.23,
+        "56": 2.333,
+        "57": 2.437,
+        "58": 2.548,
+        "59": 2.603,
+        "60": 2.714,
+        "61": 2.81,
+        "62": 2.873,
+        "63": 2.952,
+        "64+": 3.0
+      },
+      "age_curve_note": "CMS default standard age curve (3:1 limit); premium(age) = premium(21) * factor. A few states use their own curve (e.g. NY and VT are community rated).",
+      "age_curve_source": "https://www.cms.gov/cciio/programs-and-initiatives/health-insurance-market-reforms/state-rating",
+      "derived_unsubsidised_benchmark_annual_2027": {
+        "age_45": 9545,
+        "age_50": 11806,
+        "age_55": 14741,
+        "age_60": 17940,
+        "age_64": 19831,
+        "child_0_14": 5057
+      },
+      "regional_spread": "State averages range roughly 0.7x to 1.8x the national benchmark; expose a cost-of-area multiplier or let the user type their quote.",
+      "out_of_pocket_maximum_2026": {
+        "self_only": 10600,
+        "family": 21200
+      },
+      "subsidy_note": "Premium tax credits (and the return of the 400% FPL cliff after the enhanced credits expired at end of 2025) are computed in the tax module from simulated MAGI; this section only supplies gross premiums.",
+      "confidence": "high for 2026/2027 benchmark averages (KFF); medium for the age-curve factors (quoted from the CMS default curve from memory; verify) and the OOP maximum (secondary source)"
+    },
+    "medicare_phase": {
+      "components_2026_per_person_annual": {
+        "part_b_premium": 2435,
+        "part_d_premium": 500,
+        "medigap_plan_g_premium": 2200,
+        "part_b_deductible": 283,
+        "drugs_out_of_pocket": 600,
+        "dental_vision_hearing_other": 1300,
+        "total_default": 7300
+      },
+      "facts": {
+        "part_b_standard_monthly_2026": 202.9,
+        "part_b_deductible_2026": 283,
+        "part_b_2027": "Not yet announced by CMS as of 2026-11-17. 2026 Medicare Trustees projection: about $209.50/month and a $292 deductible.",
+        "part_d_base_beneficiary_premium": {
+          "2026": 38.99,
+          "2027": 41.33
+        },
+        "part_d_out_of_pocket_cap": {
+          "2026": 2100,
+          "2027": 2400,
+          "confidence": "medium (2027 figure from secondary source)"
+        },
+        "medicare_advantage_average_oop_limit_2026": {
+          "in_network": 5421,
+          "in_and_out_of_network": 9825
+        },
+        "fidelity_2026": "A 65-year-old retiring in 2026 needs about $185,500 (after tax) for health costs through retirement, excluding long-term care; $371,000 for a couple; 45% of it is Part B and D premiums. Up 7.5% from $172,500 in 2025."
+      },
+      "age_gradient": "Real cost rises about 1.5%/yr with age after 65 (attained-age Medigap rating and rising utilisation), on top of medical inflation. Judgement.",
+      "alternative_medicare_advantage": {
+        "premiums": "Part B premium plus about $0-20/month",
+        "expected_oop": 1800,
+        "oop_sigma": 1.0,
+        "oop_cap": 5421,
+        "note": "Lower expected cost, more variance, network limits."
+      },
+      "cross_check": "$7,300/yr growing 1.5% real with age and 1.5% excess inflation for 21 years sums to about $210k in today's dollars; without the dental/vision/hearing line (which Fidelity excludes) about $172k. Fidelity's $185,500 sits between the two.",
+      "irmaa_note": "Income-related Part B/D surcharges are computed in the tax module from MAGI two years earlier.",
+      "sources": [
+        "https://www.govinfo.gov/content/pkg/FR-2025-11-19/html/2025-20251.htm",
+        "https://www.kff.org/medicare/issue-brief/a-current-snapshot-of-the-medicare-part-d-prescription-drug-benefit/",
+        "https://www.kff.org/medicare/medicare-advantage-premiums-out-of-pocket-limits-supplemental-benefits-and-prior-authorization/",
+        "https://www.foxbusiness.com/economy/fidelity-estimates-retirees-spend-185500-healthcare-medical-expenses-retirement"
+      ],
+      "confidence": "high for Part B/D statutory amounts; medium for Medigap (plan G premiums vary about $1,500-3,500 by state and age) and residual out-of-pocket"
+    },
+    "out_of_pocket_by_age_pre_65": {
+      "mean_annual_oop_per_person_2026_dollars": {
+        "0-17": 400,
+        "18-44": 800,
+        "45-54": 1200,
+        "55-64": 1700
+      },
+      "note": "Approximate MEPS household-component means for people with private coverage, rolled forward to 2026 dollars. Excludes premiums. Scale by 1.5 for a high-deductible/bronze plan and 0.7 for a rich employer plan (judgement).",
+      "source": "https://meps.ahrq.gov/mepsweb/data_stats/quick_tables.jsp",
+      "confidence": "medium-low (order of magnitude from MEPS summary tables; not re-pulled for this file)"
+    },
+    "variance_model": {
+      "equation": "ln OOP(t) = ln(mean_oop(age)) - 0.5*sigma^2 + p(t) + u(t);  p(t) = 0.92 * p(t-1) + w(t);  Var[p] = share_persistent * sigma^2;  Var[u] = (1 - share_persistent) * sigma^2;  OOP = min(OOP, plan_oop_max).",
+      "sigma_pre_65": 1.0,
+      "sigma_medicare_with_medigap": 0.5,
+      "sigma_medicare_advantage": 1.0,
+      "rho_persistent": 0.92,
+      "share_persistent": 0.33,
+      "evidence": "French and Jones (2004) fit log out-of-pocket health costs in the HRS/AHEAD as a persistent AR(1) (rho = 0.922) plus white noise, with about two thirds of cross-sectional variance transitory and a total log variance well above 1; their data include nursing-home costs, which are modelled separately here, so sigma is set lower.",
+      "source": "https://doi.org/10.1002/jae.790",
+      "confidence": "medium (structure from the literature; sigma is a judgement because insurance caps the tail)"
+    },
+    "excess_medical_inflation": {
+      "default_pct_over_cpi": 1.5,
+      "range": [
+        0.0,
+        3.0
+      ],
+      "evidence": "CPI medical care outpaced CPI-U by about 1.6 points/yr over 1948-2024, about 2.7 points in 1980-2000 and about 0.7 points in 2000-2024 (computed from BLS index levels quoted from memory). Household-borne premiums have risen faster than the medical CPI: the Part B premium went from $45.50 (2000) to $202.90 (2026), 5.9%/yr against CPI of about 2.5%; KFF family premiums +28% in the last five years against 24.4% CPI; ACA benchmark premiums +26% and +13% in 2026 and 2027.",
+      "confidence": "medium (judgement call between the 25-year CPI gap and premium experience)"
+    },
+    "knobs": [
+      "plan richness while working (rich / typical / high-deductible)",
+      "pre-65 retirement coverage (ACA benchmark / user quote / spouse's employer / COBRA 18 months)",
+      "Medicare style (Original + Medigap / Advantage)",
+      "excess medical inflation (advanced)"
+    ],
+    "left_out": [
+      "health-state Markov chain linking medical cost, mortality and LTC (the health multiplier and LTC module carry the main correlations)",
+      "employer retiree health benefits",
+      "HSA mechanics (account module)",
+      "state-specific ACA curves"
+    ]
+  },
+  "long_term_care": {
+    "summary": "End-of-life episode model. After a person's age at death T is drawn, with probability p(sex, T) the final D years of life are spent receiving paid long-term care, with care type and annual cost drawn from the CareScout survey. Calibrated to ASPE/HRS lifetime-risk tables.",
+    "lifetime_risk_evidence": {
+      "johnson_2019_hrs_1995_2014": {
+        "develop_severe_need_after_65": 0.7,
+        "any_paid_ltss": 0.48,
+        "paid_home_care": 0.29,
+        "residential_care": 0.05,
+        "nursing_home_90_days_plus": 0.28,
+        "medicaid_financed_nursing_home": 0.13,
+        "by_sex_any_paid_ltss": {
+          "men": 0.38,
+          "women": 0.55
+        },
+        "by_sex_nursing_home": {
+          "men": 0.2,
+          "women": 0.34
+        },
+        "by_age_at_death_any_paid_ltss": {
+          "65-74": 0.23,
+          "75-84": 0.36,
+          "85+": 0.54
+        },
+        "by_education_any_paid_ltss": {
+          "no_high_school": 0.49,
+          "high_school_or_some_college": 0.48,
+          "bachelors_plus": 0.48
+        },
+        "by_education_medicaid_nursing_home": {
+          "no_high_school": 0.17,
+          "high_school_or_some_college": 0.12,
+          "bachelors_plus": 0.05
+        },
+        "more_than_2_years_paid_ltss_all_adults": 0.24,
+        "more_than_4_years_paid_ltss_all_adults": 0.13,
+        "more_than_2_years_nursing_home_all_adults": 0.15,
+        "average_years_among_users": {
+          "any_paid_ltss": 2.4,
+          "nursing_home": 2.3,
+          "paid_home_care": 1.8,
+          "residential_care": 2.5
+        },
+        "annual_prevalence_2014": {
+          "severe_need_65_plus": 0.16,
+          "paid_ltss_65_74": 0.03,
+          "paid_ltss_75_84": 0.08,
+          "paid_ltss_85_plus": 0.26
+        },
+        "definition": "Severe need = 2+ ADL limitations or severe cognitive impairment. Nursing-home stays under 90 days are excluded (post-acute rehab, covered by Medicare).",
+        "source": "https://aspe.hhs.gov/sites/default/files/migrated_legacy_files//188046/LifetimeRisk.pdf"
+      },
+      "favreault_dey_dynasim_2021": {
+        "any_paid_ltss_top_earnings_quintile": 0.56,
+        "any_nursing_home": 0.37,
+        "nursing_home_2_years_plus": 0.09,
+        "note": "Projection for cohorts born 1941-1974; higher than the historical HRS numbers because of longer lives and because short stays count.",
+        "source": "https://aspe.hhs.gov/sites/default/files/private/pdf/265066/MostLikelyIB.pdf"
+      },
+      "confidence": "high (read from the reports)"
+    },
+    "model": {
+      "probability_of_episode": "p(sex, T) = min(0.90, logistic(-1.208 + 0.065 * (T - 70) + shift_sex) * risk_multiplier), T = age at death (must be >= 65).",
+      "shift_sex": {
+        "male": -0.173,
+        "female": 0.402
+      },
+      "calibration": "The age slope reproduces Johnson's 23% / 36% / 54% by age at death; the sex shifts reproduce 38% (men) and 55% (women) lifetime risk under the 2023 period table. With mortality improvement and the 0.75 health multiplier the lifetime risk rises to about 43% / 60%, close to the DYNASIM projection.",
+      "risk_multiplier_presets": {
+        "low": 0.7,
+        "base": 1.0,
+        "high": 1.3
+      },
+      "duration_years_distribution": {
+        "values": [
+          0.75,
+          3,
+          5,
+          7,
+          9,
+          11.5
+        ],
+        "bins": [
+          "<=2",
+          "2-4",
+          "4-6",
+          "6-8",
+          "8-10",
+          ">10"
+        ],
+        "male": [
+          0.59,
+          0.22,
+          0.09,
+          0.05,
+          0.02,
+          0.03
+        ],
+        "female": [
+          0.44,
+          0.24,
+          0.13,
+          0.08,
+          0.05,
+          0.06
+        ],
+        "implied_mean": {
+          "male": 2.4,
+          "female": 3.4
+        },
+        "note": "Johnson (2019) Table 6, distribution of years of paid LTSS among users. Draw the bin, then a uniform value inside it. Episode runs from max(65, T - D) to T."
+      },
+      "care_type_mix": {
+        "home_care_only": 0.45,
+        "assisted_living": 0.15,
+        "nursing_home": 0.4,
+        "note": "Derived from Johnson's 29% home / 5% residential / 28% nursing-home lifetime shares, shifted toward assisted living to reflect the post-2014 trend. Judgement."
+      },
+      "annual_cost_by_type_2025_dollars": {
+        "home_care_only": 55000,
+        "assisted_living": 74400,
+        "nursing_home": 114975,
+        "blended_expected": 81900
+      },
+      "home_care_cost_note": "$55,000 = about 30 hours/week at the $35 national median hourly rate. CareScout's $80,080 headline assumes 44 hours/week.",
+      "offset_to_other_spending": "While in assisted living or a nursing home, cut that person's share of ordinary living expenses by 50% (food, transport, travel no longer bought separately). No offset for home care.",
+      "cost_inflation": "CPI + 1.5 points (labour-driven; care costs track wages). Median nursing-home and assisted-living rates have grown about 3-4.5%/yr since 2004."
+    },
+    "equivalent_forward_hazard": {
+      "note": "For engines that prefer a year-by-year hazard instead of looking back from the death age. Gompertz onset hazard among people alive and not yet in care: h(age) = A * exp(0.115 * (age - 65)), with independent population mortality and the same duration table (episode ends at death if sooner). A is calibrated to the same 38% / 55% lifetime risk.",
+      "A": {
+        "male": 0.00608,
+        "female": 0.00862
+      },
+      "B": 0.115,
+      "annual_hazard_table": {
+        "male": {
+          "65": 0.0061,
+          "70": 0.0108,
+          "75": 0.0192,
+          "80": 0.0341,
+          "85": 0.0606,
+          "90": 0.1078,
+          "95": 0.1915
+        },
+        "female": {
+          "65": 0.0086,
+          "70": 0.0153,
+          "75": 0.0272,
+          "80": 0.0484,
+          "85": 0.086,
+          "90": 0.1529,
+          "95": 0.2716
+        }
+      },
+      "implied_by_end_of_life_model": {
+        "note": "Onset hazard implied by the recommended end-of-life model under the 2023 period table (age 65 excluded: truncation artefact).",
+        "male": {
+          "70": 0.00643,
+          "75": 0.01222,
+          "80": 0.02365,
+          "85": 0.04412,
+          "90": 0.0787,
+          "95": 0.12858,
+          "100": 0.17936
+        },
+        "female": {
+          "70": 0.00775,
+          "75": 0.01514,
+          "80": 0.02894,
+          "85": 0.05266,
+          "90": 0.09079,
+          "95": 0.14431,
+          "100": 0.20796
+        }
+      },
+      "caveat": "The forward version understates the link between care and imminent death and so produces slightly shorter episodes for the same lifetime risk. Prefer the end-of-life model."
+    },
+    "costs_carescout_2025": {
+      "survey": "CareScout (Genworth) Cost of Care Survey 2025, released 2026-03-02, national medians, more than 25,000 rates collected July-November 2025.",
+      "in_home_non_medical_caregiver": {
+        "hourly": 35,
+        "annual_at_44_hours_per_week": 80080,
+        "change": "+3%",
+        "note": "CareScout merged homemaker and home health aide into one category in 2025."
+      },
+      "assisted_living": {
+        "monthly": 6200,
+        "annual": 74400,
+        "change": "+5%"
+      },
+      "nursing_home_semi_private": {
+        "daily": 315,
+        "annual": 114975,
+        "change": "+2%"
+      },
+      "nursing_home_private": {
+        "daily": 355,
+        "annual": 129575,
+        "change": "+1%"
+      },
+      "adult_day_health": {
+        "annual": 24700,
+        "change": "-5%"
+      },
+      "regional_spread": "State medians span roughly 0.6x to 2x the national figure (nursing home: about $75k in TX/MO/OK to $200k+ in AK/CT/NY).",
+      "sources": [
+        "https://investor.genworth.com/news-events/press-releases/detail/1054",
+        "https://assets.carescout.com/x/8fcb50422f/282102.pdf"
+      ],
+      "confidence": "high"
+    },
+    "medicaid_backstop": {
+      "rule_of_thumb": "Medicaid pays for nursing-home care once a single person's countable assets are about $2,000 and nearly all income goes to the facility (personal-needs allowance of about $30-200/month). A community spouse keeps the home, one car and a resource allowance of roughly $32,500 to $162,660 (2026 federal range, medium confidence). Home-equity limit roughly $752,000-$1,130,000 (2026, medium confidence). Transfers within 5 years are penalised.",
+      "model_treatment": "Not modelled as income. A path that exhausts liquid assets is counted as a failure (ran out of money) even though Medicaid would then pay for care; the results screen should say that Medicaid is the real-world floor. Only 5% of bachelor's-plus adults ever use Medicaid-financed nursing-home care (Johnson 2019)."
+    },
+    "insurance_knob": "Optional user inputs: annual premium, daily/monthly benefit, benefit period (years), elimination period (days), inflation rider %. Benefit offsets the episode cost.",
+    "knobs": [
+      "LTC risk (low / base / high)",
+      "care cost level (national median / low-cost area / high-cost area or a custom annual amount)",
+      "LTC insurance policy (optional)"
+    ],
+    "left_out": [
+      "unpaid family care (assumed to cover needs outside paid episodes)",
+      "multiple separate episodes",
+      "transitions between care settings inside an episode (one blended type per episode)",
+      "short post-acute stays covered by Medicare",
+      "Medicaid planning"
+    ],
+    "confidence": "medium-high for incidence and cost; medium for care-type mix and the offset"
+  },
+  "expense_shocks": {
+    "summary": "Irregular lumpy household expenses (car repair or replacement beyond plan, home repair, legal, family emergencies, uncovered dental/vet) as a compound Poisson process scaled to the household's annual spending. Medical shocks are excluded here (healthcare module).",
+    "model": {
+      "equation": "N(year) ~ Poisson(lambda); each shock S = annual_base_spending * LogNormal(ln(median_fraction), sigma). Total = sum of S. If mean_neutral is on, subtract lambda * E[S] from baseline spending so shocks add variance but not level.",
+      "lambda_per_year": {
+        "renter": 0.4,
+        "homeowner": 0.6,
+        "default": 0.5
+      },
+      "median_fraction_of_annual_spending": 0.025,
+      "sigma": 1.0,
+      "implied": {
+        "mean_fraction_per_shock": 0.041,
+        "p95_fraction": 0.13,
+        "p99_fraction": 0.26,
+        "expected_annual_cost_fraction": 0.021,
+        "p_at_least_one_shock_per_year": 0.39
+      },
+      "mean_neutral_default": true,
+      "mean_neutral_reasoning": "Most people's stated annual spending already averages in irregular items. Mean-neutral shocks avoid silently raising spending by 2%; turn it off for users who report only their regular monthly budget."
+    },
+    "evidence": {
+      "jpmorgan_chase_institute_2017": {
+        "any_extraordinary_payment_per_year": 0.37,
+        "medical": 0.16,
+        "auto_repair": 0.08,
+        "tax": 0.19,
+        "more_than_one_per_year": 0.1,
+        "median_payment": {
+          "medical": 1143,
+          "auto_repair": 953,
+          "tax": 2142,
+          "any": 1520
+        },
+        "age_gradient": "44% of families 65+ vs 22% under 25",
+        "aftermath": "12 months later liquid savings still depleted for 48% of families",
+        "sample": "about 250,000 Chase checking customers, 2013-2015 (not nationally representative)",
+        "source": "https://www.jpmorganchase.com/institute/all-topics/household-financial-health/report-coping-with-costs"
+      },
+      "pew_2015": {
+        "households_with_a_financial_shock_in_12_months": 0.6,
+        "median_cost_of_most_expensive_shock": 2000,
+        "relative_size": "about half a month of income for the median household",
+        "source": "https://www.pew.org/en/research-and-analysis/articles/2015/10/the-role-of-emergency-savings-in-family-financial-security",
+        "confidence": "medium (figures quoted from memory of the brief; the page could not be re-fetched)"
+      },
+      "fed_shed_2025": {
+        "would_cover_400_dollar_expense_with_cash_or_equivalent": 0.63,
+        "peak_2021": 0.68,
+        "source": "https://www.federalreserve.gov/publications/2026-economic-well-being-of-us-households-in-2025-executive-summary.htm"
+      },
+      "scaling": "JPMCI median extraordinary payment of $1,520 is about 2.5-3% of median annual household spending at the time (about $55-60k), which sets median_fraction."
+    },
+    "knobs": [
+      "irregular expenses: off / typical / high (lambda 0, 0.5, 1.0)"
+    ],
+    "left_out": [
+      "correlation of shocks with recessions or job loss",
+      "insurance deductibles modelled per policy",
+      "large planned purchases (user enters those as one-off goals)"
+    ],
+    "confidence": "medium-low (frequency is sourced; severity distribution as a share of spending is a judgement)"
+  },
+  "children": {
+    "summary": "Deterministic per-child annual cost by age band and household income tier (USDA), re-inflated with simulated CPI, plus explicit childcare for ages 0-4 and an explicit college goal. No randomness by default.",
+    "usda_2015": {
+      "dollars_year": 2015,
+      "columns": [
+        "total",
+        "housing",
+        "food",
+        "transportation",
+        "clothing",
+        "health_care",
+        "child_care_and_education",
+        "miscellaneous"
+      ],
+      "married_couple_overall_us_annual_per_child": {
+        "low_income_under_59200": {
+          "0-2": [
+            9690,
+            3160,
+            1310,
+            1200,
+            670,
+            820,
+            2080,
+            450
+          ],
+          "3-5": [
+            9700,
+            3160,
+            1350,
+            1250,
+            540,
+            760,
+            2080,
+            560
+          ],
+          "6-8": [
+            9330,
+            3160,
+            1930,
+            1310,
+            540,
+            790,
+            920,
+            680
+          ],
+          "9-11": [
+            9960,
+            3160,
+            2200,
+            1350,
+            690,
+            900,
+            920,
+            740
+          ],
+          "12-14": [
+            9570,
+            3160,
+            2290,
+            1500,
+            740,
+            860,
+            440,
+            580
+          ],
+          "15-17": [
+            9980,
+            3160,
+            2300,
+            1690,
+            720,
+            910,
+            640,
+            560
+          ],
+          "total_0_17": 174690
+        },
+        "middle_income_59200_to_107400": {
+          "0-2": [
+            12680,
+            3680,
+            1580,
+            1790,
+            750,
+            1180,
+            2870,
+            830
+          ],
+          "3-5": [
+            12730,
+            3680,
+            1690,
+            1840,
+            600,
+            1110,
+            2870,
+            940
+          ],
+          "6-8": [
+            12350,
+            3680,
+            2280,
+            1900,
+            600,
+            1130,
+            1710,
+            1050
+          ],
+          "9-11": [
+            13180,
+            3680,
+            2680,
+            1940,
+            780,
+            1280,
+            1710,
+            1110
+          ],
+          "12-14": [
+            13030,
+            3680,
+            2780,
+            2090,
+            860,
+            1240,
+            1430,
+            950
+          ],
+          "15-17": [
+            13900,
+            3680,
+            2790,
+            2270,
+            830,
+            1300,
+            2090,
+            940
+          ],
+          "total_0_17": 233610
+        },
+        "high_income_over_107400": {
+          "0-2": [
+            19770,
+            5460,
+            2210,
+            2590,
+            1110,
+            1580,
+            5170,
+            1650
+          ],
+          "3-5": [
+            19790,
+            5460,
+            2320,
+            2640,
+            940,
+            1490,
+            5170,
+            1770
+          ],
+          "6-8": [
+            19380,
+            5460,
+            2960,
+            2690,
+            940,
+            1440,
+            4010,
+            1880
+          ],
+          "9-11": [
+            20700,
+            5460,
+            3570,
+            2740,
+            1180,
+            1800,
+            4010,
+            1940
+          ],
+          "12-14": [
+            21050,
+            5460,
+            3560,
+            2890,
+            1310,
+            1740,
+            4310,
+            1780
+          ],
+          "15-17": [
+            23380,
+            5460,
+            3720,
+            3070,
+            1280,
+            1820,
+            6270,
+            1760
+          ],
+          "total_0_17": 372210
+        }
+      },
+      "income_tiers_2015_dollars": {
+        "low": "under $59,200 (mean $36,300)",
+        "middle": "$59,200-$107,400 (mean $81,700)",
+        "high": "over $107,400 (mean $185,400)"
+      },
+      "family_size_adjustment": {
+        "only_child": 1.27,
+        "two_children": 1.0,
+        "three_or_more_each": 0.76
+      },
+      "basis": "Younger child in a two-child, married-couple family; 2011-15 Consumer Expenditure Survey; excludes college and pregnancy costs. The housing column is the cost of an extra bedroom.",
+      "inflate_to_today": "Multiply by CPI-U(now) / 237.017 (2015 annual average). The factor is roughly 1.38-1.40 for late 2026 (medium confidence; compute from the CPI series in data/history). Apply the same factor to the income tier boundaries (about $82k and $149k in 2026 dollars).",
+      "source": "https://fns-prod.azureedge.us/sites/default/files/crc2015_March2017.pdf",
+      "confidence": "high for the 2015 table (read from the report); USDA has not published an update since"
+    },
+    "recommended_core_cost_2015_dollars": {
+      "definition": "USDA total minus housing minus child care and education. Use this when housing is modelled explicitly (the user's actual home) and childcare is added separately, which is the FIRESight v2 default.",
+      "values": {
+        "low_income_under_59200": {
+          "0-2": 4450,
+          "3-5": 4460,
+          "6-8": 5250,
+          "9-11": 5880,
+          "12-14": 5970,
+          "15-17": 6180
+        },
+        "middle_income_59200_to_107400": {
+          "0-2": 6130,
+          "3-5": 6180,
+          "6-8": 6960,
+          "9-11": 7790,
+          "12-14": 7920,
+          "15-17": 8130
+        },
+        "high_income_over_107400": {
+          "0-2": 9140,
+          "3-5": 9160,
+          "6-8": 9910,
+          "9-11": 11230,
+          "12-14": 11280,
+          "15-17": 11650
+        }
+      }
+    },
+    "brookings_update": {
+      "total_birth_to_17_middle_income_child_born_2015": 310605,
+      "note": "Sawhill and Welch (Brookings, August 2022): USDA's $233,610 in 2015 dollars becomes $310,605 nominal for a child born in 2015 once inflation is assumed to run 4% instead of USDA's 2.2% (about $26,000 more than USDA's own inflation-projected total); about $18,271 per year. Excludes college.",
+      "source": "https://www.brookings.edu/wp-content/uploads/2022/08/Brookings_Cost-to-raise-a-child_inflation-adjusted-2.pdf",
+      "confidence": "medium-high (figures confirmed through secondary coverage of the Brookings note)"
+    },
+    "childcare": {
+      "ccaoa_2025_national": {
+        "average_annual_price": 13184,
+        "prior_year_2024": 13128,
+        "infant_center": {
+          "method1_average_of_states": 15636,
+          "method2_space_weighted": 15015,
+          "method3_program_weighted": 15728
+        },
+        "infant_family_child_care_home": {
+          "method1": 11673,
+          "method2": 13834,
+          "method3": 12336
+        },
+        "four_year_old_center": {
+          "method1": 12555,
+          "method2": 12165,
+          "method3": 12470
+        },
+        "four_year_old_family_child_care_home": {
+          "method1": 10572,
+          "method2": 12178,
+          "method3": 14045
+        },
+        "trend": "+23% from 2021 to 2025 vs +24% CPI, i.e. flat in real terms recently",
+        "source": "https://info.childcareaware.org/price-and-supply-2025"
+      },
+      "default_full_time_annual_2025_dollars": {
+        "age_0_1": 15500,
+        "age_2": 14000,
+        "age_3_4": 12400,
+        "age_5_12_before_after_school_and_summer": 6000
+      },
+      "school_age_note": "The school-age figure is an estimate (about 45% of the preschool price); Child Care Aware did not publish a national school-age figure on the 2025 page. Low confidence.",
+      "regional_spread": "Infant centre care runs from about $8k (MS, AL) to $25k+ (MA, DC, CA metros).",
+      "inflation": "CPI + 1.0 point (labour-intensive service; long-run CPI for day care and preschool has run about 1-1.5 points above CPI-U). Judgement.",
+      "confidence": "high for the national averages; medium for the default by-age schedule"
+    },
+    "college": {
+      "published_tuition_and_fees_2026_27": {
+        "public_two_year_in_district": 4210,
+        "public_four_year_in_state": 12290,
+        "public_four_year_out_of_state": 32730,
+        "private_nonprofit_four_year": 46350
+      },
+      "one_year_change": {
+        "public_two_year": 100,
+        "public_four_year_in_state": 350,
+        "public_four_year_out_of_state": 1110,
+        "private_nonprofit": 1640
+      },
+      "full_budget_2025_26": {
+        "note": "Tuition, fees, housing, food, books, transport, personal. Published budgets for full-time undergraduates.",
+        "public_two_year_in_district": 21320,
+        "public_four_year_in_state": 30990,
+        "public_four_year_out_of_state": 50920,
+        "private_nonprofit_four_year": 65470
+      },
+      "full_budget_2026_27_estimate": {
+        "note": "2025-26 budget + published tuition increase + 3% on the non-tuition part. Derived, medium confidence.",
+        "public_four_year_in_state": 31900,
+        "public_four_year_out_of_state": 52600,
+        "private_nonprofit_four_year": 67700
+      },
+      "housing_and_food_2025_26": {
+        "public_four_year": 13900,
+        "private_nonprofit_four_year": 15920,
+        "confidence": "medium-low (secondary source quoting College Board)"
+      },
+      "net_price_2026_27": {
+        "net_tuition_and_fees_public_four_year_in_state": 1920,
+        "net_tuition_and_fees_private_nonprofit": 17280,
+        "net_tuition_fees_housing_food_public_four_year": 16350,
+        "net_cost_private_nonprofit": 38540,
+        "note": "After grant aid, first-time full-time students. Averages are pulled down by need-based aid that most FIRE households will not receive; default to published price for high-income households and net price for middle-income ones."
+      },
+      "default_annual_cost_today_dollars": {
+        "public_in_state": 31900,
+        "public_out_of_state": 52600,
+        "private": 67700,
+        "elite_private_full_pay": 95000
+      },
+      "elite_note": "Sticker cost of attendance at the most expensive private universities is $95-100k for 2026-27 (press reports list 16 colleges above $100k).",
+      "inflation_over_cpi": {
+        "default_pct": 1.0,
+        "range": [
+          0.0,
+          3.0
+        ],
+        "evidence": "Published tuition rose about 3%/yr above CPI from the 1980s to the mid-2010s. Over the last decade inflation-adjusted published tuition fell at public institutions and rose only about 2% in total at private nonprofits; net tuition at public four-year colleges fell from $4,600 (2012-13) to $1,920 (2026-27) in constant dollars.",
+        "confidence": "medium (judgement between the long-run +3 and the recent 0)"
+      },
+      "sources": [
+        "https://research.collegeboard.org/trends/college-pricing/highlights",
+        "https://newsroom.collegeboard.org/trends-college-pricing-and-student-aid-report-published-tuition-prices-public-institutions-and",
+        "https://www.insidehighered.com/node/223046"
+      ],
+      "confidence": "high for 2026-27 tuition and 2025-26 budgets"
+    },
+    "knobs": [
+      "number of children and birth years (including planned)",
+      "childcare: none / part-time / full-time, per child",
+      "college plan per child: none / public in-state / public out-of-state / private / custom, and share the parents pay"
+    ],
+    "left_out": [
+      "529 mechanics and financial aid formulas (accounts/tax modules)",
+      "private K-12 (user enters as a custom expense)",
+      "fertility uncertainty",
+      "adult-child support"
+    ]
+  },
+  "retirement_spending": {
+    "summary": "How baseline (non-health, non-housing-debt) spending changes in real terms through retirement. Default is the Blanchett 'smile'; alternatives are flat real spending and the Consumer Expenditure Survey age pattern.",
+    "blanchett_smile": {
+      "formula": "annual real change in spending at a given age = 0.00008 * age^2 - 0.0125 * age - 0.0066 * ln(ExpTar) + 0.546, where ExpTar is the household's target annual spending in dollars.",
+      "interpretation": "Real spending falls about 1%/yr in the mid-70s to mid-80s and turns up late in life as health costs rise; the trough of the growth rate is at age 78. Higher spenders cut more.",
+      "table": {
+        "25000": {
+          "annual_real_change_by_age": {
+            "60": 0.0172,
+            "65": 0.0047,
+            "70": -0.0038,
+            "75": -0.0083,
+            "80": -0.0088,
+            "85": -0.0053,
+            "90": 0.0022,
+            "95": 0.0137,
+            "100": 0.0292
+          },
+          "cumulative_real_level_vs_age_65": {
+            "70": 1.005,
+            "75": 0.975,
+            "80": 0.933,
+            "85": 0.897,
+            "90": 0.885,
+            "95": 0.914,
+            "100": 1.007
+          }
+        },
+        "50000": {
+          "annual_real_change_by_age": {
+            "60": 0.0126,
+            "65": 0.0001,
+            "70": -0.0084,
+            "75": -0.0129,
+            "80": -0.0134,
+            "85": -0.0099,
+            "90": -0.0024,
+            "95": 0.0091,
+            "100": 0.0246
+          },
+          "cumulative_real_level_vs_age_65": {
+            "70": 0.982,
+            "75": 0.931,
+            "80": 0.87,
+            "85": 0.818,
+            "90": 0.789,
+            "95": 0.796,
+            "100": 0.858
+          }
+        },
+        "100000": {
+          "annual_real_change_by_age": {
+            "60": 0.008,
+            "65": -0.0045,
+            "70": -0.013,
+            "75": -0.0175,
+            "80": -0.018,
+            "85": -0.0145,
+            "90": -0.007,
+            "95": 0.0045,
+            "100": 0.02
+          },
+          "cumulative_real_level_vs_age_65": {
+            "70": 0.96,
+            "75": 0.889,
+            "80": 0.812,
+            "85": 0.746,
+            "90": 0.703,
+            "95": 0.693,
+            "100": 0.73
+          }
+        },
+        "150000": {
+          "annual_real_change_by_age": {
+            "60": 0.0053,
+            "65": -0.0072,
+            "70": -0.0157,
+            "75": -0.0202,
+            "80": -0.0207,
+            "85": -0.0172,
+            "90": -0.0097,
+            "95": 0.0018,
+            "100": 0.0173
+          },
+          "cumulative_real_level_vs_age_65": {
+            "70": 0.947,
+            "75": 0.866,
+            "80": 0.78,
+            "85": 0.706,
+            "90": 0.657,
+            "95": 0.639,
+            "100": 0.664
+          }
+        }
+      },
+      "application": "spend(t+1) = spend(t) * (1 + inflation) * (1 + delta(age_t, ExpTar)). Apply from retirement or age 60, whichever is later. ExpTar should be the first-year retirement spending deflated to roughly 2012-2014 dollars (the paper's units); using today's dollars instead changes delta by only about -0.2 points.",
+      "double_counting_warning": "The late-life upturn in Blanchett's data is health and long-term-care spending. FIRESight v2 models both explicitly, so apply the smile only to the non-health budget and clamp delta at 0 from the age where it turns positive (about 89-95 depending on ExpTar).",
+      "source": "https://www.financialplanningassociation.org/article/journal/MAY14-exploring-retirement-consumption-puzzle",
+      "source_alt": "https://www.morningstar.com/content/dam/marketing/shared/research/foundational/677785-EstimatingTrueCostRetirement.pdf",
+      "confidence": "medium-high (formula quoted from memory of Blanchett 2014, Journal of Financial Planning 27(5); the computed table reproduces the published shape: about 0% at 65, -1.3% at 75-80, positive after 90 for a $50k household)"
+    },
+    "ces_age_pattern": {
+      "average_annual_expenditures_by_age_of_reference_person_2024": {
+        "25-34": 74475,
+        "35-44": 91229,
+        "45-54": 100327,
+        "55-64": 84946,
+        "65-74": 65354,
+        "75+": 55834,
+        "all_consumer_units": 78535
+      },
+      "ratios_to_55_64": {
+        "65-74": 0.769,
+        "75+": 0.657
+      },
+      "all_consumer_units_2025": 81905,
+      "implied_cross_sectional_decline": "About -2.6%/yr from the 55-64 midpoint to the 65-74 midpoint and -1.4%/yr from there to roughly age 81.",
+      "caveat": "Cross-section, not a cohort: older households are smaller, poorer cohorts, and no longer pay payroll taxes or mortgages. It overstates the decline a given household chooses. Use as an 'aggressive decline' alternative: -2%/yr real from 65 to 75, -1%/yr from 75 to 85, flat after.",
+      "sources": [
+        "https://www.bls.gov/opub/reports/consumer-expenditures/2024/",
+        "https://fred.stlouisfed.org/series/CXUTOTALEXPLB0408M"
+      ],
+      "confidence": "high for the figures (BLS via FRED)"
+    },
+    "presets": {
+      "flat_real": "0% real change (conservative, the classic 4% rule assumption)",
+      "smile": "Blanchett, clamped at 0 after the trough ends (default)",
+      "ces_decline": "-2% / -1% / 0% schedule above"
+    },
+    "knobs": [
+      "retirement spending path (flat / smile / steeper decline)"
+    ],
+    "left_out": [
+      "go-go / slow-go / no-go custom phases (covered by letting users add dated spending goals)",
+      "spending reductions at first death (handled by the household module: default survivor spends 70% of the couple's baseline)"
+    ]
+  },
+  "housing": {
+    "summary": "Transaction and carrying-cost parameters for an owned home, and the idiosyncratic price risk to layer on top of the national home price index produced by the scenario generator.",
+    "closing_costs": {
+      "buyer_pct_of_price": {
+        "default": 0.03,
+        "range": [
+          0.02,
+          0.05
+        ],
+        "includes": "lender origination, appraisal, title insurance, recording, prepaid interest/escrow set-up; excludes down payment and points"
+      },
+      "seller_pct_of_price": {
+        "default": 0.07,
+        "range": [
+          0.06,
+          0.1
+        ],
+        "includes": "agent commissions (about 5% total after the 2024 NAR settlement, previously 5-6%), transfer taxes, title/escrow, typical concessions"
+      },
+      "moving_and_setup_pct": 0.01,
+      "source": "https://www.consumerfinance.gov/ask-cfpb/what-fees-or-charges-are-paid-when-closing-on-a-mortgage-and-who-pays-them-en-1845/",
+      "confidence": "medium (wide regional variation; transfer taxes alone range from 0 to over 2%)"
+    },
+    "pmi": {
+      "definition": "Borrower-paid monthly private mortgage insurance, annual premium as % of the original loan amount, 30-year fixed, standard coverage.",
+      "annual_rate_pct_by_ltv_and_fico": {
+        "fico_bands": [
+          "760+",
+          "740-759",
+          "720-739",
+          "700-719",
+          "680-699",
+          "660-679",
+          "640-659",
+          "620-639"
+        ],
+        "ltv_95.01_97": [
+          0.58,
+          0.7,
+          0.87,
+          0.99,
+          1.21,
+          1.54,
+          1.65,
+          1.86
+        ],
+        "ltv_90.01_95": [
+          0.38,
+          0.53,
+          0.66,
+          0.78,
+          0.96,
+          1.28,
+          1.33,
+          1.42
+        ],
+        "ltv_85.01_90": [
+          0.28,
+          0.38,
+          0.46,
+          0.55,
+          0.65,
+          0.9,
+          0.91,
+          0.94
+        ],
+        "ltv_80.01_85": [
+          0.19,
+          0.2,
+          0.23,
+          0.25,
+          0.28,
+          0.38,
+          0.4,
+          0.44
+        ]
+      },
+      "simple_default": "0.5% of the loan per year when LTV > 80% (good credit); 1.0% for fair credit.",
+      "cancellation": "Borrower may request cancellation at 80% LTV of the original value; automatic termination at 78% (Homeowners Protection Act). Model: PMI stops when scheduled balance <= 78% of purchase price, or when balance <= 80% and the user opts to request it.",
+      "fha_alternative": "FHA: 1.75% upfront plus 0.55%/yr annual MIP (life of loan if down payment under 10%).",
+      "sources": [
+        "https://www.consumerfinance.gov/ask-cfpb/when-can-i-remove-private-mortgage-insurance-pmi-from-my-loan-en-202/",
+        "https://www.urban.org/sites/default/files/2026-09/Housing_Finance_at_a_Glance_A_Monthly_Chartbook_September_2026.pdf"
+      ],
+      "confidence": "medium-low for the grid (a representative insurer rate card recalled from memory; insurers now price loan-by-loan and average premiums have fallen about 25% since 2017). High for the cancellation rules."
+    },
+    "maintenance_pct_of_value": {
+      "default": 0.01,
+      "range": [
+        0.01,
+        0.02
+      ],
+      "capital_replacement_addon": 0.005,
+      "note": "1% of home value per year for routine maintenance is the standard rule; roofs, HVAC and other replacements add about 0.5%. Harding, Rosenthal and Sirmans (2007) estimate gross depreciation of about 2.5%/yr and about 2% net of maintenance. Costs scale with the structure, not the land, so use the low end in expensive coastal metros. Lumpiness is supplied by the expense-shock module.",
+      "source": "https://doi.org/10.1016/j.jue.2006.07.007",
+      "confidence": "medium"
+    },
+    "homeowners_insurance_pct_of_value": {
+      "default": 0.005,
+      "range": [
+        0.003,
+        0.02
+      ],
+      "high_risk_states": "1-2% in FL, LA, TX, OK and wildfire zones",
+      "real_growth": "CPI + 2 points for the next 10 years, then CPI (premiums rose far faster than inflation in 2021-2025 as insurers repriced catastrophe risk). Judgement.",
+      "evidence": "Urban Institute: average annual premium on newly originated agency mortgages rose from $1,270 (2018) to $1,856 (2024), +46%.",
+      "source": "https://www.urban.org/sites/default/files/2026-09/Housing_Finance_at_a_Glance_A_Monthly_Chartbook_September_2026.pdf",
+      "confidence": "medium"
+    },
+    "property_tax_pct_of_value": {
+      "default": 0.009,
+      "range": [
+        0.003,
+        0.023
+      ],
+      "note": "Effective rate on market value; national average about 0.9% (ATTOM), from about 0.3% (HI) to about 2.2% (NJ, IL). The tax module owns deductibility/SALT.",
+      "confidence": "medium"
+    },
+    "idiosyncratic_price_risk": {
+      "model": "ln P_house(t) = ln P_house(0) + [ln HPI_national(t) - ln HPI_national(0)] + m(t) + x(sale);  m(t) = m(t-1) + local(t), local ~ N(0, sigma_local^2) (metro + neighbourhood drift, independent of the national index);  x(sale) ~ N(0, sigma_sale^2) is drawn once each time the house is actually sold or bought (transaction noise). Subtract 0.5*variance terms so the expected price equals the index.",
+      "sigma_local_annual": 0.04,
+      "sigma_sale": 0.1,
+      "implied_total_idiosyncratic_sd": {
+        "1_year": 0.108,
+        "10_years": 0.161,
+        "30_years": 0.241
+      },
+      "evidence": {
+        "flavin_yamashita_2002": "PSID owner-reported values: real return on an individual house has mean 6.6% and standard deviation 14.2% per year (including about 5% national-index volatility).",
+        "case_shiller_1989": "Individual house price changes have an annual standard deviation near 15%, dominated by house-specific noise; city indices explain a small share of the variance.",
+        "giacoletti_2021": "Idiosyncratic risk in repeat sales is large (about 10% or more of price) but grows much more slowly than the square root of the holding period: most of it is realised at the moment of sale. This is why the default splits risk into a small annual drift and a one-off sale shock rather than a 12-15% annual random walk."
+      },
+      "sources": [
+        "https://doi.org/10.1257/000282802760015757",
+        "https://www.jstor.org/stable/1804778",
+        "https://doi.org/10.1093/rfs/hhab033"
+      ],
+      "confidence": "medium (the 10-15% one-year figure is well established; the split between drift and sale noise is a modelling judgement)"
+    },
+    "rent_growth": {
+      "default_real": 0.0075,
+      "sd_annual": 0.02,
+      "note": "CPI rent of primary residence has grown about 0.5-1.0 point faster than CPI-U since the mid-1980s. Rents are much less volatile than prices; correlate local rent growth 0.5 with the home-price local factor. A renter's own rent also resets to market on a move.",
+      "confidence": "medium (index values quoted from memory)"
+    },
+    "knobs": [
+      "home value, mortgage, purchase/sale plans",
+      "location cost tier for tax and insurance (low / typical / high) or custom rates",
+      "credit tier for PMI (good / fair)"
+    ],
+    "left_out": [
+      "metro-specific indices (one national index plus idiosyncratic drift)",
+      "HOA/condo assessments (user-entered)",
+      "natural-disaster loss beyond insurance",
+      "mortgage refinancing decisions (separate module)"
+    ]
+  },
+  "equity_compensation": {
+    "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
+    "private_company": {
+      "evidence": {
+        "correlation_ventures": {
+          "sample": "More than 21,000 US venture financings, 2004-2013, gross multiple realised per financing",
+          "distribution": {
+            "below_1x": 0.648,
+            "1x_to_5x": 0.253,
+            "5x_to_10x": 0.059,
+            "10x_to_20x": 0.025,
+            "20x_to_50x": 0.011,
+            "above_50x": 0.004
+          },
+          "note": "Investor preferred-stock outcomes. Employees hold common stock or options behind liquidation preferences and with a strike price, so their distribution is worse.",
+          "sources": [
+            "https://medium.com/correlation-ventures/venture-capital-no-were-not-normal-32a26edea7c7",
+            "https://sethlevine.com/archives/2014/08/venture-outcomes-are-even-more-skewed-than-you-think.html"
+          ],
+          "confidence": "high for <1x (65%), 5x+ (10%), 10x+ (4%), 50x+ (0.4%); band split to one decimal from memory"
+        },
+        "hall_woodward_2010": "About three quarters of founders of venture-backed companies receive nothing at exit; the risk-adjusted value of the typical founder's stake is close to zero for a risk-averse person.",
+        "time_to_liquidity": "Median company age at US IPO has been about 10-12 years since 2010 (Ritter); acquisitions typically come 5-8 years after first venture funding. Secondary sales and tender offers exist mainly at late-stage unicorns.",
+        "sources": [
+          "https://doi.org/10.1257/aer.100.3.1163",
+          "https://site.warrington.ufl.edu/ritter/ipo-data/"
+        ]
+      },
+      "model": {
+        "inputs": "Paper value V today (shares x latest preferred price, or vested option spread), stage, and vesting schedule.",
+        "equation": "At random time T (years) the stake pays V * M and nothing before. Outcome class is drawn from the stage table; M is drawn log-uniformly inside the class range. T ~ LogNormal(ln(median_T), 0.5). In a recession year no liquidity event occurs (T is pushed out one year).",
+        "stage_table": {
+          "seed_to_series_a": {
+            "p_zero": 0.7,
+            "p_modest": 0.2,
+            "p_good": 0.08,
+            "p_large": 0.02,
+            "median_T_years": 7
+          },
+          "series_b_to_c": {
+            "p_zero": 0.5,
+            "p_modest": 0.3,
+            "p_good": 0.16,
+            "p_large": 0.04,
+            "median_T_years": 5
+          },
+          "late_stage_pre_ipo": {
+            "p_zero": 0.3,
+            "p_modest": 0.45,
+            "p_good": 0.22,
+            "p_large": 0.03,
+            "median_T_years": 3
+          }
+        },
+        "multiple_ranges_on_paper_value": {
+          "zero": [
+            0,
+            0
+          ],
+          "modest": [
+            0.1,
+            1.0
+          ],
+          "good": [
+            1.0,
+            4.0
+          ],
+          "large": [
+            4.0,
+            20.0
+          ]
+        },
+        "implied_expected_multiple": {
+          "seed_to_series_a": 0.45,
+          "series_b_to_c": 0.86,
+          "late_stage_pre_ipo": 0.95
+        },
+        "default_in_base_plan": "Count private equity at zero in the headline success rate and show the upside as a separate scenario. This is the single most useful honest default."
+      },
+      "confidence": "low-medium (class probabilities are judgement, anchored to the Correlation Ventures distribution and adjusted for common-stock subordination and stage)"
+    },
+    "single_public_stock": {
+      "model": "r_stock(t) = rf + beta * (r_market(t) - rf) + e(t); e(t) is Student-t with 4 degrees of freedom scaled to annual volatility sigma_idio, mean adjusted so the stock has no alpha. Plus a ruin hazard: each year with probability h the position loses 100%.",
+      "defaults": {
+        "large_cap": {
+          "beta": 1.0,
+          "sigma_idio": 0.25,
+          "ruin_hazard": 0.003
+        },
+        "typical_tech_or_growth": {
+          "beta": 1.2,
+          "sigma_idio": 0.35,
+          "ruin_hazard": 0.01
+        },
+        "small_or_recent_ipo": {
+          "beta": 1.3,
+          "sigma_idio": 0.5,
+          "ruin_hazard": 0.03
+        }
+      },
+      "beta_dispersion": "Cross-sectional standard deviation of betas is about 0.3-0.5 around a mean of 1.0.",
+      "volatility_drag": "With market volatility 16% and total stock volatility 40%, the median growth rate of the single stock is about 0.5 * (0.40^2 - 0.16^2) = 6.7 points per year below the market at equal expected return. This drag, not a lower mean, is what the simulation should show.",
+      "employer_correlation": "If the stock is the user's employer, link the job-loss hazard to it: in any year the stock's idiosyncratic return is below -40%, multiply that earner's separation hazard by 3 (judgement).",
+      "bessembinder": {
+        "finding": "Of about 26,000 US common stocks in CRSP 1926-2016, only 42.6% had lifetime buy-and-hold returns above one-month Treasury bills (four in seven did not). The most common lifetime outcome is a loss of 100%. Just 4.3% of stocks (1,092 firms) account for all of the net wealth created above T-bills. Global update 1991-2020: 55.2% of US stocks and 57.4% of non-US stocks underperformed T-bills.",
+        "sources": [
+          "https://doi.org/10.1016/j.jfineco.2018.06.004",
+          "https://wpcarey.asu.edu/department-finance/faculty-research/do-stocks-outperform-treasury-bills"
+        ],
+        "confidence": "high"
+      },
+      "idiosyncratic_volatility_evidence": "Campbell, Lettau, Malkiel, Xu (2001): firm-level volatility is the largest component of a typical stock's total volatility and rose from the 1960s to the 1990s; a typical individual US stock has annualised volatility of 30-50% against 15-18% for the market.",
+      "source": "https://doi.org/10.1111/0022-1082.00318",
+      "confidence": "medium (well-established magnitudes; the three presets are judgement)"
+    },
+    "knobs": [
+      "private equity: stage and paper value; include in base plan yes/no (default no)",
+      "single stock: preset (large cap / growth / small) and a planned diversification schedule (% sold per year)"
+    ],
+    "left_out": [
+      "option exercise strategy, AMT, 83(b), QSBS (tax module)",
+      "liquidation-preference waterfall",
+      "company-specific forecasts"
+    ]
+  },
+  "crypto": {
+    "summary": "A speculative asset with no cash flows: very high volatility, fat tails, positive and crisis-sensitive correlation with equities, and a real chance of permanent loss. Parameters are assumptions, not estimates, and the UI should say so.",
+    "model": {
+      "equation": "Monthly log return = (mu_log - 0.5*0)/12 + sigma/sqrt(12) * t4, where t4 is a unit-variance Student-t draw with 4 degrees of freedom, correlated rho with the equity shock of the same month. mu_log is the assumed median annual real log growth. Each year, with probability ruin_hazard, the holding suffers a permanent 100% loss (protocol failure, ban, custody/exchange loss).",
+      "sigma_annual": 0.7,
+      "student_t_df": 4,
+      "correlation_with_equities": 0.35,
+      "correlation_in_equity_drawdowns": 0.6,
+      "ruin_hazard_annual": {
+        "bitcoin_or_ether": 0.01,
+        "other_tokens": 0.08
+      },
+      "median_real_growth_presets": {
+        "skeptic": -0.1,
+        "neutral": 0.0,
+        "believer": 0.05
+      },
+      "default_preset": "neutral"
+    },
+    "reasoning": {
+      "volatility": "Bitcoin's realised annualised volatility has mostly been 50-80% since 2018 (higher before); ether and smaller tokens 80-120%. Drawdowns of 75-85% occurred in 2014, 2018 and 2022.",
+      "expected_return": "There are no cash flows to anchor a return. The neutral preset assumes the median outcome just keeps pace with inflation. Because of the 70% volatility the arithmetic mean under that preset is still about +24%/yr: most paths drift down while a few go up enormously. Assigning crypto an equity-like arithmetic mean (about 6% real) would imply a median decay of about 18%/yr, which is the 'skeptic' neighbourhood.",
+      "correlation": "Near zero before 2020; rolling correlation of bitcoin with US equities has averaged roughly 0.3-0.4 since 2020 and rises in sell-offs (March 2020, 2022), so it does not hedge equity risk when it matters.",
+      "permanent_loss": "More than half of all tokens ever listed on major trackers have died. Even for the largest assets a 1%/yr hazard (26% cumulative over 30 years) is a modest allowance for protocol, regulatory, quantum-cryptography and custody risk. Terra/Luna (2022) and exchange failures (Mt. Gox, FTX) are the reference events.",
+      "position_sizing": "With these parameters a 5% allocation changes plan success by well under one point either way; a 30% allocation makes outcomes bimodal. Show that sensitivity rather than a point forecast."
+    },
+    "knobs": [
+      "outlook (skeptic / neutral / believer)",
+      "asset type (bitcoin-ether / other)"
+    ],
+    "left_out": [
+      "staking yield",
+      "token-specific models",
+      "tax-lot detail (tax module treats it as property)"
+    ],
+    "confidence": "low by construction (judgement); volatility and drawdown history are factual, quoted from memory"
+  },
+  "withdrawal_rules": {
+    "conventions": "All rules are stated in real (inflation-adjusted) terms. B(t) = portfolio value at the start of year t before the withdrawal; W(t) = withdrawal for year t; W0 = first-year withdrawal; IWR = W0 / B(0); cpi(t) = simulated inflation over the prior year. Withdrawals are taken at the start of the year. Other income (Social Security, pensions) is subtracted from the spending need before the rule is applied or added on top, depending on the product decision; the rules themselves govern portfolio withdrawals.",
+    "constant_dollar_bengen": {
+      "definition": "W(0) = IWR * B(0); W(t) = W(t-1) * (1 + cpi(t)) regardless of portfolio performance, until the portfolio is exhausted.",
+      "default_IWR": 0.04,
+      "history": "Bengen (1994): 4.15% was the highest rate that survived every 30-year period from 1926 with 50-75% stocks (intermediate Treasuries for the rest); 'SAFEMAX' later raised to about 4.5% with small-cap stocks (2006) and about 4.7% in his 2025 book. For 40-60 year FIRE horizons historical safe rates are nearer 3.25-3.5%.",
+      "source": "https://www.financialplanningassociation.org/sites/default/files/2021-04/MAR04%20Determining%20Withdrawal%20Rates%20Using%20Historical%20Data.pdf",
+      "confidence": "high for the rule; medium for the later SAFEMAX figures"
+    },
+    "constant_percentage": {
+      "definition": "W(t) = p * B(t) every year. Never depletes; income is as volatile as the portfolio.",
+      "default_p": 0.04,
+      "confidence": "high"
+    },
+    "guyton_klinger": {
+      "definition_order_each_year": [
+        "1. Withdrawal rule (modified, 2006): W(t) = W(t-1) * (1 + cpi(t)), EXCEPT no inflation increase if the portfolio's total return in the prior year was negative AND W(t-1)*(1+cpi(t)) / B(t) would exceed IWR. A skipped increase is never made up.",
+        "2. Capital preservation rule: if W(t) / B(t) > 1.20 * IWR, cut W(t) by 10%. Not applied in the final 15 years of the planning horizon (e.g. after age 85 when planning to 100).",
+        "3. Prosperity rule: if W(t) / B(t) < 0.80 * IWR, raise W(t) by 10%.",
+        "4. The adjusted W(t) becomes the base for next year."
+      ],
+      "portfolio_management_rule": [
+        "After a year in which an asset class's gain leaves it above its target weight, sell the excess into cash to fund future withdrawals.",
+        "Fund each withdrawal in this order: (1) overweight equity classes from the prior year-end, (2) overweight fixed income, (3) cash, (4) remaining fixed income, (5) remaining equities in order of prior-year performance.",
+        "Take nothing from equities after a year in which equities had a negative return if cash and fixed income can cover the withdrawal."
+      ],
+      "thresholds": {
+        "upper_guardrail": 1.2,
+        "lower_guardrail": 0.8,
+        "cut": 0.1,
+        "raise": 0.1,
+        "capital_preservation_sunset_years_before_end": 15
+      },
+      "inflation_cap_note": "Guyton's original 2004 inflation rule capped each year's increase at 6% with no make-up. Guyton and Klinger (2006) test it and then drop it from the final rule set; offer it as an optional switch (cap = 6%).",
+      "paper_results": "Initial withdrawal rates of 5.2-5.6% were sustainable for 40 years at 99% confidence with at least 65% equities (their return assumptions).",
+      "caveat": "The guardrails are defined on the withdrawal rate, so a deep bear market can trigger several consecutive 10% cuts; cumulative real spending cuts of 30-50% occur in bad historical sequences. Report the spending distribution, not just the success rate.",
+      "source": "https://www.financialplanningassociation.org/sites/default/files/2021-11/2006%20-%20Guyton%20and%20Klinger%20-%20Decision%20Rules%20and%20SWR%20%281%29.PDF",
+      "confidence": "high (rule text checked against the 2006 Journal of Financial Planning paper)"
+    },
+    "vanguard_dynamic_spending": {
+      "definition": "target(t) = p * B(t). real_prev = W(t-1) * (1 + cpi(t)). W(t) = min(max(target(t), real_prev * (1 - floor)), real_prev * (1 + ceiling)).",
+      "ceiling": 0.05,
+      "floor": 0.025,
+      "default_p": 0.04,
+      "note": "Hybrid of constant-dollar (ceiling = floor = 0) and constant-percentage (no limits). Some later Vanguard illustrations use a 1.5% floor.",
+      "source": "https://corporate.vanguard.com/content/dam/corp/research/pdf/from_assets_to_income_a_goals_based_approach_to_retirement_spending.pdf",
+      "confidence": "high for the mechanism; the 5% / 2.5% pair is Vanguard's standard illustration"
+    },
+    "vpw": {
+      "definition": "Each year withdraw the level payment that would exhaust the portfolio at the horizon if it earned an assumed real return r: W(t) = B(t) * r / (1 - (1 + r)^(-n)) / (1 + r), n = years remaining including this one (payment at start of year; spreadsheet PMT(r, n, -B, 0, 1)). If r = 0, W = B / n.",
+      "assumed_real_returns": {
+        "stocks": 0.05,
+        "bonds": 0.019
+      },
+      "r": "r = equity_weight * 0.050 + bond_weight * 0.019",
+      "horizon_default_last_withdrawal_age": 99,
+      "max_percentage_cap": 0.1,
+      "examples_60_40_r_0.0376": {
+        "n_40": 0.047,
+        "n_30": 0.0541,
+        "n_20": 0.0694,
+        "n_10": 0.1174
+      },
+      "note": "Equivalent to actuarial / amortisation-based spending. Never runs out before the horizon by construction; the risk shows up as low late-life income, so pair it with stochastic longevity carefully (use a horizon near the 95th percentile of survival).",
+      "source": "https://www.bogleheads.org/wiki/Variable_percentage_withdrawal",
+      "confidence": "high for the formula; medium for the Bogleheads default return assumptions (from memory)"
+    },
+    "floor_and_ceiling": {
+      "definition": "target(t) = p * B(t). W0_real(t) = W0 * cumulative inflation to t. W(t) = min(max(target(t), (1 - floor) * W0_real(t)), (1 + ceiling) * W0_real(t)). Limits are relative to the FIRST year's real withdrawal (unlike Vanguard, which is relative to the previous year).",
+      "floor": 0.15,
+      "ceiling": 0.2,
+      "default_p": 0.045,
+      "note": "Bengen (2001). Pfau's descriptions use a 15% floor with either a 20% or a 50% ceiling; the floor drives sustainability, the ceiling matters little. With these bands the historical worst-case starting rate rises by about 10% (e.g. 4.15% to about 4.6%).",
+      "source": "https://retirementresearcher.com/floor-ceiling-retirement-spending-strategy/",
+      "confidence": "medium (band values taken from Pfau's summaries of Bengen 2001, not the original article)"
+    },
+    "rising_equity_glidepath": {
+      "definition": "Equity weight rises linearly from E_start at retirement to E_end over N years, then stays at E_end: E(t) = E_start + (E_end - E_start) * min(t, N) / N.",
+      "defaults": {
+        "E_start": 0.3,
+        "E_end": 0.7,
+        "N_years": 30
+      },
+      "finding": "Pfau and Kitces (2014): portfolios that start at about 20-40% equities and rise to about 60-80% do better in the worst outcomes than static or declining paths, because low equity exposure when the portfolio is largest reduces sequence-of-returns risk.",
+      "source": "https://www.financialplanningassociation.org/article/journal/JAN14-reducing-retirement-risk-rising-equity-glide-path",
+      "confidence": "high"
+    },
+    "bond_tent": {
+      "definition": "V-shaped equity path around the retirement date R: E(t) = E_work for t <= R - N_down; falls linearly to E_min at R; rises linearly back to E_late at R + N_up; constant after.",
+      "defaults": {
+        "E_work": 0.8,
+        "E_min": 0.4,
+        "E_late": 0.7,
+        "N_down_years": 10,
+        "N_up_years": 15
+      },
+      "note": "Kitces's name for combining a pre-retirement target-date glide with the post-retirement rising glidepath; the extra bonds are spent first in early retirement.",
+      "source": "https://www.kitces.com/blog/managing-portfolio-size-effect-with-bond-tent-in-retirement-red-zone/",
+      "confidence": "high for the concept; the default numbers are a typical illustration"
+    },
+    "product_default": "Offer constant-dollar as the familiar baseline, and recommend a guardrail rule (Guyton-Klinger or Vanguard dynamic) for the headline plan, always reporting the 5th-percentile real spending alongside the success rate.",
+    "left_out": [
+      "RMD-based spending (RMDs are enforced by the tax/account module; could be added as a rule)",
+      "utility-optimised dynamic programming",
+      "Kitces/Income Lab risk-based guardrails (needs nested simulation)",
+      "annuitisation"
+    ]
+  },
+  "social_security_notes": {
+    "scope": "Benefit computation from the earnings record belongs to the Social Security module; these are the non-obvious points that change results for early retirees and couples.",
+    "points": [
+      "AIME uses the highest 35 years of indexed earnings divided by 420 months. Someone who retires at 45 after 23 years of work has 12 zero years. Earnings before age 60 are indexed to the national average wage index (AWI) of the year the worker turns 60, so already-earned credits keep pace with wage growth (about 1.1% real per year in the Trustees' assumptions) even after the person stops working.",
+      "PIA bend points are those of the year the worker turns 62 and grow with AWI; 2026 formula: 90% of the first $1,286 of AIME, 32% up to $7,749, 15% above. The 2026 taxable maximum is $184,500. Project future bend points and the wage base with simulated wage growth, not CPI.",
+      "COLAs accrue from age 62 whether or not the benefit has been claimed, so delaying never forfeits inflation adjustments.",
+      "Claiming-age factors for full retirement age 67 (born 1960 or later): reduction of 5/9 of 1% per month for the first 36 months early and 5/12 of 1% per month beyond that (70% at 62, 75% at 63, 80% at 64, 86.67% at 65, 93.33% at 66); delayed retirement credit of 2/3 of 1% per month to age 70 (108% at 68, 116% at 69, 124% at 70). Claiming is monthly, not annual.",
+      "Delayed retirement credits earned mid-year are generally paid starting the following January (immediately if claiming at 70).",
+      "Spousal benefit: up to 50% of the worker's PIA (not of the worker's actual benefit) if claimed at the spouse's own full retirement age; no delayed credits on spousal benefits; reduced 25/36 of 1% per month for the first 36 months early and 5/12 of 1% beyond (32.5% of the worker's PIA at 62). Deemed filing applies to everyone born 1954 or later: you cannot claim spousal and delay your own.",
+      "Survivor benefit: the survivor keeps the larger of the two benefits. The widow(er) receives what the deceased was actually receiving, including delayed credits, subject to a floor of 82.5% of the deceased's PIA if the deceased claimed early. Available from age 60 at 71.5%. Consequence: the higher earner delaying to 70 is longevity insurance for the couple's survivor; the lower earner's claiming age matters only until the first death.",
+      "Household benefit drops by between one third and one half at the first death while tax brackets switch to single: model the survivor phase explicitly.",
+      "Retirement earnings test (before full retirement age): $1 withheld per $2 of earnings above $24,480 in 2026 ($1 per $3 above $65,160 in the year FRA is reached). Withheld months are credited back at FRA, so it is a deferral, not a tax.",
+      "Windfall Elimination Provision and Government Pension Offset were repealed by the Social Security Fairness Act (effective for benefits after December 2023); no need to model them.",
+      "Taxation thresholds for benefits ($25,000 / $34,000 single, $32,000 / $44,000 joint) are not indexed, so the taxable share rises over a long nominal simulation (tax module).",
+      "Trust fund risk: the 2025 Trustees Report projected OASI reserve depletion in 2033 with 77% of scheduled benefits payable (combined OASDI 2034, 81%); the 2026 report was not checked for this file. Offer a scenario switch: full scheduled benefits (default) versus a 20-23% cut from 2033.",
+      "PIA is rounded down to the next lower dime and the monthly benefit to the next lower dollar; Medicare Part B is normally deducted from the benefit (hold-harmless limits the Part B increase to the COLA for most people not paying IRMAA)."
+    ],
+    "sources": [
+      "https://www.ssa.gov/oact/cola/piaformula.html",
+      "https://www.ssa.gov/oact/cola/bendpoints.html",
+      "https://www.ssa.gov/oact/quickcalc/early_late.html",
+      "https://www.ssa.gov/oact/cola/rtea.html",
+      "https://www.ssa.gov/oact/TR/2026/"
+    ],
+    "confidence": "high for the claiming formulas; medium for the 2026 dollar thresholds (bend points, earnings-test limits, wage base quoted from memory; verify against ssa.gov before release); 2027 values were not retrieved"
+  }
+}

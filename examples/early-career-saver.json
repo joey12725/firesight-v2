@@ -1,0 +1,463 @@
+{
+  "schema_version": 2,
+  "name": "Early-career saver",
+  "description": "Demo household: a single software engineer in Denver saving aggressively toward early retirement.",
+  "start": "2026-11",
+  "household": {
+    "people": [
+      {
+        "id": "maya",
+        "name": "Maya",
+        "birth": "1999-07",
+        "sex": "female",
+        "health": "average",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 22.0
+          }
+        }
+      }
+    ],
+    "children": [],
+    "location": {
+      "country": "US",
+      "state": "CO",
+      "city": "Denver",
+      "foreign_tax_rate": null
+    }
+  },
+  "incomes": [
+    {
+      "id": "maya_job",
+      "name": "Software engineer",
+      "owner": 0,
+      "kind": {
+        "type": "job",
+        "salary": 108000.0,
+        "growth": {
+          "type": "lifecycle",
+          "profile": "steep",
+          "extra": 0.0
+        },
+        "risk": {
+          "level": "typical"
+        },
+        "bonus": {
+          "target_fraction": 0.06,
+          "volatility": 0.4,
+          "month": 2
+        },
+        "commission": null,
+        "equity": [
+          {
+            "id": "new_hire_rsu",
+            "kind": {
+              "type": "rsu"
+            },
+            "company": {
+              "type": "public",
+              "volatility": 0.45,
+              "beta": 1.3
+            },
+            "unvested_value": 60000.0,
+            "vest_months_remaining": 36,
+            "cliff_months": 0,
+            "refresh_annual_value": 18000.0,
+            "sell_on_vest": true
+          }
+        ],
+        "plan": {
+          "employee_fraction": 0.1,
+          "employee_max": false,
+          "roth_fraction": 0.0,
+          "match_rate": 0.5,
+          "match_up_to": 0.06,
+          "after_tax_mega": false
+        },
+        "hsa_contribution": 2000.0,
+        "hsa_employer": 500.0,
+        "ends_at_retirement": true
+      },
+      "start": null,
+      "end": null
+    }
+  ],
+  "spending": {
+    "items": [
+      {
+        "id": "rent",
+        "name": "Rent",
+        "category": "rent",
+        "amount": 1650.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "utilities",
+        "name": "Utilities and internet",
+        "category": "utilities",
+        "amount": 160.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "groceries",
+        "name": "Groceries",
+        "category": "groceries",
+        "amount": 420.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "dining",
+        "name": "Restaurants",
+        "category": "dining",
+        "amount": 220.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "transport",
+        "name": "Car, fuel and transit",
+        "category": "transport",
+        "amount": 260.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "factor",
+          "factor": 0.7
+        },
+        "owner": null
+      },
+      {
+        "id": "car_insurance",
+        "name": "Car and renter's insurance",
+        "category": "insurance",
+        "amount": 125.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "entertainment",
+        "name": "Entertainment",
+        "category": "entertainment",
+        "amount": 150.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "gym",
+        "name": "Climbing gym",
+        "category": "personal",
+        "amount": 45.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "personal",
+        "name": "Clothing and personal care",
+        "category": "personal",
+        "amount": 120.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "travel",
+        "name": "Travel",
+        "category": "travel",
+        "amount": 3000.0,
+        "frequency": "annual",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      }
+    ],
+    "lifestyle_creep": 0.3,
+    "retirement_smile": true,
+    "shocks": "typical",
+    "healthcare": {
+      "mode": "modeled",
+      "early_retirement": {
+        "type": "aca"
+      },
+      "long_term_care": true,
+      "quality": "silver"
+    },
+    "survivor_factor": 0.7
+  },
+  "accounts": [
+    {
+      "id": "checking",
+      "name": "Checking",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 5500.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "fixed",
+        "rate": 0.0
+      },
+      "holdings": null
+    },
+    {
+      "id": "savings",
+      "name": "High-yield savings",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 12000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "k401",
+      "name": "401(k)",
+      "owner": 0,
+      "kind": "traditional",
+      "balance": 26000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "roth_ira",
+      "name": "Roth IRA",
+      "owner": 0,
+      "kind": "roth",
+      "balance": 9000.0,
+      "cost_basis": null,
+      "roth_basis": 7500.0,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "brokerage",
+      "name": "Brokerage",
+      "owner": 0,
+      "kind": "taxable",
+      "balance": 6000.0,
+      "cost_basis": 5200.0,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "hsa",
+      "name": "HSA",
+      "owner": 0,
+      "kind": "hsa",
+      "balance": 2400.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    }
+  ],
+  "portfolio": {
+    "target": {
+      "us_stocks": 70.0,
+      "intl_stocks": 20.0,
+      "bonds": 10.0
+    },
+    "glide": {
+      "type": "none"
+    },
+    "rebalance": {
+      "type": "annual"
+    },
+    "location": "mirror",
+    "expense_ratio": 0.001,
+    "advisory_fee": 0.0,
+    "emergency_months": 4.0,
+    "retirement_cash_years": 0.0,
+    "custom_asset": null,
+    "single_stock": {
+      "volatility": 0.35,
+      "beta": 1.1
+    }
+  },
+  "properties": [],
+  "debts": [
+    {
+      "id": "student_loan",
+      "name": "Student loan",
+      "kind": "student",
+      "balance": 18500.0,
+      "rate": 0.05,
+      "payment": null,
+      "remaining_months": 96
+    }
+  ],
+  "debt_policy": {
+    "strategy": "avalanche",
+    "extra_monthly": 200.0
+  },
+  "events": [
+    {
+      "id": "first_home",
+      "name": "Buy a first home",
+      "when": {
+        "type": "date",
+        "at": "2030-06"
+      },
+      "probability": 1.0,
+      "timing_uncertainty_years": 1.0,
+      "kind": {
+        "type": "buy_home",
+        "property_id": "home",
+        "price": 420000.0,
+        "down_payment_fraction": 0.2,
+        "rate": null,
+        "term_years": 30,
+        "replaces_rent": true,
+        "closing_cost_fraction": 0.03,
+        "use": {
+          "type": "primary"
+        },
+        "property_tax_rate": 0.005,
+        "insurance_rate": 0.005,
+        "maintenance_rate": 0.01,
+        "hoa_monthly": 0.0,
+        "appreciation_vs_national": 0.0,
+        "idiosyncratic_volatility": 0.08
+      }
+    }
+  ],
+  "retirement": {
+    "trigger": {
+      "type": "when_funded",
+      "withdrawal_rate": 0.035,
+      "basis": "investable",
+      "count_future_income": true,
+      "min_age": null,
+      "max_age": 70.0
+    },
+    "partner_offset_years": 0.0,
+    "spending_rule": {
+      "type": "constant_real"
+    },
+    "withdrawal_order": {
+      "type": "tax_aware",
+      "fill_to_bracket": 0.12,
+      "roth_conversions": true,
+      "mind_aca": true
+    },
+    "early_access": "auto",
+    "bequest_target": 0.0
+  },
+  "assumptions": {
+    "market": {
+      "kind": {
+        "type": "bootstrap",
+        "mean_block_months": 60,
+        "from_year": null
+      },
+      "equity_premium_adjustment": 0.0,
+      "inflation_adjustment": 0.0,
+      "stress": []
+    },
+    "taxes": {
+      "kind": {
+        "type": "us_current_law"
+      },
+      "index_brackets": true,
+      "social_security_haircut": null
+    },
+    "longevity": {
+      "type": "stochastic",
+      "improvement": true
+    },
+    "career_risk": true,
+    "health_risk": true
+  },
+  "simulation": {
+    "paths": 10000,
+    "seed": 1,
+    "end_age": 100
+  }
+}

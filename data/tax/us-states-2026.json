@@ -1,0 +1,3783 @@
+{
+ "meta": {
+  "year": 2026,
+  "generated": "2026-11-17",
+  "description": "State individual income tax parameters for tax year 2026, 50 states plus DC. Base data: Tax Foundation table as of 2026-02-11, then updated for laws enacted later in 2026 with retroactive effect (AR, AZ, GA, SC, UT, WV) and for state-published 2026 inflation adjustments (CA, MA, ME, VT, ND, HI). Independently verified 2026-11-17 against state primary sources; that pass corrected the AZ and MD standard deductions (2025 amounts had been carried into 2026).",
+  "units": {
+   "rate": "decimal fraction",
+   "over": "USD of state taxable income; marginal rate applies to income above this amount",
+   "property_tax_effective_rate": "fraction of home value per year, owner-occupied housing, calendar 2024 (ACS)",
+   "sales_tax_combined_rate": "state rate plus population-weighted average local rate, as of 2026-07-01"
+  },
+  "field_notes": {
+   "brackets": "Sorted ascending. A leading {over:0, rate:0} entry is an explicit zero bracket. Empty list means no tax on ordinary income.",
+   "inflation_indexed": "True when bracket thresholds are indexed annually by statute. Flat-rate states with no thresholds are false.",
+   "standard_deduction.type": "'deduction', 'credit' (Utah) or 'none'. follows_federal means the state uses the federal standard deduction ($16,100 single / $32,200 joint for 2026).",
+   "personal_exemption.type": "'deduction' reduces taxable income; 'credit' reduces tax. dependent_type is given separately because some states mix them.",
+   "social_security.status": "'none' = benefits not taxed; 'partial' = taxed only above an income/age test or partly; 'follows_federal' = federally taxable portion is taxed.",
+   "retirement_distributions.taxed": "'none', 'partial' (broad exclusion; see exclusion and notes) or 'full' for traditional IRA/401(k) distributions.",
+   "local_income_tax.statewide_avg_effective_rate": "Tax Foundation estimate of local income tax as a share of AGI (2023 data)."
+  },
+  "sources": [
+   "https://taxfoundation.org/data/all/state/state-income-tax-rates-2026/",
+   "https://taxfoundation.org/wp-content/uploads/2026/02/2026-State-Individual-Income-Tax-Rates-Brackets.xlsx",
+   "https://taxfoundation.org/data/all/state/2026-sales-tax-rates-midyear/",
+   "https://taxfoundation.org/data/all/state/property-taxes-by-state-county/",
+   "https://taxfoundation.org/data/all/state/state-capital-gains-tax-rates/",
+   "https://taxfoundation.org/local-income-taxes-2023/",
+   "https://www.ftb.ca.gov/about-ftb/newsroom/tax-news/2026/10.html",
+   "https://www.maine.gov/revenue/sites/maine.gov.revenue/files/2026-05/ind_tax_rate_sched_2026_rev.pdf",
+   "https://tax.wv.gov/Individuals/Pages/PersonalIncomeTaxReductionBill.aspx",
+   "https://www.dor.sc.gov/news/information-about-h-4216",
+   "https://www.scstatehouse.gov/sess126_2025-2026/fiscalimpactstatements/H4216%202026-03-30%20signed.pdf",
+   "https://www.dfa.arkansas.gov/wp-content/uploads/whformula_2026.pdf",
+   "https://www.azleg.gov/legtext/57leg/2R/summary/H.HB4168_061726_SIGNED.DOCX.htm",
+   "https://tax.vermont.gov/sites/tax/files/documents/GB-1210-2026.pdf",
+   "https://www.mass.gov/info-details/massachusetts-tax-rates",
+   "https://files.hawaii.gov/tax/news/announce/ann24-03.pdf",
+   "https://www.kiplinger.com/taxes/states-that-tax-social-security-benefits",
+   "https://www.kiplinger.com/retirement/602202/taxes-in-retirement-how-all-50-states-tax-retirees",
+   "https://www.azleg.gov/legtext/57leg/2R/laws/0140.htm",
+   "https://www.azleg.gov/ars/43/01041.htm",
+   "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/withholding/2026/withholding-guide.pdf",
+   "https://mgaleg.maryland.gov/mgawebsite/Laws/StatuteText?article=gtg&section=10-217&enactments=false",
+   "https://www.tax.ny.gov/pdf/current_forms/it/it2105i.pdf",
+   "See SOURCES-states.md for the full list and judgement calls."
+  ]
+ },
+ "AK": {
+  "name": "Alaska",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0094,
+  "sales_tax_combined_rate": 0.0182,
+  "sales_tax_state_rate": 0.0,
+  "notes": []
+ },
+ "AL": {
+  "name": "Alabama",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 500,
+     "rate": 0.04
+    },
+    {
+     "over": 3000,
+     "rate": 0.05
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 1000,
+     "rate": 0.04
+    },
+    {
+     "over": 6000,
+     "rate": 0.05
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 3000,
+   "married_joint": 8500,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 1500,
+   "married_joint": 3000,
+   "dependent": 1000,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 6000,
+    "min_age": 65
+   },
+   "notes": "First $6,000 of retirement plan distributions (IRA, 401(k)) exempt at 65+."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Birmingham",
+   "major_city_rate": 0.01,
+   "statewide_avg_effective_rate": 0.0007,
+   "notes": "Occupational taxes in some cities."
+  },
+  "property_tax_effective_rate": 0.0037,
+  "sales_tax_combined_rate": 0.0946,
+  "sales_tax_state_rate": 0.04,
+  "notes": [
+   "Standard deduction shown is the maximum; it phases down to $2,500 single / $5,000 joint as AGI rises above about $25,500. Federal income tax paid is deductible. Dependent exemption falls to $500 above $50,000 AGI and $300 above $100,000."
+  ]
+ },
+ "AR": {
+  "name": "Arkansas",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 5600,
+     "rate": 0.02
+    },
+    {
+     "over": 11200,
+     "rate": 0.03
+    },
+    {
+     "over": 16000,
+     "rate": 0.034
+    },
+    {
+     "over": 26400,
+     "rate": 0.037
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 5600,
+     "rate": 0.02
+    },
+    {
+     "over": 11200,
+     "rate": 0.03
+    },
+    {
+     "over": 16000,
+     "rate": 0.034
+    },
+    {
+     "over": 26400,
+     "rate": 0.037
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 2470,
+   "married_joint": 4940,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 29,
+   "married_joint": 58,
+   "dependent": 29,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "alt_high_income_brackets": [
+   {
+    "over": 0,
+    "rate": 0.02
+   },
+   {
+    "over": 4600,
+    "rate": 0.037
+   }
+  ],
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 6000,
+    "min_age": 59.5
+   },
+   "notes": "Up to $6,000 of retirement income deductible from age 59.5."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_fraction": 0.5,
+   "notes": "Gain above $10,000,000 fully exempt."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0056,
+  "sales_tax_combined_rate": 0.0948,
+  "sales_tax_state_rate": 0.065,
+  "notes": [
+   "Brackets are the standard (lower-income) table, thresholds taken from the DFA 2026 withholding formula, with the top rate cut from 3.9% to 3.7% retroactive to 2026-01-01 (HB 1001 / SB 1, signed 2026-05-06). Net income above roughly $94,700-$97,800 uses a second table (2% from $0, 3.7% over $4,600 per Tax Foundation) with a bracket-adjustment bridge; that adds roughly $330 of tax and is not modelled. Same schedule for every filing status; married couples may compute tax separately on one return."
+  ]
+ },
+ "AZ": {
+  "name": "Arizona",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.025
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.025
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 125,
+   "type": "none",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Some government/military pensions get an exemption of up to $2,500."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_fraction": 0.25
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0048,
+  "sales_tax_combined_rate": 0.0854,
+  "sales_tax_state_rate": 0.056,
+  "notes": [
+   "HB 4168 (Laws 2026, ch. 140) updated IRC conformity to 2026-01-01 and rewrote A.R.S. 43-1041(A) to a base standard deduction of $15,750/$31,500 ($23,625 head of household), applied retroactively to tax years beginning after 2024-12-31, so $15,750/$31,500 is the tax year 2025 amount. Subsection H requires the department to adjust that base for inflation in the same manner as the federal basic standard deduction, which gives the 2026 federal amount of $16,100/$32,200 stored here (statutory derivation; the 2026 Form 140 was not yet published). Dependent credit raised from $100 to $125 (under 17) for 2026. From 2026 the standard deduction is increased by charitable contributions up to $1,000 single / $2,000 joint."
+  ]
+ },
+ "CA": {
+  "name": "California",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.01
+    },
+    {
+     "over": 11456,
+     "rate": 0.02
+    },
+    {
+     "over": 27157,
+     "rate": 0.04
+    },
+    {
+     "over": 42861,
+     "rate": 0.06
+    },
+    {
+     "over": 59498,
+     "rate": 0.08
+    },
+    {
+     "over": 75197,
+     "rate": 0.093
+    },
+    {
+     "over": 384109,
+     "rate": 0.103
+    },
+    {
+     "over": 460927,
+     "rate": 0.113
+    },
+    {
+     "over": 768213,
+     "rate": 0.123
+    },
+    {
+     "over": 1000000,
+     "rate": 0.133
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.01
+    },
+    {
+     "over": 22912,
+     "rate": 0.02
+    },
+    {
+     "over": 54314,
+     "rate": 0.04
+    },
+    {
+     "over": 85722,
+     "rate": 0.06
+    },
+    {
+     "over": 118996,
+     "rate": 0.08
+    },
+    {
+     "over": 150394,
+     "rate": 0.093
+    },
+    {
+     "over": 768218,
+     "rate": 0.103
+    },
+    {
+     "over": 921854,
+     "rate": 0.113
+    },
+    {
+     "over": 1000000,
+     "rate": 0.123
+    },
+    {
+     "over": 1536426,
+     "rate": 0.133
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 5900,
+   "married_joint": 11800,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 158,
+   "married_joint": 316,
+   "dependent": 491,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.007,
+  "sales_tax_combined_rate": 0.0903,
+  "sales_tax_state_rate": 0.0725,
+  "notes": [
+   "2026 figures from FTB Tax News October 2026 (indexed 2026 schedules, standard deduction, exemption credits). Rates include the 1% Mental Health Services Tax on taxable income over $1,000,000 (threshold not indexed, same for all filing statuses). Excludes 1.3% SDI payroll tax on all wages (Tax Foundation: 1.3% for the 2025/2026 table). Exemption credits phase out at high AGI."
+  ]
+ },
+ "CO": {
+  "name": "Colorado",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.044
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.044
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Federally taxable benefits fully deductible at age 65+. Ages 55-64: fully deductible if AGI <= $75,000 single / $95,000 joint (2026), otherwise deduction capped at $20,000. Under 55: follows federal.",
+   "full_exemption_age": 65
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 20000,
+    "min_age": 55
+   },
+   "notes": "$20,000 retirement income deduction at ages 55-64, $24,000 at 65+."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Denver",
+   "major_city_rate": null,
+   "statewide_avg_effective_rate": null,
+   "notes": "Flat occupational privilege tax ($9.75 per month in Denver), not a percentage."
+  },
+  "property_tax_effective_rate": 0.005,
+  "sales_tax_combined_rate": 0.0789,
+  "sales_tax_state_rate": 0.029,
+  "notes": [
+   "Starts from federal taxable income, so the federal standard deduction applies. TABOR surpluses can temporarily lower the rate."
+  ]
+ },
+ "CT": {
+  "name": "Connecticut",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 10000,
+     "rate": 0.045
+    },
+    {
+     "over": 50000,
+     "rate": 0.055
+    },
+    {
+     "over": 100000,
+     "rate": 0.06
+    },
+    {
+     "over": 200000,
+     "rate": 0.065
+    },
+    {
+     "over": 250000,
+     "rate": 0.069
+    },
+    {
+     "over": 500000,
+     "rate": 0.0699
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 20000,
+     "rate": 0.045
+    },
+    {
+     "over": 100000,
+     "rate": 0.055
+    },
+    {
+     "over": 200000,
+     "rate": 0.06
+    },
+    {
+     "over": 400000,
+     "rate": 0.065
+    },
+    {
+     "over": 500000,
+     "rate": 0.069
+    },
+    {
+     "over": 1000000,
+     "rate": 0.0699
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 15000,
+   "married_joint": 24000,
+   "dependent": 0,
+   "type": "deduction",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Fully exempt if AGI below $75,000 single / $100,000 joint; above that no more than 25% of benefits are taxed.",
+   "exempt_below_agi": {
+    "single": 75000,
+    "married_joint": 100000
+   },
+   "max_taxable_fraction_of_benefits": 0.25
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "notes": "Pension, annuity and IRA income exempt or partly exempt below AGI of roughly $75,000 single / $100,000 joint, phasing out above."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0154,
+  "sales_tax_combined_rate": 0.0635,
+  "sales_tax_state_rate": 0.0635,
+  "notes": [
+   "No standard deduction; personal exemption of $15,000/$24,000 phases out to zero above AGI $30,000 single / $48,000 joint and is partly replaced by a sliding personal credit. The 2% bracket phases out and high earners face benefit recapture, so the marginal schedule understates tax at high incomes."
+  ]
+ },
+ "DE": {
+  "name": "Delaware",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 2000,
+     "rate": 0.022
+    },
+    {
+     "over": 5000,
+     "rate": 0.039
+    },
+    {
+     "over": 10000,
+     "rate": 0.048
+    },
+    {
+     "over": 20000,
+     "rate": 0.052
+    },
+    {
+     "over": 25000,
+     "rate": 0.0555
+    },
+    {
+     "over": 60000,
+     "rate": 0.066
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 2000,
+     "rate": 0.022
+    },
+    {
+     "over": 5000,
+     "rate": 0.039
+    },
+    {
+     "over": 10000,
+     "rate": 0.048
+    },
+    {
+     "over": 20000,
+     "rate": 0.052
+    },
+    {
+     "over": 25000,
+     "rate": 0.0555
+    },
+    {
+     "over": 60000,
+     "rate": 0.066
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 3250,
+   "married_joint": 6500,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 110,
+   "married_joint": 220,
+   "dependent": 110,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 12500,
+    "min_age": 60
+   },
+   "notes": "Up to $12,500 of pension and qualified retirement plan income excluded at 60+."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Wilmington",
+   "major_city_rate": 0.0125,
+   "statewide_avg_effective_rate": null
+  },
+  "property_tax_effective_rate": 0.0054,
+  "sales_tax_combined_rate": 0.0,
+  "sales_tax_state_rate": 0.0,
+  "notes": []
+ },
+ "FL": {
+  "name": "Florida",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0078,
+  "sales_tax_combined_rate": 0.0698,
+  "sales_tax_state_rate": 0.06,
+  "notes": []
+ },
+ "GA": {
+  "name": "Georgia",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0499
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0499
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 15000,
+   "married_joint": 30000,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 5000,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 35000,
+    "min_age": 62
+   },
+   "notes": "Retirement income exclusion of $35,000 at 62-64 and $65,000 at 65+."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0079,
+  "sales_tax_combined_rate": 0.0756,
+  "sales_tax_state_rate": 0.04,
+  "notes": [
+   "HB 463 (2026) cut the flat rate from 5.19% to 4.99% retroactive to 2026-01-01 and raised the standard deduction to $15,000/$30,000 (rising $375/$750 a year from 2027 toward $18,000/$36,000). HB 463 also raised the dependent exemption from $4,000 to $5,000 for 2026 (rising $125 a year from 2027 toward $6,000), confirmed in the bill text. Further cuts of 0.125 points a year toward 3.99% depend on revenue triggers."
+  ]
+ },
+ "HI": {
+  "name": "Hawaii",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 9600,
+     "rate": 0.032
+    },
+    {
+     "over": 14400,
+     "rate": 0.055
+    },
+    {
+     "over": 19200,
+     "rate": 0.064
+    },
+    {
+     "over": 24000,
+     "rate": 0.068
+    },
+    {
+     "over": 36000,
+     "rate": 0.072
+    },
+    {
+     "over": 48000,
+     "rate": 0.076
+    },
+    {
+     "over": 125000,
+     "rate": 0.079
+    },
+    {
+     "over": 175000,
+     "rate": 0.0825
+    },
+    {
+     "over": 225000,
+     "rate": 0.09
+    },
+    {
+     "over": 275000,
+     "rate": 0.1
+    },
+    {
+     "over": 325000,
+     "rate": 0.11
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 19200,
+     "rate": 0.032
+    },
+    {
+     "over": 28800,
+     "rate": 0.055
+    },
+    {
+     "over": 38400,
+     "rate": 0.064
+    },
+    {
+     "over": 48000,
+     "rate": 0.068
+    },
+    {
+     "over": 72000,
+     "rate": 0.072
+    },
+    {
+     "over": 96000,
+     "rate": 0.076
+    },
+    {
+     "over": 250000,
+     "rate": 0.079
+    },
+    {
+     "over": 350000,
+     "rate": 0.0825
+    },
+    {
+     "over": 450000,
+     "rate": 0.09
+    },
+    {
+     "over": 550000,
+     "rate": 0.1
+    },
+    {
+     "over": 650000,
+     "rate": 0.11
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 8000,
+   "married_joint": 16000,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 1144,
+   "married_joint": 2288,
+   "dependent": 1144,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "notes": "Employer-funded pensions exempt; 401(k) elective-deferral and IRA distributions taxable."
+  },
+  "long_term_capital_gains": {
+   "treatment": "rate_cap",
+   "max_rate": 0.0725
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0029,
+  "sales_tax_combined_rate": 0.045,
+  "sales_tax_state_rate": 0.04,
+  "notes": [
+   "Standard deduction for 2026 is $8,000/$16,000 under Act 46 (SLH 2024), confirmed by Hawaii DOTAX announcement 2024-03; the February 2026 Tax Foundation table still showed $4,400/$8,800. Brackets same as 2025. Act 24 (2026) adds a 13% rate over $1,000,000 from 2027."
+  ]
+ },
+ "IA": {
+  "name": "Iowa",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.038
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.038
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 40,
+   "married_joint": 80,
+   "dependent": 40,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "Retirement income exempt from age 55; taxable before 55."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Des Moines",
+   "major_city_rate": 0.00085,
+   "statewide_avg_effective_rate": 0.0008,
+   "notes": "School district surtaxes only."
+  },
+  "property_tax_effective_rate": 0.0133,
+  "sales_tax_combined_rate": 0.0694,
+  "sales_tax_state_rate": 0.06,
+  "notes": []
+ },
+ "ID": {
+  "name": "Idaho",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 4811,
+     "rate": 0.053
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 9622,
+     "rate": 0.053
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.005,
+  "sales_tax_combined_rate": 0.0603,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "Flat 5.3% above a zero bracket. Zero-bracket threshold shown is the 2025 amount ($4,811 single / $9,622 joint); it is indexed annually and the 2026 amount had not been published."
+  ]
+ },
+ "IL": {
+  "name": "Illinois",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0495
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0495
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 2925,
+   "married_joint": 5850,
+   "dependent": 2925,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "Qualified retirement plan, IRA and pension income fully exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0188,
+  "sales_tax_combined_rate": 0.0898,
+  "sales_tax_state_rate": 0.0625,
+  "notes": [
+   "Personal exemption unavailable above AGI $250,000 single / $500,000 joint."
+  ]
+ },
+ "IN": {
+  "name": "Indiana",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0295
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0295
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 1000,
+   "married_joint": 2000,
+   "dependent": 1000,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Indianapolis (Marion County)",
+   "major_city_rate": 0.0202,
+   "statewide_avg_effective_rate": 0.0035,
+   "notes": "County-level local income taxes."
+  },
+  "property_tax_effective_rate": 0.0076,
+  "sales_tax_combined_rate": 0.07,
+  "sales_tax_state_rate": 0.07,
+  "notes": []
+ },
+ "KS": {
+  "name": "Kansas",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.052
+    },
+    {
+     "over": 23000,
+     "rate": 0.0558
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.052
+    },
+    {
+     "over": 46000,
+     "rate": 0.0558
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 3605,
+   "married_joint": 8240,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 9160,
+   "married_joint": 18320,
+   "dependent": 2320,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Public pensions exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": null,
+   "major_city_rate": null,
+   "statewide_avg_effective_rate": null,
+   "notes": "Local intangibles tax on interest and dividends in some jurisdictions only."
+  },
+  "property_tax_effective_rate": 0.0121,
+  "sales_tax_combined_rate": 0.0871,
+  "sales_tax_state_rate": 0.065,
+  "notes": [
+   "Personal exemption $9,160 single / $18,320 joint plus $2,320 per dependent."
+  ]
+ },
+ "KY": {
+  "name": "Kentucky",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.035
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.035
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 3360,
+   "married_joint": 3360,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 31110,
+    "min_age": null
+   },
+   "notes": "Up to $31,110 per person of pension/retirement distributions excluded."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Louisville",
+   "major_city_rate": 0.0145,
+   "statewide_avg_effective_rate": 0.0093,
+   "notes": "Occupational licence taxes on wages; school district add-ons in some places."
+  },
+  "property_tax_effective_rate": 0.0074,
+  "sales_tax_combined_rate": 0.06,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "Standard deduction is per taxpayer and not doubled on a joint return."
+  ]
+ },
+ "LA": {
+  "name": "Louisiana",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.03
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.03
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 12875,
+   "married_joint": 25750,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 12000,
+    "min_age": 65
+   },
+   "notes": "Up to $12,000 excluded at 65+; public pensions exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0055,
+  "sales_tax_combined_rate": 0.1013,
+  "sales_tax_state_rate": 0.05,
+  "notes": []
+ },
+ "MA": {
+  "name": "Massachusetts",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.05
+    },
+    {
+     "over": 1107750,
+     "rate": 0.09
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.05
+    },
+    {
+     "over": 1107750,
+     "rate": 0.09
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 4400,
+   "married_joint": 8800,
+   "dependent": 1000,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Government pensions may be exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.01,
+  "sales_tax_combined_rate": 0.0625,
+  "sales_tax_state_rate": 0.0625,
+  "notes": [
+   "4% surtax threshold for 2026 is $1,107,750 (indexed annually); the 5% base rate has no brackets. Excludes PFML payroll contribution."
+  ]
+ },
+ "MD": {
+  "name": "Maryland",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 1000,
+     "rate": 0.03
+    },
+    {
+     "over": 2000,
+     "rate": 0.04
+    },
+    {
+     "over": 3000,
+     "rate": 0.0475
+    },
+    {
+     "over": 100000,
+     "rate": 0.05
+    },
+    {
+     "over": 125000,
+     "rate": 0.0525
+    },
+    {
+     "over": 150000,
+     "rate": 0.055
+    },
+    {
+     "over": 250000,
+     "rate": 0.0575
+    },
+    {
+     "over": 500000,
+     "rate": 0.0625
+    },
+    {
+     "over": 1000000,
+     "rate": 0.065
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 1000,
+     "rate": 0.03
+    },
+    {
+     "over": 2000,
+     "rate": 0.04
+    },
+    {
+     "over": 3000,
+     "rate": 0.0475
+    },
+    {
+     "over": 150000,
+     "rate": 0.05
+    },
+    {
+     "over": 175000,
+     "rate": 0.0525
+    },
+    {
+     "over": 225000,
+     "rate": 0.055
+    },
+    {
+     "over": 300000,
+     "rate": 0.0575
+    },
+    {
+     "over": 600000,
+     "rate": 0.0625
+    },
+    {
+     "over": 1200000,
+     "rate": 0.065
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 3400,
+   "married_joint": 6850,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 3200,
+   "married_joint": 6400,
+   "dependent": 3200,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 40600,
+    "min_age": 65
+   },
+   "notes": "Pension exclusion up to $40,600 at 65+; 401(k)/IRA distributions otherwise taxable."
+  },
+  "long_term_capital_gains": {
+   "treatment": "surtax",
+   "surtax_rate": 0.02,
+   "surtax_agi_threshold": 350000,
+   "notes": "Additional 2% on capital gains when federal AGI exceeds $350,000."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Baltimore",
+   "major_city_rate": 0.032,
+   "statewide_avg_effective_rate": 0.024,
+   "notes": "Counties and Baltimore City levy local income taxes; statewide average about 2.4% of AGI."
+  },
+  "property_tax_effective_rate": 0.0092,
+  "sales_tax_combined_rate": 0.06,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "Brackets shown are state only; every county and Baltimore City add a local income tax. Personal exemption phases out above AGI $100,000 single / $150,000 joint.",
+   "Standard deduction: $3,350/$6,700 was the tax year 2025 amount. Tax-General 10-217(c) indexes it for tax years after 2025 by the IRC 1(f)(3) cost-of-living adjustment (base year 2024), with the increase rounded down to a multiple of $50. The Comptroller's 2026 withholding guide gives $3,400 for single; the joint amount of $6,850 is computed from the same rule (6,700 x about 2.27% = $152, rounded down to $150) and was not yet printed on a 2026 Form 502."
+  ]
+ },
+ "ME": {
+  "name": "Maine",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.058
+    },
+    {
+     "over": 27400,
+     "rate": 0.0675
+    },
+    {
+     "over": 64850,
+     "rate": 0.0715
+    },
+    {
+     "over": 1000000,
+     "rate": 0.0915
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.058
+    },
+    {
+     "over": 54850,
+     "rate": 0.0675
+    },
+    {
+     "over": 129750,
+     "rate": 0.0715
+    },
+    {
+     "over": 1500000,
+     "rate": 0.0915
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 15700,
+   "married_joint": 31400,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 5300,
+   "married_joint": 10600,
+   "dependent": 305,
+   "type": "deduction",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 48216,
+    "min_age": null
+   },
+   "notes": "Pension income deduction up to $48,216; federal pensions exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0098,
+  "sales_tax_combined_rate": 0.055,
+  "sales_tax_state_rate": 0.055,
+  "notes": [
+   "From Maine Revenue Services 2026 Individual Income Tax Rates (revised 2026-05-20). Top bracket includes the new 2% surcharge on taxable income over $1,000,000 single / $1,500,000 joint, effective 2026. Standard deduction and personal exemption phase out at high income. Dependent amount is a $305 credit (2025 amount)."
+  ]
+ },
+ "MI": {
+  "name": "Michigan",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0425
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0425
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 5900,
+   "married_joint": 11800,
+   "dependent": 5900,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "Retirement and pension income (pensions, IRA distributions) largely exempt from tax year 2026 (PA 4 of 2023, PA 24 of 2025)."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Detroit",
+   "major_city_rate": 0.024,
+   "statewide_avg_effective_rate": 0.0016
+  },
+  "property_tax_effective_rate": 0.0119,
+  "sales_tax_combined_rate": 0.06,
+  "sales_tax_state_rate": 0.06,
+  "notes": []
+ },
+ "MN": {
+  "name": "Minnesota",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0535
+    },
+    {
+     "over": 33310,
+     "rate": 0.068
+    },
+    {
+     "over": 109430,
+     "rate": 0.0785
+    },
+    {
+     "over": 203150,
+     "rate": 0.0985
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0535
+    },
+    {
+     "over": 48700,
+     "rate": 0.068
+    },
+    {
+     "over": 193480,
+     "rate": 0.0785
+    },
+    {
+     "over": 337930,
+     "rate": 0.0985
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 15300,
+   "married_joint": 30600,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 5300,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Federally taxable benefits fully subtracted if AGI below $84,490 single / $108,320 joint (2026); subtraction falls 10% for each $4,000 above.",
+   "exempt_below_agi": {
+    "single": 84490,
+    "married_joint": 108320
+   },
+   "phase_out_per_step": {
+    "fraction": 0.1,
+    "step": 4000
+   }
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "surtax",
+   "surtax_rate": 0.01,
+   "surtax_net_investment_income_threshold": 1000000
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.01,
+  "sales_tax_combined_rate": 0.0814,
+  "sales_tax_state_rate": 0.0688,
+  "notes": [
+   "Standard deduction is reduced for AGI above about $244,400. Additional 1% tax on net investment income over $1,000,000."
+  ]
+ },
+ "MO": {
+  "name": "Missouri",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 1348,
+     "rate": 0.02
+    },
+    {
+     "over": 2696,
+     "rate": 0.025
+    },
+    {
+     "over": 4044,
+     "rate": 0.03
+    },
+    {
+     "over": 5392,
+     "rate": 0.035
+    },
+    {
+     "over": 6740,
+     "rate": 0.04
+    },
+    {
+     "over": 8088,
+     "rate": 0.045
+    },
+    {
+     "over": 9436,
+     "rate": 0.047
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 1348,
+     "rate": 0.02
+    },
+    {
+     "over": 2696,
+     "rate": 0.025
+    },
+    {
+     "over": 4044,
+     "rate": 0.03
+    },
+    {
+     "over": 5392,
+     "rate": 0.035
+    },
+    {
+     "over": 6740,
+     "rate": 0.04
+    },
+    {
+     "over": 8088,
+     "rate": 0.045
+    },
+    {
+     "over": 9436,
+     "rate": 0.047
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "notes": "Public pension exemption and a limited private pension deduction."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exempt",
+   "notes": "Capital gains exempt from individual income tax from 2025."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Kansas City",
+   "major_city_rate": 0.01,
+   "statewide_avg_effective_rate": 0.0018,
+   "notes": "1% earnings tax in Kansas City."
+  },
+  "property_tax_effective_rate": 0.0089,
+  "sales_tax_combined_rate": 0.0844,
+  "sales_tax_state_rate": 0.0423,
+  "notes": [
+   "Federal income tax paid is partly deductible. Standard deduction equals the federal amount."
+  ]
+ },
+ "MS": {
+  "name": "Mississippi",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 10000,
+     "rate": 0.04
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 10000,
+     "rate": 0.04
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 2300,
+   "married_joint": 4600,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 6000,
+   "married_joint": 12000,
+   "dependent": 1500,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "Qualified retirement income exempt; early withdrawals taxable."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0058,
+  "sales_tax_combined_rate": 0.0706,
+  "sales_tax_state_rate": 0.07,
+  "notes": []
+ },
+ "MT": {
+  "name": "Montana",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.047
+    },
+    {
+     "over": 47500,
+     "rate": 0.0565
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.047
+    },
+    {
+     "over": 95000,
+     "rate": 0.0565
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "follows_federal",
+   "notes": "Federally taxable benefits are taxed; taxpayers 65+ get a $5,500 subtraction from income."
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 5500,
+    "min_age": 65
+   },
+   "notes": "$5,500 subtraction at 65+."
+  },
+  "long_term_capital_gains": {
+   "treatment": "lower_rates",
+   "max_rate": 0.041,
+   "notes": "Separate lower rate schedule for net long-term gains (top 4.1%)."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0061,
+  "sales_tax_combined_rate": 0.0,
+  "sales_tax_state_rate": 0.0,
+  "notes": [
+   "Starts from federal taxable income, so the federal standard deduction applies."
+  ]
+ },
+ "NC": {
+  "name": "North Carolina",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0399
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0399
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 12750,
+   "married_joint": 25500,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0066,
+  "sales_tax_combined_rate": 0.071,
+  "sales_tax_state_rate": 0.0475,
+  "notes": []
+ },
+ "ND": {
+  "name": "North Dakota",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 49575,
+     "rate": 0.0195
+    },
+    {
+     "over": 250400,
+     "rate": 0.025
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 82800,
+     "rate": 0.0195
+    },
+    {
+     "over": 304850,
+     "rate": 0.025
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_fraction": 0.4
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0092,
+  "sales_tax_combined_rate": 0.0709,
+  "sales_tax_state_rate": 0.05,
+  "notes": [
+   "2026 thresholds confirmed against the Tax Rate Schedules printed on the 2026 Form ND-1ES (single $49,575/$250,400; joint $82,800/$304,850); they are the 2025 thresholds ($48,475/$244,825 single, $80,975/$298,075 joint) indexed by about 2.27%."
+  ]
+ },
+ "NE": {
+  "name": "Nebraska",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0246
+    },
+    {
+     "over": 4130,
+     "rate": 0.0351
+    },
+    {
+     "over": 24760,
+     "rate": 0.0455
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0246
+    },
+    {
+     "over": 8250,
+     "rate": 0.0351
+    },
+    {
+     "over": 49530,
+     "rate": 0.0455
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 8850,
+   "married_joint": 17700,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 176,
+   "married_joint": 352,
+   "dependent": 176,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Military retirement exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0144,
+  "sales_tax_combined_rate": 0.0698,
+  "sales_tax_state_rate": 0.055,
+  "notes": []
+ },
+ "NH": {
+  "name": "New Hampshire",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.015,
+  "sales_tax_combined_rate": 0.0,
+  "sales_tax_state_rate": 0.0,
+  "notes": [
+   "Interest and dividends tax fully repealed for tax years beginning after 2024; no individual income tax in 2026."
+  ]
+ },
+ "NJ": {
+  "name": "New Jersey",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 20000,
+     "rate": 0.0175
+    },
+    {
+     "over": 35000,
+     "rate": 0.035
+    },
+    {
+     "over": 40000,
+     "rate": 0.05525
+    },
+    {
+     "over": 75000,
+     "rate": 0.0637
+    },
+    {
+     "over": 500000,
+     "rate": 0.0897
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.014
+    },
+    {
+     "over": 20000,
+     "rate": 0.0175
+    },
+    {
+     "over": 50000,
+     "rate": 0.0245
+    },
+    {
+     "over": 70000,
+     "rate": 0.035
+    },
+    {
+     "over": 80000,
+     "rate": 0.05525
+    },
+    {
+     "over": 150000,
+     "rate": 0.0637
+    },
+    {
+     "over": 500000,
+     "rate": 0.0897
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 1000,
+   "married_joint": 2000,
+   "dependent": 1500,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 75000,
+    "min_age": 62
+   },
+   "notes": "At 62+: exclusion up to $75,000 single / $100,000 joint, phased out as income rises to $150,000."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Newark",
+   "major_city_rate": 0.01,
+   "statewide_avg_effective_rate": null,
+   "notes": "Employer payroll tax, not paid by individuals."
+  },
+  "property_tax_effective_rate": 0.0188,
+  "sales_tax_combined_rate": 0.066,
+  "sales_tax_state_rate": 0.0663,
+  "notes": []
+ },
+ "NM": {
+  "name": "New Mexico",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.015
+    },
+    {
+     "over": 5500,
+     "rate": 0.032
+    },
+    {
+     "over": 16500,
+     "rate": 0.043
+    },
+    {
+     "over": 33500,
+     "rate": 0.047
+    },
+    {
+     "over": 66500,
+     "rate": 0.049
+    },
+    {
+     "over": 210000,
+     "rate": 0.059
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.015
+    },
+    {
+     "over": 8000,
+     "rate": 0.032
+    },
+    {
+     "over": 25000,
+     "rate": 0.043
+    },
+    {
+     "over": 50000,
+     "rate": 0.047
+    },
+    {
+     "over": 100000,
+     "rate": 0.049
+    },
+    {
+     "over": 315000,
+     "rate": 0.059
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 4000,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Exempt if income <= $100,000 single / $150,000 joint; otherwise follows federal.",
+   "exempt_below_agi": {
+    "single": 100000,
+    "married_joint": 150000
+   }
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 8000,
+    "min_age": 65
+   },
+   "notes": "Up to $8,000 deduction at 65+, income-limited."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_amount": 2500,
+   "notes": "Greater of $2,500 or 40% of gain (up to $1,000,000) from sale of a New Mexico business; ordinary portfolio gains get only the $2,500."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0063,
+  "sales_tax_combined_rate": 0.0768,
+  "sales_tax_state_rate": 0.0488,
+  "notes": [
+   "The $4,000 dependent deduction applies to all but one dependent."
+  ]
+ },
+ "NV": {
+  "name": "Nevada",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.005,
+  "sales_tax_combined_rate": 0.0824,
+  "sales_tax_state_rate": 0.0685,
+  "notes": []
+ },
+ "NY": {
+  "name": "New York",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.039
+    },
+    {
+     "over": 8500,
+     "rate": 0.044
+    },
+    {
+     "over": 11700,
+     "rate": 0.0515
+    },
+    {
+     "over": 13900,
+     "rate": 0.054
+    },
+    {
+     "over": 80650,
+     "rate": 0.059
+    },
+    {
+     "over": 215400,
+     "rate": 0.0685
+    },
+    {
+     "over": 1077550,
+     "rate": 0.0965
+    },
+    {
+     "over": 5000000,
+     "rate": 0.103
+    },
+    {
+     "over": 25000000,
+     "rate": 0.109
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.039
+    },
+    {
+     "over": 17150,
+     "rate": 0.044
+    },
+    {
+     "over": 23600,
+     "rate": 0.0515
+    },
+    {
+     "over": 27900,
+     "rate": 0.054
+    },
+    {
+     "over": 161550,
+     "rate": 0.059
+    },
+    {
+     "over": 323200,
+     "rate": 0.0685
+    },
+    {
+     "over": 2155350,
+     "rate": 0.0965
+    },
+    {
+     "over": 5000000,
+     "rate": 0.103
+    },
+    {
+     "over": 25000000,
+     "rate": 0.109
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 8000,
+   "married_joint": 16050,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 1000,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 20000,
+    "min_age": 59.5
+   },
+   "notes": "$20,000 pension and annuity exclusion from age 59.5; federal, NY state/local and military pensions exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "New York City",
+   "major_city_rate": 0.03876,
+   "statewide_avg_effective_rate": 0.016,
+   "notes": "NYC resident income tax is graduated; 3.876% is the top rate."
+  },
+  "property_tax_effective_rate": 0.013,
+  "sales_tax_combined_rate": 0.0854,
+  "sales_tax_state_rate": 0.04,
+  "notes": [
+   "Tax-benefit recapture makes high-income taxpayers pay the top applicable rate on all income. Dependent exemption $1,000."
+  ]
+ },
+ "OH": {
+  "name": "Ohio",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 26050,
+     "rate": 0.0275
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 26050,
+     "rate": 0.0275
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 2400,
+   "married_joint": 4800,
+   "dependent": 2400,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Military retirement pay exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Columbus",
+   "major_city_rate": 0.025,
+   "statewide_avg_effective_rate": 0.012,
+   "notes": "Most cities and many school districts levy income taxes."
+  },
+  "property_tax_effective_rate": 0.0136,
+  "sales_tax_combined_rate": 0.0729,
+  "sales_tax_state_rate": 0.0575,
+  "notes": [
+   "Flat 2.75% on nonbusiness income above $26,050 from 2026 (HB 96). Personal exemption is $2,400 at AGI <= $40,000, $2,150 to $80,000, $1,900 above, and unavailable above $500,000."
+  ]
+ },
+ "OK": {
+  "name": "Oklahoma",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 3750,
+     "rate": 0.025
+    },
+    {
+     "over": 4900,
+     "rate": 0.035
+    },
+    {
+     "over": 7200,
+     "rate": 0.045
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0
+    },
+    {
+     "over": 7500,
+     "rate": 0.025
+    },
+    {
+     "over": 9800,
+     "rate": 0.035
+    },
+    {
+     "over": 14400,
+     "rate": 0.045
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 6350,
+   "married_joint": 12700,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 1000,
+   "married_joint": 2000,
+   "dependent": 1000,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 10000,
+    "min_age": null
+   },
+   "notes": "Up to $10,000 per person of retirement income exempt."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0079,
+  "sales_tax_combined_rate": 0.0906,
+  "sales_tax_state_rate": 0.045,
+  "notes": []
+ },
+ "OR": {
+  "name": "Oregon",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0475
+    },
+    {
+     "over": 4550,
+     "rate": 0.0675
+    },
+    {
+     "over": 11400,
+     "rate": 0.0875
+    },
+    {
+     "over": 125000,
+     "rate": 0.099
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0475
+    },
+    {
+     "over": 9100,
+     "rate": 0.0675
+    },
+    {
+     "over": 22800,
+     "rate": 0.0875
+    },
+    {
+     "over": 250000,
+     "rate": 0.099
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 2910,
+   "married_joint": 5820,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 256,
+   "married_joint": 512,
+   "dependent": 256,
+   "type": "credit",
+   "dependent_type": "credit"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full"
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Portland",
+   "major_city_rate": 0.04,
+   "statewide_avg_effective_rate": 0.0018,
+   "notes": "4% is the combined top rate of the 1% regional (Metro) and 3% Multnomah County taxes, which apply only above income thresholds."
+  },
+  "property_tax_effective_rate": 0.0081,
+  "sales_tax_combined_rate": 0.0,
+  "sales_tax_state_rate": 0.0,
+  "notes": [
+   "Federal income tax paid is deductible up to a cap. Personal exemption credit unavailable above federal AGI $100,000 single / $200,000 joint."
+  ]
+ },
+ "PA": {
+  "name": "Pennsylvania",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0307
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0307
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "Traditional retirement income (pensions, 401(k), IRA) is not taxed."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Philadelphia",
+   "major_city_rate": 0.038712,
+   "statewide_avg_effective_rate": 0.0099,
+   "notes": "Philadelphia wage tax rate is the 2023 resident rate; most municipalities levy an earned income tax of about 1%."
+  },
+  "property_tax_effective_rate": 0.0126,
+  "sales_tax_combined_rate": 0.0634,
+  "sales_tax_state_rate": 0.06,
+  "notes": []
+ },
+ "RI": {
+  "name": "Rhode Island",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0375
+    },
+    {
+     "over": 82050,
+     "rate": 0.0475
+    },
+    {
+     "over": 186450,
+     "rate": 0.0599
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0375
+    },
+    {
+     "over": 82050,
+     "rate": 0.0475
+    },
+    {
+     "over": 186450,
+     "rate": 0.0599
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 11200,
+   "married_joint": 22400,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 5250,
+   "married_joint": 10500,
+   "dependent": 5250,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Exempt for those at full retirement age with federal AGI below $107,000 single / $133,750 joint; otherwise follows federal.",
+   "exempt_below_agi": {
+    "single": 107000,
+    "married_joint": 133750
+   },
+   "requires_full_retirement_age": true
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 50000,
+    "min_age": null
+   },
+   "notes": "Up to $50,000 of pension/annuity/401(k) income exempt at full retirement age, income-limited; IRA distributions taxable."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0112,
+  "sales_tax_combined_rate": 0.07,
+  "sales_tax_state_rate": 0.07,
+  "notes": [
+   "Standard deduction and exemptions phase out between modified federal AGI of about $261,000 and $290,800."
+  ]
+ },
+ "SC": {
+  "name": "South Carolina",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0199
+    },
+    {
+     "over": 30000,
+     "rate": 0.0521
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0199
+    },
+    {
+     "over": 30000,
+     "rate": 0.0521
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 15000,
+   "married_joint": 30000,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false,
+   "phase_out": {
+    "basis": "federal_agi",
+    "single": [
+     40000,
+     95000
+    ],
+    "married_joint": [
+     80000,
+     190000
+    ],
+    "method": "linear to zero across the range"
+   }
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 4930,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 15000,
+    "min_age": 65
+   },
+   "notes": "Retirement income exclusion of up to $15,000; existing deductions retained under H. 4216."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_fraction": 0.44
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0049,
+  "sales_tax_combined_rate": 0.0749,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "H. 4216 (signed 2026-03-30) replaced the 0%/3%/6% schedule for tax year 2026: 1.99% up to $30,000 and 5.21% above (SCDOR states it as 5.21% minus $966). Federal standard/itemized deductions are replaced by the SC Income Adjusted Deduction ($15,000 single, $22,500 HoH, $30,000 joint) which phases out proportionally over federal AGI $40,000-$95,000 single / $80,000-$190,000 joint. Other SC deductions (dependent exemption, retirement and age-65 deductions, 44% capital gains deduction) are retained. Indexation of the new brackets is not confirmed (set false). The 5.21% rate falls in later years if revenue-growth triggers are met."
+  ]
+ },
+ "SD": {
+  "name": "South Dakota",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.01,
+  "sales_tax_combined_rate": 0.0611,
+  "sales_tax_state_rate": 0.042,
+  "notes": []
+ },
+ "TN": {
+  "name": "Tennessee",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0052,
+  "sales_tax_combined_rate": 0.0961,
+  "sales_tax_state_rate": 0.07,
+  "notes": [
+   "Hall tax on interest and dividends fully repealed in 2021."
+  ]
+ },
+ "TX": {
+  "name": "Texas",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.014,
+  "sales_tax_combined_rate": 0.082,
+  "sales_tax_state_rate": 0.0625,
+  "notes": []
+ },
+ "UT": {
+  "name": "Utah",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0445
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0445
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "credit",
+   "credit_amount": {
+    "single": 966,
+    "married_joint": 1932
+   },
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 2111,
+   "type": "none",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Follows federal, offset by a non-refundable Social Security benefits credit that phases out with income (thresholds not captured here)."
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Retirement credit of up to $450, income-limited."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0048,
+  "sales_tax_combined_rate": 0.0742,
+  "sales_tax_state_rate": 0.061,
+  "notes": [
+   "SB 60 (2026) cut the flat rate from 4.5% to 4.45% retroactive to 2026-01-01. In place of a standard deduction Utah gives a non-refundable taxpayer credit of 6% of the federal standard/itemized deduction plus personal exemptions ($966/$1,932 at the 2026 federal standard deduction), phasing out at 1.3 cents per dollar of income above about $18,213 single / $36,426 joint (2025 thresholds). Dependent exemption amount ($2,111) feeds that credit and is a 2025 figure."
+  ]
+ },
+ "VA": {
+  "name": "Virginia",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 3000,
+     "rate": 0.03
+    },
+    {
+     "over": 5000,
+     "rate": 0.05
+    },
+    {
+     "over": 17000,
+     "rate": 0.0575
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.02
+    },
+    {
+     "over": 3000,
+     "rate": 0.03
+    },
+    {
+     "over": 5000,
+     "rate": 0.05
+    },
+    {
+     "over": 17000,
+     "rate": 0.0575
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 8750,
+   "married_joint": 17500,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 930,
+   "married_joint": 1860,
+   "dependent": 930,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "partial",
+   "exclusion": {
+    "amount": 12000,
+    "min_age": 65
+   },
+   "notes": "Age deduction up to $12,000 at 65+, reduced above AGI $50,000 single / $75,000 joint."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0078,
+  "sales_tax_combined_rate": 0.0577,
+  "sales_tax_state_rate": 0.053,
+  "notes": []
+ },
+ "VT": {
+  "name": "Vermont",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0335
+    },
+    {
+     "over": 50750,
+     "rate": 0.066
+    },
+    {
+     "over": 122850,
+     "rate": 0.076
+    },
+    {
+     "over": 256300,
+     "rate": 0.0875
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0335
+    },
+    {
+     "over": 84700,
+     "rate": 0.066
+    },
+    {
+     "over": 204750,
+     "rate": 0.076
+    },
+    {
+     "over": 312050,
+     "rate": 0.0875
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 7850,
+   "married_joint": 15700,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 5400,
+   "married_joint": 10800,
+   "dependent": 5400,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "partial",
+   "notes": "Full exemption if AGI <= $50,000 single / $65,000 joint, phasing out completely at $60,000 / $75,000; otherwise follows federal.",
+   "exempt_below_agi": {
+    "single": 50000,
+    "married_joint": 65000
+   },
+   "phase_out_end_agi": {
+    "single": 60000,
+    "married_joint": 75000
+   }
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Limited exemption for some government pensions."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0151,
+  "sales_tax_combined_rate": 0.0643,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "2026 bracket widths are derived from the Vermont Department of Taxes 2026 percentage-method withholding tables (annual table minus the built-in zero bracket) and match the 2025 schedule indexed by about 2.7%; the $5,400 exemption is the 2026 withholding allowance. The $7,850/$15,700 standard deduction is the 2025 amount ($7,650/$15,300) indexed the same way and matches one secondary source; not confirmed against the 2026 rate schedule, which was not yet published. Taxpayers with federal AGI over $150,000 pay at least 3% of AGI."
+  ]
+ },
+ "WA": {
+  "name": "Washington",
+  "has_income_tax": true,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "excise",
+   "standard_deduction": 278000,
+   "standard_deduction_year": 2025,
+   "brackets": [
+    {
+     "over": 0,
+     "rate": 0.07
+    },
+    {
+     "over": 1000000,
+     "rate": 0.099
+    }
+   ],
+   "notes": "7% excise on long-term capital gains above the standard deduction ($278,000 for 2025, indexed; 2026 amount not published) and 9.9% on taxable gains above $1,000,000. Some asset types are excluded. The deduction is per individual or married couple (not doubled for couples)."
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0075,
+  "sales_tax_combined_rate": 0.0957,
+  "sales_tax_state_rate": 0.065,
+  "notes": [
+   "No tax on wages or ordinary income. 7% excise on long-term capital gains above the standard deduction and 9.9% on gains above $1,000,000 (see long_term_capital_gains). 0.58% WA Cares payroll premium on wages is not included. A 9.9% tax on income above $1,000,000 was enacted in 2026 to take effect in 2028."
+  ]
+ },
+ "WI": {
+  "name": "Wisconsin",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.035
+    },
+    {
+     "over": 15110,
+     "rate": 0.044
+    },
+    {
+     "over": 51950,
+     "rate": 0.053
+    },
+    {
+     "over": 332720,
+     "rate": 0.0765
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.035
+    },
+    {
+     "over": 20150,
+     "rate": 0.044
+    },
+    {
+     "over": 69260,
+     "rate": 0.053
+    },
+    {
+     "over": 443630,
+     "rate": 0.0765
+    }
+   ]
+  },
+  "inflation_indexed": true,
+  "standard_deduction": {
+   "single": 13960,
+   "married_joint": 25840,
+   "type": "deduction",
+   "follows_federal": false,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 700,
+   "married_joint": 1400,
+   "dependent": 700,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Up to $24,000 per person excludable at 67+ for some retirees (income-limited)."
+  },
+  "long_term_capital_gains": {
+   "treatment": "exclusion",
+   "exclusion_fraction": 0.3
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0132,
+  "sales_tax_combined_rate": 0.0572,
+  "sales_tax_state_rate": 0.05,
+  "notes": [
+   "Standard deduction phases out with income (starts about $20,119 single / $29,039 joint, zero at about $136,453 / $159,690)."
+  ]
+ },
+ "WV": {
+  "name": "West Virginia",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.0211
+    },
+    {
+     "over": 10000,
+     "rate": 0.0281
+    },
+    {
+     "over": 25000,
+     "rate": 0.0316
+    },
+    {
+     "over": 40000,
+     "rate": 0.0422
+    },
+    {
+     "over": 60000,
+     "rate": 0.0458
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.0211
+    },
+    {
+     "over": 10000,
+     "rate": 0.0281
+    },
+    {
+     "over": 25000,
+     "rate": 0.0316
+    },
+    {
+     "over": 40000,
+     "rate": 0.0422
+    },
+    {
+     "over": 60000,
+     "rate": 0.0458
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 2000,
+   "married_joint": 4000,
+   "dependent": 2000,
+   "type": "deduction",
+   "dependent_type": "deduction"
+  },
+  "social_security": {
+   "status": "none",
+   "notes": "Fully exempt for all incomes from tax year 2026 (phase-out of the tax completed)."
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Pensions taxable with some exclusions."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": true,
+   "major_city": "Charleston",
+   "major_city_rate": null,
+   "statewide_avg_effective_rate": null,
+   "notes": "Flat city service fees ($6 per pay period in Charleston), not a percentage."
+  },
+  "property_tax_effective_rate": 0.0051,
+  "sales_tax_combined_rate": 0.066,
+  "sales_tax_state_rate": 0.06,
+  "notes": [
+   "SB 392 (2026) cut all rates about 5% retroactive to 2026-01-01; schedule from the WV Tax Division. Same thresholds for single and joint filers."
+  ]
+ },
+ "WY": {
+  "name": "Wyoming",
+  "has_income_tax": false,
+  "taxes_wages": false,
+  "brackets": {
+   "single": [],
+   "married_joint": []
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 0,
+   "married_joint": 0,
+   "type": "none",
+   "follows_federal": false,
+   "inflation_indexed": false
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "none",
+   "notes": "No state income tax."
+  },
+  "long_term_capital_gains": {
+   "treatment": "not_taxed"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.0053,
+  "sales_tax_combined_rate": 0.0539,
+  "sales_tax_state_rate": 0.04,
+  "notes": []
+ },
+ "DC": {
+  "name": "District of Columbia",
+  "has_income_tax": true,
+  "taxes_wages": true,
+  "brackets": {
+   "single": [
+    {
+     "over": 0,
+     "rate": 0.04
+    },
+    {
+     "over": 10000,
+     "rate": 0.06
+    },
+    {
+     "over": 40000,
+     "rate": 0.065
+    },
+    {
+     "over": 60000,
+     "rate": 0.085
+    },
+    {
+     "over": 250000,
+     "rate": 0.0925
+    },
+    {
+     "over": 500000,
+     "rate": 0.0975
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ],
+   "married_joint": [
+    {
+     "over": 0,
+     "rate": 0.04
+    },
+    {
+     "over": 10000,
+     "rate": 0.06
+    },
+    {
+     "over": 40000,
+     "rate": 0.065
+    },
+    {
+     "over": 60000,
+     "rate": 0.085
+    },
+    {
+     "over": 250000,
+     "rate": 0.0925
+    },
+    {
+     "over": 500000,
+     "rate": 0.0975
+    },
+    {
+     "over": 1000000,
+     "rate": 0.1075
+    }
+   ]
+  },
+  "inflation_indexed": false,
+  "standard_deduction": {
+   "single": 16100,
+   "married_joint": 32200,
+   "type": "deduction",
+   "follows_federal": true,
+   "inflation_indexed": true
+  },
+  "personal_exemption": {
+   "single": 0,
+   "married_joint": 0,
+   "dependent": 0,
+   "type": "none",
+   "dependent_type": "none"
+  },
+  "social_security": {
+   "status": "none"
+  },
+  "retirement_distributions": {
+   "taxed": "full",
+   "notes": "Small ($3,000) exclusion for some government pensions."
+  },
+  "long_term_capital_gains": {
+   "treatment": "ordinary"
+  },
+  "local_income_tax": {
+   "has_local_income_tax": false
+  },
+  "property_tax_effective_rate": 0.006,
+  "sales_tax_combined_rate": 0.06,
+  "sales_tax_state_rate": 0.06,
+  "notes": []
+ }
+}

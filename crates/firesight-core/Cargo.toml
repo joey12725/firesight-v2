@@ -1,0 +1,19 @@
+[package]
+name = "firesight-core"
+description = "FIRESight simulation engine: pure, deterministic, no I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+# Pure-Rust libm: identical results on native and wasm32 (see src/math.rs).
+libm = "0.2"
+# Compact binary codec for Accumulator chunks crossing the worker boundary.
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+# Reports the JSON path at which a patched profile failed to deserialise.
+serde_path_to_error = "0.1"

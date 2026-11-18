@@ -1,0 +1,62 @@
+{
+  "budget_mapping": {
+    "childcare": "childcare",
+    "clothing": "goods_services",
+    "debt_payment": null,
+    "dining_out": "dining",
+    "entertainment": "goods_services",
+    "gas": "transport",
+    "groceries": "groceries",
+    "gym": "goods_services",
+    "healthcare": null,
+    "insurance": null,
+    "mortgage": null,
+    "other": "overall",
+    "property_tax": null,
+    "public_transport": "transport",
+    "rent": "housing_rent",
+    "subscriptions": null,
+    "utilities": "utilities"
+  },
+  "imputed_codes": {
+    "c": "childcare",
+    "d": "dining",
+    "g": "groceries",
+    "o": "goods_services",
+    "p": "home_price",
+    "r": "housing_rent",
+    "t": "transport",
+    "u": "utilities"
+  },
+  "notes": {
+    "debt_payment": "Fixed nominal contract (student loan, car loan, credit card); never scaled.",
+    "gas": "The transport index mixes fuel, vehicle, transit and taxi prices.",
+    "healthcare": "Not priced by the source. Premiums and out-of-pocket costs come from the healthcare model (employer, ACA, Medicare).",
+    "insurance": "Contract priced by the insurer, not by local consumer prices; never scaled by this index.",
+    "mortgage": "Fixed nominal contract on the old home; never scaled. A home bought after the move is priced with home_price by the housing model.",
+    "other": "Use overall_single or overall_family according to household size.",
+    "property_tax": "Follows the home's assessed value and local rate; handled by the housing model.",
+    "subscriptions": "Nationally priced; never scaled."
+  },
+  "overall_weights": {
+    "family": {
+      "childcare": 0.0714,
+      "dining": 0.0595,
+      "goods_services": 0.1071,
+      "groceries": 0.119,
+      "housing": 0.3929,
+      "transport": 0.1905,
+      "utilities": 0.0595
+    },
+    "single": {
+      "childcare": 0.0,
+      "dining": 0.0755,
+      "goods_services": 0.1258,
+      "groceries": 0.1006,
+      "housing": 0.4403,
+      "transport": 0.2013,
+      "utilities": 0.0566
+    }
+  },
+  "reference": "item-wise median price across United States cities = 100"
+}

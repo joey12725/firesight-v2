@@ -1,0 +1,12 @@
+target/
+node_modules/
+dist/
+web/src/engine/pkg/
+.vercel
+.env*
+.DS_Store
+
+# Raw downloads are rebuilt by tools/; only the README is tracked.
+data/history/raw/*
+!data/history/raw/README.md
+crates/firesight-wasm/pkg/

@@ -1,0 +1,16 @@
+sex,age_band,annual_pct_reduction_2024_2050,annual_pct_reduction_2050_2100
+male,0-14,1.43,1.5
+male,15-49,0.51,0.82
+male,50-64,0.85,0.92
+male,65-84,0.85,0.73
+male,85+,0.67,0.59
+female,0-14,1.45,1.53
+female,15-49,0.67,0.89
+female,50-64,0.86,0.96
+female,65-84,0.8,0.66
+female,85+,0.61,0.54
+unisex,0-14,1.44,1.51
+unisex,15-49,0.56,0.84
+unisex,50-64,0.86,0.94
+unisex,65-84,0.82,0.7
+unisex,85+,0.63,0.56

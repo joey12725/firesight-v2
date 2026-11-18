@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/firesight-core", "crates/firesight-wasm", "crates/firesight-cli"]
+
+[workspace.package]
+version = "2.0.0-alpha.1"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[workspace.dependencies]
+firesight-core = { path = "crates/firesight-core" }
+serde = { version = "1", features = ["derive"] }
+# preserve_order keeps struct field order in the generated JSON Schema and in patched
+# profiles, which the UI relies on for form layout.
+serde_json = { version = "1", features = ["preserve_order"] }
+schemars = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+inherits = "release"

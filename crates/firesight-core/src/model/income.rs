@@ -1,0 +1,467 @@
+//! Income sources: jobs, self-employment, pensions, annuities and everything else.
+//! Social Security lives on the person; rental income lives on the property.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use super::When;
+
+/// One source of income belonging to one person.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Income {
+    /// Stable identifier used by patches and events, for example "alex_job".
+    pub id: String,
+    /// Display name, for example "Software engineer at Initech".
+    pub name: String,
+    /// Who earns it: 0 for the first person in the household, 1 for the second.
+    pub owner: usize,
+    /// What kind of income this is and its details.
+    pub kind: IncomeKind,
+    /// When the income begins. Leave empty if it is already being received.
+    pub start: Option<When>,
+    /// When the income stops regardless of retirement. Leave empty for no fixed end
+    /// (jobs still stop at retirement when `ends_at_retirement` is true).
+    pub end: Option<When>,
+}
+
+/// The kind of an income source.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum IncomeKind {
+    /// A salaried or hourly job with an employer.
+    Job(Job),
+    /// Freelance, gig or business income reported on Schedule C.
+    SelfEmployment(SelfEmployment),
+    /// A defined-benefit pension.
+    Pension(Pension),
+    /// A purchased annuity paying a fixed income for life.
+    Annuity(Annuity),
+    /// Any other recurring income: alimony, royalties, family support, a trust.
+    Other(OtherIncome),
+}
+
+impl Default for IncomeKind {
+    fn default() -> Self {
+        IncomeKind::Job(Job::default())
+    }
+}
+
+/// A job with an employer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Job {
+    /// Gross base pay per year in today's dollars, before tax and before 401(k)
+    /// deferrals. Excludes bonus, commission and equity.
+    pub salary: f64,
+    /// How base pay is expected to grow over the career, on top of inflation.
+    pub growth: WageGrowth,
+    /// How uncertain the job is: random pay shocks and the chance of a layoff.
+    pub risk: CareerRisk,
+    /// Annual cash bonus, if any.
+    pub bonus: Option<Bonus>,
+    /// Sales commission, if any.
+    pub commission: Option<Commission>,
+    /// Stock grants (RSUs or options) from this employer.
+    pub equity: Vec<EquityGrant>,
+    /// The employer retirement plan (401(k), 403(b) or similar) and how much goes in.
+    /// Leave empty if the job has no plan or the person does not contribute.
+    pub plan: Option<EmployerPlan>,
+    /// The employee's own HSA contribution per year through payroll, in today's
+    /// dollars. Requires a high-deductible health plan. 0 for none.
+    pub hsa_contribution: f64,
+    /// The employer's HSA contribution per year, in today's dollars. 0 for none.
+    pub hsa_employer: f64,
+    /// Whether this job stops when the household retires. Set false for work that is
+    /// meant to continue into retirement and give it an explicit `end` instead.
+    pub ends_at_retirement: bool,
+}
+
+impl Default for Job {
+    fn default() -> Self {
+        Self {
+            salary: 0.0,
+            growth: WageGrowth::default(),
+            risk: CareerRisk::default(),
+            bonus: None,
+            commission: None,
+            equity: Vec::new(),
+            plan: None,
+            hsa_contribution: 0.0,
+            hsa_employer: 0.0,
+            ends_at_retirement: true,
+        }
+    }
+}
+
+/// How base pay grows in real terms.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum WageGrowth {
+    /// The same raise above inflation every year.
+    Flat {
+        /// Annual raise above inflation as a decimal. 0.0 keeps pace with inflation;
+        /// 0.01 is a typical long-run figure.
+        real_raise: f64,
+    },
+    /// An age-dependent curve: fast growth early in a career, flattening in the 40s
+    /// and slightly declining after the mid-50s, as seen in earnings data.
+    Lifecycle {
+        /// Shape of the curve.
+        #[serde(default)]
+        profile: LifecycleProfile,
+        /// Extra annual real growth added to the curve at every age, as a decimal.
+        /// Usually 0.
+        #[serde(default)]
+        extra: f64,
+    },
+}
+
+impl Default for WageGrowth {
+    fn default() -> Self {
+        WageGrowth::Lifecycle {
+            profile: LifecycleProfile::Typical,
+            extra: 0.0,
+        }
+    }
+}
+
+/// Shape of the lifecycle wage curve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleProfile {
+    /// Little age-related growth: pay roughly tracks inflation (many hourly and
+    /// public-sector jobs).
+    Flat,
+    /// The median curve for workers with some college education.
+    #[default]
+    Typical,
+    /// Steep early growth typical of professional and technical careers.
+    Steep,
+}
+
+/// Job uncertainty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct CareerRisk {
+    /// How volatile pay is and how likely a layoff is. "typical" matches economy-wide
+    /// averages (a few percent chance of job loss per year, higher in recessions).
+    pub level: RiskLevel,
+}
+
+/// A coarse risk dial.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskLevel {
+    /// No randomness: pay follows the growth curve exactly and the job is never lost.
+    None,
+    /// Stable employment such as tenured or government work.
+    Low,
+    /// Economy-wide average.
+    #[default]
+    Typical,
+    /// Cyclical or volatile work: startups, sales, construction.
+    High,
+}
+
+/// An annual cash bonus.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Bonus {
+    /// Target bonus as a fraction of base salary (0.10 = 10% of salary).
+    pub target_fraction: f64,
+    /// How much the payout varies from year to year, as a standard deviation relative
+    /// to the target (0.3 means payouts typically land within 30% of target). 0 for a
+    /// guaranteed bonus.
+    pub volatility: f64,
+    /// Calendar month in which the bonus is paid, 1 to 12. Default 3 (March).
+    pub month: u32,
+}
+
+impl Default for Bonus {
+    fn default() -> Self {
+        Self {
+            target_fraction: 0.10,
+            volatility: 0.3,
+            month: 3,
+        }
+    }
+}
+
+/// Sales commission paid on top of base salary.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Commission {
+    /// Expected commission per year in today's dollars.
+    pub expected_annual: f64,
+    /// Year-to-year variation as a standard deviation relative to the expected amount
+    /// (0.4 = 40%). Commission is paid monthly and never goes below zero.
+    pub volatility: f64,
+}
+
+impl Default for Commission {
+    fn default() -> Self {
+        Self {
+            expected_annual: 0.0,
+            volatility: 0.4,
+        }
+    }
+}
+
+/// An employer retirement plan such as a 401(k) or 403(b).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct EmployerPlan {
+    /// Share of salary the employee contributes (0.10 = 10%). Capped at the IRS limit.
+    /// Ignored when `employee_max` is true.
+    pub employee_fraction: f64,
+    /// Contribute the IRS maximum every year (including catch-up contributions from
+    /// age 50) instead of a fixed share of salary.
+    pub employee_max: bool,
+    /// Share of the employee's contribution that goes to the Roth side of the plan
+    /// (0 = all pre-tax, 1 = all Roth).
+    pub roth_fraction: f64,
+    /// Employer match per dollar the employee contributes (0.5 = 50 cents on the dollar,
+    /// 1.0 = dollar for dollar). 0 for no match.
+    pub match_rate: f64,
+    /// The match applies to employee contributions up to this fraction of salary
+    /// (0.06 = the first 6% of pay).
+    pub match_up_to: f64,
+    /// Whether the plan allows after-tax contributions with in-plan Roth conversion
+    /// ("mega backdoor Roth"), which lets surplus savings fill the plan up to the
+    /// overall IRS limit.
+    pub after_tax_mega: bool,
+}
+
+impl Default for EmployerPlan {
+    fn default() -> Self {
+        Self {
+            employee_fraction: 0.06,
+            employee_max: false,
+            roth_fraction: 0.0,
+            match_rate: 0.5,
+            match_up_to: 0.06,
+            after_tax_mega: false,
+        }
+    }
+}
+
+/// A grant of employer stock that vests over time.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct EquityGrant {
+    /// Stable identifier used by patches, for example "rsu_2024".
+    pub id: String,
+    /// Restricted stock units or stock options.
+    pub kind: EquityKind,
+    /// Whether the employer's stock is publicly traded, which decides when vested
+    /// shares can be sold.
+    pub company: EquityCompany,
+    /// Value of the not-yet-vested part of the grant at today's share price, in
+    /// today's dollars. For options, the value of the underlying shares, not the spread.
+    pub unvested_value: f64,
+    /// Months until the grant is fully vested. Vesting is monthly and even after the cliff.
+    pub vest_months_remaining: u32,
+    /// Months until the first vest. 0 if the cliff has already passed.
+    pub cliff_months: u32,
+    /// Value of the new grant received each year while employed ("refreshers"), in
+    /// today's dollars. Each refresh vests over four years. 0 for none.
+    pub refresh_annual_value: f64,
+    /// Sell shares as soon as they vest and invest the proceeds according to the
+    /// portfolio. When false, vested shares are held as a single-stock position.
+    pub sell_on_vest: bool,
+}
+
+impl Default for EquityGrant {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            kind: EquityKind::Rsu,
+            company: EquityCompany::default(),
+            unvested_value: 0.0,
+            vest_months_remaining: 48,
+            cliff_months: 0,
+            refresh_annual_value: 0.0,
+            sell_on_vest: true,
+        }
+    }
+}
+
+/// The kind of equity award.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EquityKind {
+    /// Restricted stock units: taxed as wages at the share value when they vest.
+    #[default]
+    Rsu,
+    /// Stock options: worth the share price minus the strike price, and nothing if the
+    /// price is below the strike.
+    Option {
+        /// Strike price as a fraction of today's share price (0.4 means the option is
+        /// 60% in the money; 1.0 means at the money).
+        strike_fraction: f64,
+    },
+}
+
+/// Whether employer stock can be sold freely.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EquityCompany {
+    /// A listed company: shares can be sold when they vest.
+    Public {
+        /// Annual volatility of the share price as a decimal. A large established
+        /// company is about 0.30; a volatile growth company 0.50 or more.
+        #[serde(default = "default_stock_volatility")]
+        volatility: f64,
+        /// Sensitivity to the US stock market: 1.0 moves with the market, above 1
+        /// amplifies it.
+        #[serde(default = "default_beta")]
+        beta: f64,
+    },
+    /// A private company: shares are worth nothing spendable until an IPO or sale.
+    Private {
+        /// Chance per year that the company has its outcome (an IPO, a sale or a
+        /// shutdown), as a decimal. 0.12 means about eight years on average.
+        #[serde(default = "default_liquidity_hazard")]
+        liquidity_hazard: f64,
+        /// Probability that the outcome is a failure and the equity is worth nothing.
+        /// Around 0.5 for a venture-backed company.
+        #[serde(default = "default_fail_prob")]
+        fail_prob: f64,
+        /// Spread of the value when the outcome is a success, as the standard deviation
+        /// of the log of the payout. 1.0 is a wide spread; the expected payout across
+        /// successes and failures equals the stated grant value.
+        #[serde(default = "default_exit_volatility")]
+        exit_volatility: f64,
+    },
+}
+
+fn default_stock_volatility() -> f64 {
+    0.35
+}
+fn default_beta() -> f64 {
+    1.2
+}
+fn default_liquidity_hazard() -> f64 {
+    0.12
+}
+fn default_fail_prob() -> f64 {
+    0.5
+}
+fn default_exit_volatility() -> f64 {
+    1.0
+}
+
+impl Default for EquityCompany {
+    fn default() -> Self {
+        EquityCompany::Public {
+            volatility: default_stock_volatility(),
+            beta: default_beta(),
+        }
+    }
+}
+
+/// Self-employment income.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct SelfEmployment {
+    /// Net profit per year in today's dollars, after business expenses and before
+    /// income and self-employment tax.
+    pub net_annual: f64,
+    /// Year-to-year variation in profit as a standard deviation relative to the
+    /// expected amount (0.25 = 25%).
+    pub volatility: f64,
+    /// Expected annual growth above inflation, as a decimal.
+    pub real_growth: f64,
+    /// Whether the work stops when the household retires.
+    pub ends_at_retirement: bool,
+    /// Share of net profit contributed to a solo 401(k) or SEP, pre-tax (0.10 = 10%).
+    /// Capped at the IRS limit.
+    pub solo_401k_fraction: f64,
+}
+
+impl Default for SelfEmployment {
+    fn default() -> Self {
+        Self {
+            net_annual: 0.0,
+            volatility: 0.25,
+            real_growth: 0.0,
+            ends_at_retirement: true,
+            solo_401k_fraction: 0.0,
+        }
+    }
+}
+
+/// A defined-benefit pension. Set the income's `start` to the age payments begin.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Pension {
+    /// Annual benefit in today's dollars at the time payments start.
+    pub annual: f64,
+    /// Whether payments rise with inflation once they start.
+    pub cola: Cola,
+    /// Fraction of the benefit a surviving partner keeps after the owner dies
+    /// (0.5 for a 50% joint-and-survivor option, 0 for a single-life pension).
+    pub survivor_fraction: f64,
+}
+
+impl Default for Pension {
+    fn default() -> Self {
+        Self {
+            annual: 0.0,
+            cola: Cola::None,
+            survivor_fraction: 0.0,
+        }
+    }
+}
+
+/// Cost-of-living adjustment on a pension.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Cola {
+    /// Payments rise fully with inflation (most government pensions).
+    Full,
+    /// Payments are fixed in dollars and lose value to inflation (most private pensions).
+    #[default]
+    None,
+    /// Payments rise by a fixed percentage each year regardless of inflation.
+    Partial {
+        /// Annual increase as a decimal (0.02 = 2% per year).
+        rate: f64,
+    },
+}
+
+/// A lifetime annuity. Set the income's `start` to when payments begin.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Annuity {
+    /// Annual payment in today's dollars at the time payments start.
+    pub annual: f64,
+    /// True if payments rise with inflation; false if they are fixed in dollars.
+    pub real: bool,
+}
+
+/// Any other recurring income.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct OtherIncome {
+    /// Amount per year in today's dollars. It keeps pace with inflation.
+    pub annual: f64,
+    /// Whether it is taxed as ordinary income. Gifts and child support are not taxable.
+    pub taxable: bool,
+    /// Expected annual growth above inflation, as a decimal. Usually 0.
+    pub real_growth: f64,
+    /// Whether it stops when the household retires.
+    pub ends_at_retirement: bool,
+}
+
+impl Default for OtherIncome {
+    fn default() -> Self {
+        Self {
+            annual: 0.0,
+            taxable: true,
+            real_growth: 0.0,
+            ends_at_retirement: false,
+        }
+    }
+}

@@ -1,0 +1,591 @@
+{
+  "schema_version": 2,
+  "name": "Dual-income family",
+  "description": "Demo household: two earners in Austin with a toddler, a second child planned, and a home purchase in two years.",
+  "start": "2026-11",
+  "household": {
+    "people": [
+      {
+        "id": "priya",
+        "name": "Priya",
+        "birth": "1989-09",
+        "sex": "female",
+        "health": "average",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 22.0
+          }
+        }
+      },
+      {
+        "id": "daniel",
+        "name": "Daniel",
+        "birth": "1990-04",
+        "sex": "male",
+        "health": "average",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 24.0
+          }
+        }
+      }
+    ],
+    "children": [
+      {
+        "id": "anika",
+        "name": "Anika",
+        "birth": "2023-10",
+        "costs": "modeled",
+        "childcare_monthly": 1400.0,
+        "college": {
+          "type": "public_in_state"
+        },
+        "college_share": 0.75
+      },
+      {
+        "id": "second_child",
+        "name": "Second child (planned)",
+        "birth": "2028-01",
+        "costs": "modeled",
+        "childcare_monthly": 1600.0,
+        "college": {
+          "type": "public_in_state"
+        },
+        "college_share": 0.75
+      }
+    ],
+    "location": {
+      "country": "US",
+      "state": "TX",
+      "city": "Austin",
+      "foreign_tax_rate": null
+    }
+  },
+  "incomes": [
+    {
+      "id": "priya_job",
+      "name": "Product manager",
+      "owner": 0,
+      "kind": {
+        "type": "job",
+        "salary": 128000.0,
+        "growth": {
+          "type": "lifecycle",
+          "profile": "typical",
+          "extra": 0.0
+        },
+        "risk": {
+          "level": "typical"
+        },
+        "bonus": {
+          "target_fraction": 0.07,
+          "volatility": 0.35,
+          "month": 12
+        },
+        "commission": null,
+        "equity": [],
+        "plan": {
+          "employee_fraction": 0.1,
+          "employee_max": false,
+          "roth_fraction": 0.25,
+          "match_rate": 0.5,
+          "match_up_to": 0.06,
+          "after_tax_mega": false
+        },
+        "hsa_contribution": 4000.0,
+        "hsa_employer": 1000.0,
+        "ends_at_retirement": true
+      },
+      "start": null,
+      "end": null
+    },
+    {
+      "id": "daniel_job",
+      "name": "Registered nurse",
+      "owner": 1,
+      "kind": {
+        "type": "job",
+        "salary": 92000.0,
+        "growth": {
+          "type": "lifecycle",
+          "profile": "flat",
+          "extra": 0.0
+        },
+        "risk": {
+          "level": "low"
+        },
+        "bonus": null,
+        "commission": null,
+        "equity": [],
+        "plan": {
+          "employee_fraction": 0.08,
+          "employee_max": false,
+          "roth_fraction": 0.0,
+          "match_rate": 1.0,
+          "match_up_to": 0.04,
+          "after_tax_mega": false
+        },
+        "hsa_contribution": 0.0,
+        "hsa_employer": 0.0,
+        "ends_at_retirement": true
+      },
+      "start": null,
+      "end": null
+    }
+  ],
+  "spending": {
+    "items": [
+      {
+        "id": "rent",
+        "name": "Rent",
+        "category": "rent",
+        "amount": 2400.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "utilities",
+        "name": "Utilities, internet and phones",
+        "category": "utilities",
+        "amount": 340.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "groceries",
+        "name": "Groceries",
+        "category": "groceries",
+        "amount": 1150.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "dining",
+        "name": "Restaurants",
+        "category": "dining",
+        "amount": 380.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "transport",
+        "name": "Two cars: fuel and upkeep",
+        "category": "transport",
+        "amount": 420.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "factor",
+          "factor": 0.6
+        },
+        "owner": null
+      },
+      {
+        "id": "insurance",
+        "name": "Car, life and umbrella insurance",
+        "category": "insurance",
+        "amount": 310.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "clothing",
+        "name": "Clothing and personal care",
+        "category": "personal",
+        "amount": 220.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "entertainment",
+        "name": "Entertainment and hobbies",
+        "category": "entertainment",
+        "amount": 250.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "giving",
+        "name": "Charity and gifts",
+        "category": "giving",
+        "amount": 150.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "vacations",
+        "name": "Family vacations",
+        "category": "travel",
+        "amount": 7000.0,
+        "frequency": "annual",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "factor",
+          "factor": 1.5
+        },
+        "owner": null
+      }
+    ],
+    "lifestyle_creep": 0.25,
+    "retirement_smile": true,
+    "shocks": "typical",
+    "healthcare": {
+      "mode": "modeled",
+      "early_retirement": {
+        "type": "aca"
+      },
+      "long_term_care": true,
+      "quality": "silver"
+    },
+    "survivor_factor": 0.7
+  },
+  "accounts": [
+    {
+      "id": "checking",
+      "name": "Joint checking",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 14000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "fixed",
+        "rate": 0.0
+      },
+      "holdings": null
+    },
+    {
+      "id": "savings",
+      "name": "Savings (emergency and down payment)",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 96000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "priya_401k",
+      "name": "Priya's 401(k)",
+      "owner": 0,
+      "kind": "traditional",
+      "balance": 150000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "priya_roth",
+      "name": "Priya's Roth 401(k) and IRA",
+      "owner": 0,
+      "kind": "roth",
+      "balance": 31000.0,
+      "cost_basis": null,
+      "roth_basis": 19000.0,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "daniel_403b",
+      "name": "Daniel's 403(b)",
+      "owner": 1,
+      "kind": "traditional",
+      "balance": 70000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "brokerage",
+      "name": "Joint brokerage",
+      "owner": 0,
+      "kind": "taxable",
+      "balance": 68000.0,
+      "cost_basis": 51000.0,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "hsa",
+      "name": "HSA",
+      "owner": 0,
+      "kind": "hsa",
+      "balance": 9000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    }
+  ],
+  "portfolio": {
+    "target": {
+      "us_stocks": 55.0,
+      "intl_stocks": 20.0,
+      "bonds": 20.0,
+      "real_estate": 5.0
+    },
+    "glide": {
+      "type": "target_date",
+      "years_before": 15.0,
+      "equity_at_retirement": 0.6,
+      "years_after": 7.0,
+      "equity_final": 0.45
+    },
+    "rebalance": {
+      "type": "annual"
+    },
+    "location": "tax_efficient",
+    "expense_ratio": 0.001,
+    "advisory_fee": 0.0,
+    "emergency_months": 6.0,
+    "retirement_cash_years": 0.0,
+    "custom_asset": null,
+    "single_stock": {
+      "volatility": 0.35,
+      "beta": 1.1
+    }
+  },
+  "properties": [],
+  "debts": [
+    {
+      "id": "minivan",
+      "name": "Minivan loan",
+      "kind": "auto",
+      "balance": 21000.0,
+      "rate": 0.065,
+      "payment": null,
+      "remaining_months": 48
+    }
+  ],
+  "debt_policy": {
+    "strategy": "minimum",
+    "extra_monthly": 0.0
+  },
+  "events": [
+    {
+      "id": "buy_home",
+      "name": "Buy a house",
+      "when": {
+        "type": "date",
+        "at": "2028-11"
+      },
+      "probability": 1.0,
+      "timing_uncertainty_years": 0.5,
+      "kind": {
+        "type": "buy_home",
+        "property_id": "home",
+        "price": 520000.0,
+        "down_payment_fraction": 0.15,
+        "rate": null,
+        "term_years": 30,
+        "replaces_rent": true,
+        "closing_cost_fraction": 0.03,
+        "use": {
+          "type": "primary"
+        },
+        "property_tax_rate": 0.018,
+        "insurance_rate": 0.005,
+        "maintenance_rate": 0.01,
+        "hoa_monthly": 0.0,
+        "appreciation_vs_national": 0.0,
+        "idiosyncratic_volatility": 0.08
+      }
+    },
+    {
+      "id": "parental_leave",
+      "name": "Daniel's parental leave",
+      "when": {
+        "type": "date",
+        "at": "2028-01"
+      },
+      "probability": 1.0,
+      "timing_uncertainty_years": 0.0,
+      "kind": {
+        "type": "career_break",
+        "person": 1,
+        "months": 4,
+        "income_fraction": 0.6
+      }
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen remodel",
+      "when": {
+        "type": "date",
+        "at": "2031-05"
+      },
+      "probability": 0.8,
+      "timing_uncertainty_years": 1.0,
+      "kind": {
+        "type": "expense",
+        "amount": 45000.0,
+        "financed": {
+          "down_fraction": 0.33,
+          "rate": 0.075,
+          "term_months": 60
+        }
+      }
+    },
+    {
+      "id": "inheritance",
+      "name": "Possible inheritance",
+      "when": {
+        "type": "age",
+        "person": 0,
+        "age": 58.0
+      },
+      "probability": 0.5,
+      "timing_uncertainty_years": 5.0,
+      "kind": {
+        "type": "windfall",
+        "amount": 120000.0,
+        "taxable": false
+      }
+    }
+  ],
+  "retirement": {
+    "trigger": {
+      "type": "when_funded",
+      "withdrawal_rate": 0.035,
+      "basis": "investable",
+      "count_future_income": true,
+      "min_age": 50.0,
+      "max_age": 67.0
+    },
+    "partner_offset_years": 0.0,
+    "spending_rule": {
+      "type": "guardrails",
+      "upper": 0.2,
+      "lower": 0.2,
+      "adjust": 0.1
+    },
+    "withdrawal_order": {
+      "type": "tax_aware",
+      "fill_to_bracket": 0.12,
+      "roth_conversions": true,
+      "mind_aca": true
+    },
+    "early_access": "auto",
+    "bequest_target": 0.0
+  },
+  "assumptions": {
+    "market": {
+      "kind": {
+        "type": "bootstrap",
+        "mean_block_months": 60,
+        "from_year": null
+      },
+      "equity_premium_adjustment": 0.0,
+      "inflation_adjustment": 0.0,
+      "stress": []
+    },
+    "taxes": {
+      "kind": {
+        "type": "us_current_law"
+      },
+      "index_brackets": true,
+      "social_security_haircut": null
+    },
+    "longevity": {
+      "type": "stochastic",
+      "improvement": true
+    },
+    "career_risk": true,
+    "health_risk": true
+  },
+  "simulation": {
+    "paths": 10000,
+    "seed": 1,
+    "end_age": 100
+  }
+}

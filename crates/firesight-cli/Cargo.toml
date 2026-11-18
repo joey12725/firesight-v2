@@ -1,0 +1,17 @@
+[package]
+name = "firesight-cli"
+description = "Native FIRESight runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "firesight"
+path = "src/main.rs"
+
+[dependencies]
+firesight-core.workspace = true
+serde_json.workspace = true
+rayon = "1"
+clap = { version = "4", features = ["derive"] }

@@ -1,0 +1,3137 @@
+{
+  "$schema_version": "1.0.0",
+  "jurisdiction": "US-federal",
+  "tax_year": 2026,
+  "generated": "2026-11-17",
+  "currency": "USD nominal dollars of the stated year",
+  "description": "US federal tax, retirement-account, Social Security, Medicare and ACA parameters for tax/benefit year 2026, with officially published 2027 values under `published_2027`. Every number was fetched from the source named in its `source` key (see `sources` and data/tax/SOURCES-federal.md). Engine convention: all dollar amounts are nominal for the stated year; index forward per each block's `indexing` flag.",
+  "conventions": {
+    "brackets": "Arrays of {up_to, rate}. `up_to` is the inclusive upper bound of taxable income taxed at `rate`; null = no upper bound. Marginal: income between the previous up_to and this up_to is taxed at `rate`.",
+    "rates": "Decimals (0.22 = 22%).",
+    "filing_statuses": [
+      "single",
+      "married_joint",
+      "head_of_household"
+    ],
+    "married_separate": "Included where the source gives it; the engine's primary statuses are the three above.",
+    "indexing_legend": {
+      "c_cpi_u": "Indexed annually by Chained CPI-U under IRC 1(f)(3) (12 months ending Aug 31 of prior year). Model with simulated CPI (optionally minus ~0.25-0.3 pt/yr chained-CPI wedge). Statutory rounding applies (see `rounding` where given).",
+      "cpi_u": "Indexed annually to CPI-U (not chained).",
+      "cpi_w": "Indexed to CPI-W (Social Security COLA: Q3 over Q3).",
+      "awi": "Indexed to the SSA national Average Wage Index (two-year lag): value_Y = base * AWI[Y-2] / AWI[base_year-2]. Model with simulated wage growth.",
+      "none": "Frozen in nominal dollars by statute; NOT indexed. Real value erodes with simulated inflation.",
+      "statutory_schedule": "Changes on a fixed schedule written into statute (see the schedule in the block).",
+      "program_cost": "Set annually by the agency from projected program costs (Medicare premiums/deductibles). Model with health-cost inflation.",
+      "premium_vs_income_growth": "ACA applicable percentages: adjusted by the ratio of premium growth to income growth since 2013.",
+      "market": "Market-determined observation (premiums, deductibles); model with health-cost inflation."
+    }
+  },
+  "income_tax": {
+    "source": "irs_rp_2025_32",
+    "law_note": "OBBBA (P.L. 119-21, 7/4/2025) sec. 70101 made the TCJA rate structure (10/12/22/24/32/35/37) permanent; sec. 70102 made the larger standard deduction permanent and raised the base amounts; personal exemption permanently $0 (sec. 70103).",
+    "indexing": "c_cpi_u",
+    "rounding": "Brackets and standard deduction: rounded down to next lowest multiple of $50 (rounding rule recalled from IRC 1(f)(7)/63(c)(4), not re-fetched).",
+    "standard_deduction": {
+      "single": 16100,
+      "married_joint": 32200,
+      "head_of_household": 24150,
+      "married_separate": 16100,
+      "indexing": "c_cpi_u"
+    },
+    "additional_standard_deduction_65_or_blind": {
+      "married_per_qualifying_person": 1650,
+      "unmarried_not_surviving_spouse": 2050,
+      "by_status": {
+        "single": 2050,
+        "head_of_household": 2050,
+        "married_joint": 1650,
+        "married_separate": 1650
+      },
+      "note": "Per condition (age 65+ and/or blind) per person. Applies only when taking the standard deduction.",
+      "indexing": "c_cpi_u"
+    },
+    "dependent_standard_deduction": {
+      "minimum": 1350,
+      "earned_income_plus": 450,
+      "indexing": "c_cpi_u"
+    },
+    "personal_exemption": 0,
+    "ordinary_brackets": {
+      "single": [
+        {
+          "up_to": 12400,
+          "rate": 0.1
+        },
+        {
+          "up_to": 50400,
+          "rate": 0.12
+        },
+        {
+          "up_to": 105700,
+          "rate": 0.22
+        },
+        {
+          "up_to": 201775,
+          "rate": 0.24
+        },
+        {
+          "up_to": 256225,
+          "rate": 0.32
+        },
+        {
+          "up_to": 640600,
+          "rate": 0.35
+        },
+        {
+          "up_to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_joint": [
+        {
+          "up_to": 24800,
+          "rate": 0.1
+        },
+        {
+          "up_to": 100800,
+          "rate": 0.12
+        },
+        {
+          "up_to": 211400,
+          "rate": 0.22
+        },
+        {
+          "up_to": 403550,
+          "rate": 0.24
+        },
+        {
+          "up_to": 512450,
+          "rate": 0.32
+        },
+        {
+          "up_to": 768700,
+          "rate": 0.35
+        },
+        {
+          "up_to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "up_to": 17700,
+          "rate": 0.1
+        },
+        {
+          "up_to": 67450,
+          "rate": 0.12
+        },
+        {
+          "up_to": 105700,
+          "rate": 0.22
+        },
+        {
+          "up_to": 201750,
+          "rate": 0.24
+        },
+        {
+          "up_to": 256200,
+          "rate": 0.32
+        },
+        {
+          "up_to": 640600,
+          "rate": 0.35
+        },
+        {
+          "up_to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "up_to": 12400,
+          "rate": 0.1
+        },
+        {
+          "up_to": 50400,
+          "rate": 0.12
+        },
+        {
+          "up_to": 105700,
+          "rate": 0.22
+        },
+        {
+          "up_to": 201775,
+          "rate": 0.24
+        },
+        {
+          "up_to": 256225,
+          "rate": 0.32
+        },
+        {
+          "up_to": 384350,
+          "rate": 0.35
+        },
+        {
+          "up_to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "long_term_capital_gains_brackets": {
+      "note": "Applies to net long-term capital gains and qualified dividends. Thresholds are TAXABLE INCOME levels: gains stack on top of ordinary taxable income; the portion of gains falling below the 0% ceiling is taxed at 0%, below the 15% ceiling at 15%, above at 20%. NIIT (3.8%) is separate.",
+      "indexing": "c_cpi_u",
+      "single": [
+        {
+          "up_to": 49450,
+          "rate": 0.0
+        },
+        {
+          "up_to": 545500,
+          "rate": 0.15
+        },
+        {
+          "up_to": null,
+          "rate": 0.2
+        }
+      ],
+      "married_joint": [
+        {
+          "up_to": 98900,
+          "rate": 0.0
+        },
+        {
+          "up_to": 613700,
+          "rate": 0.15
+        },
+        {
+          "up_to": null,
+          "rate": 0.2
+        }
+      ],
+      "head_of_household": [
+        {
+          "up_to": 66200,
+          "rate": 0.0
+        },
+        {
+          "up_to": 579600,
+          "rate": 0.15
+        },
+        {
+          "up_to": null,
+          "rate": 0.2
+        }
+      ],
+      "married_separate": [
+        {
+          "up_to": 49450,
+          "rate": 0.0
+        },
+        {
+          "up_to": 306850,
+          "rate": 0.15
+        },
+        {
+          "up_to": null,
+          "rate": 0.2
+        }
+      ]
+    },
+    "alternative_minimum_tax": {
+      "indexing": "c_cpi_u",
+      "exemption": {
+        "single": 90100,
+        "head_of_household": 90100,
+        "married_joint": 140200,
+        "married_separate": 70100
+      },
+      "exemption_phaseout_start": {
+        "single": 500000,
+        "head_of_household": 500000,
+        "married_joint": 1000000,
+        "married_separate": 500000
+      },
+      "exemption_complete_phaseout": {
+        "single": 680200,
+        "head_of_household": 680200,
+        "married_joint": 1280400,
+        "married_separate": 640200
+      },
+      "exemption_phaseout_rate": 0.5,
+      "rate_26_up_to_amti_excess": 244500,
+      "rates": [
+        0.26,
+        0.28
+      ],
+      "note": "OBBBA sec. 70107: from 2026 the phase-out thresholds reset to $500k/$1M (indexed from 2027, base 2025) and the phase-out rate doubles from 25% to 50% (statute text, sec. 70107(c): 'by substituting 50 percent for 25 percent'; consistent with the Rev. Proc. complete-phaseout amounts: 90,100/0.5 = 180,200)."
+    },
+    "itemized_deduction_limitation": {
+      "source": "obbba_pl_119_21",
+      "effective_from_tax_year": 2026,
+      "rule": "IRC 68 as amended (OBBBA sec. 70111): itemized deductions reduced by 2/37 of the lesser of (a) itemized deductions or (b) taxable income (before this rule, plus itemized deductions) in excess of the start of the 37% bracket. Effectively caps the benefit of itemized deductions at 35%.",
+      "reduction_fraction": "2/37",
+      "indexing": "none"
+    },
+    "kiddie_tax_unearned_income_threshold": 1350,
+    "kiddie_tax_note": "1,350 is the IRC 1(g)(4)(A)(ii)(I) amount (Rev. Proc. 2025-32 sec. 4.02). The kiddie tax applies to a child's net unearned income above TWICE this amount ($2,700 in 2026; $2,800 in 2027): the first 1,350 is covered by the dependent standard deduction and the next 1,350 is taxed at the child's rate."
+  },
+  "net_investment_income_tax": {
+    "source": "irs_tc559",
+    "rate": 0.038,
+    "magi_threshold": {
+      "single": 200000,
+      "head_of_household": 200000,
+      "married_joint": 250000,
+      "married_separate": 125000
+    },
+    "base": "lesser of net investment income or MAGI over threshold",
+    "indexing": "none"
+  },
+  "additional_medicare_tax": {
+    "source": "irs_tc560",
+    "rate": 0.009,
+    "threshold": {
+      "single": 200000,
+      "head_of_household": 200000,
+      "married_joint": 250000,
+      "married_separate": 125000
+    },
+    "base": "Medicare wages + self-employment income over threshold (combined for joint filers)",
+    "indexing": "none"
+  },
+  "fica": {
+    "source": "ssa_cola_facts_2026",
+    "oasdi_rate_employee": 0.062,
+    "oasdi_rate_employer": 0.062,
+    "oasdi_wage_base": 184500,
+    "medicare_rate_employee": 0.0145,
+    "medicare_rate_employer": 0.0145,
+    "medicare_wage_base": null,
+    "indexing": {
+      "oasdi_wage_base": "awi",
+      "rates": "none"
+    },
+    "oasdi_wage_base_rounding": "nearest $300; cannot fall; frozen in years with a zero COLA",
+    "quarter_of_coverage_earnings": 1890,
+    "self_employment": {
+      "source": "irs_tc554",
+      "net_earnings_factor": 0.9235,
+      "oasdi_rate": 0.124,
+      "medicare_rate": 0.029,
+      "combined_rate": 0.153,
+      "minimum_net_earnings": 400,
+      "deduction_fraction_of_se_tax": 0.5,
+      "note": "SE tax base = 92.35% of net SE earnings; OASDI portion capped at wage base less W-2 Social Security wages; half of SE tax is an above-the-line deduction; additional 0.9% Medicare tax applies above the thresholds and is not deductible."
+    }
+  },
+  "credits": {
+    "child_tax_credit": {
+      "source": [
+        "irs_rp_2025_32",
+        "obbba_pl_119_21",
+        "usc_24"
+      ],
+      "amount_per_child": 2200,
+      "refundable_max_per_child": 1700,
+      "refundable_formula": "15% of earned income over $2,500, capped at refundable max per child",
+      "earned_income_floor": 2500,
+      "other_dependent_credit": 500,
+      "phase_out_magi_threshold": {
+        "single": 200000,
+        "head_of_household": 200000,
+        "married_joint": 400000,
+        "married_separate": 200000
+      },
+      "phase_out_reduction_per_1000": 50,
+      "phase_out_rate": 0.05,
+      "qualifying_child_max_age": 16,
+      "indexing": {
+        "amount_per_child": "c_cpi_u (from 2026, base 2025 $2,200, rounded down to $100)",
+        "refundable_max_per_child": "c_cpi_u (base $1,400 in 2017 dollars, rounded down to $100)",
+        "phase_out_magi_threshold": "none",
+        "other_dependent_credit": "none",
+        "earned_income_floor": "none"
+      },
+      "note": "OBBBA sec. 70104 made the credit permanent and set $2,200 for 2025; the 2026 inflation-adjusted amount is still $2,200. Phase-out: $50 per $1,000 (or fraction) of MAGI over the threshold."
+    },
+    "child_and_dependent_care_credit": {
+      "source": [
+        "obbba_pl_119_21",
+        "irs_tc602"
+      ],
+      "expense_limit_one": 3000,
+      "expense_limit_two_or_more": 6000,
+      "max_rate": 0.5,
+      "rate_schedule": "50% reduced 1 pt per $2,000 (or fraction) of AGI over $15,000, not below 35%; then reduced 1 pt per $2,000 ($4,000 joint) of AGI over $75,000 ($150,000 joint), not below 20%",
+      "min_rate": 0.2,
+      "nonrefundable": true,
+      "dependent_care_fsa_limit": 7500,
+      "indexing": "none",
+      "note": "New rate schedule (OBBBA sec. 70405) and $7,500 dependent-care FSA limit (sec. 70404) apply from tax year 2026."
+    },
+    "savers_credit_agi_limits": {
+      "source": "irs_notice_2025_67",
+      "married_joint": {
+        "rate_50_up_to": 48500,
+        "rate_20_up_to": 52500,
+        "rate_10_up_to": 80500
+      },
+      "head_of_household": {
+        "rate_50_up_to": 36375,
+        "rate_20_up_to": 39375,
+        "rate_10_up_to": 60375
+      },
+      "single": {
+        "rate_50_up_to": 24250,
+        "rate_20_up_to": 26250,
+        "rate_10_up_to": 40250
+      },
+      "indexing": "c_cpi_u",
+      "note": "2026 is the last year of the Saver's Credit for retirement contributions: for tax years beginning after 2026 it is replaced by the Saver's Match (IRC 6433, a 50% federal matching contribution up to $2,000 of contributions, paid into the account) per SECURE 2.0 sec. 103; see IRS Notice 2026-66 footnote 2. The 2027 AGI limits in Notice 2026-66 (joint 50,000/54,000/83,000) apply to the residual credit for ABLE contributions only."
+    }
+  },
+  "senior_deduction": {
+    "source": [
+      "obbba_pl_119_21",
+      "irs_obbba_seniors"
+    ],
+    "amount_per_qualifying_person": 6000,
+    "qualifying_age": 65,
+    "phase_out_magi_threshold": {
+      "single": 75000,
+      "head_of_household": 75000,
+      "married_joint": 150000
+    },
+    "phase_out_rate": 0.06,
+    "phase_out_rule": "Each person's $6,000 is reduced by 6% of MAGI over the threshold (fully gone at $175,000 single / $250,000 joint).",
+    "first_tax_year": 2025,
+    "last_tax_year": 2028,
+    "sunset_year": 2029,
+    "married_separate_eligible": false,
+    "available_to_itemizers": true,
+    "indexing": "none",
+    "note": "IRC 151(d)(5)(C). In addition to the regular additional standard deduction for 65+. Does not reduce MAGI for Social Security taxation, IRMAA or ACA purposes (it is a below-the-line deduction)."
+  },
+  "itemized_deductions": {
+    "salt_cap": {
+      "source": "obbba_pl_119_21",
+      "indexing": "statutory_schedule",
+      "phase_down_rate": 0.3,
+      "floor": 10000,
+      "married_separate_factor": 0.5,
+      "rule": "cap_Y reduced by 30% of (MAGI - threshold_Y), but not below $10,000. Same cap for single, HoH and joint; half for married filing separately.",
+      "schedule": [
+        {
+          "year": 2025,
+          "cap": 40000.0,
+          "phase_down_magi_threshold": 500000.0,
+          "computed": false
+        },
+        {
+          "year": 2026,
+          "cap": 40400.0,
+          "phase_down_magi_threshold": 505000.0,
+          "computed": false
+        },
+        {
+          "year": 2027,
+          "cap": 40804.0,
+          "phase_down_magi_threshold": 510050.0,
+          "computed": true
+        },
+        {
+          "year": 2028,
+          "cap": 41212.04,
+          "phase_down_magi_threshold": 515150.5,
+          "computed": true
+        },
+        {
+          "year": 2029,
+          "cap": 41624.16,
+          "phase_down_magi_threshold": 520302.01,
+          "computed": true
+        },
+        {
+          "year": 2030,
+          "cap": 10000.0,
+          "phase_down_magi_threshold": null,
+          "computed": false,
+          "note": "2030 and later: flat $10,000, no phase-down"
+        }
+      ],
+      "schedule_note": "2025 and 2026 amounts are written in IRC 164(b)(7). 2027-2029 = 101% of prior year (statute gives no rounding rule; values here are computed, flagged computed=true). Reverts to $10,000 for tax years beginning after 2029."
+    },
+    "mortgage_interest": {
+      "source": [
+        "irs_pub_936",
+        "obbba_pl_119_21"
+      ],
+      "acquisition_debt_limit": 750000,
+      "acquisition_debt_limit_married_separate": 375000,
+      "grandfathered_limit_pre_2017_12_16": 1000000,
+      "home_equity_interest_deductible": false,
+      "mortgage_insurance_premiums_treated_as_interest_from": 2026,
+      "indexing": "none",
+      "note": "OBBBA sec. 70108 made the $750,000 limit permanent."
+    },
+    "charitable": {
+      "source": "obbba_pl_119_21",
+      "itemizer_floor_pct_of_agi": 0.005,
+      "non_itemizer_deduction": {
+        "single": 1000,
+        "married_joint": 2000
+      },
+      "effective_from_tax_year": 2026,
+      "indexing": "none",
+      "note": "OBBBA sec. 70424 ($1,000/$2,000 non-itemizer cash-gift deduction, IRC 170(p)) and sec. 70425 (0.5%-of-AGI floor for itemizers)."
+    },
+    "medical_expense_floor_pct_of_agi": 0.075
+  },
+  "retirement_accounts": {
+    "source": "irs_notice_2025_67",
+    "employer_plans_401k_403b_457b_tsp": {
+      "elective_deferral_limit": 24500,
+      "catch_up_age_50_plus": 8000,
+      "super_catch_up_ages_60_to_63": 11250,
+      "super_catch_up_note": "Replaces (does not add to) the age-50 catch-up for those attaining age 60-63 during the year.",
+      "total_annual_additions_415c": 72000,
+      "compensation_limit_401a17": 360000,
+      "roth_catch_up_required_if_prior_year_fica_wages_over": 150000,
+      "highly_compensated_threshold": 160000,
+      "indexing": {
+        "elective_deferral_limit": "cpi_u ($500 increments)",
+        "catch_up_age_50_plus": "cpi_u ($500 increments)",
+        "super_catch_up_ages_60_to_63": "cpi_u (greater of $10,000 or 150% of 2024 regular catch-up, indexed)",
+        "total_annual_additions_415c": "cpi_u ($1,000 increments)",
+        "compensation_limit_401a17": "cpi_u ($5,000 increments)"
+      },
+      "indexing_method_note": "IRC 415(d): adjusted like Social Security COLA, using CPI-U Q3 over base-period Q3."
+    },
+    "simple_ira": {
+      "deferral_limit": 17000,
+      "catch_up_age_50_plus": 4000,
+      "super_catch_up_ages_60_to_63": 5250
+    },
+    "ira": {
+      "contribution_limit": 7500,
+      "catch_up_age_50_plus": 1100,
+      "indexing": {
+        "contribution_limit": "c_cpi_u ($500 increments)",
+        "catch_up_age_50_plus": "c_cpi_u ($100 increments, indexed since 2024)"
+      },
+      "requires_earned_income": true,
+      "spousal_ira_allowed": true
+    },
+    "roth_ira_contribution_phase_out_magi": {
+      "single": {
+        "start": 153000,
+        "end": 168000
+      },
+      "head_of_household": {
+        "start": 153000,
+        "end": 168000
+      },
+      "married_joint": {
+        "start": 242000,
+        "end": 252000
+      },
+      "married_separate": {
+        "start": 0,
+        "end": 10000
+      },
+      "indexing": "c_cpi_u ($1,000 increments); married_separate not indexed"
+    },
+    "traditional_ira_deduction_phase_out_magi": {
+      "covered_by_workplace_plan": {
+        "single": {
+          "start": 81000,
+          "end": 91000
+        },
+        "head_of_household": {
+          "start": 81000,
+          "end": 91000
+        },
+        "married_joint": {
+          "start": 129000,
+          "end": 149000
+        },
+        "married_separate": {
+          "start": 0,
+          "end": 10000
+        }
+      },
+      "not_covered_but_spouse_covered": {
+        "married_joint": {
+          "start": 242000,
+          "end": 252000
+        }
+      },
+      "neither_covered": "fully deductible at any income",
+      "indexing": "c_cpi_u ($1,000 increments); married_separate not indexed"
+    },
+    "qualified_charitable_distribution_limit": 111000,
+    "hsa": {
+      "source": "irs_rp_2025_19",
+      "contribution_limit_self_only": 4400,
+      "contribution_limit_family": 8750,
+      "catch_up_age_55_plus": 1000,
+      "hdhp_min_deductible_self_only": 1700,
+      "hdhp_min_deductible_family": 3400,
+      "hdhp_max_out_of_pocket_self_only": 8500,
+      "hdhp_max_out_of_pocket_family": 17000,
+      "indexing": {
+        "contribution_limits": "c_cpi_u ($50 increments)",
+        "catch_up_age_55_plus": "none",
+        "hdhp_thresholds": "c_cpi_u ($50 increments)"
+      },
+      "note": "From 2026, ACA bronze and catastrophic exchange plans are treated as HSA-eligible HDHPs (OBBBA sec. 71307). Catch-up is per account holder (each 55+ spouse needs their own HSA). No contributions once enrolled in Medicare."
+    }
+  },
+  "early_withdrawal": {
+    "source": [
+      "irs_early_distribution_exceptions",
+      "irs_pub_590b",
+      "irs_sepp_faq",
+      "irs_notice_2022_6"
+    ],
+    "penalty_rate": 0.1,
+    "penalty_free_age": 59.5,
+    "indexing": "none",
+    "rule_of_55": {
+      "age": 55,
+      "public_safety_age": 50,
+      "applies_to": "employer qualified plans (401(k), 403(b)) of the employer separated from, when separation occurs in or after the calendar year the employee reaches age 55",
+      "applies_to_ira": false
+    },
+    "roth_ira": {
+      "ordering": [
+        "regular contributions (always tax- and penalty-free)",
+        "conversion/rollover contributions, first-in first-out (taxable portion of each conversion first)",
+        "earnings"
+      ],
+      "qualified_distribution": "After the 5-tax-year period beginning Jan 1 of the first year a contribution was made to any Roth IRA, AND age 59.5 (or death, disability, first-home up to $10,000 lifetime). Qualified distributions of earnings are tax-free.",
+      "five_year_rule_contributions_years": 5,
+      "conversion_five_year_rule": "Each conversion has its own 5-tax-year clock (starting Jan 1 of the conversion year); withdrawing the taxable part of a conversion before the clock ends AND before age 59.5 incurs the 10% penalty (no income tax, already taxed). This is the basis of the Roth conversion ladder.",
+      "conversion_five_year_rule_years": 5,
+      "first_home_lifetime_limit": 10000,
+      "no_lifetime_rmd_for_owner": true
+    },
+    "hsa_non_medical_penalty": {
+      "source": "usc_223",
+      "rate": 0.2,
+      "penalty_free_age": 65,
+      "note": "IRC 223(f)(4): 20% additional tax on non-medical HSA distributions before age 65 (plus ordinary income tax); after 65 ordinary income tax only."
+    },
+    "sepp_72t": {
+      "methods": [
+        "required_minimum_distribution",
+        "fixed_amortization",
+        "fixed_annuitization"
+      ],
+      "max_interest_rate": "greater of 5% or 120% of the federal mid-term rate for either of the two months preceding the first distribution",
+      "interest_rate_floor_cap": 0.05,
+      "must_continue_until": "later of 5 years from first payment or age 59.5",
+      "modification_penalty": "10% recapture on all prior payments plus interest",
+      "life_expectancy_tables": "Uniform Lifetime, Single Life or Joint and Last Survivor (26 CFR 1.401(a)(9)-9)"
+    }
+  },
+  "required_minimum_distributions": {
+    "source": [
+      "ecfr_1_401a9_9",
+      "fr_rmd_final_regs_2024",
+      "irs_rmd_faq"
+    ],
+    "start_age_by_birth_year": [
+      {
+        "birth_year_from": null,
+        "birth_year_to": 1949,
+        "age": 70.5,
+        "note": "born before July 1, 1949: 70.5; July 1 1949 - 1950: 72"
+      },
+      {
+        "birth_year_from": 1950,
+        "birth_year_to": 1950,
+        "age": 72
+      },
+      {
+        "birth_year_from": 1951,
+        "birth_year_to": 1959,
+        "age": 73
+      },
+      {
+        "birth_year_from": 1960,
+        "birth_year_to": null,
+        "age": 75
+      }
+    ],
+    "birth_year_1959_note": "SECURE 2.0 drafting overlap: final regs (89 FR 58886, 7/19/2024) say 73 for those born 1951-1958 and 75 for those born 1960+, and reserve 1959; proposed regs treat 1959 as age 73. Encoded here as 73.",
+    "first_rmd_deadline": "April 1 of the year after reaching the start age (later years: Dec 31)",
+    "calculation": "RMD = prior Dec 31 balance / divisor for age attained in the distribution year",
+    "applies_to": [
+      "traditional IRA",
+      "SEP/SIMPLE IRA",
+      "traditional 401(k)/403(b)/457(b)"
+    ],
+    "not_required_for_owner": [
+      "Roth IRA",
+      "designated Roth 401(k)/403(b) accounts (from 2024)"
+    ],
+    "missed_rmd_excise_tax": 0.25,
+    "missed_rmd_excise_tax_if_corrected": 0.1,
+    "indexing": "none",
+    "uniform_lifetime_table_effective": "distribution years beginning on or after 2022-01-01",
+    "uniform_lifetime_table": [
+      {
+        "age": 72,
+        "divisor": 27.4
+      },
+      {
+        "age": 73,
+        "divisor": 26.5
+      },
+      {
+        "age": 74,
+        "divisor": 25.5
+      },
+      {
+        "age": 75,
+        "divisor": 24.6
+      },
+      {
+        "age": 76,
+        "divisor": 23.7
+      },
+      {
+        "age": 77,
+        "divisor": 22.9
+      },
+      {
+        "age": 78,
+        "divisor": 22.0
+      },
+      {
+        "age": 79,
+        "divisor": 21.1
+      },
+      {
+        "age": 80,
+        "divisor": 20.2
+      },
+      {
+        "age": 81,
+        "divisor": 19.4
+      },
+      {
+        "age": 82,
+        "divisor": 18.5
+      },
+      {
+        "age": 83,
+        "divisor": 17.7
+      },
+      {
+        "age": 84,
+        "divisor": 16.8
+      },
+      {
+        "age": 85,
+        "divisor": 16.0
+      },
+      {
+        "age": 86,
+        "divisor": 15.2
+      },
+      {
+        "age": 87,
+        "divisor": 14.4
+      },
+      {
+        "age": 88,
+        "divisor": 13.7
+      },
+      {
+        "age": 89,
+        "divisor": 12.9
+      },
+      {
+        "age": 90,
+        "divisor": 12.2
+      },
+      {
+        "age": 91,
+        "divisor": 11.5
+      },
+      {
+        "age": 92,
+        "divisor": 10.8
+      },
+      {
+        "age": 93,
+        "divisor": 10.1
+      },
+      {
+        "age": 94,
+        "divisor": 9.5
+      },
+      {
+        "age": 95,
+        "divisor": 8.9
+      },
+      {
+        "age": 96,
+        "divisor": 8.4
+      },
+      {
+        "age": 97,
+        "divisor": 7.8
+      },
+      {
+        "age": 98,
+        "divisor": 7.3
+      },
+      {
+        "age": 99,
+        "divisor": 6.8
+      },
+      {
+        "age": 100,
+        "divisor": 6.4
+      },
+      {
+        "age": 101,
+        "divisor": 6.0
+      },
+      {
+        "age": 102,
+        "divisor": 5.6
+      },
+      {
+        "age": 103,
+        "divisor": 5.2
+      },
+      {
+        "age": 104,
+        "divisor": 4.9
+      },
+      {
+        "age": 105,
+        "divisor": 4.6
+      },
+      {
+        "age": 106,
+        "divisor": 4.3
+      },
+      {
+        "age": 107,
+        "divisor": 4.1
+      },
+      {
+        "age": 108,
+        "divisor": 3.9
+      },
+      {
+        "age": 109,
+        "divisor": 3.7
+      },
+      {
+        "age": 110,
+        "divisor": 3.5
+      },
+      {
+        "age": 111,
+        "divisor": 3.4
+      },
+      {
+        "age": 112,
+        "divisor": 3.3
+      },
+      {
+        "age": 113,
+        "divisor": 3.1
+      },
+      {
+        "age": 114,
+        "divisor": 3.0
+      },
+      {
+        "age": 115,
+        "divisor": 2.9
+      },
+      {
+        "age": 116,
+        "divisor": 2.8
+      },
+      {
+        "age": 117,
+        "divisor": 2.7
+      },
+      {
+        "age": 118,
+        "divisor": 2.5
+      },
+      {
+        "age": 119,
+        "divisor": 2.3
+      },
+      {
+        "age": 120,
+        "divisor": 2.0
+      }
+    ],
+    "uniform_lifetime_table_note": "Last row (age 120) applies to age 120 and older. Used unless the sole beneficiary is a spouse more than 10 years younger."
+  },
+  "social_security": {
+    "source": [
+      "ssa_cola_facts_2026",
+      "ssa_cola_facts_2027",
+      "ssa_bend_points",
+      "ssa_awi",
+      "ssa_cbb",
+      "ssa_nra",
+      "ssa_early_late",
+      "ssa_rtea",
+      "ssa_trustees_2026",
+      "ssa_family_max"
+    ],
+    "cola": {
+      "2026": 0.028,
+      "2027": 0.036,
+      "note": "The '2026 COLA' (2.8%) is effective with benefits for Dec 2025, paid Jan 2026; the '2027 COLA' (3.6%) is effective Dec 2026, paid Jan 2027.",
+      "indexing": "cpi_w",
+      "history_by_effective_december_year_pct": {
+        "1975": 8.0,
+        "1976": 6.4,
+        "1977": 5.9,
+        "1978": 6.5,
+        "1979": 9.9,
+        "1980": 14.3,
+        "1981": 11.2,
+        "1982": 7.4,
+        "1983": 3.5,
+        "1984": 3.5,
+        "1985": 3.1,
+        "1986": 1.3,
+        "1987": 4.2,
+        "1988": 4.0,
+        "1989": 4.7,
+        "1990": 5.4,
+        "1991": 3.7,
+        "1992": 3.0,
+        "1993": 2.6,
+        "1994": 2.8,
+        "1995": 2.6,
+        "1996": 2.9,
+        "1997": 2.1,
+        "1998": 1.3,
+        "1999": 2.5,
+        "2000": 3.5,
+        "2001": 2.6,
+        "2002": 1.4,
+        "2003": 2.1,
+        "2004": 2.7,
+        "2005": 4.1,
+        "2006": 3.3,
+        "2007": 2.3,
+        "2008": 5.8,
+        "2009": 0.0,
+        "2010": 0.0,
+        "2011": 3.6,
+        "2012": 1.7,
+        "2013": 1.5,
+        "2014": 1.7,
+        "2015": 0.0,
+        "2016": 0.3,
+        "2017": 2.0,
+        "2018": 2.8,
+        "2019": 1.6,
+        "2020": 1.3,
+        "2021": 5.9,
+        "2022": 8.7,
+        "2023": 3.2,
+        "2024": 2.5,
+        "2025": 2.8,
+        "2026": 3.6
+      },
+      "history_note": "Key = year the COLA was determined (effective December of that year, first paid the following January; pre-1983 COLAs were effective June/July). Values in percent."
+    },
+    "pia_formula": {
+      "factors": [
+        0.9,
+        0.32,
+        0.15
+      ],
+      "bend_points_year_of_eligibility_2026": [
+        1286,
+        7749
+      ],
+      "bend_points_year_of_eligibility_2027": [
+        1340,
+        8077
+      ],
+      "rule": "PIA = 90% of AIME up to bend1 + 32% of AIME between bend1 and bend2 + 15% of AIME above bend2, using the bend points for the year the worker turns 62 (or dies/becomes disabled); round down to next lower $0.10. Then apply every COLA from the year of eligibility (age 62) onward.",
+      "bend_point_derivation": "bend_Y = round(base_1979 * AWI[Y-2] / AWI[1977]) with base_1979 = [180, 1085], AWI[1977] = 9779.44",
+      "indexing": "awi",
+      "bend_points_by_eligibility_year": {
+        "1979": [
+          180,
+          1085
+        ],
+        "1980": [
+          194,
+          1171
+        ],
+        "1981": [
+          211,
+          1274
+        ],
+        "1982": [
+          230,
+          1388
+        ],
+        "1983": [
+          254,
+          1528
+        ],
+        "1984": [
+          267,
+          1612
+        ],
+        "1985": [
+          280,
+          1691
+        ],
+        "1986": [
+          297,
+          1790
+        ],
+        "1987": [
+          310,
+          1866
+        ],
+        "1988": [
+          319,
+          1922
+        ],
+        "1989": [
+          339,
+          2044
+        ],
+        "1990": [
+          356,
+          2145
+        ],
+        "1991": [
+          370,
+          2230
+        ],
+        "1992": [
+          387,
+          2333
+        ],
+        "1993": [
+          401,
+          2420
+        ],
+        "1994": [
+          422,
+          2545
+        ],
+        "1995": [
+          426,
+          2567
+        ],
+        "1996": [
+          437,
+          2635
+        ],
+        "1997": [
+          455,
+          2741
+        ],
+        "1998": [
+          477,
+          2875
+        ],
+        "1999": [
+          505,
+          3043
+        ],
+        "2000": [
+          531,
+          3202
+        ],
+        "2001": [
+          561,
+          3381
+        ],
+        "2002": [
+          592,
+          3567
+        ],
+        "2003": [
+          606,
+          3653
+        ],
+        "2004": [
+          612,
+          3689
+        ],
+        "2005": [
+          627,
+          3779
+        ],
+        "2006": [
+          656,
+          3955
+        ],
+        "2007": [
+          680,
+          4100
+        ],
+        "2008": [
+          711,
+          4288
+        ],
+        "2009": [
+          744,
+          4483
+        ],
+        "2010": [
+          761,
+          4586
+        ],
+        "2011": [
+          749,
+          4517
+        ],
+        "2012": [
+          767,
+          4624
+        ],
+        "2013": [
+          791,
+          4768
+        ],
+        "2014": [
+          816,
+          4917
+        ],
+        "2015": [
+          826,
+          4980
+        ],
+        "2016": [
+          856,
+          5157
+        ],
+        "2017": [
+          885,
+          5336
+        ],
+        "2018": [
+          895,
+          5397
+        ],
+        "2019": [
+          926,
+          5583
+        ],
+        "2020": [
+          960,
+          5785
+        ],
+        "2021": [
+          996,
+          6002
+        ],
+        "2022": [
+          1024,
+          6172
+        ],
+        "2023": [
+          1115,
+          6721
+        ],
+        "2024": [
+          1174,
+          7078
+        ],
+        "2025": [
+          1226,
+          7391
+        ],
+        "2026": [
+          1286,
+          7749
+        ],
+        "2027": [
+          1340,
+          8077
+        ]
+      },
+      "family_maximum_bend_points_by_eligibility_year": {
+        "1979": [
+          230,
+          332,
+          433
+        ],
+        "1980": [
+          248,
+          358,
+          467
+        ],
+        "1981": [
+          270,
+          390,
+          508
+        ],
+        "1982": [
+          294,
+          425,
+          554
+        ],
+        "1983": [
+          324,
+          468,
+          610
+        ],
+        "1984": [
+          342,
+          493,
+          643
+        ],
+        "1985": [
+          358,
+          517,
+          675
+        ],
+        "1986": [
+          379,
+          548,
+          714
+        ],
+        "1987": [
+          396,
+          571,
+          745
+        ],
+        "1988": [
+          407,
+          588,
+          767
+        ],
+        "1989": [
+          433,
+          626,
+          816
+        ],
+        "1990": [
+          455,
+          656,
+          856
+        ],
+        "1991": [
+          473,
+          682,
+          890
+        ],
+        "1992": [
+          495,
+          714,
+          931
+        ],
+        "1993": [
+          513,
+          740,
+          966
+        ],
+        "1994": [
+          539,
+          779,
+          1016
+        ],
+        "1995": [
+          544,
+          785,
+          1024
+        ],
+        "1996": [
+          559,
+          806,
+          1052
+        ],
+        "1997": [
+          581,
+          839,
+          1094
+        ],
+        "1998": [
+          609,
+          880,
+          1147
+        ],
+        "1999": [
+          645,
+          931,
+          1214
+        ],
+        "2000": [
+          679,
+          980,
+          1278
+        ],
+        "2001": [
+          717,
+          1034,
+          1349
+        ],
+        "2002": [
+          756,
+          1092,
+          1424
+        ],
+        "2003": [
+          774,
+          1118,
+          1458
+        ],
+        "2004": [
+          782,
+          1129,
+          1472
+        ],
+        "2005": [
+          801,
+          1156,
+          1508
+        ],
+        "2006": [
+          838,
+          1210,
+          1578
+        ],
+        "2007": [
+          869,
+          1255,
+          1636
+        ],
+        "2008": [
+          909,
+          1312,
+          1711
+        ],
+        "2009": [
+          950,
+          1372,
+          1789
+        ],
+        "2010": [
+          972,
+          1403,
+          1830
+        ],
+        "2011": [
+          957,
+          1382,
+          1803
+        ],
+        "2012": [
+          980,
+          1415,
+          1845
+        ],
+        "2013": [
+          1011,
+          1459,
+          1903
+        ],
+        "2014": [
+          1042,
+          1505,
+          1962
+        ],
+        "2015": [
+          1056,
+          1524,
+          1987
+        ],
+        "2016": [
+          1093,
+          1578,
+          2058
+        ],
+        "2017": [
+          1131,
+          1633,
+          2130
+        ],
+        "2018": [
+          1144,
+          1651,
+          2154
+        ],
+        "2019": [
+          1184,
+          1708,
+          2228
+        ],
+        "2020": [
+          1226,
+          1770,
+          2309
+        ],
+        "2021": [
+          1272,
+          1837,
+          2395
+        ],
+        "2022": [
+          1308,
+          1889,
+          2463
+        ],
+        "2023": [
+          1425,
+          2056,
+          2682
+        ],
+        "2024": [
+          1500,
+          2166,
+          2825
+        ],
+        "2025": [
+          1567,
+          2262,
+          2950
+        ],
+        "2026": [
+          1643,
+          2371,
+          3093
+        ],
+        "2027": [
+          1712,
+          2471,
+          3223
+        ]
+      },
+      "family_maximum_factors": [
+        1.5,
+        2.72,
+        1.34,
+        1.75
+      ],
+      "family_maximum_factors_note": "Factors 150/272/134/175% and the 2027 bend points confirmed against SSA 'Formula for Family Maximum Benefit' (source ssa_family_max); total rounded down to the next lower $0.10."
+    },
+    "aime": {
+      "rule": "Index each year's capped earnings to AWI of the year the worker turns 60: indexed = min(earnings, wage_base[y]) * AWI[year_turn_60] / AWI[y]; earnings at age 60 and later taken at face value. Take the highest 35 years (zeros included), sum, divide by 420, round down to whole dollar.",
+      "computation_years": 35,
+      "months": 420,
+      "indexing_year_offset_from_eligibility": -2,
+      "credits_needed": 40,
+      "max_credits_per_year": 4
+    },
+    "average_wage_index": {
+      "unit": "USD",
+      "first_year": 1951,
+      "last_year": 2025,
+      "latest": {
+        "year": 2025,
+        "value": 72800.33,
+        "growth_over_prior_year": 0.0423
+      },
+      "series": {
+        "1951": 2799.16,
+        "1952": 2973.32,
+        "1953": 3139.44,
+        "1954": 3155.64,
+        "1955": 3301.44,
+        "1956": 3532.36,
+        "1957": 3641.72,
+        "1958": 3673.8,
+        "1959": 3855.8,
+        "1960": 4007.12,
+        "1961": 4086.76,
+        "1962": 4291.4,
+        "1963": 4396.64,
+        "1964": 4576.32,
+        "1965": 4658.72,
+        "1966": 4938.36,
+        "1967": 5213.44,
+        "1968": 5571.76,
+        "1969": 5893.76,
+        "1970": 6186.24,
+        "1971": 6497.08,
+        "1972": 7133.8,
+        "1973": 7580.16,
+        "1974": 8030.76,
+        "1975": 8630.92,
+        "1976": 9226.48,
+        "1977": 9779.44,
+        "1978": 10556.03,
+        "1979": 11479.46,
+        "1980": 12513.46,
+        "1981": 13773.1,
+        "1982": 14531.34,
+        "1983": 15239.24,
+        "1984": 16135.07,
+        "1985": 16822.51,
+        "1986": 17321.82,
+        "1987": 18426.51,
+        "1988": 19334.04,
+        "1989": 20099.55,
+        "1990": 21027.98,
+        "1991": 21811.6,
+        "1992": 22935.42,
+        "1993": 23132.67,
+        "1994": 23753.53,
+        "1995": 24705.66,
+        "1996": 25913.9,
+        "1997": 27426.0,
+        "1998": 28861.44,
+        "1999": 30469.84,
+        "2000": 32154.82,
+        "2001": 32921.92,
+        "2002": 33252.09,
+        "2003": 34064.95,
+        "2004": 35648.55,
+        "2005": 36952.94,
+        "2006": 38651.41,
+        "2007": 40405.48,
+        "2008": 41334.97,
+        "2009": 40711.61,
+        "2010": 41673.83,
+        "2011": 42979.61,
+        "2012": 44321.67,
+        "2013": 44888.16,
+        "2014": 46481.52,
+        "2015": 48098.63,
+        "2016": 48642.15,
+        "2017": 50321.89,
+        "2018": 52145.8,
+        "2019": 54099.99,
+        "2020": 55628.6,
+        "2021": 60575.07,
+        "2022": 63795.13,
+        "2023": 66621.8,
+        "2024": 69846.57,
+        "2025": 72800.33
+      }
+    },
+    "maximum_taxable_earnings": {
+      "unit": "USD",
+      "indexing": "awi",
+      "series": {
+        "1937": 3000,
+        "1938": 3000,
+        "1939": 3000,
+        "1940": 3000,
+        "1941": 3000,
+        "1942": 3000,
+        "1943": 3000,
+        "1944": 3000,
+        "1945": 3000,
+        "1946": 3000,
+        "1947": 3000,
+        "1948": 3000,
+        "1949": 3000,
+        "1950": 3000,
+        "1951": 3600,
+        "1952": 3600,
+        "1953": 3600,
+        "1954": 3600,
+        "1955": 4200,
+        "1956": 4200,
+        "1957": 4200,
+        "1958": 4200,
+        "1959": 4800,
+        "1960": 4800,
+        "1961": 4800,
+        "1962": 4800,
+        "1963": 4800,
+        "1964": 4800,
+        "1965": 4800,
+        "1966": 6600,
+        "1967": 6600,
+        "1968": 7800,
+        "1969": 7800,
+        "1970": 7800,
+        "1971": 7800,
+        "1972": 9000,
+        "1973": 10800,
+        "1974": 13200,
+        "1975": 14100,
+        "1976": 15300,
+        "1977": 16500,
+        "1978": 17700,
+        "1979": 22900,
+        "1980": 25900,
+        "1981": 29700,
+        "1982": 32400,
+        "1983": 35700,
+        "1984": 37800,
+        "1985": 39600,
+        "1986": 42000,
+        "1987": 43800,
+        "1988": 45000,
+        "1989": 48000,
+        "1990": 51300,
+        "1991": 53400,
+        "1992": 55500,
+        "1993": 57600,
+        "1994": 60600,
+        "1995": 61200,
+        "1996": 62700,
+        "1997": 65400,
+        "1998": 68400,
+        "1999": 72600,
+        "2000": 76200,
+        "2001": 80400,
+        "2002": 84900,
+        "2003": 87000,
+        "2004": 87900,
+        "2005": 90000,
+        "2006": 94200,
+        "2007": 97500,
+        "2008": 102000,
+        "2009": 106800,
+        "2010": 106800,
+        "2011": 106800,
+        "2012": 110100,
+        "2013": 113700,
+        "2014": 117000,
+        "2015": 118500,
+        "2016": 118500,
+        "2017": 127200,
+        "2018": 128400,
+        "2019": 132900,
+        "2020": 137700,
+        "2021": 142800,
+        "2022": 147000,
+        "2023": 160200,
+        "2024": 168600,
+        "2025": 176100,
+        "2026": 184500,
+        "2027": 192300
+      },
+      "note": "OASDI contribution and benefit base 1937-2027. Amounts for 1937-1974 and 1979-1981 were set by statute."
+    },
+    "full_retirement_age": {
+      "table": [
+        {
+          "birth_year_from": null,
+          "birth_year_to": 1937,
+          "fra_months": 780
+        },
+        {
+          "birth_year_from": 1938,
+          "birth_year_to": 1938,
+          "fra_months": 782
+        },
+        {
+          "birth_year_from": 1939,
+          "birth_year_to": 1939,
+          "fra_months": 784
+        },
+        {
+          "birth_year_from": 1940,
+          "birth_year_to": 1940,
+          "fra_months": 786
+        },
+        {
+          "birth_year_from": 1941,
+          "birth_year_to": 1941,
+          "fra_months": 788
+        },
+        {
+          "birth_year_from": 1942,
+          "birth_year_to": 1942,
+          "fra_months": 790
+        },
+        {
+          "birth_year_from": 1943,
+          "birth_year_to": 1954,
+          "fra_months": 792
+        },
+        {
+          "birth_year_from": 1955,
+          "birth_year_to": 1955,
+          "fra_months": 794
+        },
+        {
+          "birth_year_from": 1956,
+          "birth_year_to": 1956,
+          "fra_months": 796
+        },
+        {
+          "birth_year_from": 1957,
+          "birth_year_to": 1957,
+          "fra_months": 798
+        },
+        {
+          "birth_year_from": 1958,
+          "birth_year_to": 1958,
+          "fra_months": 800
+        },
+        {
+          "birth_year_from": 1959,
+          "birth_year_to": 1959,
+          "fra_months": 802
+        },
+        {
+          "birth_year_from": 1960,
+          "birth_year_to": null,
+          "fra_months": 804
+        }
+      ],
+      "note": "fra_months = FRA in months (792 = 66y0m, 804 = 67y0m). People born on Jan 1 use the prior year. For survivor (widow/er) benefits add 2 to the birth year thresholds.",
+      "indexing": "none"
+    },
+    "early_retirement_reduction": {
+      "earliest_age": 62,
+      "per_month_first_36": 0.0055555556,
+      "per_month_first_36_fraction": "5/9 of 1%",
+      "per_month_beyond_36": 0.0041666667,
+      "per_month_beyond_36_fraction": "5/12 of 1%",
+      "max_reduction_fra_67_at_62": 0.3
+    },
+    "delayed_retirement_credit": {
+      "per_year": 0.08,
+      "per_month": 0.0066666667,
+      "per_month_fraction": "2/3 of 1%",
+      "applies_to_birth_year_from": 1943,
+      "max_age": 70,
+      "note": "No credit after age 70. Credits earned during a year are applied the following January (or at 70)."
+    },
+    "claiming_factor_examples_fra_67": {
+      "62": 0.7,
+      "63": 0.75,
+      "64": 0.8,
+      "65": 0.8667,
+      "66": 0.9333,
+      "67": 1.0,
+      "68": 1.08,
+      "69": 1.16,
+      "70": 1.24
+    },
+    "earnings_test": {
+      "2026": {
+        "exempt_under_fra_annual": 24480,
+        "exempt_year_of_fra_annual": 65160
+      },
+      "2027": {
+        "exempt_under_fra_annual": 25560,
+        "exempt_year_of_fra_annual": 67920
+      },
+      "withhold_per_dollar_over_under_fra": 0.5,
+      "withhold_per_dollar_over_year_of_fra": 0.3333333333,
+      "note": "Applies only before FRA; year-of-FRA threshold counts only earnings in months before FRA. Withheld benefits are restored via recomputation at FRA (not lost).",
+      "indexing": "awi",
+      "history": {
+        "2000": {
+          "under_fra": 10080,
+          "year_of_fra": 17000
+        },
+        "2001": {
+          "under_fra": 10680,
+          "year_of_fra": 25000
+        },
+        "2002": {
+          "under_fra": 11280,
+          "year_of_fra": 30000
+        },
+        "2003": {
+          "under_fra": 11520,
+          "year_of_fra": 30720
+        },
+        "2004": {
+          "under_fra": 11640,
+          "year_of_fra": 31080
+        },
+        "2005": {
+          "under_fra": 12000,
+          "year_of_fra": 31800
+        },
+        "2006": {
+          "under_fra": 12480,
+          "year_of_fra": 33240
+        },
+        "2007": {
+          "under_fra": 12960,
+          "year_of_fra": 34440
+        },
+        "2008": {
+          "under_fra": 13560,
+          "year_of_fra": 36120
+        },
+        "2009": {
+          "under_fra": 14160,
+          "year_of_fra": 37680
+        },
+        "2010": {
+          "under_fra": 14160,
+          "year_of_fra": 37680
+        },
+        "2011": {
+          "under_fra": 14160,
+          "year_of_fra": 37680
+        },
+        "2012": {
+          "under_fra": 14640,
+          "year_of_fra": 38880
+        },
+        "2013": {
+          "under_fra": 15120,
+          "year_of_fra": 40080
+        },
+        "2014": {
+          "under_fra": 15480,
+          "year_of_fra": 41400
+        },
+        "2015": {
+          "under_fra": 15720,
+          "year_of_fra": 41880
+        },
+        "2016": {
+          "under_fra": 15720,
+          "year_of_fra": 41880
+        },
+        "2017": {
+          "under_fra": 16920,
+          "year_of_fra": 44880
+        },
+        "2018": {
+          "under_fra": 17040,
+          "year_of_fra": 45360
+        },
+        "2019": {
+          "under_fra": 17640,
+          "year_of_fra": 46920
+        },
+        "2020": {
+          "under_fra": 18240,
+          "year_of_fra": 48600
+        },
+        "2021": {
+          "under_fra": 18960,
+          "year_of_fra": 50520
+        },
+        "2022": {
+          "under_fra": 19560,
+          "year_of_fra": 51960
+        },
+        "2023": {
+          "under_fra": 21240,
+          "year_of_fra": 56520
+        },
+        "2024": {
+          "under_fra": 22320,
+          "year_of_fra": 59520
+        },
+        "2025": {
+          "under_fra": 23400,
+          "year_of_fra": 62160
+        },
+        "2026": {
+          "under_fra": 24480,
+          "year_of_fra": 65160
+        },
+        "2027": {
+          "under_fra": 25560,
+          "year_of_fra": 67920
+        }
+      }
+    },
+    "benefit_taxation": {
+      "source": [
+        "usc_86",
+        "ssa_benefit_taxes"
+      ],
+      "provisional_income": "AGI excluding Social Security + tax-exempt interest + 50% of Social Security benefits",
+      "base_amount": {
+        "single": 25000,
+        "head_of_household": 25000,
+        "married_joint": 32000,
+        "married_separate_living_together": 0
+      },
+      "adjusted_base_amount": {
+        "single": 34000,
+        "head_of_household": 34000,
+        "married_joint": 44000,
+        "married_separate_living_together": 0
+      },
+      "formula": "taxable = min(0.85*benefits, 0.85*max(0, PI - adjusted_base) + min(0.5*benefits, 0.5*(adjusted_base - base), 0.5*max(0, PI - base)))",
+      "max_taxable_fraction": 0.85,
+      "indexing": "none"
+    },
+    "spousal_benefit": {
+      "max_fraction_of_worker_pia": 0.5,
+      "at": "spouse's FRA",
+      "earliest_age": 62,
+      "reduction_per_month_first_36": 0.0069444444,
+      "reduction_per_month_first_36_fraction": "25/36 of 1%",
+      "reduction_per_month_beyond_36": 0.0041666667,
+      "min_fraction_at_62_with_fra_67": 0.325,
+      "delayed_credits": false,
+      "rule": "Spouse receives the greater of own retirement benefit or (own benefit + excess spousal top-up up to 50% of worker's PIA); worker must have filed. Deemed filing applies (cannot claim one and defer the other). No increase for claiming after FRA."
+    },
+    "survivor_benefit": {
+      "fraction_of_deceased_benefit_at_survivor_fra": 1.0,
+      "earliest_age": 60,
+      "fraction_at_60": 0.715,
+      "rule": "Surviving spouse (married 9+ months) gets up to 100% of the deceased's benefit (including delayed credits) at survivor FRA, scaling linearly from 71.5% at age 60; survivor effectively keeps the larger of the two benefits. May claim survivor benefit and switch to own retirement benefit later (or vice versa).",
+      "child_or_parent_with_child_under_16_fraction": 0.75,
+      "widows_limit_floor_fraction_of_pia": 0.825,
+      "widows_limit_note": "If the deceased claimed early, survivor at FRA gets the larger of the deceased's reduced benefit or 82.5% of the deceased's PIA (figure recalled, not re-fetched).",
+      "lump_sum_death_payment": 255
+    },
+    "max_benefit_at_fra_monthly": {
+      "2026": 4152,
+      "2027": 4188
+    },
+    "average_retired_worker_benefit_monthly": {
+      "2026_jan": 2071,
+      "2027_jan": 2170
+    },
+    "trust_fund": {
+      "source": "ssa_trustees_2026",
+      "report_year": 2026,
+      "oasi_depletion": "2032-Q4",
+      "oasi_depletion_year": 2032,
+      "oasi_payable_fraction_after_depletion": 0.78,
+      "combined_oasdi_depletion": "2034-Q3",
+      "combined_oasdi_depletion_year": 2034,
+      "combined_oasdi_payable_fraction_after_depletion": 0.83,
+      "combined_oasdi_payable_fraction_2100": 0.65,
+      "medicare_hi_depletion": "2033-Q2",
+      "medicare_hi_payable_fraction_after_depletion": 0.89,
+      "oasi_payable_fraction_2100": 0.62,
+      "note": "Retirement benefits are paid from OASI (78% payable from Q4 2032 under current law); the combined OASDI figure (83% from 2034) is hypothetical because the funds cannot be merged without legislation. OASI payable share declines from 78% at depletion to 62% by 2100 (2026 Trustees summary, Table 8)."
+    }
+  },
+  "medicare": {
+    "source": "cms_2026_parts_ab",
+    "eligibility_age": 65,
+    "part_a": {
+      "premium_with_40_quarters": 0,
+      "inpatient_deductible": 1736,
+      "premium_30_to_39_quarters_monthly": 311,
+      "premium_under_30_quarters_monthly": 565
+    },
+    "part_b": {
+      "standard_premium_monthly": 202.9,
+      "annual_deductible": 283,
+      "coinsurance": 0.2,
+      "indexing": "program_cost"
+    },
+    "part_d": {
+      "source": "cms_2026_part_d",
+      "base_beneficiary_premium_monthly": 38.99,
+      "indexing": "program_cost",
+      "note": "National base beneficiary premium; actual plan premiums vary. Annual increase capped at 6% through 2029 (IRA)."
+    },
+    "irmaa": {
+      "lookback_years": 2,
+      "lookback_note": "2026 premiums use MAGI from the 2024 tax return (AGI + tax-exempt interest).",
+      "magi_definition": "AGI + tax-exempt interest",
+      "per_person": true,
+      "cliff_based": true,
+      "indexing": {
+        "tiers_1_to_4_thresholds": "cpi_u",
+        "top_tier_threshold": "none (frozen at $500,000/$750,000 through 2027; indexed from 2028 - recalled, not re-fetched)",
+        "surcharges": "program_cost. The TOTAL Part B premium in the five IRMAA tiers is about 1.4x, 2.0x, 2.6x, 3.2x, 3.4x the standard premium (beneficiary pays 35/50/65/80/85% of cost instead of 25%), so the SURCHARGE stored in part_b_surcharge_monthly is about 0.4x, 1.0x, 1.6x, 2.2x, 2.4x the standard premium (2026: 81.20/202.90 = 0.4). Part D surcharges scale with the Part D base beneficiary premium."
+      },
+      "single": [
+        {
+          "magi_over": 0,
+          "magi_up_to": 109000,
+          "part_b_surcharge_monthly": 0.0,
+          "part_d_surcharge_monthly": 0.0
+        },
+        {
+          "magi_over": 109000,
+          "magi_up_to": 137000,
+          "part_b_surcharge_monthly": 81.2,
+          "part_d_surcharge_monthly": 14.5
+        },
+        {
+          "magi_over": 137000,
+          "magi_up_to": 171000,
+          "part_b_surcharge_monthly": 202.9,
+          "part_d_surcharge_monthly": 37.5
+        },
+        {
+          "magi_over": 171000,
+          "magi_up_to": 205000,
+          "part_b_surcharge_monthly": 324.6,
+          "part_d_surcharge_monthly": 60.4
+        },
+        {
+          "magi_over": 205000,
+          "magi_up_to": 500000,
+          "part_b_surcharge_monthly": 446.3,
+          "part_d_surcharge_monthly": 83.3
+        },
+        {
+          "magi_over": 500000,
+          "magi_up_to": null,
+          "part_b_surcharge_monthly": 487.0,
+          "part_d_surcharge_monthly": 91.0
+        }
+      ],
+      "head_of_household": "same as single",
+      "married_joint": [
+        {
+          "magi_over": 0,
+          "magi_up_to": 218000,
+          "part_b_surcharge_monthly": 0.0,
+          "part_d_surcharge_monthly": 0.0
+        },
+        {
+          "magi_over": 218000,
+          "magi_up_to": 274000,
+          "part_b_surcharge_monthly": 81.2,
+          "part_d_surcharge_monthly": 14.5
+        },
+        {
+          "magi_over": 274000,
+          "magi_up_to": 342000,
+          "part_b_surcharge_monthly": 202.9,
+          "part_d_surcharge_monthly": 37.5
+        },
+        {
+          "magi_over": 342000,
+          "magi_up_to": 410000,
+          "part_b_surcharge_monthly": 324.6,
+          "part_d_surcharge_monthly": 60.4
+        },
+        {
+          "magi_over": 410000,
+          "magi_up_to": 750000,
+          "part_b_surcharge_monthly": 446.3,
+          "part_d_surcharge_monthly": 83.3
+        },
+        {
+          "magi_over": 750000,
+          "magi_up_to": null,
+          "part_b_surcharge_monthly": 487.0,
+          "part_d_surcharge_monthly": 91.0
+        }
+      ],
+      "married_separate_lived_together": [
+        {
+          "magi_over": 0,
+          "magi_up_to": 109000,
+          "part_b_surcharge_monthly": 0.0,
+          "part_d_surcharge_monthly": 0.0
+        },
+        {
+          "magi_over": 109000,
+          "magi_up_to": 391000,
+          "part_b_surcharge_monthly": 446.3,
+          "part_d_surcharge_monthly": 83.3
+        },
+        {
+          "magi_over": 391000,
+          "magi_up_to": null,
+          "part_b_surcharge_monthly": 487.0,
+          "part_d_surcharge_monthly": 91.0
+        }
+      ],
+      "tier_boundary_note": "magi_over is exclusive, magi_up_to inclusive for tiers 1-4 ('greater than X and less than or equal to Y'); the top tier starts AT (>=) $500,000/$750,000, and for married_separate_lived_together AT (>=) the last magi_over ($391,000 in 2026, $388,000 in 2027), i.e. the preceding tier's magi_up_to is exclusive in those cases."
+    }
+  },
+  "aca": {
+    "source": [
+      "irs_rp_2025_25",
+      "hhs_poverty_2026",
+      "hhs_poverty_prior",
+      "kff_benchmark",
+      "cms_age_curve",
+      "healthcare_gov_oop",
+      "kff_2027_oep",
+      "healthcare_gov_ptc"
+    ],
+    "enhanced_subsidies_status": {
+      "enhanced_ptc_in_effect_2026": false,
+      "cliff_at_400_pct_fpl_applies_2026": true,
+      "cliff_at_400_pct_fpl_applies_2027": true,
+      "finding": "The ARPA/IRA enhanced premium tax credits expired on 2025-12-31 and were NOT extended. For 2026 and 2027 coverage the original ACA schedule applies: credits only for household income from 100% to 400% of FPL, with no credit at all above 400% (the 'subsidy cliff').",
+      "as_of": "2026-11-17"
+    },
+    "premium_tax_credit": {
+      "eligibility_min_pct_fpl": 1.0,
+      "eligibility_max_pct_fpl": 4.0,
+      "medicaid_expansion_threshold_pct_fpl": 1.38,
+      "formula": "PTC = max(0, benchmark SLCSP premium for the household - applicable_percentage * household MAGI). Within each band the percentage rises linearly from initial to final as income rises across the band.",
+      "magi_definition": "AGI + tax-exempt interest + non-taxable Social Security + excluded foreign income",
+      "fpl_year_used": "Coverage year Y uses the HHS poverty guidelines published in year Y-1 (2026 coverage -> 2025 guidelines; 2027 coverage -> 2026 guidelines).",
+      "applicable_percentage_table_2026": [
+        {
+          "fpl_from": 0.0,
+          "fpl_to": 1.33,
+          "initial": 0.021,
+          "final": 0.021
+        },
+        {
+          "fpl_from": 1.33,
+          "fpl_to": 1.5,
+          "initial": 0.0314,
+          "final": 0.0419
+        },
+        {
+          "fpl_from": 1.5,
+          "fpl_to": 2.0,
+          "initial": 0.0419,
+          "final": 0.066
+        },
+        {
+          "fpl_from": 2.0,
+          "fpl_to": 2.5,
+          "initial": 0.066,
+          "final": 0.0844
+        },
+        {
+          "fpl_from": 2.5,
+          "fpl_to": 3.0,
+          "initial": 0.0844,
+          "final": 0.0996
+        },
+        {
+          "fpl_from": 3.0,
+          "fpl_to": 4.0,
+          "initial": 0.0996,
+          "final": 0.0996
+        }
+      ],
+      "above_400_pct_fpl": "no credit (applicable percentage undefined; household pays full premium)",
+      "employer_coverage_affordability_threshold_2026": 0.0996,
+      "excess_advance_ptc_repayment_cap": "none from tax year 2026 (OBBBA sec. 71305 repealed the repayment limits: all excess advance credit must be repaid)",
+      "indexing": "premium_vs_income_growth"
+    },
+    "federal_poverty_guidelines": {
+      "indexing": "cpi_u",
+      "region": "48 contiguous states and DC",
+      "2025": {
+        "first_person": 15650,
+        "each_additional": 5500,
+        "by_household_size": {
+          "1": 15650,
+          "2": 21150,
+          "3": 26650,
+          "4": 32150,
+          "5": 37650,
+          "6": 43150,
+          "7": 48650,
+          "8": 54150
+        },
+        "used_for_coverage_year": 2026
+      },
+      "2026": {
+        "first_person": 15960,
+        "each_additional": 5680,
+        "by_household_size": {
+          "1": 15960,
+          "2": 21640,
+          "3": 27320,
+          "4": 33000,
+          "5": 38680,
+          "6": 44360,
+          "7": 50040,
+          "8": 55720
+        },
+        "used_for_coverage_year": 2027
+      },
+      "alaska_2026": {
+        "first_person": 19950,
+        "each_additional": 7100
+      },
+      "hawaii_2026": {
+        "first_person": 18360,
+        "each_additional": 6530
+      },
+      "alaska_2025": {
+        "first_person": 19550,
+        "each_additional": 6880,
+        "used_for_coverage_year": 2026
+      },
+      "hawaii_2025": {
+        "first_person": 17990,
+        "each_additional": 6330,
+        "used_for_coverage_year": 2026
+      },
+      "alaska_hawaii_note": "alaska_2026/hawaii_2026 apply to 2027 coverage; 2026 coverage uses alaska_2025/hawaii_2025 (ASPE poverty guidelines API, fetched 2026-11-17).",
+      "alaska_hawaii_source": "aspe_poverty_api"
+    },
+    "benchmark_premium": {
+      "source": "kff_benchmark",
+      "definition": "National average second-lowest-cost silver plan monthly premium for a 40-year-old, weighted by county plan selections (before subsidy)",
+      "monthly_age_40": {
+        "2025": 497,
+        "2026": 625,
+        "2027": 703
+      },
+      "implied_age_21_base_2026": 489.05,
+      "indexing": "market",
+      "note": "Scale to other ages with age_rating_curve: premium(age) = monthly_age_40 * factor(age) / factor(40). Varies widely by state and rating area."
+    },
+    "age_rating_curve": {
+      "source": "cms_age_curve",
+      "description": "Federal default standard age curve (in effect since plan year 2018), premium ratio relative to age 21 = 1.000; 3:1 max adult ratio. Ages 0-14 share one band; 64 means 64 and older. AL, DC, MA, MN, MS, NJ(small group), NY, OR, UT, VT use state curves or community rating.",
+      "factor_by_age": {
+        "0": 0.765,
+        "1": 0.765,
+        "2": 0.765,
+        "3": 0.765,
+        "4": 0.765,
+        "5": 0.765,
+        "6": 0.765,
+        "7": 0.765,
+        "8": 0.765,
+        "9": 0.765,
+        "10": 0.765,
+        "11": 0.765,
+        "12": 0.765,
+        "13": 0.765,
+        "14": 0.765,
+        "15": 0.833,
+        "16": 0.859,
+        "17": 0.885,
+        "18": 0.913,
+        "19": 0.941,
+        "20": 0.97,
+        "21": 1.0,
+        "22": 1.0,
+        "23": 1.0,
+        "24": 1.0,
+        "25": 1.004,
+        "26": 1.024,
+        "27": 1.048,
+        "28": 1.087,
+        "29": 1.119,
+        "30": 1.135,
+        "31": 1.159,
+        "32": 1.183,
+        "33": 1.198,
+        "34": 1.214,
+        "35": 1.222,
+        "36": 1.23,
+        "37": 1.238,
+        "38": 1.246,
+        "39": 1.262,
+        "40": 1.278,
+        "41": 1.302,
+        "42": 1.325,
+        "43": 1.357,
+        "44": 1.397,
+        "45": 1.444,
+        "46": 1.5,
+        "47": 1.563,
+        "48": 1.635,
+        "49": 1.706,
+        "50": 1.786,
+        "51": 1.865,
+        "52": 1.952,
+        "53": 2.04,
+        "54": 2.135,
+        "55": 2.23,
+        "56": 2.333,
+        "57": 2.437,
+        "58": 2.548,
+        "59": 2.603,
+        "60": 2.714,
+        "61": 2.81,
+        "62": 2.873,
+        "63": 2.952,
+        "64": 3.0
+      },
+      "child_rating_note": "Only the three oldest covered children under 21 are charged.",
+      "indexing": "none"
+    },
+    "cost_sharing": {
+      "out_of_pocket_maximum": {
+        "2026": {
+          "self_only": 10600,
+          "family": 21200
+        },
+        "2027": {
+          "self_only": 12000,
+          "family": 24000
+        },
+        "indexing": "market (premium adjustment percentage)"
+      },
+      "average_deductible_2026": {
+        "source": "kff_deductibles_2026",
+        "bronze": 7476,
+        "silver_no_csr": 5304,
+        "silver_csr_up_to_150_fpl": 80,
+        "gold": 1722,
+        "all_plans_enrollment_weighted": 3786,
+        "scope": "HealthCare.gov plans, individual, combined medical+drug deductible",
+        "indexing": "market"
+      },
+      "csr_eligibility_max_pct_fpl": 2.5,
+      "actuarial_value": {
+        "bronze": 0.6,
+        "silver": 0.7,
+        "gold": 0.8,
+        "platinum": 0.9
+      }
+    }
+  },
+  "capital_gains_and_property": {
+    "home_sale_exclusion": {
+      "source": "irs_tc701",
+      "single": 250000,
+      "head_of_household": 250000,
+      "married_joint": 500000,
+      "ownership_and_use_test": "owned and used as main home for 2 of the 5 years before sale; once every 2 years",
+      "indexing": "none"
+    },
+    "capital_loss_deduction_limit": {
+      "source": "irs_tc409",
+      "annual_limit_against_ordinary_income": 3000,
+      "married_separate": 1500,
+      "carryforward": "unlimited, indefinite",
+      "indexing": "none"
+    },
+    "step_up_in_basis_at_death": true,
+    "collectibles_max_rate": 0.28,
+    "unrecaptured_section_1250_max_rate": 0.25
+  },
+  "qualified_business_income_deduction": {
+    "source": [
+      "irs_rp_2025_32",
+      "obbba_pl_119_21"
+    ],
+    "rate": 0.2,
+    "permanent": true,
+    "taxable_income_threshold": {
+      "single": 201750,
+      "head_of_household": 201750,
+      "married_joint": 403500,
+      "married_separate": 201775
+    },
+    "phase_in_range_end": {
+      "single": 276750,
+      "head_of_household": 276750,
+      "married_joint": 553500,
+      "married_separate": 276775
+    },
+    "phase_in_width": {
+      "single": 75000,
+      "married_joint": 150000
+    },
+    "minimum_deduction": 400,
+    "minimum_qbi_for_minimum_deduction": 1000,
+    "rule": "Deduction = 20% of qualified business income (pass-through/sole-proprietor), limited to 20% of taxable income less net capital gain. Below the threshold no further limits; across the phase-in range the W-2 wage/property limits phase in and specified service trades (SSTB) phase out entirely.",
+    "indexing": {
+      "thresholds": "c_cpi_u",
+      "phase_in_width": "none",
+      "minimum_deduction": "c_cpi_u (from 2027)"
+    }
+  },
+  "estate_and_gift": {
+    "source": "irs_rp_2025_32",
+    "annual_gift_exclusion": 19000,
+    "basic_exclusion_amount": 15000000,
+    "basic_exclusion_note": "$15,000,000 per person for 2026 set by OBBBA sec. 70106 (Rev. Proc. 2025-32 sec. 2.14); indexed after 2026.",
+    "indexing": "c_cpi_u"
+  },
+  "long_term_care_premium_deduction_limits": {
+    "source": "irs_rp_2025_32",
+    "by_attained_age": [
+      {
+        "age_up_to": 40,
+        "limit": 500
+      },
+      {
+        "age_up_to": 50,
+        "limit": 930
+      },
+      {
+        "age_up_to": 60,
+        "limit": 1860
+      },
+      {
+        "age_up_to": 70,
+        "limit": 4960
+      },
+      {
+        "age_up_to": null,
+        "limit": 6200
+      }
+    ],
+    "indexing": "c_cpi_u (medical care component)"
+  },
+  "published_2027": {
+    "note": "Officially published tax/benefit-year 2027 values (as of 2026-11-17). Same structure/semantics as the 2026 blocks above.",
+    "income_tax": {
+      "source": "irs_rp_2026_35",
+      "standard_deduction": {
+        "single": 16600,
+        "married_joint": 33200,
+        "head_of_household": 24925,
+        "married_separate": 16600
+      },
+      "additional_standard_deduction_65_or_blind": {
+        "married_per_qualifying_person": 1700,
+        "unmarried_not_surviving_spouse": 2100
+      },
+      "dependent_standard_deduction": {
+        "minimum": 1400,
+        "earned_income_plus": 500
+      },
+      "ordinary_brackets": {
+        "single": [
+          {
+            "up_to": 12800,
+            "rate": 0.1
+          },
+          {
+            "up_to": 52025,
+            "rate": 0.12
+          },
+          {
+            "up_to": 109125,
+            "rate": 0.22
+          },
+          {
+            "up_to": 208325,
+            "rate": 0.24
+          },
+          {
+            "up_to": 264550,
+            "rate": 0.32
+          },
+          {
+            "up_to": 661375,
+            "rate": 0.35
+          },
+          {
+            "up_to": null,
+            "rate": 0.37
+          }
+        ],
+        "married_joint": [
+          {
+            "up_to": 25600,
+            "rate": 0.1
+          },
+          {
+            "up_to": 104050,
+            "rate": 0.12
+          },
+          {
+            "up_to": 218250,
+            "rate": 0.22
+          },
+          {
+            "up_to": 416650,
+            "rate": 0.24
+          },
+          {
+            "up_to": 529100,
+            "rate": 0.32
+          },
+          {
+            "up_to": 793650,
+            "rate": 0.35
+          },
+          {
+            "up_to": null,
+            "rate": 0.37
+          }
+        ],
+        "head_of_household": [
+          {
+            "up_to": 18250,
+            "rate": 0.1
+          },
+          {
+            "up_to": 69650,
+            "rate": 0.12
+          },
+          {
+            "up_to": 109100,
+            "rate": 0.22
+          },
+          {
+            "up_to": 208300,
+            "rate": 0.24
+          },
+          {
+            "up_to": 264550,
+            "rate": 0.32
+          },
+          {
+            "up_to": 661350,
+            "rate": 0.35
+          },
+          {
+            "up_to": null,
+            "rate": 0.37
+          }
+        ],
+        "married_separate": [
+          {
+            "up_to": 12800,
+            "rate": 0.1
+          },
+          {
+            "up_to": 52025,
+            "rate": 0.12
+          },
+          {
+            "up_to": 109125,
+            "rate": 0.22
+          },
+          {
+            "up_to": 208325,
+            "rate": 0.24
+          },
+          {
+            "up_to": 264550,
+            "rate": 0.32
+          },
+          {
+            "up_to": 396825,
+            "rate": 0.35
+          },
+          {
+            "up_to": null,
+            "rate": 0.37
+          }
+        ]
+      },
+      "long_term_capital_gains_brackets": {
+        "single": [
+          {
+            "up_to": 51050,
+            "rate": 0.0
+          },
+          {
+            "up_to": 563200,
+            "rate": 0.15
+          },
+          {
+            "up_to": null,
+            "rate": 0.2
+          }
+        ],
+        "married_joint": [
+          {
+            "up_to": 102100,
+            "rate": 0.0
+          },
+          {
+            "up_to": 633600,
+            "rate": 0.15
+          },
+          {
+            "up_to": null,
+            "rate": 0.2
+          }
+        ],
+        "head_of_household": [
+          {
+            "up_to": 68350,
+            "rate": 0.0
+          },
+          {
+            "up_to": 598400,
+            "rate": 0.15
+          },
+          {
+            "up_to": null,
+            "rate": 0.2
+          }
+        ],
+        "married_separate": [
+          {
+            "up_to": 51050,
+            "rate": 0.0
+          },
+          {
+            "up_to": 316800,
+            "rate": 0.15
+          },
+          {
+            "up_to": null,
+            "rate": 0.2
+          }
+        ]
+      },
+      "alternative_minimum_tax": {
+        "exemption": {
+          "single": 93000,
+          "married_joint": 144700,
+          "married_separate": 72350
+        },
+        "exemption_phaseout_start": {
+          "single": 515950,
+          "married_joint": 1031900,
+          "married_separate": 515950
+        },
+        "exemption_complete_phaseout": {
+          "single": 701950,
+          "married_joint": 1321300,
+          "married_separate": 660650
+        },
+        "rate_26_up_to_amti_excess": 252500
+      },
+      "kiddie_tax_unearned_income_threshold": 1400
+    },
+    "child_tax_credit": {
+      "source": "irs_rp_2026_35",
+      "amount_per_child": 2300,
+      "refundable_max_per_child": 1800
+    },
+    "qualified_business_income_deduction": {
+      "source": "irs_rp_2026_35",
+      "taxable_income_threshold": {
+        "single": 208300,
+        "head_of_household": 208300,
+        "married_joint": 416600,
+        "married_separate": 208325
+      },
+      "phase_in_range_end": {
+        "single": 283300,
+        "head_of_household": 283300,
+        "married_joint": 566600,
+        "married_separate": 283325
+      },
+      "minimum_deduction": 415,
+      "minimum_qbi_for_minimum_deduction": 1030
+    },
+    "salt_cap": {
+      "cap": 40804.0,
+      "phase_down_magi_threshold": 510050.0,
+      "computed": true
+    },
+    "fica": {
+      "source": "ssa_cola_facts_2027",
+      "oasdi_wage_base": 192300,
+      "quarter_of_coverage_earnings": 1970
+    },
+    "retirement_accounts": {
+      "source": "irs_notice_2026_66",
+      "elective_deferral_limit": 25500,
+      "catch_up_age_50_plus": 8500,
+      "super_catch_up_ages_60_to_63": 11750,
+      "total_annual_additions_415c": 75000,
+      "roth_catch_up_required_if_prior_year_fica_wages_over": 155000,
+      "ira_contribution_limit": 7500,
+      "ira_catch_up_age_50_plus": 1100,
+      "roth_ira_contribution_phase_out_magi": {
+        "single": {
+          "start": 158000,
+          "end": 173000
+        },
+        "head_of_household": {
+          "start": 158000,
+          "end": 173000
+        },
+        "married_joint": {
+          "start": 250000,
+          "end": 260000
+        },
+        "married_separate": {
+          "start": 0,
+          "end": 10000
+        }
+      },
+      "traditional_ira_deduction_phase_out_magi": {
+        "covered_by_workplace_plan": {
+          "single": {
+            "start": 83000,
+            "end": 93000
+          },
+          "head_of_household": {
+            "start": 83000,
+            "end": 93000
+          },
+          "married_joint": {
+            "start": 133000,
+            "end": 153000
+          },
+          "married_separate": {
+            "start": 0,
+            "end": 10000
+          }
+        },
+        "not_covered_but_spouse_covered": {
+          "married_joint": {
+            "start": 250000,
+            "end": 260000
+          }
+        }
+      },
+      "compensation_limit_401a17": 375000,
+      "highly_compensated_threshold": 170000,
+      "simple_ira": {
+        "deferral_limit": 17500,
+        "catch_up_age_50_plus": 4000,
+        "super_catch_up_ages_60_to_63": 5250
+      },
+      "qualified_charitable_distribution_limit": 114000
+    },
+    "hsa": {
+      "source": "irs_rp_2026_24",
+      "contribution_limit_self_only": 4500,
+      "contribution_limit_family": 9000,
+      "catch_up_age_55_plus": 1000,
+      "hdhp_min_deductible_self_only": 1750,
+      "hdhp_min_deductible_family": 3500,
+      "hdhp_max_out_of_pocket_self_only": 8700,
+      "hdhp_max_out_of_pocket_family": 17400
+    },
+    "social_security": {
+      "source": "ssa_cola_facts_2027",
+      "cola": 0.036,
+      "bend_points": [
+        1340,
+        8077
+      ],
+      "earnings_test": {
+        "exempt_under_fra_annual": 25560,
+        "exempt_year_of_fra_annual": 67920
+      },
+      "max_benefit_at_fra_monthly": 4188
+    },
+    "medicare": {
+      "source": "cms_2027_parts_ab",
+      "part_a_inpatient_deductible": 1776,
+      "part_b": {
+        "standard_premium_monthly": 209.4,
+        "annual_deductible": 292
+      },
+      "part_d_base_beneficiary_premium_monthly": 41.33,
+      "part_d_source": "cms_2027_part_d",
+      "irmaa": {
+        "lookback_note": "2027 premiums use MAGI from the 2025 tax return.",
+        "single": [
+          {
+            "magi_over": 0,
+            "magi_up_to": 112000,
+            "part_b_surcharge_monthly": 0.0,
+            "part_d_surcharge_monthly": 0.0
+          },
+          {
+            "magi_over": 112000,
+            "magi_up_to": 141000,
+            "part_b_surcharge_monthly": 83.7,
+            "part_d_surcharge_monthly": 15.4
+          },
+          {
+            "magi_over": 141000,
+            "magi_up_to": 177000,
+            "part_b_surcharge_monthly": 209.4,
+            "part_d_surcharge_monthly": 39.7
+          },
+          {
+            "magi_over": 177000,
+            "magi_up_to": 212000,
+            "part_b_surcharge_monthly": 335.0,
+            "part_d_surcharge_monthly": 64.0
+          },
+          {
+            "magi_over": 212000,
+            "magi_up_to": 500000,
+            "part_b_surcharge_monthly": 460.6,
+            "part_d_surcharge_monthly": 88.3
+          },
+          {
+            "magi_over": 500000,
+            "magi_up_to": null,
+            "part_b_surcharge_monthly": 502.4,
+            "part_d_surcharge_monthly": 96.4
+          }
+        ],
+        "married_joint": [
+          {
+            "magi_over": 0,
+            "magi_up_to": 224000,
+            "part_b_surcharge_monthly": 0.0,
+            "part_d_surcharge_monthly": 0.0
+          },
+          {
+            "magi_over": 224000,
+            "magi_up_to": 282000,
+            "part_b_surcharge_monthly": 83.7,
+            "part_d_surcharge_monthly": 15.4
+          },
+          {
+            "magi_over": 282000,
+            "magi_up_to": 354000,
+            "part_b_surcharge_monthly": 209.4,
+            "part_d_surcharge_monthly": 39.7
+          },
+          {
+            "magi_over": 354000,
+            "magi_up_to": 424000,
+            "part_b_surcharge_monthly": 335.0,
+            "part_d_surcharge_monthly": 64.0
+          },
+          {
+            "magi_over": 424000,
+            "magi_up_to": 750000,
+            "part_b_surcharge_monthly": 460.6,
+            "part_d_surcharge_monthly": 88.3
+          },
+          {
+            "magi_over": 750000,
+            "magi_up_to": null,
+            "part_b_surcharge_monthly": 502.4,
+            "part_d_surcharge_monthly": 96.4
+          }
+        ],
+        "married_separate_lived_together": [
+          {
+            "magi_over": 0,
+            "magi_up_to": 112000,
+            "part_b_surcharge_monthly": 0.0,
+            "part_d_surcharge_monthly": 0.0
+          },
+          {
+            "magi_over": 112000,
+            "magi_up_to": 388000,
+            "part_b_surcharge_monthly": 460.6,
+            "part_d_surcharge_monthly": 88.3
+          },
+          {
+            "magi_over": 388000,
+            "magi_up_to": null,
+            "part_b_surcharge_monthly": 502.4,
+            "part_d_surcharge_monthly": 96.4
+          }
+        ]
+      },
+      "part_a_premium_30_to_39_quarters_monthly": 328,
+      "part_a_premium_under_30_quarters_monthly": 597
+    },
+    "aca": {
+      "source": "irs_rp_2026_26",
+      "applicable_percentage_table_2027": [
+        {
+          "fpl_from": 0.0,
+          "fpl_to": 1.33,
+          "initial": 0.0215,
+          "final": 0.0215
+        },
+        {
+          "fpl_from": 1.33,
+          "fpl_to": 1.5,
+          "initial": 0.0323,
+          "final": 0.043
+        },
+        {
+          "fpl_from": 1.5,
+          "fpl_to": 2.0,
+          "initial": 0.043,
+          "final": 0.0678
+        },
+        {
+          "fpl_from": 2.0,
+          "fpl_to": 2.5,
+          "initial": 0.0678,
+          "final": 0.0866
+        },
+        {
+          "fpl_from": 2.5,
+          "fpl_to": 3.0,
+          "initial": 0.0866,
+          "final": 0.1022
+        },
+        {
+          "fpl_from": 3.0,
+          "fpl_to": 4.0,
+          "initial": 0.1022,
+          "final": 0.1022
+        }
+      ],
+      "employer_coverage_affordability_threshold": 0.1022,
+      "benchmark_premium_monthly_age_40": 703,
+      "out_of_pocket_maximum": {
+        "self_only": 12000,
+        "family": 24000
+      },
+      "fpl_guidelines_used": "2026"
+    },
+    "estate_and_gift": {
+      "source": "irs_rp_2026_35",
+      "annual_gift_exclusion": 20000,
+      "basic_exclusion_amount": 15480000
+    },
+    "long_term_care_premium_deduction_limits": {
+      "source": "irs_rp_2026_35",
+      "by_attained_age": [
+        {
+          "age_up_to": 40,
+          "limit": 500
+        },
+        {
+          "age_up_to": 50,
+          "limit": 945
+        },
+        {
+          "age_up_to": 60,
+          "limit": 1890
+        },
+        {
+          "age_up_to": 70,
+          "limit": 5030
+        },
+        {
+          "age_up_to": null,
+          "limit": 6290
+        }
+      ]
+    }
+  },
+  "sources": {
+    "irs_rp_2025_32": {
+      "title": "IRS Rev. Proc. 2025-32 (2026 inflation adjustments incl. OBBBA amendments)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-25-32.pdf"
+    },
+    "irs_news_2026": {
+      "title": "IRS news release, tax year 2026 inflation adjustments",
+      "url": "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2026-including-amendments-from-the-one-big-beautiful-bill"
+    },
+    "irs_rp_2026_35": {
+      "title": "IRS Rev. Proc. 2026-35 (2027 inflation adjustments)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-26-35.pdf"
+    },
+    "irs_news_2027": {
+      "title": "IRS news release, tax year 2027 inflation adjustments",
+      "url": "https://www.irs.gov/newsroom/irs-releases-tax-inflation-adjustments-for-tax-year-2027-taxpayers-continue-to-benefit-from-the-working-families-tax-cuts"
+    },
+    "irs_notice_2025_67": {
+      "title": "IRS Notice 2025-67 (2026 retirement plan and IRA limits)",
+      "url": "https://www.irs.gov/pub/irs-drop/n-25-67.pdf"
+    },
+    "irs_notice_2026_66": {
+      "title": "IRS Notice 2026-66 (2027 retirement plan and IRA limits)",
+      "url": "https://www.irs.gov/pub/irs-drop/n-26-66.pdf"
+    },
+    "irs_rp_2025_19": {
+      "title": "IRS Rev. Proc. 2025-19 (2026 HSA/HDHP amounts)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-25-19.pdf"
+    },
+    "irs_rp_2026_24": {
+      "title": "IRS Rev. Proc. 2026-24 (2027 HSA/HDHP amounts)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-26-24.pdf"
+    },
+    "irs_rp_2025_25": {
+      "title": "IRS Rev. Proc. 2025-25 (2026 ACA applicable percentage table)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-25-25.pdf"
+    },
+    "irs_rp_2026_26": {
+      "title": "IRS Rev. Proc. 2026-26 (2027 ACA applicable percentage table)",
+      "url": "https://www.irs.gov/pub/irs-drop/rp-26-26.pdf"
+    },
+    "obbba_pl_119_21": {
+      "title": "Public Law 119-21 (One Big Beautiful Bill Act), statute text",
+      "url": "https://www.congress.gov/119/plaws/publ21/PLAW-119publ21.htm"
+    },
+    "irs_obbba_seniors": {
+      "title": "IRS: OBBBA tax deductions for working Americans and seniors",
+      "url": "https://www.irs.gov/newsroom/one-big-beautiful-bill-act-tax-deductions-for-working-americans-and-seniors"
+    },
+    "usc_223": {
+      "title": "26 USC 223 (health savings accounts)",
+      "url": "https://www.law.cornell.edu/uscode/text/26/223"
+    },
+    "irs_ptc_qa": {
+      "title": "IRS: Questions and answers on the premium tax credit (MAGI definition)",
+      "url": "https://www.irs.gov/affordable-care-act/individuals-and-families/questions-and-answers-on-the-premium-tax-credit"
+    },
+    "usc_24": {
+      "title": "26 USC 24 (child tax credit)",
+      "url": "https://www.law.cornell.edu/uscode/text/26/24"
+    },
+    "usc_86": {
+      "title": "26 USC 86 (taxation of Social Security benefits)",
+      "url": "https://www.law.cornell.edu/uscode/text/26/86"
+    },
+    "irs_tc559": {
+      "title": "IRS Topic 559, Net investment income tax",
+      "url": "https://www.irs.gov/taxtopics/tc559"
+    },
+    "irs_tc560": {
+      "title": "IRS Topic 560, Additional Medicare tax",
+      "url": "https://www.irs.gov/taxtopics/tc560"
+    },
+    "irs_tc554": {
+      "title": "IRS Topic 554, Self-employment tax",
+      "url": "https://www.irs.gov/taxtopics/tc554"
+    },
+    "irs_tc602": {
+      "title": "IRS Topic 602, Child and dependent care credit",
+      "url": "https://www.irs.gov/taxtopics/tc602"
+    },
+    "irs_tc701": {
+      "title": "IRS Topic 701, Sale of your home",
+      "url": "https://www.irs.gov/taxtopics/tc701"
+    },
+    "irs_tc409": {
+      "title": "IRS Topic 409, Capital gains and losses",
+      "url": "https://www.irs.gov/taxtopics/tc409"
+    },
+    "irs_pub_936": {
+      "title": "IRS Publication 936, Home mortgage interest deduction",
+      "url": "https://www.irs.gov/publications/p936"
+    },
+    "irs_pub_590b": {
+      "title": "IRS Publication 590-B, Distributions from IRAs",
+      "url": "https://www.irs.gov/pub/irs-pdf/p590b.pdf"
+    },
+    "irs_early_distribution_exceptions": {
+      "title": "IRS: Exceptions to tax on early distributions",
+      "url": "https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-exceptions-to-tax-on-early-distributions"
+    },
+    "irs_sepp_faq": {
+      "title": "IRS: Substantially equal periodic payments FAQ",
+      "url": "https://www.irs.gov/retirement-plans/substantially-equal-periodic-payments"
+    },
+    "irs_notice_2022_6": {
+      "title": "IRS Notice 2022-6 (72(t) SEPP methods and interest rate)",
+      "url": "https://www.irs.gov/pub/irs-drop/n-22-06.pdf"
+    },
+    "irs_rmd_faq": {
+      "title": "IRS: RMD FAQs",
+      "url": "https://www.irs.gov/retirement-plans/retirement-plan-and-ira-required-minimum-distributions-faqs"
+    },
+    "ecfr_1_401a9_9": {
+      "title": "26 CFR 1.401(a)(9)-9 (Uniform Lifetime Table)",
+      "url": "https://www.ecfr.gov/current/title-26/section-1.401(a)(9)-9"
+    },
+    "fr_rmd_final_regs_2024": {
+      "title": "Final RMD regulations, 89 FR 58886 (applicable age by birth year)",
+      "url": "https://www.federalregister.gov/documents/2024/07/19/2024-14542/required-minimum-distributions"
+    },
+    "ssa_cola_facts_2026": {
+      "title": "SSA 2026 COLA fact sheet",
+      "url": "https://www.ssa.gov/news/en/cola/factsheets/2026.html"
+    },
+    "ssa_cola_facts_2027": {
+      "title": "SSA 2027 COLA fact sheet",
+      "url": "https://www.ssa.gov/news/en/cola/factsheets/2027.html"
+    },
+    "ssa_cola_series": {
+      "title": "SSA COLA history",
+      "url": "https://www.ssa.gov/oact/cola/colaseries.html"
+    },
+    "ssa_bend_points": {
+      "title": "SSA benefit formula bend points",
+      "url": "https://www.ssa.gov/oact/cola/bendpoints.html"
+    },
+    "ssa_pia_formula": {
+      "title": "SSA PIA formula",
+      "url": "https://www.ssa.gov/oact/cola/piaformula.html"
+    },
+    "ssa_awi": {
+      "title": "SSA national average wage index series",
+      "url": "https://www.ssa.gov/oact/cola/AWI.html"
+    },
+    "ssa_cbb": {
+      "title": "SSA contribution and benefit base",
+      "url": "https://www.ssa.gov/oact/cola/cbb.html"
+    },
+    "ssa_nra": {
+      "title": "SSA normal retirement age",
+      "url": "https://www.ssa.gov/oact/progdata/nra.html"
+    },
+    "ssa_early_late": {
+      "title": "SSA early or late retirement",
+      "url": "https://www.ssa.gov/oact/quickcalc/early_late.html"
+    },
+    "ssa_spouse": {
+      "title": "SSA benefits for spouses",
+      "url": "https://www.ssa.gov/oact/quickcalc/spouse.html"
+    },
+    "ssa_survivors": {
+      "title": "SSA survivor benefits (Pub. 05-10084 and survivors pages)",
+      "url": "https://www.ssa.gov/pubs/EN-05-10084.pdf"
+    },
+    "ssa_rtea": {
+      "title": "SSA earnings test exempt amounts",
+      "url": "https://www.ssa.gov/oact/cola/rtea.html"
+    },
+    "ssa_benefit_taxes": {
+      "title": "SSA: income taxes and your Social Security benefit",
+      "url": "https://www.ssa.gov/benefits/retirement/planner/taxes.html"
+    },
+    "ssa_trustees_2026": {
+      "title": "Summary of the 2026 Social Security and Medicare Trustees Reports",
+      "url": "https://www.ssa.gov/oact/TRSUM/index.html"
+    },
+    "ssa_irmaa": {
+      "title": "SSA: Medicare premiums, rules for higher-income beneficiaries",
+      "url": "https://www.ssa.gov/benefits/medicare/medicare-premiums.html"
+    },
+    "cms_2026_parts_ab": {
+      "title": "CMS 2026 Medicare Parts A & B premiums and deductibles; Part D IRMAA",
+      "url": "https://www.cms.gov/newsroom/fact-sheets/2026-medicare-parts-b-premiums-deductibles"
+    },
+    "cms_2027_parts_ab": {
+      "title": "CMS 2027 Medicare Parts A & B premiums and deductibles; Part D IRMAA (released 2026-11-17)",
+      "url": "https://www.cms.gov/newsroom/fact-sheets/2027-medicare-parts-b-premiums-deductibles"
+    },
+    "cms_2026_part_d": {
+      "title": "CMS 2026 Part D bid information (base beneficiary premium)",
+      "url": "https://www.cms.gov/newsroom/fact-sheets/2026-medicare-part-d-bid-information-and-part-d-premium-stabilization-demonstration-parameters"
+    },
+    "cms_2027_part_d": {
+      "title": "CMS 2027 Part D national average monthly bid amount information",
+      "url": "https://www.cms.gov/newsroom/fact-sheets/medicare-part-d-2027-national-average-monthly-bid-amount-information"
+    },
+    "hhs_poverty_2026": {
+      "title": "HHS ASPE 2026 poverty guidelines",
+      "url": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines"
+    },
+    "hhs_poverty_prior": {
+      "title": "HHS ASPE prior poverty guidelines (2025)",
+      "url": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/prior-hhs-poverty-guidelines-federal-register-references"
+    },
+    "kff_benchmark": {
+      "title": "KFF Marketplace average benchmark premiums",
+      "url": "https://www.kff.org/health-costs/state-indicator/marketplace-average-benchmark-premiums/"
+    },
+    "kff_2027_oep": {
+      "title": "KFF: 9 things to watch for the 2027 ACA open enrollment period",
+      "url": "https://www.kff.org/affordable-care-act/9-things-to-watch-for-the-2027-aca-open-enrollment-period/"
+    },
+    "kff_deductibles_2026": {
+      "title": "KFF: 2026 ACA Marketplace enrollment, premiums and deductibles; healthinsurance.org summary of KFF metal-level deductibles",
+      "url": "https://www.kff.org/affordable-care-act/what-we-know-so-far-about-2026-aca-marketplace-enrollment-premiums-and-deductibles/",
+      "secondary_url": "https://www.healthinsurance.org/glossary/deductible/"
+    },
+    "cms_age_curve": {
+      "title": "CMS state-specific age curve variations (federal default curve, 2018+)",
+      "url": "https://www.cms.gov/cciio/programs-and-initiatives/health-insurance-market-reforms/downloads/statespecagecrv053117.pdf"
+    },
+    "healthcare_gov_oop": {
+      "title": "HealthCare.gov glossary: out-of-pocket maximum/limit",
+      "url": "https://www.healthcare.gov/glossary/out-of-pocket-maximum-limit/"
+    },
+    "healthcare_gov_ptc": {
+      "title": "HealthCare.gov glossary: premium tax credit (100%-400% FPL)",
+      "url": "https://www.healthcare.gov/glossary/premium-tax-credit/"
+    },
+    "fr_marketplace_integrity_2025": {
+      "title": "HHS Marketplace Integrity and Affordability final rule, 90 FR 27074 (2026 OOP max $10,600/$21,200)",
+      "url": "https://www.federalregister.gov/documents/2025/06/25/2025-11606/patient-protection-and-affordable-care-act-marketplace-integrity-and-affordability"
+    },
+    "ssa_family_max": {
+      "title": "SSA formula for family maximum benefit (factors 150/272/134/175%)",
+      "url": "https://www.ssa.gov/oact/cola/familymax.html"
+    },
+    "aspe_poverty_api": {
+      "title": "HHS ASPE Poverty Guidelines API (2025 Alaska and Hawaii figures)",
+      "url": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/poverty-guidelines-api"
+    }
+  }
+}

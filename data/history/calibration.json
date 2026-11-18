@@ -1,0 +1,4813 @@
+{
+ "generated_by": "tools/build_history.py",
+ "units": "decimal fractions; '_ann' = annualised (mean x12, vol x sqrt(12)); skew/kurtosis are of monthly returns",
+ "sample": {
+  "start": "1926-07",
+  "end": "2026-09",
+  "rows": 1203
+ },
+ "coverage": {
+  "equity_us": {
+   "start": "1926-07",
+   "end": "2026-09",
+   "months": 1203,
+   "gap_free": true
+  },
+  "tbill": {
+   "start": "1926-07",
+   "end": "2026-09",
+   "months": 1203,
+   "gap_free": true
+  },
+  "bond10": {
+   "start": "1926-07",
+   "end": "2026-09",
+   "months": 1203,
+   "gap_free": true
+  },
+  "cpi": {
+   "start": "1926-07",
+   "end": "2026-09",
+   "months": 1203,
+   "gap_free": true
+  },
+  "home": {
+   "start": "1926-07",
+   "end": "2026-08",
+   "months": 1202,
+   "gap_free": true
+  },
+  "equity_intl": {
+   "start": "1975-01",
+   "end": "2026-09",
+   "months": 621,
+   "gap_free": true
+  },
+  "gold": {
+   "start": "1968-04",
+   "end": "2026-09",
+   "months": 702,
+   "gap_free": true
+  },
+  "unemployment": {
+   "start": "1929-04",
+   "end": "2026-09",
+   "months": 1170,
+   "gap_free": true
+  }
+ },
+ "build_notes": {
+  "home_source": "fhfa",
+  "cpi_interpolated_index_months": [
+   "2025-10"
+  ],
+  "home_caseshiller_vs_fhfa_purchase_only_dec_dec": {
+   "years": [
+    1992,
+    2025
+   ],
+   "corr": 0.973332,
+   "mean_caseshiller": 0.045624,
+   "mean_fhfa": 0.044839,
+   "sd_caseshiller": 0.060039,
+   "sd_fhfa": 0.049406,
+   "worst_year_caseshiller": -0.119963,
+   "worst_year_fhfa": -0.104527
+  },
+  "home_shiller_vs_caseshiller_overlap": {
+   "months": 432,
+   "corr_monthly_change": 0.999992,
+   "start": "1987-02",
+   "end": "2023-01"
+  },
+  "mortgage_spread_over_gs10": {
+   "mean": 0.017616,
+   "sd": 0.005154,
+   "start": "1971-04",
+   "end": "2026-09",
+   "months": 666
+  },
+  "equity_intl_proxy": {
+   "method": "fixed non-negative weights summing to 1 on French country value-weight USD market returns, least-squares fitted to the French Developed ex US market return",
+   "fit_window": [
+    "1990-07",
+    "2000-06"
+   ],
+   "weights": {
+    "UK": 0.133433,
+    "Austrlia": 0.01672,
+    "Belgium": 0.070928,
+    "France": 0.07662,
+    "Germany": 0.072599,
+    "HongKong": 0.010786,
+    "Italy": 0.057405,
+    "Japan": 0.413694,
+    "Nethrlnd": 0.008526,
+    "Singapor": 0.004839,
+    "Spain": 0.026086,
+    "Sweden": 0.055037,
+    "Swtzrlnd": 0.053327
+   },
+   "fit_tracking_error_ann": 0.027233,
+   "fit_corr": 0.986521,
+   "holdout_window": [
+    "2000-07",
+    "2025-12"
+   ],
+   "holdout_tracking_error_ann": 0.026751,
+   "holdout_corr": 0.986983,
+   "holdout_mean_diff_ann": -0.003864
+  }
+ },
+ "series_stats": {
+  "full_sample": {
+   "equity_us": {
+    "nominal": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.115729,
+     "mean_geo_ann": 0.103591,
+     "vol_ann": 0.183237,
+     "skew_monthly": 0.126026,
+     "excess_kurtosis_monthly": 7.356652,
+     "min_month": -0.2871,
+     "max_month": 0.3891,
+     "worst_12m": {
+      "return": -0.657397,
+      "window_end": "1932-06"
+     },
+     "max_drawdown": {
+      "depth": -0.836522,
+      "peak": "1929-08",
+      "trough": "1932-06",
+      "recovered": "1945-01",
+      "months_peak_to_recovery": 185
+     }
+    },
+    "real": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.086244,
+     "mean_geo_ann": 0.071629,
+     "vol_ann": 0.183916,
+     "skew_monthly": 0.214929,
+     "excess_kurtosis_monthly": 7.340327,
+     "min_month": -0.282347,
+     "max_month": 0.3891,
+     "worst_12m": {
+      "return": -0.61961,
+      "window_end": "1932-06"
+     },
+     "max_drawdown": {
+      "depth": -0.792047,
+      "peak": "1929-08",
+      "trough": "1932-06",
+      "recovered": "1945-02",
+      "months_peak_to_recovery": 186
+     }
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.03243,
+     "mean_geo_ann": 0.032879,
+     "vol_ann": 0.00859,
+     "skew_monthly": 1.097414,
+     "excess_kurtosis_monthly": 1.444034,
+     "min_month": -0.0006,
+     "max_month": 0.0135,
+     "worst_12m": {
+      "return": -0.0005,
+      "window_end": "1939-01"
+     },
+     "max_drawdown": {
+      "depth": -0.0009,
+      "peak": "1938-10",
+      "trough": "1941-04",
+      "recovered": "1942-03",
+      "months_peak_to_recovery": 41
+     }
+    },
+    "real": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.003121,
+     "mean_geo_ann": 0.002964,
+     "vol_ann": 0.017896,
+     "skew_monthly": -1.403251,
+     "excess_kurtosis_monthly": 14.008666,
+     "min_month": -0.055272,
+     "max_month": 0.023327,
+     "worst_12m": {
+      "return": -0.16137,
+      "window_end": "1947-03"
+     },
+     "max_drawdown": {
+      "depth": -0.486639,
+      "peak": "1933-05",
+      "trough": "1951-12",
+      "recovered": "2001-08",
+      "months_peak_to_recovery": 819
+     }
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.047072,
+     "mean_geo_ann": 0.045942,
+     "vol_ann": 0.064679,
+     "skew_monthly": 0.549284,
+     "excess_kurtosis_monthly": 3.995885,
+     "min_month": -0.079165,
+     "max_month": 0.123228,
+     "worst_12m": {
+      "return": -0.179287,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.26129,
+      "peak": "2020-07",
+      "trough": "2023-10",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.01786,
+     "mean_geo_ann": 0.01565,
+     "vol_ann": 0.068358,
+     "skew_monthly": 0.388216,
+     "excess_kurtosis_monthly": 3.527796,
+     "min_month": -0.092003,
+     "max_month": 0.117079,
+     "worst_12m": {
+      "return": -0.238286,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.600789,
+      "peak": "1940-12",
+      "trough": "1981-09",
+      "recovered": "1989-06",
+      "months_peak_to_recovery": 582
+     }
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "start": "1926-07",
+     "end": "2026-09",
+     "months": 1203,
+     "mean_arith_ann": 0.029588,
+     "mean_geo_ann": 0.029826,
+     "vol_ann": 0.018049,
+     "skew_monthly": 1.032328,
+     "excess_kurtosis_monthly": 13.728347,
+     "min_month": -0.020548,
+     "max_month": 0.058824,
+     "worst_12m": {
+      "return": -0.107383,
+      "window_end": "1932-10"
+     },
+     "max_drawdown": {
+      "depth": -0.288136,
+      "peak": "1926-06",
+      "trough": "1933-03",
+      "recovered": "1944-12",
+      "months_peak_to_recovery": 222
+     }
+    }
+   },
+   "home": {
+    "nominal": {
+     "start": "1926-07",
+     "end": "2026-08",
+     "months": 1202,
+     "mean_arith_ann": 0.039925,
+     "mean_geo_ann": 0.040453,
+     "vol_ann": 0.020182,
+     "skew_monthly": 0.196388,
+     "excess_kurtosis_monthly": 0.821195,
+     "min_month": -0.021948,
+     "max_month": 0.023042,
+     "worst_12m": {
+      "return": -0.106023,
+      "window_end": "2008-11"
+     },
+     "max_drawdown": {
+      "depth": -0.264026,
+      "peak": "1926-06",
+      "trough": "1933-01",
+      "recovered": "1943-06",
+      "months_peak_to_recovery": 204
+     }
+    },
+    "real": {
+     "start": "1926-07",
+     "end": "2026-08",
+     "months": 1202,
+     "mean_arith_ann": 0.010539,
+     "mean_geo_ann": 0.010353,
+     "vol_ann": 0.021655,
+     "skew_monthly": -0.241233,
+     "excess_kurtosis_monthly": 2.365189,
+     "min_month": -0.040259,
+     "max_month": 0.021811,
+     "worst_12m": {
+      "return": -0.138396,
+      "window_end": "2008-09"
+     },
+     "max_drawdown": {
+      "depth": -0.300591,
+      "peak": "2006-11",
+      "trough": "2012-02",
+      "recovered": "2020-04",
+      "months_peak_to_recovery": 161
+     }
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.114398,
+     "mean_geo_ann": 0.105525,
+     "vol_ann": 0.16511,
+     "skew_monthly": -0.274586,
+     "excess_kurtosis_monthly": 1.321333,
+     "min_month": -0.2103,
+     "max_month": 0.175973,
+     "worst_12m": {
+      "return": -0.498017,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.559401,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2013-12",
+      "months_peak_to_recovery": 74
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.078097,
+     "mean_geo_ann": 0.066278,
+     "vol_ann": 0.165527,
+     "skew_monthly": -0.240193,
+     "excess_kurtosis_monthly": 1.209139,
+     "min_month": -0.202242,
+     "max_month": 0.171459,
+     "worst_12m": {
+      "return": -0.4992,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.566164,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2017-07",
+      "months_peak_to_recovery": 117
+     }
+    }
+   },
+   "gold": {
+    "nominal": {
+     "start": "1968-04",
+     "end": "2026-09",
+     "months": 702,
+     "mean_arith_ann": 0.095141,
+     "mean_geo_ann": 0.084767,
+     "vol_ann": 0.168768,
+     "skew_monthly": 1.808523,
+     "excess_kurtosis_monthly": 14.046979,
+     "min_month": -0.166917,
+     "max_month": 0.483516,
+     "worst_12m": {
+      "return": -0.363919,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.620741,
+      "peak": "1980-01",
+      "trough": "1999-07",
+      "recovered": "2006-05",
+      "months_peak_to_recovery": 316
+     }
+    },
+    "real": {
+     "start": "1968-04",
+     "end": "2026-09",
+     "months": 702,
+     "mean_arith_ann": 0.055626,
+     "mean_geo_ann": 0.043217,
+     "vol_ann": 0.166448,
+     "skew_monthly": 1.636924,
+     "excess_kurtosis_monthly": 12.864433,
+     "min_month": -0.179398,
+     "max_month": 0.462541,
+     "worst_12m": {
+      "return": -0.425722,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.830597,
+      "peak": "1980-01",
+      "trough": "2001-04",
+      "recovered": "2025-02",
+      "months_peak_to_recovery": 541
+     }
+    }
+   }
+  },
+  "from_1953": {
+   "equity_us": {
+    "nominal": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.118822,
+     "mean_geo_ann": 0.112938,
+     "vol_ann": 0.150102,
+     "skew_monthly": -0.474986,
+     "excess_kurtosis_monthly": 1.696024,
+     "min_month": -0.2259,
+     "max_month": 0.1662,
+     "worst_12m": {
+      "return": -0.425674,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.503117,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2012-02",
+      "months_peak_to_recovery": 52
+     }
+    },
+    "real": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.084281,
+     "mean_geo_ann": 0.075233,
+     "vol_ann": 0.151115,
+     "skew_monthly": -0.465071,
+     "excess_kurtosis_monthly": 1.577773,
+     "min_month": -0.227914,
+     "max_month": 0.154789,
+     "worst_12m": {
+      "return": -0.474716,
+      "window_end": "1974-09"
+     },
+     "max_drawdown": {
+      "depth": -0.562863,
+      "peak": "1968-11",
+      "trough": "1974-09",
+      "recovered": "1983-04",
+      "months_peak_to_recovery": 173
+     }
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.040485,
+     "mean_geo_ann": 0.041206,
+     "vol_ann": 0.00867,
+     "skew_monthly": 0.876828,
+     "excess_kurtosis_monthly": 1.203017,
+     "min_month": 0.0,
+     "max_month": 0.0135,
+     "worst_12m": {
+      "return": -0.0,
+      "window_end": "2013-12"
+     },
+     "max_drawdown": {
+      "depth": 0.0,
+      "peak": "1953-01",
+      "trough": "1953-01",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.005985,
+     "mean_geo_ann": 0.005931,
+     "vol_ann": 0.011786,
+     "skew_monthly": -0.106765,
+     "excess_kurtosis_monthly": 1.9043,
+     "min_month": -0.013175,
+     "max_month": 0.019833,
+     "worst_12m": {
+      "return": -0.082154,
+      "window_end": "2022-06"
+     },
+     "max_drawdown": {
+      "depth": -0.248479,
+      "peak": "2008-12",
+      "trough": "2022-06",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.053124,
+     "mean_geo_ann": 0.051582,
+     "vol_ann": 0.074195,
+     "skew_monthly": 0.444267,
+     "excess_kurtosis_monthly": 2.421025,
+     "min_month": -0.079165,
+     "max_month": 0.123228,
+     "worst_12m": {
+      "return": -0.179287,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.26129,
+      "peak": "2020-07",
+      "trough": "2023-10",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.018744,
+     "mean_geo_ann": 0.015956,
+     "vol_ann": 0.076492,
+     "skew_monthly": 0.405359,
+     "excess_kurtosis_monthly": 2.515831,
+     "min_month": -0.092003,
+     "max_month": 0.117079,
+     "worst_12m": {
+      "return": -0.238286,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.479269,
+      "peak": "1967-03",
+      "trough": "1981-09",
+      "recovered": "1985-11",
+      "months_peak_to_recovery": 224
+     }
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "start": "1953-02",
+     "end": "2026-09",
+     "months": 884,
+     "mean_arith_ann": 0.034591,
+     "mean_geo_ann": 0.035067,
+     "vol_ann": 0.012281,
+     "skew_monthly": 0.131854,
+     "excess_kurtosis_monthly": 2.559192,
+     "min_month": -0.019153,
+     "max_month": 0.018059,
+     "worst_12m": {
+      "return": -0.020972,
+      "window_end": "2009-07"
+     },
+     "max_drawdown": {
+      "depth": -0.044262,
+      "peak": "2008-07",
+      "trough": "2008-12",
+      "recovered": "2011-01",
+      "months_peak_to_recovery": 30
+     }
+    }
+   },
+   "home": {
+    "nominal": {
+     "start": "1953-02",
+     "end": "2026-08",
+     "months": 883,
+     "mean_arith_ann": 0.042401,
+     "mean_geo_ann": 0.043048,
+     "vol_ann": 0.019052,
+     "skew_monthly": 0.080658,
+     "excess_kurtosis_monthly": 1.405373,
+     "min_month": -0.021948,
+     "max_month": 0.023042,
+     "worst_12m": {
+      "return": -0.106023,
+      "window_end": "2008-11"
+     },
+     "max_drawdown": {
+      "depth": -0.222168,
+      "peak": "2007-06",
+      "trough": "2012-01",
+      "recovered": "2016-04",
+      "months_peak_to_recovery": 106
+     }
+    },
+    "real": {
+     "start": "1953-02",
+     "end": "2026-08",
+     "months": 883,
+     "mean_arith_ann": 0.007893,
+     "mean_geo_ann": 0.007751,
+     "vol_ann": 0.018404,
+     "skew_monthly": -0.041547,
+     "excess_kurtosis_monthly": 0.9177,
+     "min_month": -0.017795,
+     "max_month": 0.017385,
+     "worst_12m": {
+      "return": -0.138396,
+      "window_end": "2008-09"
+     },
+     "max_drawdown": {
+      "depth": -0.300591,
+      "peak": "2006-11",
+      "trough": "2012-02",
+      "recovered": "2020-04",
+      "months_peak_to_recovery": 161
+     }
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.114398,
+     "mean_geo_ann": 0.105525,
+     "vol_ann": 0.16511,
+     "skew_monthly": -0.274586,
+     "excess_kurtosis_monthly": 1.321333,
+     "min_month": -0.2103,
+     "max_month": 0.175973,
+     "worst_12m": {
+      "return": -0.498017,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.559401,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2013-12",
+      "months_peak_to_recovery": 74
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.078097,
+     "mean_geo_ann": 0.066278,
+     "vol_ann": 0.165527,
+     "skew_monthly": -0.240193,
+     "excess_kurtosis_monthly": 1.209139,
+     "min_month": -0.202242,
+     "max_month": 0.171459,
+     "worst_12m": {
+      "return": -0.4992,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.566164,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2017-07",
+      "months_peak_to_recovery": 117
+     }
+    }
+   },
+   "gold": {
+    "nominal": {
+     "start": "1968-04",
+     "end": "2026-09",
+     "months": 702,
+     "mean_arith_ann": 0.095141,
+     "mean_geo_ann": 0.084767,
+     "vol_ann": 0.168768,
+     "skew_monthly": 1.808523,
+     "excess_kurtosis_monthly": 14.046979,
+     "min_month": -0.166917,
+     "max_month": 0.483516,
+     "worst_12m": {
+      "return": -0.363919,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.620741,
+      "peak": "1980-01",
+      "trough": "1999-07",
+      "recovered": "2006-05",
+      "months_peak_to_recovery": 316
+     }
+    },
+    "real": {
+     "start": "1968-04",
+     "end": "2026-09",
+     "months": 702,
+     "mean_arith_ann": 0.055626,
+     "mean_geo_ann": 0.043217,
+     "vol_ann": 0.166448,
+     "skew_monthly": 1.636924,
+     "excess_kurtosis_monthly": 12.864433,
+     "min_month": -0.179398,
+     "max_month": 0.462541,
+     "worst_12m": {
+      "return": -0.425722,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.830597,
+      "peak": "1980-01",
+      "trough": "2001-04",
+      "recovered": "2025-02",
+      "months_peak_to_recovery": 541
+     }
+    }
+   }
+  },
+  "from_1975": {
+   "equity_us": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.132804,
+     "mean_geo_ann": 0.127579,
+     "vol_ann": 0.155064,
+     "skew_monthly": -0.571615,
+     "excess_kurtosis_monthly": 1.874453,
+     "min_month": -0.2259,
+     "max_month": 0.1425,
+     "worst_12m": {
+      "return": -0.425674,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.503117,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2012-02",
+      "months_peak_to_recovery": 52
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.096462,
+     "mean_geo_ann": 0.087549,
+     "vol_ann": 0.155635,
+     "skew_monthly": -0.533199,
+     "excess_kurtosis_monthly": 1.76805,
+     "min_month": -0.227914,
+     "max_month": 0.143648,
+     "worst_12m": {
+      "return": -0.427027,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.520556,
+      "peak": "2000-03",
+      "trough": "2009-02",
+      "recovered": "2013-02",
+      "months_peak_to_recovery": 155
+     }
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.041975,
+     "mean_geo_ann": 0.042743,
+     "vol_ann": 0.009684,
+     "skew_monthly": 0.753701,
+     "excess_kurtosis_monthly": 0.5828,
+     "min_month": 0.0,
+     "max_month": 0.0135,
+     "worst_12m": {
+      "return": -0.0,
+      "window_end": "2013-12"
+     },
+     "max_drawdown": {
+      "depth": 0.0,
+      "peak": "1974-12",
+      "trough": "1974-12",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.005792,
+     "mean_geo_ann": 0.005725,
+     "vol_ann": 0.012821,
+     "skew_monthly": -0.022076,
+     "excess_kurtosis_monthly": 1.579228,
+     "min_month": -0.013175,
+     "max_month": 0.019833,
+     "worst_12m": {
+      "return": -0.082154,
+      "window_end": "2022-06"
+     },
+     "max_drawdown": {
+      "depth": -0.248479,
+      "peak": "2008-12",
+      "trough": "2022-06",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.062679,
+     "mean_geo_ann": 0.060982,
+     "vol_ann": 0.082149,
+     "skew_monthly": 0.325077,
+     "excess_kurtosis_monthly": 1.706694,
+     "min_month": -0.079165,
+     "max_month": 0.123228,
+     "worst_12m": {
+      "return": -0.179287,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.26129,
+      "peak": "2020-07",
+      "trough": "2023-10",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.026652,
+     "mean_geo_ann": 0.023316,
+     "vol_ann": 0.084962,
+     "skew_monthly": 0.318467,
+     "excess_kurtosis_monthly": 1.783855,
+     "min_month": -0.092003,
+     "max_month": 0.117079,
+     "worst_12m": {
+      "return": -0.238286,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.424426,
+      "peak": "1976-12",
+      "trough": "1981-09",
+      "recovered": "1985-05",
+      "months_peak_to_recovery": 101
+     }
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.036281,
+     "mean_geo_ann": 0.036808,
+     "vol_ann": 0.012651,
+     "skew_monthly": -0.124945,
+     "excess_kurtosis_monthly": 2.767032,
+     "min_month": -0.019153,
+     "max_month": 0.015209,
+     "worst_12m": {
+      "return": -0.020972,
+      "window_end": "2009-07"
+     },
+     "max_drawdown": {
+      "depth": -0.044262,
+      "peak": "2008-07",
+      "trough": "2008-12",
+      "recovered": "2011-01",
+      "months_peak_to_recovery": 30
+     }
+    }
+   },
+   "home": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-08",
+     "months": 620,
+     "mean_arith_ann": 0.049637,
+     "mean_geo_ann": 0.050556,
+     "vol_ann": 0.020842,
+     "skew_monthly": -0.14764,
+     "excess_kurtosis_monthly": 1.194235,
+     "min_month": -0.021948,
+     "max_month": 0.023042,
+     "worst_12m": {
+      "return": -0.106023,
+      "window_end": "2008-11"
+     },
+     "max_drawdown": {
+      "depth": -0.222168,
+      "peak": "2007-06",
+      "trough": "2012-01",
+      "recovered": "2016-04",
+      "months_peak_to_recovery": 106
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-08",
+     "months": 620,
+     "mean_arith_ann": 0.013438,
+     "mean_geo_ann": 0.013315,
+     "vol_ann": 0.020183,
+     "skew_monthly": -0.199529,
+     "excess_kurtosis_monthly": 0.669718,
+     "min_month": -0.017795,
+     "max_month": 0.017385,
+     "worst_12m": {
+      "return": -0.138396,
+      "window_end": "2008-09"
+     },
+     "max_drawdown": {
+      "depth": -0.300591,
+      "peak": "2006-11",
+      "trough": "2012-02",
+      "recovered": "2020-04",
+      "months_peak_to_recovery": 161
+     }
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.114398,
+     "mean_geo_ann": 0.105525,
+     "vol_ann": 0.16511,
+     "skew_monthly": -0.274586,
+     "excess_kurtosis_monthly": 1.321333,
+     "min_month": -0.2103,
+     "max_month": 0.175973,
+     "worst_12m": {
+      "return": -0.498017,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.559401,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2013-12",
+      "months_peak_to_recovery": 74
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.078097,
+     "mean_geo_ann": 0.066278,
+     "vol_ann": 0.165527,
+     "skew_monthly": -0.240193,
+     "excess_kurtosis_monthly": 1.209139,
+     "min_month": -0.202242,
+     "max_month": 0.171459,
+     "worst_12m": {
+      "return": -0.4992,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.566164,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2017-07",
+      "months_peak_to_recovery": 117
+     }
+    }
+   },
+   "gold": {
+    "nominal": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.07354,
+     "mean_geo_ann": 0.06288,
+     "vol_ann": 0.161722,
+     "skew_monthly": 1.988831,
+     "excess_kurtosis_monthly": 18.393316,
+     "min_month": -0.166917,
+     "max_month": 0.483516,
+     "worst_12m": {
+      "return": -0.363919,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.620741,
+      "peak": "1980-01",
+      "trough": "1999-07",
+      "recovered": "2006-05",
+      "months_peak_to_recovery": 316
+     }
+    },
+    "real": {
+     "start": "1975-01",
+     "end": "2026-09",
+     "months": 621,
+     "mean_arith_ann": 0.037046,
+     "mean_geo_ann": 0.025147,
+     "vol_ann": 0.159652,
+     "skew_monthly": 1.807289,
+     "excess_kurtosis_monthly": 16.777638,
+     "min_month": -0.179398,
+     "max_month": 0.462541,
+     "worst_12m": {
+      "return": -0.425722,
+      "window_end": "1981-07"
+     },
+     "max_drawdown": {
+      "depth": -0.830597,
+      "peak": "1980-01",
+      "trough": "2001-04",
+      "recovered": "2025-02",
+      "months_peak_to_recovery": 541
+     }
+    }
+   }
+  },
+  "from_1990": {
+   "equity_us": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.117159,
+     "mean_geo_ann": 0.110867,
+     "vol_ann": 0.15144,
+     "skew_monthly": -0.566536,
+     "excess_kurtosis_monthly": 1.069578,
+     "min_month": -0.1712,
+     "max_month": 0.136,
+     "worst_12m": {
+      "return": -0.425674,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.503117,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2012-02",
+      "months_peak_to_recovery": 52
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.09074,
+     "mean_geo_ann": 0.082039,
+     "vol_ann": 0.151919,
+     "skew_monthly": -0.503688,
+     "excess_kurtosis_monthly": 0.962638,
+     "min_month": -0.162743,
+     "max_month": 0.143648,
+     "worst_12m": {
+      "return": -0.427027,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.520556,
+      "peak": "2000-03",
+      "trough": "2009-02",
+      "recovered": "2013-02",
+      "months_peak_to_recovery": 155
+     }
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.02632,
+     "mean_geo_ann": 0.02662,
+     "vol_ann": 0.006259,
+     "skew_monthly": 0.183438,
+     "excess_kurtosis_monthly": -1.301225,
+     "min_month": 0.0,
+     "max_month": 0.0068,
+     "worst_12m": {
+      "return": -0.0,
+      "window_end": "2013-12"
+     },
+     "max_drawdown": {
+      "depth": 0.0,
+      "peak": "1990-06",
+      "trough": "1990-06",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 6.1e-05,
+     "mean_geo_ann": -2.2e-05,
+     "vol_ann": 0.012888,
+     "skew_monthly": 0.007053,
+     "excess_kurtosis_monthly": 2.19617,
+     "min_month": -0.013175,
+     "max_month": 0.019833,
+     "worst_12m": {
+      "return": -0.082154,
+      "window_end": "2022-06"
+     },
+     "max_drawdown": {
+      "depth": -0.248479,
+      "peak": "2008-12",
+      "trough": "2022-06",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.049153,
+     "mean_geo_ann": 0.047469,
+     "vol_ann": 0.07352,
+     "skew_monthly": 0.018561,
+     "excess_kurtosis_monthly": 0.84131,
+     "min_month": -0.072438,
+     "max_month": 0.095684,
+     "worst_12m": {
+      "return": -0.179287,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.26129,
+      "peak": "2020-07",
+      "trough": "2023-10",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.023024,
+     "mean_geo_ann": 0.020286,
+     "vol_ann": 0.076701,
+     "skew_monthly": 0.197719,
+     "excess_kurtosis_monthly": 1.622535,
+     "min_month": -0.073447,
+     "max_month": 0.117079,
+     "worst_12m": {
+      "return": -0.238286,
+      "window_end": "2022-10"
+     },
+     "max_drawdown": {
+      "depth": -0.378981,
+      "peak": "2020-04",
+      "trough": "2026-09",
+      "recovered": null,
+      "months_peak_to_recovery": null
+     }
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.026391,
+     "mean_geo_ann": 0.026642,
+     "vol_ann": 0.011767,
+     "skew_monthly": -0.519134,
+     "excess_kurtosis_monthly": 4.244294,
+     "min_month": -0.019153,
+     "max_month": 0.013736,
+     "worst_12m": {
+      "return": -0.020972,
+      "window_end": "2009-07"
+     },
+     "max_drawdown": {
+      "depth": -0.044262,
+      "peak": "2008-07",
+      "trough": "2008-12",
+      "recovered": "2011-01",
+      "months_peak_to_recovery": 30
+     }
+    }
+   },
+   "home": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-08",
+     "months": 434,
+     "mean_arith_ann": 0.042077,
+     "mean_geo_ann": 0.042634,
+     "vol_ann": 0.02262,
+     "skew_monthly": -0.026025,
+     "excess_kurtosis_monthly": 0.876646,
+     "min_month": -0.021948,
+     "max_month": 0.023042,
+     "worst_12m": {
+      "return": -0.106023,
+      "window_end": "2008-11"
+     },
+     "max_drawdown": {
+      "depth": -0.222168,
+      "peak": "2007-06",
+      "trough": "2012-01",
+      "recovered": "2016-04",
+      "months_peak_to_recovery": 106
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-08",
+     "months": 434,
+     "mean_arith_ann": 0.015787,
+     "mean_geo_ann": 0.015679,
+     "vol_ann": 0.020971,
+     "skew_monthly": -0.272316,
+     "excess_kurtosis_monthly": 0.576384,
+     "min_month": -0.017458,
+     "max_month": 0.017385,
+     "worst_12m": {
+      "return": -0.138396,
+      "window_end": "2008-09"
+     },
+     "max_drawdown": {
+      "depth": -0.300591,
+      "peak": "2006-11",
+      "trough": "2012-02",
+      "recovered": "2020-04",
+      "months_peak_to_recovery": 161
+     }
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.074314,
+     "mean_geo_ann": 0.062631,
+     "vol_ann": 0.162959,
+     "skew_monthly": -0.4552,
+     "excess_kurtosis_monthly": 1.408159,
+     "min_month": -0.2103,
+     "max_month": 0.1572,
+     "worst_12m": {
+      "return": -0.498017,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.559401,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2013-12",
+      "months_peak_to_recovery": 74
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.047959,
+     "mean_geo_ann": 0.035055,
+     "vol_ann": 0.163124,
+     "skew_monthly": -0.424445,
+     "excess_kurtosis_monthly": 1.26951,
+     "min_month": -0.202242,
+     "max_month": 0.150265,
+     "worst_12m": {
+      "return": -0.4992,
+      "window_end": "2009-02"
+     },
+     "max_drawdown": {
+      "depth": -0.566164,
+      "peak": "2007-10",
+      "trough": "2009-02",
+      "recovered": "2017-07",
+      "months_peak_to_recovery": 117
+     }
+    }
+   },
+   "gold": {
+    "nominal": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.07699,
+     "mean_geo_ann": 0.071611,
+     "vol_ann": 0.124651,
+     "skew_monthly": 0.500619,
+     "excess_kurtosis_monthly": 1.328283,
+     "min_month": -0.117037,
+     "max_month": 0.173585,
+     "worst_12m": {
+      "return": -0.274777,
+      "window_end": "2013-12"
+     },
+     "max_drawdown": {
+      "depth": -0.392777,
+      "peak": "2011-09",
+      "trough": "2015-12",
+      "recovered": "2020-07",
+      "months_peak_to_recovery": 106
+     }
+    },
+    "real": {
+     "start": "1990-07",
+     "end": "2026-09",
+     "months": 435,
+     "mean_arith_ann": 0.050416,
+     "mean_geo_ann": 0.043801,
+     "vol_ann": 0.123252,
+     "skew_monthly": 0.525667,
+     "excess_kurtosis_monthly": 1.340245,
+     "min_month": -0.118778,
+     "max_month": 0.171492,
+     "worst_12m": {
+      "return": -0.285507,
+      "window_end": "2013-12"
+     },
+     "max_drawdown": {
+      "depth": -0.510329,
+      "peak": "1990-08",
+      "trough": "2001-04",
+      "recovered": "2006-04",
+      "months_peak_to_recovery": 188
+     }
+    }
+   }
+  }
+ },
+ "annual_return_stats": {
+  "nominal": {
+   "equity_us": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.121912,
+    "mean_geo": 0.102688,
+    "sd": 0.198369,
+    "min": [
+     1931,
+     -0.437634
+    ],
+    "max": [
+     1933,
+     0.567957
+    ],
+    "ac1": -0.001115,
+    "share_negative_years": 0.242424
+   },
+   "tbill": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.033293,
+    "mean_geo": 0.032852,
+    "sd": 0.030609,
+    "min": [
+     1938,
+     -0.0004
+    ],
+    "max": [
+     1981,
+     0.147175
+    ],
+    "ac1": 0.90812,
+    "share_negative_years": 0.020202
+   },
+   "bond10": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.049822,
+    "mean_geo": 0.046828,
+    "sd": 0.081483,
+    "min": [
+     2022,
+     -0.163745
+    ],
+    "max": [
+     1982,
+     0.389831
+    ],
+    "ac1": -0.03302,
+    "share_negative_years": 0.20202
+   },
+   "cpi": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.030535,
+    "mean_geo": 0.029803,
+    "sd": 0.039128,
+    "min": [
+     1932,
+     -0.10274
+    ],
+    "max": [
+     1946,
+     0.181319
+    ],
+    "ac1": 0.613568,
+    "share_negative_years": 0.080808
+   },
+   "home": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.04229,
+    "mean_geo": 0.040822,
+    "sd": 0.055854,
+    "min": [
+     2008,
+     -0.104527
+    ],
+    "max": [
+     1945,
+     0.230247
+    ],
+    "ac1": 0.695991,
+    "share_negative_years": 0.131313
+   },
+   "equity_intl": {
+    "first_year": 1975,
+    "last_year": 2025,
+    "n": 51,
+    "mean_arith": 0.12555,
+    "mean_geo": 0.10515,
+    "sd": 0.213703,
+    "min": [
+     2008,
+     -0.428103
+    ],
+    "max": [
+     1986,
+     0.765017
+    ],
+    "ac1": 0.075478,
+    "share_negative_years": 0.254902
+   },
+   "gold": {
+    "first_year": 1969,
+    "last_year": 2025,
+    "n": 57,
+    "mean_arith": 0.110219,
+    "mean_geo": 0.085092,
+    "sd": 0.257632,
+    "min": [
+     2013,
+     -0.274777
+    ],
+    "max": [
+     1979,
+     1.1875
+    ],
+    "ac1": 0.339352,
+    "share_negative_years": 0.368421
+   }
+  },
+  "real": {
+   "equity_us": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.09,
+    "mean_geo": 0.070776,
+    "sd": 0.197587,
+    "min": [
+     1931,
+     -0.379857
+    ],
+    "max": [
+     1933,
+     0.556078
+    ],
+    "ac1": -0.013383,
+    "share_negative_years": 0.333333
+   },
+   "tbill": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.003663,
+    "mean_geo": 0.002962,
+    "sd": 0.037488,
+    "min": [
+     1946,
+     -0.150436
+    ],
+    "max": [
+     1932,
+     0.125021
+    ],
+    "ac1": 0.638956,
+    "share_negative_years": 0.434343
+   },
+   "bond10": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.020404,
+    "mean_geo": 0.016533,
+    "sd": 0.090304,
+    "min": [
+     2022,
+     -0.214448
+    ],
+    "max": [
+     1982,
+     0.338567
+    ],
+    "ac1": 0.042808,
+    "share_negative_years": 0.424242
+   },
+   "home": {
+    "first_year": 1927,
+    "last_year": 2025,
+    "n": 99,
+    "mean_arith": 0.011706,
+    "mean_geo": 0.010701,
+    "sd": 0.045722,
+    "min": [
+     2008,
+     -0.105345
+    ],
+    "max": [
+     1945,
+     0.203209
+    ],
+    "ac1": 0.497022,
+    "share_negative_years": 0.424242
+   },
+   "equity_intl": {
+    "first_year": 1975,
+    "last_year": 2025,
+    "n": 51,
+    "mean_arith": 0.085819,
+    "mean_geo": 0.066164,
+    "sd": 0.207893,
+    "min": [
+     2008,
+     -0.428625
+    ],
+    "max": [
+     1986,
+     0.745849
+    ],
+    "ac1": 0.073557,
+    "share_negative_years": 0.294118
+   },
+   "gold": {
+    "first_year": 1969,
+    "last_year": 2025,
+    "n": 57,
+    "mean_arith": 0.065835,
+    "mean_geo": 0.043801,
+    "sd": 0.229991,
+    "min": [
+     1981,
+     -0.300344
+    ],
+    "max": [
+     1979,
+     0.930818
+    ],
+    "ac1": 0.31613,
+    "share_negative_years": 0.438596
+   }
+  }
+ },
+ "premia_full_sample_ann": {
+  "equity_minus_tbill_arith": 0.083299,
+  "bond10_minus_tbill_arith": 0.014642,
+  "equity_minus_bond10_arith": 0.068656,
+  "tbill_real_arith": 0.003121
+ },
+ "correlations": {
+  "note": "pairwise-complete Pearson correlations; n_obs gives the sample size of each pair. unemp_chg = change in unemployment rate, long_yield_chg = change in monthly-average long yield. 'real' matrices deflate every return series except cpi by cpi.",
+  "monthly_nominal_full": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": -0.017025,
+     "bond10": 0.064771,
+     "cpi": 0.001533,
+     "home": 0.049764,
+     "equity_intl": 0.673429,
+     "gold": -0.030291,
+     "unemp_chg": -0.050157,
+     "long_yield_chg": -0.101143
+    },
+    "tbill": {
+     "equity_us": -0.017025,
+     "tbill": 1.0,
+     "bond10": 0.128793,
+     "cpi": 0.236936,
+     "home": 0.042324,
+     "equity_intl": 0.031139,
+     "gold": -0.038761,
+     "unemp_chg": 0.038482,
+     "long_yield_chg": 0.007317
+    },
+    "bond10": {
+     "equity_us": 0.064771,
+     "tbill": 0.128793,
+     "bond10": 1.0,
+     "cpi": -0.082769,
+     "home": -0.047746,
+     "equity_intl": 0.049386,
+     "gold": -0.000956,
+     "unemp_chg": 0.062231,
+     "long_yield_chg": -0.722806
+    },
+    "cpi": {
+     "equity_us": 0.001533,
+     "tbill": 0.236936,
+     "bond10": -0.082769,
+     "cpi": 1.0,
+     "home": 0.355906,
+     "equity_intl": -0.027526,
+     "gold": 0.13826,
+     "unemp_chg": -0.205463,
+     "long_yield_chg": 0.127362
+    },
+    "home": {
+     "equity_us": 0.049764,
+     "tbill": 0.042324,
+     "bond10": -0.047746,
+     "cpi": 0.355906,
+     "home": 1.0,
+     "equity_intl": 0.067182,
+     "gold": 0.024336,
+     "unemp_chg": -0.069366,
+     "long_yield_chg": 0.051754
+    },
+    "equity_intl": {
+     "equity_us": 0.673429,
+     "tbill": 0.031139,
+     "bond10": 0.049386,
+     "cpi": -0.027526,
+     "home": 0.067182,
+     "equity_intl": 1.0,
+     "gold": 0.093417,
+     "unemp_chg": 0.028941,
+     "long_yield_chg": -0.131332
+    },
+    "gold": {
+     "equity_us": -0.030291,
+     "tbill": -0.038761,
+     "bond10": -0.000956,
+     "cpi": 0.13826,
+     "home": 0.024336,
+     "equity_intl": 0.093417,
+     "gold": 1.0,
+     "unemp_chg": 0.046436,
+     "long_yield_chg": -0.022968
+    },
+    "unemp_chg": {
+     "equity_us": -0.050157,
+     "tbill": 0.038482,
+     "bond10": 0.062231,
+     "cpi": -0.205463,
+     "home": -0.069366,
+     "equity_intl": 0.028941,
+     "gold": 0.046436,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.067091
+    },
+    "long_yield_chg": {
+     "equity_us": -0.101143,
+     "tbill": 0.007317,
+     "bond10": -0.722806,
+     "cpi": 0.127362,
+     "home": 0.051754,
+     "equity_intl": -0.131332,
+     "gold": -0.022968,
+     "unemp_chg": -0.067091,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "tbill": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "bond10": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "cpi": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "home": {
+     "equity_us": 1202,
+     "tbill": 1202,
+     "bond10": 1202,
+     "cpi": 1202,
+     "home": 1202,
+     "equity_intl": 620,
+     "gold": 701,
+     "unemp_chg": 1168,
+     "long_yield_chg": 1201
+    },
+    "equity_intl": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "gold": {
+     "equity_us": 702,
+     "tbill": 702,
+     "bond10": 702,
+     "cpi": 702,
+     "home": 701,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 702,
+     "long_yield_chg": 702
+    },
+    "unemp_chg": {
+     "equity_us": 1169,
+     "tbill": 1169,
+     "bond10": 1169,
+     "cpi": 1169,
+     "home": 1168,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1169
+    },
+    "long_yield_chg": {
+     "equity_us": 1202,
+     "tbill": 1202,
+     "bond10": 1202,
+     "cpi": 1202,
+     "home": 1201,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    }
+   }
+  },
+  "monthly_real_full": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": 0.074827,
+     "bond10": 0.092518,
+     "cpi": -0.095142,
+     "home": 0.091994,
+     "equity_intl": 0.677505,
+     "gold": -0.029719,
+     "unemp_chg": -0.030301,
+     "long_yield_chg": -0.112719
+    },
+    "tbill": {
+     "equity_us": 0.074827,
+     "tbill": 1.0,
+     "bond10": 0.368962,
+     "cpi": -0.887116,
+     "home": 0.420216,
+     "equity_intl": 0.104136,
+     "gold": -0.11463,
+     "unemp_chg": 0.225738,
+     "long_yield_chg": -0.124473
+    },
+    "bond10": {
+     "equity_us": 0.092518,
+     "tbill": 0.368962,
+     "bond10": 1.0,
+     "cpi": -0.340429,
+     "home": 0.152285,
+     "equity_intl": 0.074592,
+     "gold": 0.001682,
+     "unemp_chg": 0.111615,
+     "long_yield_chg": -0.71505
+    },
+    "cpi": {
+     "equity_us": -0.095142,
+     "tbill": -0.887116,
+     "bond10": -0.340429,
+     "cpi": 1.0,
+     "home": -0.497287,
+     "equity_intl": -0.103412,
+     "gold": 0.06295,
+     "unemp_chg": -0.205463,
+     "long_yield_chg": 0.127362
+    },
+    "home": {
+     "equity_us": 0.091994,
+     "tbill": 0.420216,
+     "bond10": 0.152285,
+     "cpi": -0.497287,
+     "home": 1.0,
+     "equity_intl": 0.105328,
+     "gold": -0.043507,
+     "unemp_chg": 0.103412,
+     "long_yield_chg": -0.056904
+    },
+    "equity_intl": {
+     "equity_us": 0.677505,
+     "tbill": 0.104136,
+     "bond10": 0.074592,
+     "cpi": -0.103412,
+     "home": 0.105328,
+     "equity_intl": 1.0,
+     "gold": 0.091733,
+     "unemp_chg": 0.037452,
+     "long_yield_chg": -0.1479
+    },
+    "gold": {
+     "equity_us": -0.029719,
+     "tbill": -0.11463,
+     "bond10": 0.001682,
+     "cpi": 0.06295,
+     "home": -0.043507,
+     "equity_intl": 0.091733,
+     "gold": 1.0,
+     "unemp_chg": 0.053601,
+     "long_yield_chg": -0.040346
+    },
+    "unemp_chg": {
+     "equity_us": -0.030301,
+     "tbill": 0.225738,
+     "bond10": 0.111615,
+     "cpi": -0.205463,
+     "home": 0.103412,
+     "equity_intl": 0.037452,
+     "gold": 0.053601,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.067091
+    },
+    "long_yield_chg": {
+     "equity_us": -0.112719,
+     "tbill": -0.124473,
+     "bond10": -0.71505,
+     "cpi": 0.127362,
+     "home": -0.056904,
+     "equity_intl": -0.1479,
+     "gold": -0.040346,
+     "unemp_chg": -0.067091,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "tbill": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "bond10": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "cpi": {
+     "equity_us": 1203,
+     "tbill": 1203,
+     "bond10": 1203,
+     "cpi": 1203,
+     "home": 1202,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    },
+    "home": {
+     "equity_us": 1202,
+     "tbill": 1202,
+     "bond10": 1202,
+     "cpi": 1202,
+     "home": 1202,
+     "equity_intl": 620,
+     "gold": 701,
+     "unemp_chg": 1168,
+     "long_yield_chg": 1201
+    },
+    "equity_intl": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "gold": {
+     "equity_us": 702,
+     "tbill": 702,
+     "bond10": 702,
+     "cpi": 702,
+     "home": 701,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 702,
+     "long_yield_chg": 702
+    },
+    "unemp_chg": {
+     "equity_us": 1169,
+     "tbill": 1169,
+     "bond10": 1169,
+     "cpi": 1169,
+     "home": 1168,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1169
+    },
+    "long_yield_chg": {
+     "equity_us": 1202,
+     "tbill": 1202,
+     "bond10": 1202,
+     "cpi": 1202,
+     "home": 1201,
+     "equity_intl": 621,
+     "gold": 702,
+     "unemp_chg": 1169,
+     "long_yield_chg": 1202
+    }
+   }
+  },
+  "monthly_nominal_from_1975": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": 0.010315,
+     "bond10": 0.073228,
+     "cpi": -0.036491,
+     "home": 0.030376,
+     "equity_intl": 0.673429,
+     "gold": -0.028699,
+     "unemp_chg": 0.088314,
+     "long_yield_chg": -0.121129
+    },
+    "tbill": {
+     "equity_us": 0.010315,
+     "tbill": 1.0,
+     "bond10": 0.124678,
+     "cpi": 0.361708,
+     "home": 0.009788,
+     "equity_intl": 0.031139,
+     "gold": -0.049911,
+     "unemp_chg": 0.027369,
+     "long_yield_chg": 0.002886
+    },
+    "bond10": {
+     "equity_us": 0.073228,
+     "tbill": 0.124678,
+     "bond10": 1.0,
+     "cpi": -0.167791,
+     "home": -0.098104,
+     "equity_intl": 0.049386,
+     "gold": 0.017607,
+     "unemp_chg": 0.077018,
+     "long_yield_chg": -0.705572
+    },
+    "cpi": {
+     "equity_us": -0.036491,
+     "tbill": 0.361708,
+     "bond10": -0.167791,
+     "cpi": 1.0,
+     "home": 0.349471,
+     "equity_intl": -0.027526,
+     "gold": 0.128646,
+     "unemp_chg": -0.10753,
+     "long_yield_chg": 0.230039
+    },
+    "home": {
+     "equity_us": 0.030376,
+     "tbill": 0.009788,
+     "bond10": -0.098104,
+     "cpi": 0.349471,
+     "home": 1.0,
+     "equity_intl": 0.067182,
+     "gold": 0.027037,
+     "unemp_chg": -0.034482,
+     "long_yield_chg": 0.086224
+    },
+    "equity_intl": {
+     "equity_us": 0.673429,
+     "tbill": 0.031139,
+     "bond10": 0.049386,
+     "cpi": -0.027526,
+     "home": 0.067182,
+     "equity_intl": 1.0,
+     "gold": 0.093417,
+     "unemp_chg": 0.028941,
+     "long_yield_chg": -0.131332
+    },
+    "gold": {
+     "equity_us": -0.028699,
+     "tbill": -0.049911,
+     "bond10": 0.017607,
+     "cpi": 0.128646,
+     "home": 0.027037,
+     "equity_intl": 0.093417,
+     "gold": 1.0,
+     "unemp_chg": 0.046017,
+     "long_yield_chg": -0.041784
+    },
+    "unemp_chg": {
+     "equity_us": 0.088314,
+     "tbill": 0.027369,
+     "bond10": 0.077018,
+     "cpi": -0.10753,
+     "home": -0.034482,
+     "equity_intl": 0.028941,
+     "gold": 0.046017,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.088261
+    },
+    "long_yield_chg": {
+     "equity_us": -0.121129,
+     "tbill": 0.002886,
+     "bond10": -0.705572,
+     "cpi": 0.230039,
+     "home": 0.086224,
+     "equity_intl": -0.131332,
+     "gold": -0.041784,
+     "unemp_chg": -0.088261,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "tbill": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "bond10": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "cpi": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "home": {
+     "equity_us": 620,
+     "tbill": 620,
+     "bond10": 620,
+     "cpi": 620,
+     "home": 620,
+     "equity_intl": 620,
+     "gold": 620,
+     "unemp_chg": 620,
+     "long_yield_chg": 620
+    },
+    "equity_intl": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "gold": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "unemp_chg": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    },
+    "long_yield_chg": {
+     "equity_us": 621,
+     "tbill": 621,
+     "bond10": 621,
+     "cpi": 621,
+     "home": 620,
+     "equity_intl": 621,
+     "gold": 621,
+     "unemp_chg": 621,
+     "long_yield_chg": 621
+    }
+   }
+  },
+  "monthly_nominal_from_2000": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": -0.048967,
+     "bond10": -0.166679,
+     "cpi": 0.016176,
+     "home": 0.002719,
+     "equity_intl": 0.853481,
+     "gold": -0.057365,
+     "unemp_chg": 0.085492,
+     "long_yield_chg": 0.104619
+    },
+    "tbill": {
+     "equity_us": -0.048967,
+     "tbill": 1.0,
+     "bond10": 0.064159,
+     "cpi": 0.072677,
+     "home": -0.071019,
+     "equity_intl": -0.02598,
+     "gold": 0.105588,
+     "unemp_chg": 0.022339,
+     "long_yield_chg": -0.032121
+    },
+    "bond10": {
+     "equity_us": -0.166679,
+     "tbill": 0.064159,
+     "bond10": 1.0,
+     "cpi": -0.230525,
+     "home": -0.126023,
+     "equity_intl": -0.092169,
+     "gold": 0.197663,
+     "unemp_chg": 0.046165,
+     "long_yield_chg": -0.727063
+    },
+    "cpi": {
+     "equity_us": 0.016176,
+     "tbill": 0.072677,
+     "bond10": -0.230525,
+     "cpi": 1.0,
+     "home": 0.42256,
+     "equity_intl": 0.024668,
+     "gold": 0.143322,
+     "unemp_chg": -0.157591,
+     "long_yield_chg": 0.265485
+    },
+    "home": {
+     "equity_us": 0.002719,
+     "tbill": -0.071019,
+     "bond10": -0.126023,
+     "cpi": 0.42256,
+     "home": 1.0,
+     "equity_intl": 0.00921,
+     "gold": -0.059263,
+     "unemp_chg": -0.038813,
+     "long_yield_chg": 0.1507
+    },
+    "equity_intl": {
+     "equity_us": 0.853481,
+     "tbill": -0.02598,
+     "bond10": -0.092169,
+     "cpi": 0.024668,
+     "home": 0.00921,
+     "equity_intl": 1.0,
+     "gold": 0.081885,
+     "unemp_chg": 0.022284,
+     "long_yield_chg": 0.055094
+    },
+    "gold": {
+     "equity_us": -0.057365,
+     "tbill": 0.105588,
+     "bond10": 0.197663,
+     "cpi": 0.143322,
+     "home": -0.059263,
+     "equity_intl": 0.081885,
+     "gold": 1.0,
+     "unemp_chg": 0.067485,
+     "long_yield_chg": -0.245421
+    },
+    "unemp_chg": {
+     "equity_us": 0.085492,
+     "tbill": 0.022339,
+     "bond10": 0.046165,
+     "cpi": -0.157591,
+     "home": -0.038813,
+     "equity_intl": 0.022284,
+     "gold": 0.067485,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.081733
+    },
+    "long_yield_chg": {
+     "equity_us": 0.104619,
+     "tbill": -0.032121,
+     "bond10": -0.727063,
+     "cpi": 0.265485,
+     "home": 0.1507,
+     "equity_intl": 0.055094,
+     "gold": -0.245421,
+     "unemp_chg": -0.081733,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "tbill": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "bond10": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "cpi": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "home": {
+     "equity_us": 320,
+     "tbill": 320,
+     "bond10": 320,
+     "cpi": 320,
+     "home": 320,
+     "equity_intl": 320,
+     "gold": 320,
+     "unemp_chg": 320,
+     "long_yield_chg": 320
+    },
+    "equity_intl": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "gold": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "unemp_chg": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    },
+    "long_yield_chg": {
+     "equity_us": 321,
+     "tbill": 321,
+     "bond10": 321,
+     "cpi": 321,
+     "home": 320,
+     "equity_intl": 321,
+     "gold": 321,
+     "unemp_chg": 321,
+     "long_yield_chg": 321
+    }
+   }
+  },
+  "annual_nominal_full": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": -0.018146,
+     "bond10": 0.025233,
+     "cpi": 0.001269,
+     "home": 0.2527,
+     "equity_intl": 0.612564,
+     "gold": -0.107383,
+     "unemp_chg": -0.375207,
+     "long_yield_chg": -0.044249
+    },
+    "tbill": {
+     "equity_us": -0.018146,
+     "tbill": 1.0,
+     "bond10": 0.309139,
+     "cpi": 0.395104,
+     "home": 0.067952,
+     "equity_intl": 0.11866,
+     "gold": 0.061825,
+     "unemp_chg": 0.113913,
+     "long_yield_chg": 0.046443
+    },
+    "bond10": {
+     "equity_us": 0.025233,
+     "tbill": 0.309139,
+     "bond10": 1.0,
+     "cpi": -0.089885,
+     "home": -0.052108,
+     "equity_intl": -0.042903,
+     "gold": -0.086074,
+     "unemp_chg": 0.146871,
+     "long_yield_chg": -0.907938
+    },
+    "cpi": {
+     "equity_us": 0.001269,
+     "tbill": 0.395104,
+     "bond10": -0.089885,
+     "cpi": 1.0,
+     "home": 0.556228,
+     "equity_intl": 0.068953,
+     "gold": 0.399581,
+     "unemp_chg": -0.407116,
+     "long_yield_chg": 0.264398
+    },
+    "home": {
+     "equity_us": 0.2527,
+     "tbill": 0.067952,
+     "bond10": -0.052108,
+     "cpi": 0.556228,
+     "home": 1.0,
+     "equity_intl": 0.298807,
+     "gold": 0.096048,
+     "unemp_chg": -0.28085,
+     "long_yield_chg": 0.081048
+    },
+    "equity_intl": {
+     "equity_us": 0.612564,
+     "tbill": 0.11866,
+     "bond10": -0.042903,
+     "cpi": 0.068953,
+     "home": 0.298807,
+     "equity_intl": 1.0,
+     "gold": 0.165766,
+     "unemp_chg": -0.223966,
+     "long_yield_chg": 0.046278
+    },
+    "gold": {
+     "equity_us": -0.107383,
+     "tbill": 0.061825,
+     "bond10": -0.086074,
+     "cpi": 0.399581,
+     "home": 0.096048,
+     "equity_intl": 0.165766,
+     "gold": 1.0,
+     "unemp_chg": 0.175372,
+     "long_yield_chg": 0.105306
+    },
+    "unemp_chg": {
+     "equity_us": -0.375207,
+     "tbill": 0.113913,
+     "bond10": 0.146871,
+     "cpi": -0.407116,
+     "home": -0.28085,
+     "equity_intl": -0.223966,
+     "gold": 0.175372,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.121828
+    },
+    "long_yield_chg": {
+     "equity_us": -0.044249,
+     "tbill": 0.046443,
+     "bond10": -0.907938,
+     "cpi": 0.264398,
+     "home": 0.081048,
+     "equity_intl": 0.046278,
+     "gold": 0.105306,
+     "unemp_chg": -0.121828,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "tbill": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "bond10": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "cpi": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "home": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "equity_intl": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "gold": {
+     "equity_us": 57,
+     "tbill": 57,
+     "bond10": 57,
+     "cpi": 57,
+     "home": 57,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 57,
+     "long_yield_chg": 57
+    },
+    "unemp_chg": {
+     "equity_us": 96,
+     "tbill": 96,
+     "bond10": 96,
+     "cpi": 96,
+     "home": 96,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 96
+    },
+    "long_yield_chg": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    }
+   },
+   "years": [
+    1927,
+    2025
+   ]
+  },
+  "annual_real_full": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": 0.078529,
+     "bond10": 0.096004,
+     "cpi": -0.179144,
+     "home": 0.330519,
+     "equity_intl": 0.615927,
+     "gold": -0.12763,
+     "unemp_chg": -0.303119,
+     "long_yield_chg": -0.094555
+    },
+    "tbill": {
+     "equity_us": 0.078529,
+     "tbill": 1.0,
+     "bond10": 0.580664,
+     "cpi": -0.700585,
+     "home": -0.015515,
+     "equity_intl": 0.11009,
+     "gold": -0.315274,
+     "unemp_chg": 0.536195,
+     "long_yield_chg": -0.227652
+    },
+    "bond10": {
+     "equity_us": 0.096004,
+     "tbill": 0.580664,
+     "bond10": 1.0,
+     "cpi": -0.497547,
+     "home": 0.081999,
+     "equity_intl": -0.004476,
+     "gold": -0.120204,
+     "unemp_chg": 0.313188,
+     "long_yield_chg": -0.899216
+    },
+    "cpi": {
+     "equity_us": -0.179144,
+     "tbill": -0.700585,
+     "bond10": -0.497547,
+     "cpi": 1.0,
+     "home": -0.174538,
+     "equity_intl": -0.061538,
+     "gold": 0.275181,
+     "unemp_chg": -0.407116,
+     "long_yield_chg": 0.264398
+    },
+    "home": {
+     "equity_us": 0.330519,
+     "tbill": -0.015515,
+     "bond10": 0.081999,
+     "cpi": -0.174538,
+     "home": 1.0,
+     "equity_intl": 0.304651,
+     "gold": -0.137218,
+     "unemp_chg": 0.009267,
+     "long_yield_chg": -0.12085
+    },
+    "equity_intl": {
+     "equity_us": 0.615927,
+     "tbill": 0.11009,
+     "bond10": -0.004476,
+     "cpi": -0.061538,
+     "home": 0.304651,
+     "equity_intl": 1.0,
+     "gold": 0.1546,
+     "unemp_chg": -0.226459,
+     "long_yield_chg": -0.015322
+    },
+    "gold": {
+     "equity_us": -0.12763,
+     "tbill": -0.315274,
+     "bond10": -0.120204,
+     "cpi": 0.275181,
+     "home": -0.137218,
+     "equity_intl": 0.1546,
+     "gold": 1.0,
+     "unemp_chg": 0.171632,
+     "long_yield_chg": 0.046204
+    },
+    "unemp_chg": {
+     "equity_us": -0.303119,
+     "tbill": 0.536195,
+     "bond10": 0.313188,
+     "cpi": -0.407116,
+     "home": 0.009267,
+     "equity_intl": -0.226459,
+     "gold": 0.171632,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.121828
+    },
+    "long_yield_chg": {
+     "equity_us": -0.094555,
+     "tbill": -0.227652,
+     "bond10": -0.899216,
+     "cpi": 0.264398,
+     "home": -0.12085,
+     "equity_intl": -0.015322,
+     "gold": 0.046204,
+     "unemp_chg": -0.121828,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "tbill": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "bond10": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "cpi": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "home": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    },
+    "equity_intl": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "gold": {
+     "equity_us": 57,
+     "tbill": 57,
+     "bond10": 57,
+     "cpi": 57,
+     "home": 57,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 57,
+     "long_yield_chg": 57
+    },
+    "unemp_chg": {
+     "equity_us": 96,
+     "tbill": 96,
+     "bond10": 96,
+     "cpi": 96,
+     "home": 96,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 96
+    },
+    "long_yield_chg": {
+     "equity_us": 99,
+     "tbill": 99,
+     "bond10": 99,
+     "cpi": 99,
+     "home": 99,
+     "equity_intl": 51,
+     "gold": 57,
+     "unemp_chg": 96,
+     "long_yield_chg": 99
+    }
+   },
+   "years": [
+    1927,
+    2025
+   ]
+  },
+  "annual_nominal_from_1975": {
+   "order": [
+    "equity_us",
+    "tbill",
+    "bond10",
+    "cpi",
+    "home",
+    "equity_intl",
+    "gold",
+    "unemp_chg",
+    "long_yield_chg"
+   ],
+   "corr": {
+    "equity_us": {
+     "equity_us": 1.0,
+     "tbill": 0.116835,
+     "bond10": 0.052129,
+     "cpi": 0.082528,
+     "home": 0.220241,
+     "equity_intl": 0.612564,
+     "gold": 0.043554,
+     "unemp_chg": -0.073608,
+     "long_yield_chg": -0.046183
+    },
+    "tbill": {
+     "equity_us": 0.116835,
+     "tbill": 1.0,
+     "bond10": 0.286193,
+     "cpi": 0.622114,
+     "home": 0.055232,
+     "equity_intl": 0.11866,
+     "gold": 0.004241,
+     "unemp_chg": 0.157522,
+     "long_yield_chg": 0.039214
+    },
+    "bond10": {
+     "equity_us": 0.052129,
+     "tbill": 0.286193,
+     "bond10": 1.0,
+     "cpi": -0.214221,
+     "home": -0.207436,
+     "equity_intl": -0.042903,
+     "gold": -0.080745,
+     "unemp_chg": 0.263972,
+     "long_yield_chg": -0.918383
+    },
+    "cpi": {
+     "equity_us": 0.082528,
+     "tbill": 0.622114,
+     "bond10": -0.214221,
+     "cpi": 1.0,
+     "home": 0.365687,
+     "equity_intl": 0.068953,
+     "gold": 0.297973,
+     "unemp_chg": 0.004328,
+     "long_yield_chg": 0.470102
+    },
+    "home": {
+     "equity_us": 0.220241,
+     "tbill": 0.055232,
+     "bond10": -0.207436,
+     "cpi": 0.365687,
+     "home": 1.0,
+     "equity_intl": 0.298807,
+     "gold": 0.104019,
+     "unemp_chg": -0.334707,
+     "long_yield_chg": 0.203851
+    },
+    "equity_intl": {
+     "equity_us": 0.612564,
+     "tbill": 0.11866,
+     "bond10": -0.042903,
+     "cpi": 0.068953,
+     "home": 0.298807,
+     "equity_intl": 1.0,
+     "gold": 0.165766,
+     "unemp_chg": -0.223966,
+     "long_yield_chg": 0.046278
+    },
+    "gold": {
+     "equity_us": 0.043554,
+     "tbill": 0.004241,
+     "bond10": -0.080745,
+     "cpi": 0.297973,
+     "home": 0.104019,
+     "equity_intl": 0.165766,
+     "gold": 1.0,
+     "unemp_chg": 0.159763,
+     "long_yield_chg": 0.09039
+    },
+    "unemp_chg": {
+     "equity_us": -0.073608,
+     "tbill": 0.157522,
+     "bond10": 0.263972,
+     "cpi": 0.004328,
+     "home": -0.334707,
+     "equity_intl": -0.223966,
+     "gold": 0.159763,
+     "unemp_chg": 1.0,
+     "long_yield_chg": -0.229001
+    },
+    "long_yield_chg": {
+     "equity_us": -0.046183,
+     "tbill": 0.039214,
+     "bond10": -0.918383,
+     "cpi": 0.470102,
+     "home": 0.203851,
+     "equity_intl": 0.046278,
+     "gold": 0.09039,
+     "unemp_chg": -0.229001,
+     "long_yield_chg": 1.0
+    }
+   },
+   "n_obs": {
+    "equity_us": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "tbill": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "bond10": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "cpi": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "home": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "equity_intl": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "gold": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "unemp_chg": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    },
+    "long_yield_chg": {
+     "equity_us": 51,
+     "tbill": 51,
+     "bond10": 51,
+     "cpi": 51,
+     "home": 51,
+     "equity_intl": 51,
+     "gold": 51,
+     "unemp_chg": 51,
+     "long_yield_chg": 51
+    }
+   },
+   "years": [
+    1975,
+    2025
+   ]
+  },
+  "equity_bond_monthly_corr_by_era": {
+   "1926-1965": 0.006449,
+   "1966-1999": 0.28436,
+   "2000-2020": -0.349304,
+   "2021-end": 0.505686
+  }
+ },
+ "autocorrelation": {
+  "note": "sample autocorrelation of monthly series at the given lags (months); abs_nominal = autocorrelation of |return| (volatility clustering). Home-price and pre-1962 bond autocorrelations are inflated by index smoothing / interpolation / monthly-average yields.",
+  "lags": [
+   1,
+   12,
+   24,
+   36,
+   60
+  ],
+  "series": {
+   "equity_us": {
+    "nominal": {
+     "1": 0.089018,
+     "12": 0.004769,
+     "24": 0.018945,
+     "36": 0.00222,
+     "60": -0.005284
+    },
+    "real": {
+     "1": 0.09303,
+     "12": 0.005357,
+     "24": 0.020933,
+     "36": 0.006484,
+     "60": -0.001948
+    },
+    "abs_nominal": {
+     "1": 0.21871,
+     "12": 0.147916,
+     "24": 0.079001,
+     "36": 0.028993,
+     "60": 0.053239
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "1": 0.976084,
+     "12": 0.868237,
+     "24": 0.743615,
+     "36": 0.666598,
+     "60": 0.638736
+    },
+    "real": {
+     "1": 0.481405,
+     "12": 0.312466,
+     "24": 0.193551,
+     "36": 0.118478,
+     "60": 0.175092
+    },
+    "abs_nominal": {
+     "1": 0.97609,
+     "12": 0.868118,
+     "24": 0.743013,
+     "36": 0.666055,
+     "60": 0.638177
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "1": 0.116491,
+     "12": 0.016719,
+     "24": -0.00889,
+     "36": 0.005682,
+     "60": 0.049701
+    },
+    "real": {
+     "1": 0.163418,
+     "12": 0.033901,
+     "24": -0.006444,
+     "36": 0.003277,
+     "60": 0.067985
+    },
+    "abs_nominal": {
+     "1": 0.311899,
+     "12": 0.262227,
+     "24": 0.199883,
+     "36": 0.175144,
+     "60": 0.202178
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "1": 0.482105,
+     "12": 0.300925,
+     "24": 0.186789,
+     "36": 0.116702,
+     "60": 0.19782
+    },
+    "abs_nominal": {
+     "1": 0.409399,
+     "12": 0.190729,
+     "24": 0.103064,
+     "36": 0.105014,
+     "60": 0.084098
+    }
+   },
+   "home": {
+    "nominal": {
+     "1": 0.809431,
+     "12": 0.606869,
+     "24": 0.400237,
+     "36": 0.28195,
+     "60": 0.109736
+    },
+    "real": {
+     "1": 0.522846,
+     "12": 0.292031,
+     "24": 0.149394,
+     "36": 0.063656,
+     "60": -0.018071
+    },
+    "abs_nominal": {
+     "1": 0.75286,
+     "12": 0.525062,
+     "24": 0.30737,
+     "36": 0.24397,
+     "60": 0.101973
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "1": 0.08782,
+     "12": 0.005504,
+     "24": 0.020842,
+     "36": -0.023204,
+     "60": -0.017108
+    },
+    "real": {
+     "1": 0.084263,
+     "12": 0.012353,
+     "24": 0.02452,
+     "36": -0.019822,
+     "60": -0.020117
+    },
+    "abs_nominal": {
+     "1": 0.150331,
+     "12": 0.020873,
+     "24": 0.006239,
+     "36": 0.034266,
+     "60": -0.08519
+    }
+   },
+   "gold": {
+    "nominal": {
+     "1": 0.266332,
+     "12": 0.12074,
+     "24": -0.014757,
+     "36": 0.02517,
+     "60": -0.030085
+    },
+    "real": {
+     "1": 0.261443,
+     "12": 0.115111,
+     "24": -0.022667,
+     "36": 0.023238,
+     "60": -0.034592
+    },
+    "abs_nominal": {
+     "1": 0.218523,
+     "12": 0.103072,
+     "24": 0.103473,
+     "36": 0.073781,
+     "60": 0.02999
+    }
+   },
+   "long_yield_chg": {
+    "nominal": {
+     "1": 0.304639,
+     "12": -0.027786,
+     "24": -0.028533,
+     "36": 0.015428,
+     "60": 0.010598
+    }
+   },
+   "unemp_chg": {
+    "nominal": {
+     "1": 0.187287,
+     "12": 0.075613,
+     "24": 0.010886,
+     "36": -0.020431,
+     "60": -0.045484
+    }
+   },
+   "home_from_1953": {
+    "nominal": {
+     "1": 0.725548,
+     "12": 0.594012,
+     "24": 0.435068,
+     "36": 0.358051,
+     "60": 0.241114
+    }
+   },
+   "bond10_month_end_from_1962": {
+    "nominal": {
+     "1": 0.099754,
+     "12": 0.015945,
+     "24": -0.014883,
+     "36": 0.001289,
+     "60": 0.048334
+    }
+   }
+  }
+ },
+ "variance_ratios": {
+  "note": "Lo-MacKinlay overlapping variance ratio of log returns, VR(q) = Var(q-month)/(q*Var(1-month)), horizons in months (60 = 5y, 120 = 10y). <1 mean reversion, >1 momentum/persistence. Implied annualised vol at horizon q = vol_1m_annualised * sqrt(VR(q)).",
+  "series": {
+   "equity_us": {
+    "nominal": {
+     "12": 1.188142,
+     "24": 1.196193,
+     "60": 0.970916,
+     "120": 0.759475
+    },
+    "real": {
+     "12": 1.172407,
+     "24": 1.130794,
+     "60": 0.848197,
+     "120": 0.753942
+    }
+   },
+   "bond10": {
+    "nominal": {
+     "12": 1.225328,
+     "24": 1.350671,
+     "60": 1.742241,
+     "120": 2.627589
+    },
+    "real": {
+     "12": 1.524576,
+     "24": 1.830997,
+     "60": 2.205057,
+     "120": 2.667809
+    }
+   },
+   "tbill": {
+    "nominal": {
+     "12": 11.572495,
+     "24": 22.584123,
+     "60": 53.190056,
+     "120": 105.21589
+    },
+    "real": {
+     "12": 4.510825,
+     "24": 7.405388,
+     "60": 12.168514,
+     "120": 16.100093
+    }
+   },
+   "equity_intl": {
+    "nominal": {
+     "12": 1.368183,
+     "24": 1.494583,
+     "60": 1.532565,
+     "120": 1.628578
+    },
+    "real": {
+     "12": 1.3567,
+     "24": 1.463299,
+     "60": 1.407398,
+     "120": 1.092222
+    }
+   },
+   "home": {
+    "nominal": {
+     "12": 6.877684,
+     "24": 12.05755,
+     "60": 20.188766,
+     "120": 20.510285
+    },
+    "real": {
+     "12": 4.280305,
+     "24": 6.564383,
+     "60": 8.210782,
+     "120": 6.451585
+    }
+   },
+   "cpi": {
+    "nominal": {
+     "12": 4.518796,
+     "24": 7.404601,
+     "60": 12.363342,
+     "120": 16.468955
+    }
+   },
+   "equity_us_excess": {
+    "nominal": {
+     "12": 1.204846,
+     "24": 1.215831,
+     "60": 1.001136,
+     "120": 0.834025
+    }
+   },
+   "equity_us_from_1950": {
+    "real": {
+     "12": 1.167457,
+     "24": 1.118047,
+     "60": 1.082163,
+     "120": 1.241471
+    }
+   }
+  }
+ },
+ "business_cycle": {
+  "note": "recession = NBER USREC (1 from the month after the peak through the trough). mean_ann/vol_ann are annualised from the months in each state.",
+  "conditional_full_sample": {
+   "recession": {
+    "months": 201,
+    "equity_us": {
+     "n": 201,
+     "mean_ann": -0.020693,
+     "vol_ann": 0.286295,
+     "real_mean_ann": -0.023714
+    },
+    "tbill": {
+     "n": 201,
+     "mean_ann": 0.035803,
+     "vol_ann": 0.010554,
+     "real_mean_ann": 0.032953
+    },
+    "bond10": {
+     "n": 201,
+     "mean_ann": 0.090878,
+     "vol_ann": 0.080262,
+     "real_mean_ann": 0.088206
+    },
+    "cpi": {
+     "n": 201,
+     "mean_ann": 0.003317,
+     "vol_ann": 0.024643
+    },
+    "home": {
+     "n": 201,
+     "mean_ann": 0.01098,
+     "vol_ann": 0.024281,
+     "real_mean_ann": 0.008002
+    },
+    "equity_intl": {
+     "n": 61,
+     "mean_ann": -0.043301,
+     "vol_ann": 0.275647,
+     "real_mean_ann": -0.083124
+    },
+    "gold": {
+     "n": 85,
+     "mean_ann": 0.155195,
+     "vol_ann": 0.230707,
+     "real_mean_ann": 0.101209
+    },
+    "unemployment": {
+     "n": 188,
+     "avg_change_per_month": 0.004166,
+     "avg_change_per_year": 0.049991,
+     "avg_level": 0.084525
+    },
+    "long_yield": {
+     "avg_change_per_year": -0.00551,
+     "avg_level": 0.050785
+    }
+   },
+   "expansion": {
+    "months": 1002,
+    "equity_us": {
+     "n": 1002,
+     "mean_ann": 0.143095,
+     "vol_ann": 0.153516,
+     "real_mean_ann": 0.108301
+    },
+    "tbill": {
+     "n": 1002,
+     "mean_ann": 0.031753,
+     "vol_ann": 0.008132,
+     "real_mean_ann": -0.002863
+    },
+    "bond10": {
+     "n": 1002,
+     "mean_ann": 0.038285,
+     "vol_ann": 0.060809,
+     "real_mean_ann": 0.003749
+    },
+    "cpi": {
+     "n": 1002,
+     "mean_ann": 0.034858,
+     "vol_ann": 0.015999
+    },
+    "home": {
+     "n": 1001,
+     "mean_ann": 0.045737,
+     "vol_ann": 0.018826,
+     "real_mean_ann": 0.011048
+    },
+    "equity_intl": {
+     "n": 560,
+     "mean_ann": 0.131576,
+     "vol_ann": 0.14775,
+     "real_mean_ann": 0.095659
+    },
+    "gold": {
+     "n": 617,
+     "mean_ann": 0.086868,
+     "vol_ann": 0.158453,
+     "real_mean_ann": 0.049347
+    },
+    "unemployment": {
+     "n": 981,
+     "avg_change_per_month": -0.000763,
+     "avg_change_per_year": -0.009151,
+     "avg_level": 0.063478
+    },
+    "long_yield": {
+     "avg_change_per_year": 0.001264,
+     "avg_level": 0.047245
+    }
+   }
+  },
+  "conditional_from_1948": {
+   "recession": {
+    "months": 124,
+    "equity_us": {
+     "n": 124,
+     "mean_ann": 0.047526,
+     "vol_ann": 0.206857,
+     "real_mean_ann": 0.010361
+    },
+    "tbill": {
+     "n": 124,
+     "mean_ann": 0.048523,
+     "vol_ann": 0.011602,
+     "real_mean_ann": 0.010846
+    },
+    "bond10": {
+     "n": 124,
+     "mean_ann": 0.119324,
+     "vol_ann": 0.098972,
+     "real_mean_ann": 0.081891
+    },
+    "cpi": {
+     "n": 124,
+     "mean_ann": 0.037885,
+     "vol_ann": 0.018983
+    },
+    "home": {
+     "n": 124,
+     "mean_ann": 0.028469,
+     "vol_ann": 0.021622,
+     "real_mean_ann": -0.009169
+    },
+    "equity_intl": {
+     "n": 61,
+     "mean_ann": -0.043301,
+     "vol_ann": 0.275647,
+     "real_mean_ann": -0.083124
+    },
+    "gold": {
+     "n": 85,
+     "mean_ann": 0.155195,
+     "vol_ann": 0.230707,
+     "real_mean_ann": 0.101209
+    },
+    "unemployment": {
+     "n": 124,
+     "avg_change_per_month": 0.003387,
+     "avg_change_per_year": 0.040645,
+     "avg_level": 0.063024
+    },
+    "long_yield": {
+     "avg_change_per_year": -0.007974,
+     "avg_level": 0.062481
+    }
+   },
+   "expansion": {
+    "months": 821,
+    "equity_us": {
+     "n": 821,
+     "mean_ann": 0.132802,
+     "vol_ann": 0.137738,
+     "real_mean_ann": 0.099333
+    },
+    "tbill": {
+     "n": 821,
+     "mean_ann": 0.0372,
+     "vol_ann": 0.007996,
+     "real_mean_ann": 0.003886
+    },
+    "bond10": {
+     "n": 821,
+     "mean_ann": 0.04048,
+     "vol_ann": 0.066383,
+     "real_mean_ann": 0.007261
+    },
+    "cpi": {
+     "n": 821,
+     "mean_ann": 0.033415,
+     "vol_ann": 0.011936
+    },
+    "home": {
+     "n": 820,
+     "mean_ann": 0.044909,
+     "vol_ann": 0.018018,
+     "real_mean_ann": 0.011576
+    },
+    "equity_intl": {
+     "n": 560,
+     "mean_ann": 0.131576,
+     "vol_ann": 0.14775,
+     "real_mean_ann": 0.095659
+    },
+    "gold": {
+     "n": 617,
+     "mean_ann": 0.086868,
+     "vol_ann": 0.158453,
+     "real_mean_ann": 0.049347
+    },
+    "unemployment": {
+     "n": 821,
+     "avg_change_per_month": -0.000495,
+     "avg_change_per_year": -0.005934,
+     "avg_level": 0.055534
+    },
+    "long_yield": {
+     "avg_change_per_year": 0.001584,
+     "avg_level": 0.051791
+    }
+   }
+  },
+  "durations_full_sample": {
+   "window": [
+    "1926-07",
+    "2026-09"
+   ],
+   "recession_months_share": 0.167082,
+   "n_complete_recessions": 16,
+   "n_complete_expansions": 15,
+   "avg_recession_months": 12.5625,
+   "avg_expansion_months": 61.4,
+   "min_max_recession_months": [
+    2,
+    43
+   ],
+   "min_max_expansion_months": [
+    12,
+    128
+   ],
+   "recession_lengths": [
+    13,
+    43,
+    13,
+    8,
+    11,
+    10,
+    8,
+    10,
+    11,
+    16,
+    6,
+    16,
+    8,
+    8,
+    18,
+    2
+   ],
+   "expansion_lengths": [
+    21,
+    50,
+    80,
+    37,
+    45,
+    39,
+    24,
+    106,
+    36,
+    58,
+    12,
+    92,
+    120,
+    73,
+    128
+   ],
+   "censored_first_spell": {
+    "state": 0,
+    "months": 4
+   },
+   "censored_last_spell": {
+    "state": 0,
+    "months": 77
+   },
+   "transition_counts": {
+    "exp_to_exp": 985,
+    "exp_to_rec": 16,
+    "rec_to_rec": 185,
+    "rec_to_exp": 16
+   },
+   "p_expansion_to_recession": 0.015984,
+   "p_recession_to_expansion": 0.079602,
+   "transition_matrix_rows_from_exp_rec": [
+    [
+     0.984016,
+     0.015984
+    ],
+    [
+     0.079602,
+     0.920398
+    ]
+   ],
+   "implied_avg_expansion_months": 62.5625,
+   "implied_avg_recession_months": 12.5625,
+   "stationary_recession_prob": 0.167221
+  },
+  "durations_from_1948": {
+   "window": [
+    "1948-01",
+    "2026-09"
+   ],
+   "recession_months_share": 0.131217,
+   "n_complete_recessions": 12,
+   "n_complete_expansions": 11,
+   "avg_recession_months": 10.333333,
+   "avg_expansion_months": 66.636364,
+   "min_max_recession_months": [
+    2,
+    18
+   ],
+   "min_max_expansion_months": [
+    12,
+    128
+   ],
+   "recession_lengths": [
+    11,
+    10,
+    8,
+    10,
+    11,
+    16,
+    6,
+    16,
+    8,
+    8,
+    18,
+    2
+   ],
+   "expansion_lengths": [
+    45,
+    39,
+    24,
+    106,
+    36,
+    58,
+    12,
+    92,
+    120,
+    73,
+    128
+   ],
+   "censored_first_spell": {
+    "state": 0,
+    "months": 11
+   },
+   "censored_last_spell": {
+    "state": 0,
+    "months": 77
+   },
+   "transition_counts": {
+    "exp_to_exp": 808,
+    "exp_to_rec": 12,
+    "rec_to_rec": 112,
+    "rec_to_exp": 12
+   },
+   "p_expansion_to_recession": 0.014634,
+   "p_recession_to_expansion": 0.096774,
+   "transition_matrix_rows_from_exp_rec": [
+    [
+     0.985366,
+     0.014634
+    ],
+    [
+     0.096774,
+     0.903226
+    ]
+   ],
+   "implied_avg_expansion_months": 68.333333,
+   "implied_avg_recession_months": 10.333333,
+   "stationary_recession_prob": 0.131356
+  },
+  "recessions": [
+   {
+    "start": "1929-09",
+    "end": "1933-03",
+    "months": 43,
+    "unemp_before": 0.0004,
+    "unemp_at_end": 0.2536,
+    "unemp_peak_within_12m_after": 0.2559,
+    "equity_real_return_during": -0.698483
+   },
+   {
+    "start": "1937-06",
+    "end": "1938-06",
+    "months": 13,
+    "unemp_before": 0.1123,
+    "unemp_at_end": 0.2,
+    "unemp_peak_within_12m_after": 0.2,
+    "equity_real_return_during": -0.232613
+   },
+   {
+    "start": "1945-03",
+    "end": "1945-10",
+    "months": 8,
+    "unemp_before": 0.011,
+    "unemp_at_end": 0.0333,
+    "unemp_peak_within_12m_after": 0.0426,
+    "equity_real_return_during": 0.179345
+   },
+   {
+    "start": "1948-12",
+    "end": "1949-10",
+    "months": 11,
+    "unemp_before": 0.038,
+    "unemp_at_end": 0.079,
+    "unemp_peak_within_12m_after": 0.079,
+    "equity_real_return_during": 0.182486
+   },
+   {
+    "start": "1953-08",
+    "end": "1954-05",
+    "months": 10,
+    "unemp_before": 0.026,
+    "unemp_at_end": 0.059,
+    "unemp_peak_within_12m_after": 0.061,
+    "equity_real_return_during": 0.234053
+   },
+   {
+    "start": "1957-09",
+    "end": "1958-04",
+    "months": 8,
+    "unemp_before": 0.041,
+    "unemp_at_end": 0.074,
+    "unemp_peak_within_12m_after": 0.075,
+    "equity_real_return_during": -0.034065
+   },
+   {
+    "start": "1960-05",
+    "end": "1961-02",
+    "months": 10,
+    "unemp_before": 0.052,
+    "unemp_at_end": 0.069,
+    "unemp_peak_within_12m_after": 0.071,
+    "equity_real_return_during": 0.200583
+   },
+   {
+    "start": "1970-01",
+    "end": "1970-11",
+    "months": 11,
+    "unemp_before": 0.035,
+    "unemp_at_end": 0.059,
+    "unemp_peak_within_12m_after": 0.061,
+    "equity_real_return_during": -0.102415
+   },
+   {
+    "start": "1973-12",
+    "end": "1975-03",
+    "months": 16,
+    "unemp_before": 0.048,
+    "unemp_at_end": 0.086,
+    "unemp_peak_within_12m_after": 0.09,
+    "equity_real_return_during": -0.20554
+   },
+   {
+    "start": "1980-02",
+    "end": "1980-07",
+    "months": 6,
+    "unemp_before": 0.063,
+    "unemp_at_end": 0.078,
+    "unemp_peak_within_12m_after": 0.078,
+    "equity_real_return_during": 0.024515
+   },
+   {
+    "start": "1981-08",
+    "end": "1982-11",
+    "months": 16,
+    "unemp_before": 0.072,
+    "unemp_at_end": 0.108,
+    "unemp_peak_within_12m_after": 0.108,
+    "equity_real_return_during": 0.07186
+   },
+   {
+    "start": "1990-08",
+    "end": "1991-03",
+    "months": 8,
+    "unemp_before": 0.055,
+    "unemp_at_end": 0.068,
+    "unemp_peak_within_12m_after": 0.074,
+    "equity_real_return_during": 0.050294
+   },
+   {
+    "start": "2001-04",
+    "end": "2001-11",
+    "months": 8,
+    "unemp_before": 0.043,
+    "unemp_at_end": 0.055,
+    "unemp_peak_within_12m_after": 0.059,
+    "equity_real_return_during": -0.007977
+   },
+   {
+    "start": "2008-01",
+    "end": "2009-06",
+    "months": 18,
+    "unemp_before": 0.05,
+    "unemp_at_end": 0.095,
+    "unemp_peak_within_12m_after": 0.1,
+    "equity_real_return_during": -0.35329
+   },
+   {
+    "start": "2020-03",
+    "end": "2020-04",
+    "months": 2,
+    "unemp_before": 0.035,
+    "unemp_at_end": 0.148,
+    "unemp_peak_within_12m_after": 0.148,
+    "equity_real_return_during": -0.005722
+   }
+  ]
+ },
+ "equity_regimes": {
+  "threshold_method": {
+   "description": "month t is 'turbulent' when the annualised standard deviation of the trailing 12 monthly nominal US equity returns (months t-11..t) exceeds the 75th percentile of that statistic over the sample; otherwise 'calm'.",
+   "window_months": 12,
+   "threshold_vol_ann": 0.181967,
+   "trailing_vol_median": 0.138895,
+   "first_classified_month": "1927-06",
+   "calm": {
+    "months": 895,
+    "share": 0.750839,
+    "recession_share": 0.103911,
+    "equity_us": {
+     "n": 895,
+     "mean_ann": 0.123831,
+     "vol_ann": 0.130697,
+     "real_mean_ann": 0.087599
+    },
+    "tbill": {
+     "n": 895,
+     "mean_ann": 0.034268,
+     "vol_ann": 0.008506,
+     "real_mean_ann": -0.00196
+    },
+    "bond10": {
+     "n": 895,
+     "mean_ann": 0.043355,
+     "vol_ann": 0.061051,
+     "real_mean_ann": 0.007212
+    },
+    "cpi": {
+     "n": 895,
+     "mean_ann": 0.036458,
+     "vol_ann": 0.015852
+    },
+    "home": {
+     "n": 894,
+     "mean_ann": 0.046245,
+     "vol_ann": 0.018906,
+     "real_mean_ann": 0.009962
+    },
+    "equity_intl": {
+     "n": 464,
+     "mean_ann": 0.11085,
+     "vol_ann": 0.146688,
+     "real_mean_ann": 0.07312
+    },
+    "gold": {
+     "n": 530,
+     "mean_ann": 0.103366,
+     "vol_ann": 0.17426,
+     "real_mean_ann": 0.06201
+    },
+    "corr_monthly": {
+     "order": [
+      "equity_us",
+      "bond10",
+      "tbill",
+      "cpi",
+      "home",
+      "equity_intl"
+     ],
+     "corr": {
+      "equity_us": {
+       "equity_us": 1.0,
+       "bond10": 0.127389,
+       "tbill": -0.052765,
+       "cpi": -0.119039,
+       "home": -0.000104,
+       "equity_intl": 0.601918
+      },
+      "bond10": {
+       "equity_us": 0.127389,
+       "bond10": 1.0,
+       "tbill": 0.114095,
+       "cpi": -0.093641,
+       "home": -0.067423,
+       "equity_intl": 0.128693
+      },
+      "tbill": {
+       "equity_us": -0.052765,
+       "bond10": 0.114095,
+       "tbill": 1.0,
+       "cpi": 0.170711,
+       "home": -0.078773,
+       "equity_intl": 0.050165
+      },
+      "cpi": {
+       "equity_us": -0.119039,
+       "bond10": -0.093641,
+       "tbill": 0.170711,
+       "cpi": 1.0,
+       "home": 0.268814,
+       "equity_intl": -0.079044
+      },
+      "home": {
+       "equity_us": -0.000104,
+       "bond10": -0.067423,
+       "tbill": -0.078773,
+       "cpi": 0.268814,
+       "home": 1.0,
+       "equity_intl": 0.06734
+      },
+      "equity_intl": {
+       "equity_us": 0.601918,
+       "bond10": 0.128693,
+       "tbill": 0.050165,
+       "cpi": -0.079044,
+       "home": 0.06734,
+       "equity_intl": 1.0
+      }
+     },
+     "n_obs": {
+      "equity_us": {
+       "equity_us": 895,
+       "bond10": 895,
+       "tbill": 895,
+       "cpi": 895,
+       "home": 894,
+       "equity_intl": 464
+      },
+      "bond10": {
+       "equity_us": 895,
+       "bond10": 895,
+       "tbill": 895,
+       "cpi": 895,
+       "home": 894,
+       "equity_intl": 464
+      },
+      "tbill": {
+       "equity_us": 895,
+       "bond10": 895,
+       "tbill": 895,
+       "cpi": 895,
+       "home": 894,
+       "equity_intl": 464
+      },
+      "cpi": {
+       "equity_us": 895,
+       "bond10": 895,
+       "tbill": 895,
+       "cpi": 895,
+       "home": 894,
+       "equity_intl": 464
+      },
+      "home": {
+       "equity_us": 894,
+       "bond10": 894,
+       "tbill": 894,
+       "cpi": 894,
+       "home": 894,
+       "equity_intl": 463
+      },
+      "equity_intl": {
+       "equity_us": 464,
+       "bond10": 464,
+       "tbill": 464,
+       "cpi": 464,
+       "home": 463,
+       "equity_intl": 464
+      }
+     }
+    }
+   },
+   "turbulent": {
+    "months": 297,
+    "share": 0.249161,
+    "recession_share": 0.340067,
+    "equity_us": {
+     "n": 297,
+     "mean_ann": 0.087135,
+     "vol_ann": 0.290511,
+     "real_mean_ann": 0.07617
+    },
+    "tbill": {
+     "n": 297,
+     "mean_ann": 0.026893,
+     "vol_ann": 0.008814,
+     "real_mean_ann": 0.016646
+    },
+    "bond10": {
+     "n": 297,
+     "mean_ann": 0.057492,
+     "vol_ann": 0.075584,
+     "real_mean_ann": 0.047379
+    },
+    "cpi": {
+     "n": 297,
+     "mean_ann": 0.01066,
+     "vol_ann": 0.022278
+    },
+    "home": {
+     "n": 297,
+     "mean_ann": 0.023073,
+     "vol_ann": 0.022975,
+     "real_mean_ann": 0.01266
+    },
+    "equity_intl": {
+     "n": 157,
+     "mean_ann": 0.124885,
+     "vol_ann": 0.210884,
+     "real_mean_ann": 0.092808
+    },
+    "gold": {
+     "n": 172,
+     "mean_ann": 0.069797,
+     "vol_ann": 0.15083,
+     "real_mean_ann": 0.035955
+    },
+    "corr_monthly": {
+     "order": [
+      "equity_us",
+      "bond10",
+      "tbill",
+      "cpi",
+      "home",
+      "equity_intl"
+     ],
+     "corr": {
+      "equity_us": {
+       "equity_us": 1.0,
+       "bond10": 0.003389,
+       "tbill": 0.02025,
+       "cpi": 0.112557,
+       "home": 0.106088,
+       "equity_intl": 0.76599
+      },
+      "bond10": {
+       "equity_us": 0.003389,
+       "bond10": 1.0,
+       "tbill": 0.177024,
+       "cpi": -0.055173,
+       "home": 0.002502,
+       "equity_intl": -0.080707
+      },
+      "tbill": {
+       "equity_us": 0.02025,
+       "bond10": 0.177024,
+       "tbill": 1.0,
+       "cpi": 0.342256,
+       "home": 0.282703,
+       "equity_intl": -0.005165
+      },
+      "cpi": {
+       "equity_us": 0.112557,
+       "bond10": -0.055173,
+       "tbill": 0.342256,
+       "cpi": 1.0,
+       "home": 0.462406,
+       "equity_intl": 0.062208
+      },
+      "home": {
+       "equity_us": 0.106088,
+       "bond10": 0.002502,
+       "tbill": 0.282703,
+       "cpi": 0.462406,
+       "home": 1.0,
+       "equity_intl": 0.069327
+      },
+      "equity_intl": {
+       "equity_us": 0.76599,
+       "bond10": -0.080707,
+       "tbill": -0.005165,
+       "cpi": 0.062208,
+       "home": 0.069327,
+       "equity_intl": 1.0
+      }
+     },
+     "n_obs": {
+      "equity_us": {
+       "equity_us": 297,
+       "bond10": 297,
+       "tbill": 297,
+       "cpi": 297,
+       "home": 297,
+       "equity_intl": 157
+      },
+      "bond10": {
+       "equity_us": 297,
+       "bond10": 297,
+       "tbill": 297,
+       "cpi": 297,
+       "home": 297,
+       "equity_intl": 157
+      },
+      "tbill": {
+       "equity_us": 297,
+       "bond10": 297,
+       "tbill": 297,
+       "cpi": 297,
+       "home": 297,
+       "equity_intl": 157
+      },
+      "cpi": {
+       "equity_us": 297,
+       "bond10": 297,
+       "tbill": 297,
+       "cpi": 297,
+       "home": 297,
+       "equity_intl": 157
+      },
+      "home": {
+       "equity_us": 297,
+       "bond10": 297,
+       "tbill": 297,
+       "cpi": 297,
+       "home": 297,
+       "equity_intl": 157
+      },
+      "equity_intl": {
+       "equity_us": 157,
+       "bond10": 157,
+       "tbill": 157,
+       "cpi": 157,
+       "home": 157,
+       "equity_intl": 157
+      }
+     }
+    }
+   },
+   "transition_matrix_rows_from_calm_turbulent": [
+    [
+     0.965324,
+     0.034676
+    ],
+    [
+     0.104377,
+     0.895623
+    ]
+   ],
+   "expected_duration_months": {
+    "calm": 28.83871,
+    "turbulent": 9.580645
+   },
+   "stationary_turbulent_prob": 0.24937
+  },
+  "gaussian_hmm": {
+   "description": "two-state Gaussian hidden Markov model fitted by Baum-Welch EM to monthly log excess returns ln(1+equity_us) - ln(1+tbill), initialised from the threshold classification. Parameters are monthly (log excess return); *_ann fields are annualised. Per-regime statistics of the other series use the smoothed-probability classification P(turbulent)>0.5.",
+   "loglik": 2009.534756,
+   "iterations": 38,
+   "calm": {
+    "mu_monthly": 0.010773,
+    "sigma_monthly": 0.035989,
+    "mu_ann": 0.129275,
+    "sigma_ann": 0.124668
+   },
+   "turbulent": {
+    "mu_monthly": -0.02047,
+    "sigma_monthly": 0.09709,
+    "mu_ann": -0.24564,
+    "sigma_ann": 0.336331
+   },
+   "hmm_transition_matrix_rows_from_calm_turbulent": [
+    [
+     0.974952,
+     0.025048
+    ],
+    [
+     0.123683,
+     0.876317
+    ]
+   ],
+   "hmm_expected_duration_months": {
+    "calm": 39.922819,
+    "turbulent": 8.085165
+   },
+   "hmm_stationary_turbulent_prob": 0.168413,
+   "agreement_with_threshold_method": 0.825503,
+   "classified": {
+    "calm": {
+     "months": 1024,
+     "share": 0.851205,
+     "recession_share": 0.100586,
+     "equity_us": {
+      "n": 1024,
+      "mean_ann": 0.173824,
+      "vol_ann": 0.125651,
+      "real_mean_ann": 0.139906
+     },
+     "tbill": {
+      "n": 1024,
+      "mean_ann": 0.033759,
+      "vol_ann": 0.008607,
+      "real_mean_ann": 5.8e-05
+     },
+     "bond10": {
+      "n": 1024,
+      "mean_ann": 0.045225,
+      "vol_ann": 0.063926,
+      "real_mean_ann": 0.011571
+     },
+     "cpi": {
+      "n": 1024,
+      "mean_ann": 0.033922,
+      "vol_ann": 0.015779
+     },
+     "home": {
+      "n": 1023,
+      "mean_ann": 0.045313,
+      "vol_ann": 0.019063,
+      "real_mean_ann": 0.011564
+     },
+     "equity_intl": {
+      "n": 564,
+      "mean_ann": 0.162118,
+      "vol_ann": 0.144367,
+      "real_mean_ann": 0.124422
+     },
+     "gold": {
+      "n": 624,
+      "mean_ann": 0.091489,
+      "vol_ann": 0.164918,
+      "real_mean_ann": 0.052433
+     },
+     "corr_monthly": {
+      "order": [
+       "equity_us",
+       "bond10",
+       "tbill",
+       "cpi",
+       "home",
+       "equity_intl"
+      ],
+      "corr": {
+       "equity_us": {
+        "equity_us": 1.0,
+        "bond10": 0.140068,
+        "tbill": -0.006247,
+        "cpi": -0.076753,
+        "home": 0.00949,
+        "equity_intl": 0.566967
+       },
+       "bond10": {
+        "equity_us": 0.140068,
+        "bond10": 1.0,
+        "tbill": 0.14427,
+        "cpi": -0.054145,
+        "home": -0.032672,
+        "equity_intl": 0.10752
+       },
+       "tbill": {
+        "equity_us": -0.006247,
+        "bond10": 0.14427,
+        "tbill": 1.0,
+        "cpi": 0.18818,
+        "home": -0.031629,
+        "equity_intl": 0.015412
+       },
+       "cpi": {
+        "equity_us": -0.076753,
+        "bond10": -0.054145,
+        "tbill": 0.18818,
+        "cpi": 1.0,
+        "home": 0.25595,
+        "equity_intl": -0.053755
+       },
+       "home": {
+        "equity_us": 0.00949,
+        "bond10": -0.032672,
+        "tbill": -0.031629,
+        "cpi": 0.25595,
+        "home": 1.0,
+        "equity_intl": 0.018786
+       },
+       "equity_intl": {
+        "equity_us": 0.566967,
+        "bond10": 0.10752,
+        "tbill": 0.015412,
+        "cpi": -0.053755,
+        "home": 0.018786,
+        "equity_intl": 1.0
+       }
+      },
+      "n_obs": {
+       "equity_us": {
+        "equity_us": 1024,
+        "bond10": 1024,
+        "tbill": 1024,
+        "cpi": 1024,
+        "home": 1023,
+        "equity_intl": 564
+       },
+       "bond10": {
+        "equity_us": 1024,
+        "bond10": 1024,
+        "tbill": 1024,
+        "cpi": 1024,
+        "home": 1023,
+        "equity_intl": 564
+       },
+       "tbill": {
+        "equity_us": 1024,
+        "bond10": 1024,
+        "tbill": 1024,
+        "cpi": 1024,
+        "home": 1023,
+        "equity_intl": 564
+       },
+       "cpi": {
+        "equity_us": 1024,
+        "bond10": 1024,
+        "tbill": 1024,
+        "cpi": 1024,
+        "home": 1023,
+        "equity_intl": 564
+       },
+       "home": {
+        "equity_us": 1023,
+        "bond10": 1023,
+        "tbill": 1023,
+        "cpi": 1023,
+        "home": 1023,
+        "equity_intl": 563
+       },
+       "equity_intl": {
+        "equity_us": 564,
+        "bond10": 564,
+        "tbill": 564,
+        "cpi": 564,
+        "home": 563,
+        "equity_intl": 564
+       }
+      }
+     }
+    },
+    "turbulent": {
+     "months": 179,
+     "share": 0.148795,
+     "recession_share": 0.547486,
+     "equity_us": {
+      "n": 179,
+      "mean_ann": -0.216617,
+      "vol_ann": 0.353721,
+      "real_mean_ann": -0.220737
+     },
+     "tbill": {
+      "n": 179,
+      "mean_ann": 0.024825,
+      "vol_ann": 0.008179,
+      "real_mean_ann": 0.020643
+     },
+     "bond10": {
+      "n": 179,
+      "mean_ann": 0.05764,
+      "vol_ann": 0.068935,
+      "real_mean_ann": 0.05384
+     },
+     "cpi": {
+      "n": 179,
+      "mean_ann": 0.004795,
+      "vol_ann": 0.026615
+     },
+     "home": {
+      "n": 179,
+      "mean_ann": 0.009131,
+      "vol_ann": 0.023844,
+      "real_mean_ann": 0.004681
+     },
+     "equity_intl": {
+      "n": 57,
+      "mean_ann": -0.357776,
+      "vol_ann": 0.267333,
+      "real_mean_ann": -0.380271
+     },
+     "gold": {
+      "n": 78,
+      "mean_ann": 0.124361,
+      "vol_ann": 0.197898,
+      "real_mean_ann": 0.081171
+     },
+     "corr_monthly": {
+      "order": [
+       "equity_us",
+       "bond10",
+       "tbill",
+       "cpi",
+       "home",
+       "equity_intl"
+      ],
+      "corr": {
+       "equity_us": {
+        "equity_us": 1.0,
+        "bond10": -0.038412,
+        "tbill": -0.135151,
+        "cpi": 0.01037,
+        "home": 0.012261,
+        "equity_intl": 0.848521
+       },
+       "bond10": {
+        "equity_us": -0.038412,
+        "bond10": 1.0,
+        "tbill": 0.061968,
+        "cpi": -0.170487,
+        "home": -0.097887,
+        "equity_intl": -0.115085
+       },
+       "tbill": {
+        "equity_us": -0.135151,
+        "bond10": 0.061968,
+        "tbill": 1.0,
+        "cpi": 0.379618,
+        "home": 0.288657,
+        "equity_intl": -0.065193
+       },
+       "cpi": {
+        "equity_us": 0.01037,
+        "bond10": -0.170487,
+        "tbill": 0.379618,
+        "cpi": 1.0,
+        "home": 0.563695,
+        "equity_intl": -0.051693
+       },
+       "home": {
+        "equity_us": 0.012261,
+        "bond10": -0.097887,
+        "tbill": 0.288657,
+        "cpi": 0.563695,
+        "home": 1.0,
+        "equity_intl": 0.150821
+       },
+       "equity_intl": {
+        "equity_us": 0.848521,
+        "bond10": -0.115085,
+        "tbill": -0.065193,
+        "cpi": -0.051693,
+        "home": 0.150821,
+        "equity_intl": 1.0
+       }
+      },
+      "n_obs": {
+       "equity_us": {
+        "equity_us": 179,
+        "bond10": 179,
+        "tbill": 179,
+        "cpi": 179,
+        "home": 179,
+        "equity_intl": 57
+       },
+       "bond10": {
+        "equity_us": 179,
+        "bond10": 179,
+        "tbill": 179,
+        "cpi": 179,
+        "home": 179,
+        "equity_intl": 57
+       },
+       "tbill": {
+        "equity_us": 179,
+        "bond10": 179,
+        "tbill": 179,
+        "cpi": 179,
+        "home": 179,
+        "equity_intl": 57
+       },
+       "cpi": {
+        "equity_us": 179,
+        "bond10": 179,
+        "tbill": 179,
+        "cpi": 179,
+        "home": 179,
+        "equity_intl": 57
+       },
+       "home": {
+        "equity_us": 179,
+        "bond10": 179,
+        "tbill": 179,
+        "cpi": 179,
+        "home": 179,
+        "equity_intl": 57
+       },
+       "equity_intl": {
+        "equity_us": 57,
+        "bond10": 57,
+        "tbill": 57,
+        "cpi": 57,
+        "home": 57,
+        "equity_intl": 57
+       }
+      }
+     }
+    },
+    "transition_matrix_rows_from_calm_turbulent": [
+     [
+      0.981427,
+      0.018573
+     ],
+     [
+      0.106145,
+      0.893855
+     ]
+    ],
+    "expected_duration_months": {
+     "calm": 53.842105,
+     "turbulent": 9.421053
+    },
+    "stationary_turbulent_prob": 0.148918
+   }
+  }
+ },
+ "levels": {
+  "long_yield": {
+   "n": 1203,
+   "mean": 0.047813,
+   "sd": 0.027621,
+   "min": 0.0055,
+   "max": 0.1584,
+   "ac1": 0.995395,
+   "ac12": 0.940975
+  },
+  "tbill_annualised": {
+   "n": 1203,
+   "mean": 0.033337,
+   "sd": 0.031134,
+   "min": -0.007176,
+   "max": 0.174587,
+   "ac1": 0.975116,
+   "ac12": 0.864506
+  },
+  "term_spread_long_minus_tbill": {
+   "n": 1203,
+   "mean": 0.014499,
+   "sd": 0.012795,
+   "min": -0.047431,
+   "max": 0.060454,
+   "ac1": 0.852758,
+   "ac12": 0.465477
+  },
+  "inflation_12m": {
+   "n": 1192,
+   "mean": 0.030757,
+   "sd": 0.039148,
+   "min": -0.107383,
+   "max": 0.196721,
+   "ac1": 0.986545,
+   "ac12": 0.604075
+  },
+  "real_tbill_12m_expost": {
+   "n": 1192,
+   "mean": 0.003484,
+   "sd": 0.037769,
+   "min": -0.16137,
+   "max": 0.133814,
+   "ac1": 0.987234,
+   "ac12": 0.62655
+  },
+  "mortgage30_observed": {
+   "n": 666,
+   "mean": 0.076798,
+   "sd": 0.031785,
+   "min": 0.02684,
+   "max": 0.18454,
+   "ac1": 0.996283,
+   "ac12": 0.925931
+  },
+  "unemployment": {
+   "n": 1170,
+   "mean": 0.06686,
+   "sd": 0.042116,
+   "min": 0.0004,
+   "max": 0.2559,
+   "ac1": 0.992222,
+   "ac12": 0.839202
+  },
+  "unemployment_from_1948": {
+   "n": 945,
+   "mean": 0.056517,
+   "sd": 0.017031,
+   "min": 0.025,
+   "max": 0.148,
+   "ac1": 0.969396,
+   "ac12": 0.646451
+  },
+  "latest": {
+   "date": "2026-09",
+   "long_yield": 0.0529,
+   "tbill_annualised": 0.037841,
+   "mortgage30": 0.068625,
+   "unemployment": 0.042,
+   "inflation_12m": 0.037377
+  }
+ },
+ "cross_checks": {
+  "tbill_french_rf_vs_fred_tb3ms": {
+   "months": 1113,
+   "start": "1934-01",
+   "mean_french_rf_annualised": 0.033161,
+   "mean_tb3ms_discount_yield": 0.034199,
+   "corr_levels": 0.98956
+  },
+  "long_yield_ltgovtbd_vs_shiller_pre1953": {
+   "months": 321,
+   "mean_ltgovtbd": 0.027545,
+   "mean_shiller": 0.027267,
+   "corr_january_levels": 0.951219,
+   "note": "Shiller's pre-1953 long rate is annual (January) data linearly interpolated to months, so LTGOVTBD (true monthly averages) is used for returns; Shiller is a level cross-check only."
+  },
+  "bond_formula_exact_vs_duration_convexity": {
+   "max_abs_diff_monthly": 0.000524,
+   "mean_diff_ann": -0.000622,
+   "corr": 0.999995
+  },
+  "bond_month_end_vs_monthly_average_yields_from_1962": {
+   "months": 776,
+   "vol_ann_month_end": 0.077968,
+   "vol_ann_monthly_average": 0.066346,
+   "ac1_month_end": 0.099754,
+   "ac1_monthly_average": 0.312562,
+   "mean_ann_month_end": 0.057614,
+   "mean_ann_monthly_average": 0.057469
+  },
+  "bond10_calendar_year_returns_1928_on": {
+   "years": [
+    1928,
+    2025
+   ],
+   "arith_mean": 0.049635,
+   "geo_mean": 0.046613,
+   "sd": 0.081881,
+   "worst_year": [
+    2022,
+    -0.163745
+   ],
+   "best_year": [
+    1982,
+    0.389831
+   ],
+   "selected_years": {
+    "1931": -0.026168,
+    "1969": -0.055243,
+    "1982": 0.389831,
+    "1994": -0.072092,
+    "2008": 0.203745,
+    "2009": -0.101013,
+    "2013": -0.085028,
+    "2022": -0.163745
+   },
+   "published_reference": "Damodaran 'Historical Returns on Stocks, Bonds and Bills' 10-year T-bond 1928-2025 (histretSP.html, retrieved 2026-11-17): arithmetic 4.82%, geometric 4.53%, sd 7.90%; 1928-2023: 4.86% / 4.57% / 7.95% (1982 +32.81%, 2008 +20.10%, 2009 -11.12%, 2022 -17.83%, 2025 +7.80%); correlation of his annual returns with this series 0.989. Ibbotson SBBI 1926-2023 (quoted from memory, NOT verified): intermediate-term government arithmetic ~5.0% / sd ~5.6%; long-term government arithmetic ~5.7% / sd ~9.7%."
+  }
+ }
+}
