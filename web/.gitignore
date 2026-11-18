@@ -1,0 +1,6 @@
+node_modules/
+dist/
+src/engine/pkg/
+public/data/
+*.tsbuildinfo
+e2e/shots/

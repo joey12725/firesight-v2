@@ -1,0 +1,209 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import './tokens.css';
+
+/* Tailwind utilities are generated from the tokens: bg-surface-1, text-ink-2,
+   border-line, text-accent, bg-good-soft, rounded-md, text-sm and so on. */
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-inverse: var(--ink-inverse);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
+  --color-cool: var(--cool);
+  --color-cool-soft: var(--cool-soft);
+  --color-cool-ink: var(--cool-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-scrim: var(--scrim);
+
+  --font-sans: var(--ff-sans);
+  --font-mono: var(--ff-mono);
+
+  /* Type scale: dense instrument sizes; hierarchy comes from weight and colour. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+
+  --shadow-overlay: var(--elev-overlay);
+  --ease-out: var(--easing);
+
+  --animate-fade-in: fade-in var(--duration-base) var(--easing);
+  --animate-pop-in: pop-in var(--duration-base) var(--easing);
+  --animate-slide-in-right: slide-in-right var(--duration-slow) var(--easing);
+  --animate-slide-in-left: slide-in-left var(--duration-slow) var(--easing);
+  --animate-slide-in-up: slide-in-up var(--duration-slow) var(--easing);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-progress: progress-indeterminate 1.4s var(--easing) infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(2px) scale(0.985); }
+}
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+}
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+}
+@keyframes slide-in-up {
+  from { transform: translateY(100%); }
+}
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+@layer base {
+  html {
+    font-family: var(--ff-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  body {
+    background: var(--surface-0);
+    color: var(--ink-1);
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+    overscroll-behavior: none;
+  }
+  #root {
+    height: 100dvh;
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink-1);
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button,
+  [role='button'],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-3);
+  }
+  /* Number inputs are text fields with our own parsing; hide native spinners anyway. */
+  input[type='number']::-webkit-inner-spin-button {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Every figure in the product: tabular, lining numerals. */
+@utility num {
+  font-family: var(--ff-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'zero' 0;
+  letter-spacing: -0.01em;
+}
+
+/* Small uppercase label used for section eyebrows and table heads. */
+@utility eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* Range slider: a hairline track with an ember fill up to the thumb. */
+.slider {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--line-strong) var(--fill));
+}
+.slider::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--line-strong) var(--fill));
+}
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  background: var(--surface-2);
+}
+.slider::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  background: var(--surface-2);
+}

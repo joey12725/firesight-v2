@@ -1,0 +1,198 @@
+/*
+ * Design tokens. Everything visual in the app and in the charts reads from here.
+ * Light is declared on :root, dark overrides under [data-theme='dark']; the attribute
+ * is always set (index.html resolves "system" before first paint).
+ *
+ * Chart code on <canvas> cannot use var(): read resolved values with
+ * `useChartTheme()` from src/ui/charts/theme.ts.
+ */
+:root {
+  /* Surfaces: near-neutral with a slight warm tint. 0 is the page, higher is nearer. */
+  --surface-0: #f6f5f1;
+  --surface-1: #fbfaf7;
+  --surface-2: #ffffff;
+  --surface-3: #eeece6;
+  --surface-inverse: #1d1c19;
+
+  /* Text levels */
+  --ink-1: #1b1a17;
+  --ink-2: #57544c;
+  --ink-3: #8b877d;
+  --ink-inverse: #f6f5f1;
+
+  /* Hairlines */
+  --line: #e3e0d8;
+  --line-strong: #cbc7bd;
+
+  /* Ember: the FIRE identity and primary actions. Use sparingly. */
+  --accent: #cf4a12;
+  --accent-hover: #b53f0d;
+  --accent-soft: #fbe8dd;
+  --accent-ink: #a8390b;
+  --on-accent: #ffffff;
+
+  /* Cool secondary: comparison scenarios. */
+  --cool: #2a6a96;
+  --cool-soft: #e2edf5;
+  --cool-ink: #1f587f;
+
+  /* Semantic. Teal / amber / crimson stay distinguishable under the common colour
+     vision deficiencies; always pair them with an icon or a word, never colour alone. */
+  --good: #0f7a6b;
+  --good-soft: #dff1ed;
+  --warn: #9a6a08;
+  --warn-soft: #f8edd2;
+  --bad: #b4234f;
+  --bad-soft: #f9e1e8;
+
+  --focus: #cf4a12;
+  --scrim: rgb(27 26 23 / 0.32);
+  --elev-overlay: 0 1px 2px rgb(27 26 23 / 0.06), 0 12px 32px -8px rgb(27 26 23 / 0.18);
+
+  /* ---- Chart palette ---- */
+  /* Baseline plan: ember. Quantile bands from the outer (5-95) to the inner (25-75). */
+  --chart-baseline: #cf4a12;
+  --chart-band-outer: rgb(207 74 18 / 0.1);
+  --chart-band-mid: rgb(207 74 18 / 0.18);
+  --chart-band-inner: rgb(207 74 18 / 0.3);
+  --chart-median: #cf4a12;
+  --chart-sample-path: rgb(27 26 23 / 0.14);
+  /* Scenario under comparison: cool. */
+  --chart-scenario: #2a6a96;
+  --chart-scenario-band-outer: rgb(42 106 150 / 0.1);
+  --chart-scenario-band-mid: rgb(42 106 150 / 0.18);
+  --chart-scenario-band-inner: rgb(42 106 150 / 0.3);
+  /* Life-stage stack ("rich, broke or dead"). */
+  --chart-status-working: #8794a3;
+  --chart-status-retired: #1f8a7a;
+  --chart-status-cutting: #d9a021;
+  --chart-status-depleted: #b4234f;
+  --chart-status-dead: #d9d5cc;
+  /* Categorical series (Okabe-Ito order, tuned for this background). */
+  --chart-cat-1: #2a6a96;
+  --chart-cat-2: #cf4a12;
+  --chart-cat-3: #1f8a7a;
+  --chart-cat-4: #b8860b;
+  --chart-cat-5: #7a5aa6;
+  --chart-cat-6: #b4234f;
+  --chart-cat-7: #5f8f3a;
+  --chart-cat-8: #6f6b62;
+  /* Sequential single-hue ramp for heat maps, low to high. */
+  --chart-seq-1: #f3ede4;
+  --chart-seq-2: #f1d3bd;
+  --chart-seq-3: #e9a57c;
+  --chart-seq-4: #d9702f;
+  --chart-seq-5: #a83e0c;
+  /* Scaffolding */
+  --chart-grid: #e9e6de;
+  --chart-axis: #cbc7bd;
+  --chart-label: #8b877d;
+  --chart-annotation: #57544c;
+
+  /* ---- Scales ---- */
+  --ff-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ff-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --duration-fast: 90ms;
+  --duration-base: 160ms;
+  --duration-slow: 280ms;
+  --easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  --topbar-height: 48px;
+  --editor-width: 400px;
+  --assistant-width: 360px;
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --surface-0: #131210;
+  --surface-1: #191816;
+  --surface-2: #201f1c;
+  --surface-3: #2a2825;
+  --surface-inverse: #f1eee8;
+
+  --ink-1: #eeebe5;
+  --ink-2: #b3afa6;
+  --ink-3: #7f7b72;
+  --ink-inverse: #191816;
+
+  --line: #2c2a26;
+  --line-strong: #423f3a;
+
+  --accent: #f2733b;
+  --accent-hover: #f58a58;
+  --accent-soft: #38210f;
+  --accent-ink: #f79566;
+  --on-accent: #1a0d05;
+
+  --cool: #6aaad8;
+  --cool-soft: #152a3a;
+  --cool-ink: #8dbfe3;
+
+  --good: #43bfa9;
+  --good-soft: #10302b;
+  --warn: #e0aa42;
+  --warn-soft: #33270d;
+  --bad: #ef6b93;
+  --bad-soft: #3a1522;
+
+  --focus: #f2733b;
+  --scrim: rgb(0 0 0 / 0.55);
+  --elev-overlay: 0 0 0 1px rgb(255 255 255 / 0.04), 0 16px 40px -8px rgb(0 0 0 / 0.6);
+
+  --chart-baseline: #f2733b;
+  --chart-band-outer: rgb(242 115 59 / 0.12);
+  --chart-band-mid: rgb(242 115 59 / 0.22);
+  --chart-band-inner: rgb(242 115 59 / 0.36);
+  --chart-median: #f2733b;
+  --chart-sample-path: rgb(238 235 229 / 0.16);
+  --chart-scenario: #6aaad8;
+  --chart-scenario-band-outer: rgb(106 170 216 / 0.12);
+  --chart-scenario-band-mid: rgb(106 170 216 / 0.22);
+  --chart-scenario-band-inner: rgb(106 170 216 / 0.36);
+  --chart-status-working: #6d7a89;
+  --chart-status-retired: #3aa896;
+  --chart-status-cutting: #e0aa42;
+  --chart-status-depleted: #ef6b93;
+  --chart-status-dead: #3a3834;
+  --chart-cat-1: #6aaad8;
+  --chart-cat-2: #f2733b;
+  --chart-cat-3: #43bfa9;
+  --chart-cat-4: #e0aa42;
+  --chart-cat-5: #a98bd6;
+  --chart-cat-6: #ef6b93;
+  --chart-cat-7: #93c36a;
+  --chart-cat-8: #a39f96;
+  --chart-seq-1: #26211c;
+  --chart-seq-2: #4a2a17;
+  --chart-seq-3: #84401a;
+  --chart-seq-4: #c75d26;
+  --chart-seq-5: #f79566;
+  --chart-grid: #262421;
+  --chart-axis: #423f3a;
+  --chart-label: #7f7b72;
+  --chart-annotation: #b3afa6;
+
+  color-scheme: dark;
+}
+
+@media (max-width: 1280px) {
+  :root {
+    --editor-width: 360px;
+    --assistant-width: 320px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}

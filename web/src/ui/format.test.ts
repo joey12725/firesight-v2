@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest';
+import { formatForInput, money, moneyCompact, parseNumber, percent, yearMonth, yearsBetween } from './format';
+
+describe('parseNumber', () => {
+  it('reads money with suffixes and punctuation', () => {
+    expect(parseNumber('85k', 'money')).toBe(85_000);
+    expect(parseNumber('$1.2m', 'money')).toBe(1_200_000);
+    expect(parseNumber('1,250.50', 'money')).toBe(1250.5);
+    expect(parseNumber(' 2 B ', 'money')).toBe(2e9);
+    expect(parseNumber('(500)', 'money')).toBe(-500);
+    expect(parseNumber('.5k', 'money')).toBe(500);
+    expect(parseNumber('abc', 'money')).toBeNull();
+    expect(parseNumber('12q', 'money')).toBeNull();
+    expect(parseNumber('', 'money')).toBeNull();
+  });
+
+  it('reads percents as fractions', () => {
+    expect(parseNumber('4%', 'percent')).toBe(0.04);
+    expect(parseNumber('4', 'percent')).toBe(0.04);
+    expect(parseNumber('0.5', 'percent')).toBe(0.005);
+    expect(parseNumber('4.25 %', 'percent')).toBe(0.0425);
+    expect(parseNumber('4k', 'percent')).toBeNull();
+  });
+
+  it('reads durations', () => {
+    expect(parseNumber('30y', 'years')).toBe(30);
+    expect(parseNumber('18mo', 'years')).toBe(1.5);
+    expect(parseNumber('2 years', 'months')).toBe(24);
+    expect(parseNumber('18', 'months')).toBe(18);
+    expect(parseNumber('2.6', 'integer')).toBe(3);
+  });
+});
+
+describe('formatting', () => {
+  it('round-trips through the input format', () => {
+    for (const [value, kind] of [
+      [85_000, 'money'],
+      [0.0425, 'percent'],
+      [0.07, 'percent'],
+      [67, 'years'],
+      [312, 'months'],
+    ] as const) {
+      expect(parseNumber(formatForInput(value, kind), kind)).toBe(value);
+    }
+    expect(formatForInput(0.07, 'percent')).toBe('7');
+    expect(formatForInput(1_250_000, 'money')).toBe('1,250,000');
+  });
+
+  it('formats for reading', () => {
+    expect(money(85_000)).toBe('$85,000');
+    expect(moneyCompact(85_000)).toBe('$85k');
+    expect(moneyCompact(1_250_000)).toBe('$1.25M');
+    expect(moneyCompact(7_400)).toBe('$7.4k');
+    expect(moneyCompact(950)).toBe('$950');
+    expect(percent(0.0425)).toBe('4.25%');
+    expect(yearMonth('2031-09')).toBe('Sep 2031');
+    expect(yearsBetween('1989-09', '2026-11')).toBe(37);
+    expect(yearsBetween('1989-12', '2026-11')).toBe(36);
+  });
+});

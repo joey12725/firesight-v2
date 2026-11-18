@@ -11,3 +11,7 @@ data/history/raw/*
 !data/history/raw/README.md
 crates/firesight-wasm/pkg/
 .claude/
+web/e2e/shots/
+web/public/data/
+web/src/engine/profile.schema.json
+web/src/engine/profile.d.ts

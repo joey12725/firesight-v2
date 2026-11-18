@@ -1,0 +1,187 @@
+import type { Assumptions, Stress } from '@/engine/types';
+import { append, remove } from '@/state/patches';
+import { Button, IconButton, Popover } from '@/ui';
+import { ChoiceField, Group, NumField, PercentField, Row, SliderField, ToggleField } from '../fields';
+import { useEdit, useProfile } from '../hooks';
+import { WhenField } from '../WhenField';
+
+type Market = Assumptions['market']['kind'];
+
+const MODELS: { value: Market['type']; label: string; explain: string; make: () => unknown }[] = [
+  {
+    value: 'bootstrap',
+    label: 'History, reshuffled',
+    explain:
+      'Stitches futures together from multi-year stretches of real market history, keeping stocks, bonds and inflation in step. Crashes, recoveries and long droughts look like the real ones. It cannot produce anything worse than history did.',
+    make: () => ({ type: 'bootstrap' }),
+  },
+  {
+    value: 'regime',
+    label: 'Regimes',
+    explain: 'A statistical model that switches between calm and crisis periods. It can produce futures history never did, at the price of resting on fitted parameters you cannot inspect in a chart of the past.',
+    make: () => ({ type: 'regime' }),
+  },
+  {
+    value: 'lognormal',
+    label: 'Textbook random walk',
+    explain: 'Each month is an independent draw with the historical average and volatility. Simple and widely used; it has no crashes that cluster and no recoveries, so it understates both short-term risk and long-term stability.',
+    make: () => ({ type: 'lognormal' }),
+  },
+  {
+    value: 'historical',
+    label: 'History, replayed',
+    explain: 'Each path starts in a different real month and lives through what followed, in order. Easy to audit, but there are only so many decades of history, and the recent starts run out of future.',
+    make: () => ({ type: 'historical' }),
+  },
+];
+
+const STRESSES: { type: Stress['type']; label: string; note: string; make: () => unknown }[] = [
+  { type: 'crash_at_retirement', label: 'Crash at retirement', note: 'Stocks fall hard in the year you retire', make: () => ({ type: 'crash_at_retirement' }) },
+  { type: 'lost_decade', label: 'Lost decade', note: 'Ten years in which stocks return nothing after inflation', make: () => ({ type: 'lost_decade', start: { type: 'retirement', offset_years: 0 } }) },
+  { type: 'stagflation', label: 'Stagflation', note: 'High inflation with weak stock and bond returns', make: () => ({ type: 'stagflation', start: { type: 'retirement', offset_years: 0 } }) },
+];
+
+function StressRow({ stress, index }: { stress: Stress; index: number }) {
+  const path = `/assumptions/market/stress/${index}`;
+  const edit = useEdit();
+  const meta = STRESSES.find((s) => s.type === stress.type);
+  return (
+    <li data-path={path} className="space-y-3 rounded-md border border-line bg-surface-2 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-ink-1">{meta?.label}</span>
+        <IconButton icon="trash" size="sm" variant="danger" label={`Remove ${meta?.label}`} onClick={() => edit(remove(path), { label: `Remove ${meta?.label}` })} />
+      </div>
+      {stress.type === 'crash_at_retirement' && (
+        <Row>
+          <PercentField path={`${path}/drawdown`} label="Fall" />
+          <NumField path={`${path}/recovery_years`} label="Recovery" kind="years" suffix="yrs" />
+        </Row>
+      )}
+      {stress.type === 'lost_decade' && <WhenField path={`${path}/start`} label="Starts" kinds={['retirement', 'date', 'age', 'start']} />}
+      {stress.type === 'stagflation' && (
+        <>
+          <WhenField path={`${path}/start`} label="Starts" kinds={['retirement', 'date', 'age', 'start']} />
+          <Row>
+            <NumField path={`${path}/years`} label="Lasts" kind="years" suffix="yrs" />
+            <PercentField path={`${path}/inflation`} label="Inflation" />
+          </Row>
+        </>
+      )}
+    </li>
+  );
+}
+
+export function AssumptionsSection() {
+  const { assumptions } = useProfile();
+  const edit = useEdit();
+  const m = '/assumptions/market';
+  const model = assumptions.market.kind;
+  const taxes = assumptions.taxes;
+  return (
+    <>
+      <Group title="Markets">
+        <ChoiceField path={`${m}/kind`} label="How futures are generated" options={MODELS} read={(v) => (v as Market).type} write={(type) => MODELS.find((x) => x.value === type)?.make()} />
+        <p className="text-xs leading-relaxed text-ink-2">{MODELS.find((x) => x.value === model.type)?.explain}</p>
+        {model.type === 'bootstrap' && (
+          <Row>
+            <NumField path={`${m}/kind/mean_block_months`} label="Typical stretch length" kind="months" suffix="mo" />
+            <NumField path={`${m}/kind/from_year`} label="Use history from" kind="integer" nullable placeholder="All of it" />
+          </Row>
+        )}
+        <SliderField
+          path={`${m}/equity_premium_adjustment`}
+          label="Stock returns versus history"
+          kind="percent"
+          min={-0.03}
+          max={0.02}
+          step={0.0025}
+          hint="Per year. Many forecasters expect less than the historical average; -1% is a common haircut."
+        />
+        <SliderField path={`${m}/inflation_adjustment`} label="Inflation versus history" kind="percent" min={-0.02} max={0.03} step={0.0025} hint="Per year, added to simulated inflation." />
+      </Group>
+
+      <Group title="Stress tests">
+        {assumptions.market.stress.length > 0 ? (
+          <ul className="space-y-1.5">
+            {assumptions.market.stress.map((s, i) => (
+              <StressRow key={`${s.type}-${i}`} stress={s} index={i} />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs leading-snug text-ink-3">None. A stress test forces a bad episode into every simulated life, on top of the usual randomness.</p>
+        )}
+        <Popover
+          label="Add a stress test"
+          className="w-64 p-1"
+          trigger={
+            <Button size="sm" variant="ghost" icon="plus" className="-ml-2">
+              Add a stress test
+            </Button>
+          }
+        >
+          {(close) => (
+            <ul>
+              {STRESSES.map((s) => (
+                <li key={s.type}>
+                  <button
+                    type="button"
+                    className="block w-full rounded-sm px-2.5 py-1.5 text-left hover:bg-surface-3"
+                    onClick={() => {
+                      edit(append(`${m}/stress`, s.make()), { label: `Add stress test: ${s.label}` });
+                      close();
+                    }}
+                  >
+                    <span className="block text-sm font-medium text-ink-1">{s.label}</span>
+                    <span className="block text-xs text-ink-3">{s.note}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Popover>
+      </Group>
+
+      <Group title="Taxes">
+        <Row>
+          <ChoiceField
+            path="/assumptions/taxes/kind"
+            label="Tax model"
+            options={[
+              { value: 'us_current_law', label: 'US federal and state law' },
+              { value: 'flat', label: 'One flat rate' },
+              { value: 'none', label: 'No taxes' },
+            ]}
+            read={(v) => (v as typeof taxes.kind).type}
+            write={(type) => (type === 'flat' ? { type, rate: 0.2 } : { type })}
+          />
+          {taxes.kind.type === 'flat' && <PercentField path="/assumptions/taxes/kind/rate" label="Rate" />}
+        </Row>
+        {taxes.kind.type === 'us_current_law' && <ToggleField path="/assumptions/taxes/index_brackets" label="Brackets keep up with inflation" />}
+        <p className="text-xs leading-snug text-ink-3">The Social Security benefit cut is set under Income.</p>
+      </Group>
+
+      <Group title="Lifespan and risks">
+        <Row>
+          <ChoiceField
+            path="/assumptions/longevity"
+            label="Lifespans"
+            options={[
+              { value: 'stochastic', label: 'Vary, from life tables' },
+              { value: 'fixed_age', label: 'Everyone lives to an age' },
+            ]}
+            read={(v) => (v as typeof assumptions.longevity).type}
+            write={(type) => (type === 'fixed_age' ? { type, age: 95 } : { type, improvement: true })}
+          />
+          {assumptions.longevity.type === 'fixed_age' ? (
+            <NumField path="/assumptions/longevity/age" label="Age" kind="years" />
+          ) : (
+            <NumField path="/simulation/end_age" label="Plan no further than" kind="integer" suffix="yrs old" />
+          )}
+        </Row>
+        {assumptions.longevity.type === 'stochastic' && <ToggleField path="/assumptions/longevity/improvement" label="People keep living longer" />}
+        <ToggleField path="/assumptions/career_risk" label="Career risk: layoffs and pay shocks" />
+        <ToggleField path="/assumptions/health_risk" label="Health risk: medical and care costs vary" />
+      </Group>
+    </>
+  );
+}
