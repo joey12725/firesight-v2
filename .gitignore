@@ -10,3 +10,4 @@ web/src/engine/pkg/
 data/history/raw/*
 !data/history/raw/README.md
 crates/firesight-wasm/pkg/
+.claude/
