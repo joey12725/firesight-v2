@@ -23,6 +23,25 @@ pub struct RetirementPlan {
     /// Amount the household wants to leave behind, in today's dollars. The plan counts
     /// as falling short if savings drop below it. 0 for no bequest goal.
     pub bequest_target: f64,
+    /// What happens to property when savings run out.
+    pub home_equity: HomeEquity,
+}
+
+/// Whether property is sold when every account is empty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeEquity {
+    /// Property is never sold unless a `sell_property` event says so. A household
+    /// that runs out of savings cuts its spending to its income and is counted as
+    /// depleted, whatever its home is worth.
+    Never,
+    /// When savings are gone and essential spending would have to be cut, property
+    /// is sold: a vacation home first, then a rental, then the home itself (6%
+    /// selling costs, the mortgage repaid, the gain taxed as usual). After selling
+    /// its home the household rents, at 4% of the sale price a year. The plan is
+    /// then not depleted; the sale is reported on its own (`home_sale_rate`).
+    #[default]
+    LastResort,
 }
 
 impl Default for RetirementPlan {
@@ -34,6 +53,7 @@ impl Default for RetirementPlan {
             withdrawal_order: WithdrawalOrder::default(),
             early_access: EarlyAccess::Auto,
             bequest_target: 0.0,
+            home_equity: HomeEquity::LastResort,
         }
     }
 }

@@ -805,14 +805,24 @@ impl PropertyState {
     }
 
     /// Refinances the mortgage at `market_rate` if that is at least `threshold`
-    /// below the loan's rate: the balance is re-amortised at the new rate over the
-    /// term the old loan had left, so the payment falls. Closing costs are ignored
-    /// (the threshold stands in for them). Returns true if the loan was refinanced.
-    pub fn refinance(&mut self, market_rate: f64, threshold: f64) -> bool {
+    /// below the loan's rate and the interest saved over `payback_years` exceeds
+    /// `closing_costs`: the balance is re-amortised at the new rate over the term
+    /// the old loan had left, so the payment falls. Returns true if the loan was
+    /// refinanced; the caller pays the closing costs.
+    pub fn refinance(
+        &mut self,
+        market_rate: f64,
+        threshold: f64,
+        closing_costs: f64,
+        payback_years: f64,
+    ) -> bool {
         let Some(m) = &mut self.mortgage else {
             return false;
         };
         if !market_rate.is_finite() || market_rate < 0.0 || m.rate - market_rate < threshold {
+            return false;
+        }
+        if (m.rate - market_rate) * m.balance * payback_years <= closing_costs {
             return false;
         }
         // Months left on the old schedule: n = -ln(1 - B r / P) / ln(1 + r).

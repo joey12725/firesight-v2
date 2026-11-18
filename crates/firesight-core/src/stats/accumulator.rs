@@ -70,6 +70,7 @@ pub(crate) struct PathTally {
     tax: f64,
     spending: f64,
     delivered: f64,
+    extra: f64,
     planned: f64,
     worst_ratio: f64,
     years_retired: u32,
@@ -88,6 +89,7 @@ impl Default for PathTally {
             tax: 0.0,
             spending: 0.0,
             delivered: 0.0,
+            extra: 0.0,
             planned: 0.0,
             worst_ratio: f64::INFINITY,
             years_retired: 0,
@@ -131,7 +133,8 @@ impl PathTally {
             self.min_investable = self.min_investable.min(investable);
             let planned = record.get(YearSeries::SpendPlanned);
             if planned > 0.0 {
-                self.delivered += spending;
+                self.delivered += spending.min(planned);
+                self.extra += (spending - planned).max(0.0);
                 self.planned += planned;
                 let ratio = spending / planned;
                 self.worst_ratio = self.worst_ratio.min(ratio);
@@ -172,6 +175,10 @@ impl PathTally {
         set(
             PathScalar::DeliveredSpendingRatio,
             nan_unless(self.planned > 0.0, self.delivered / self.planned),
+        );
+        set(
+            PathScalar::ExtraSpendingRatio,
+            nan_unless(self.planned > 0.0, self.extra / self.planned),
         );
         set(
             PathScalar::WorstSpendingRatio,
@@ -289,7 +296,7 @@ struct WireOwned {
 impl Accumulator {
     /// Layout version written by this build. Bump whenever a field, the histogram
     /// grid or one of the series / scalar enums changes.
-    pub const VERSION: u32 = 3;
+    pub const VERSION: u32 = 4;
 
     /// An empty accumulator for a horizon of `years` calendar years.
     pub fn new(years: u32) -> Accumulator {

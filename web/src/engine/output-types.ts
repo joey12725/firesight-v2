@@ -8,9 +8,9 @@
 // Per-year arrays are indexed by year index y (axis.years[y], axis.ages[y]) and cover
 // households with someone alive that year (axis.alive[y] is the sample size).
 //
-// Status in this checkout: `summarize` and `Engine.trace` still throw "not implemented"
-// in the wasm wrapper and there is no `compare` export yet, so nothing has been checked
-// against real output. Treat a mismatch as a bug in this file.
+// `output-shapes.ts` holds a runtime shape for every document here and
+// `output-shapes.test.ts` checks real engine output against them (and the shapes against
+// these types at compile time), so drift in either direction fails the tests.
 
 /** A probability or mean with its 95% interval (sampling error only). */
 export interface Estimate {
@@ -18,6 +18,17 @@ export interface Estimate {
   std_error: number;
   lo: number;
   hi: number;
+}
+
+/**
+ * An estimate over a subset of paths (the retired, the paired): every field is null
+ * when the subset is empty. Shares of all paths use `Estimate` and are never null.
+ */
+export interface NullableEstimate {
+  value: number | null;
+  std_error: number | null;
+  lo: number | null;
+  hi: number | null;
 }
 
 /**
@@ -37,35 +48,48 @@ export interface Spread {
   count: number;
 }
 
-export type Status = 'working' | 'retired_surplus' | 'retired_on_plan' | 'retired_cutting' | 'depleted' | 'dead';
+/** Year-end state of a household, in the engine's (stable) order. */
+export const STATUSES = ['working', 'retired_surplus', 'retired_on_plan', 'retired_cutting', 'depleted', 'dead'] as const;
+export type Status = (typeof STATUSES)[number];
 
-export type HistSeries = 'net_worth' | 'investable' | 'spending' | 'gross_income' | 'total_tax';
+export const HIST_SERIES = ['net_worth', 'investable', 'spending', 'gross_income', 'total_tax'] as const;
+export type HistSeries = (typeof HIST_SERIES)[number];
 
-export type YearSeriesKind = 'balance' | 'liability' | 'income' | 'withdrawal' | 'tax' | 'spending' | 'saving' | 'transfer' | 'memo';
+export const YEAR_SERIES_KINDS = ['balance', 'liability', 'income', 'withdrawal', 'tax', 'spending', 'saving', 'transfer', 'memo'] as const;
+export type YearSeriesKind = (typeof YEAR_SERIES_KINDS)[number];
 
-export type YearSeries =
-  | 'balance_cash' | 'balance_taxable' | 'balance_traditional' | 'balance_roth' | 'balance_hsa' | 'property_value'
-  | 'mortgage' | 'debt'
-  | 'income_wages' | 'income_self_employment' | 'income_social_security' | 'income_pensions' | 'income_rental' | 'income_other'
-  | 'withdraw_cash' | 'withdraw_taxable' | 'withdraw_traditional' | 'withdraw_roth' | 'withdraw_hsa'
-  | 'tax_federal' | 'tax_state' | 'tax_payroll' | 'tax_penalties'
-  | 'spend_essential' | 'spend_discretionary' | 'spend_housing' | 'spend_healthcare' | 'spend_long_term_care' | 'spend_children' | 'spend_debt' | 'spend_one_off'
-  | 'save_cash' | 'save_taxable' | 'save_traditional' | 'save_roth' | 'save_hsa' | 'save_employer'
-  | 'roth_conversion' | 'property_purchase' | 'property_sale'
-  | 'spend_planned' | 'investment_income' | 'investment_return';
+// prettier-ignore
+export const YEAR_SERIES = [
+  'balance_cash', 'balance_taxable', 'balance_traditional', 'balance_roth', 'balance_hsa', 'property_value',
+  'mortgage', 'debt', 'income_wages', 'income_self_employment', 'income_social_security', 'income_pensions',
+  'income_rental', 'income_other', 'withdraw_cash', 'withdraw_taxable', 'withdraw_traditional', 'withdraw_roth',
+  'withdraw_hsa', 'tax_federal', 'tax_state', 'tax_payroll', 'tax_penalties', 'spend_essential',
+  'spend_discretionary', 'spend_housing', 'spend_healthcare', 'spend_long_term_care', 'spend_children', 'spend_debt',
+  'spend_one_off', 'save_cash', 'save_taxable', 'save_traditional', 'save_roth', 'save_hsa',
+  'save_employer', 'roth_conversion', 'property_purchase', 'property_sale', 'spend_planned', 'investment_income',
+  'investment_return',
+] as const;
+export type YearSeries = (typeof YEAR_SERIES)[number];
 
-export type PathScalar =
-  | 'fi_age' | 'retirement_age' | 'depletion_age' | 'death_age_0' | 'death_age_1' | 'investable_at_retirement'
-  | 'early_retirement_return' | 'worst_drawdown' | 'months_unemployed' | 'long_term_care_cost' | 'inflation'
-  | 'funded_ratio' | 'failure_cause' | 'success'
-  | 'years_simulated' | 'terminal_net_worth' | 'peak_net_worth' | 'min_investable' | 'lifetime_tax' | 'lifetime_spending'
-  | 'delivered_spending_ratio' | 'worst_spending_ratio' | 'years_retired' | 'years_below_90' | 'years_below_75' | 'years_depleted';
+/** One number per path. `coast_fi_age` was appended in accumulator version 3. */
+// prettier-ignore
+export const PATH_SCALARS = [
+  'fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement',
+  'early_retirement_return', 'worst_drawdown', 'months_unemployed', 'long_term_care_cost', 'inflation', 'funded_ratio',
+  'failure_cause', 'success', 'years_simulated', 'terminal_net_worth', 'peak_net_worth', 'min_investable',
+  'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_retired', 'years_below_90',
+  'years_below_75', 'years_depleted', 'coast_fi_age',
+] as const;
+export type PathScalar = (typeof PATH_SCALARS)[number];
 
-export type ScalarUnit = 'age' | 'dollars' | 'rate' | 'ratio' | 'months' | 'years' | 'index' | 'flag';
+export const SCALAR_UNITS = ['age', 'dollars', 'rate', 'ratio', 'months', 'years', 'index', 'flag'] as const;
+export type ScalarUnit = (typeof SCALAR_UNITS)[number];
 
-export type FailureCause = 'market_sequence' | 'job_loss' | 'health' | 'longevity' | 'overspending' | 'inflation' | 'other';
+export const FAILURE_CAUSES = ['market_sequence', 'job_loss', 'health', 'longevity', 'overspending', 'inflation', 'other'] as const;
+export type FailureCause = (typeof FAILURE_CAUSES)[number];
 
-export type FailureFactor = 'poor_early_returns' | 'deep_drawdown' | 'job_loss' | 'long_term_care' | 'long_life' | 'high_inflation';
+export const FAILURE_FACTORS = ['poor_early_returns', 'deep_drawdown', 'job_loss', 'long_term_care', 'long_life', 'high_inflation'] as const;
+export type FailureFactor = (typeof FAILURE_FACTORS)[number];
 
 export interface Axis {
   /** "YYYY-MM". */
@@ -90,15 +114,15 @@ export interface Headline {
   /** Among paths that deplete. */
   depletion_age: Spread;
   years_depleted: Spread;
-  median_terminal_net_worth: number;
-  p10_terminal_net_worth: number;
+  median_terminal_net_worth: number | null;
+  p10_terminal_net_worth: number | null;
   terminal_net_worth: Spread;
   investable_at_retirement: Spread;
-  /** Mean over retired paths. */
-  delivered_spending_ratio: Estimate;
+  /** Mean over retired paths of retired-year spending / retired-year `spend_planned`. Can exceed 1. */
+  delivered_spending_ratio: NullableEstimate;
   /** Share of retired path-years spent cutting or depleted. */
-  years_cutting_share: number;
-  median_lifetime_tax: number;
+  years_cutting_share: number | null;
+  median_lifetime_tax: number | null;
   lifetime_tax: Spread;
   lifetime_spending: Spread;
   funded_ratio: Spread | null;
@@ -106,10 +130,10 @@ export interface Headline {
 
 export interface SpendingDelivery {
   retired_paths: number;
-  paths_below_90: Estimate;
-  paths_below_75: Estimate;
-  years_below_90: Estimate;
-  years_below_75: Estimate;
+  paths_below_90: NullableEstimate;
+  paths_below_75: NullableEstimate;
+  years_below_90: NullableEstimate;
+  years_below_75: NullableEstimate;
   years_cut: Spread;
   /** [0.5, 0.75, 0.9, 0.95, 0.99] */
   worst_cut_levels: number[];
@@ -209,7 +233,8 @@ export interface FailureAttribution {
 
 /** A representative life chosen by a stated rule. Trace it with `pool.trace(profile, path_index)`. */
 export interface PathPick {
-  label: 'p10' | 'median' | 'p90' | 'median_fi' | 'failing' | (string & {});
+  /** 'p10' | 'median' | 'p90' (rank of terminal net worth), 'median_fi', 'failing'. */
+  label: string;
   scalar: PathScalar;
   path_index: number;
   value: number | null;
@@ -272,37 +297,46 @@ export interface ScalarComparison {
   neither: number;
   mean_a: number | null;
   mean_b: number | null;
-  mean_delta: Estimate;
+  /** All four fields are null when no path has a value in both runs. */
+  mean_delta: NullableEstimate;
   /** Of the per-path difference, over paths with a value in both runs. */
   quantiles: (number | null)[];
+  /** 100 values, or empty when no path has a value in both runs. */
   dots: (number | null)[];
-  b_higher: number;
-  a_higher: number;
-  equal: number;
+  /** Shares of the paired paths; null when there are none. */
+  b_higher: number | null;
+  a_higher: number | null;
+  equal: number | null;
   within_noise: boolean;
 }
 
-/**
- * Paired comparison of a scenario (B) against the baseline (A), path by path.
- * TODO(wasm): the wasm wrapper has no `compare` export yet, so `EnginePool.compare`
- * and `ViewProps.comparison[].paired` are null until it does.
- */
+export const COMPARISON_METRICS = [
+  'success_rate', 'fi_rate', 'depletion_rate', 'median_fi_age', 'median_retirement_age', 'median_terminal_net_worth',
+  'p10_terminal_net_worth', 'median_lifetime_tax', 'median_lifetime_spending', 'delivered_spending_ratio',
+] as const;
+export type ComparisonMetric = (typeof COMPARISON_METRICS)[number];
+
+/** Paired comparison of a scenario (B) against the baseline (A), path by path: wasm `compare(a, b, profile)`. */
 export interface Comparison {
   paths: number;
   unpaired_a: number;
   unpaired_b: number;
   outcomes: OutcomeComparison[];
   scalars: ScalarComparison[];
-  headline: { metric: string; a: number | null; b: number | null; delta: number | null }[];
+  headline: { metric: ComparisonMetric; a: number | null; b: number | null; delta: number | null }[];
 }
 
 // ---- PathTrace (one life in full) ---------------------------------------------------
 
-export type TraceEventKind =
-  | 'financially_independent' | 'retired' | 'laid_off' | 'rehired' | 'career_break' | 'equity_event' | 'bought_home' | 'sold_home'
-  | 'relocated' | 'windfall' | 'major_expense' | 'expense_shock' | 'roth_conversion' | 'spending_cut' | 'spending_raise' | 'depleted'
-  | 'recovered' | 'claimed_social_security' | 'health_coverage' | 'long_term_care' | 'rmd_started' | 'debt_paid_off' | 'child'
-  | 'partner_joined' | 'died' | 'market' | 'life_event' | 'other';
+// prettier-ignore
+export const TRACE_EVENT_KINDS = [
+  'financially_independent', 'retired', 'laid_off', 'rehired', 'career_break', 'equity_event',
+  'bought_home', 'sold_home', 'relocated', 'windfall', 'major_expense', 'expense_shock',
+  'roth_conversion', 'spending_cut', 'spending_raise', 'depleted', 'recovered', 'claimed_social_security',
+  'health_coverage', 'long_term_care', 'rmd_started', 'debt_paid_off', 'child', 'partner_joined',
+  'died', 'market', 'life_event', 'other',
+] as const;
+export type TraceEventKind = (typeof TRACE_EVENT_KINDS)[number];
 
 /**
  * A series over time. Keys: `net_worth`, `investable`, every YearSeries that is not zero
@@ -319,6 +353,7 @@ export interface TraceTaxReturn {
   year: number;
   /** Divide the nominal amounts by this for today's dollars. */
   price_level: number;
+  /** The engine's `TaxResult` for the year (federal_ordinary, state, fica[], agi, magi, marginal_ordinary_rate ...). */
   result: Record<string, unknown>;
   /** Nominal dollars of the tax year. */
   lines: { key: string; label: string; amount: number; note: string | null }[];
@@ -346,4 +381,87 @@ export interface PathTrace {
   tax_returns: TraceTaxReturn[];
   events: TraceEvent[];
   scalars: { scalar: PathScalar; value: number | null }[];
+}
+
+// ---- SummaryDigest (the small form for an LLM tool result) ---------------------------
+
+export interface DigestRate {
+  p: number;
+  lo: number;
+  hi: number;
+}
+
+export interface DigestSpread {
+  p10: number | null;
+  p50: number | null;
+  p90: number | null;
+}
+
+/** `Merger.digest(profileJson)` / `digest(acc, profileJson)`: about 1.7 KB. Dollars to $1,000, probabilities to 3 dp. */
+export interface SummaryDigest {
+  /** States the units and the definition of success, so the numbers cannot be misread out of context. */
+  notes: string;
+  paths: number;
+  start_year: number;
+  end_year: number;
+  start_age: number;
+  success: DigestRate;
+  fi: DigestRate;
+  depletion: DigestRate;
+  fi_age: DigestSpread;
+  retirement_age: DigestSpread;
+  terminal_net_worth: DigestSpread;
+  lifetime_tax_p50: number | null;
+  /** Cumulative share of all lives by each (decade) age. */
+  fi_by_age: { ages: number[]; p: number[] };
+  depletion_by_age: { ages: number[]; p: number[] };
+  /** Six evenly spaced ages; `alive` is the share of households with someone alive. */
+  by_age: {
+    ages: number[];
+    alive: number[];
+    net_worth_p10: (number | null)[];
+    net_worth_p50: (number | null)[];
+    net_worth_p90: (number | null)[];
+    spending_p10: (number | null)[];
+    spending_p50: (number | null)[];
+    spending_p90: (number | null)[];
+  };
+  spending_delivery: {
+    delivered_ratio: number | null;
+    paths_below_90: number | null;
+    paths_below_75: number | null;
+    years_below_90: number | null;
+    worst_cut_p90: number | null;
+  };
+  /** Top three first causes, as a share of failed paths. */
+  failure_causes: { cause: FailureCause; share: number }[];
+  trace_paths: { p10: number | null; median: number | null; p90: number | null; failing: number | null };
+}
+
+// ---- PlanPreview (deterministic, no simulation) --------------------------------------
+
+/** `planPreview(profileJson)`: what the plan implies before any simulation. Today's dollars, not rounded. */
+export interface PlanPreview {
+  /** Budget + home costs + modelled healthcare + children + debt payments, this year. */
+  annual_spending: number;
+  annual_spending_retired: number;
+  /** Gross earned income. */
+  annual_income: number;
+  /** Share of income neither spent nor taxed. */
+  savings_rate: number;
+  annual_tax: number;
+  investable: number;
+  /** What the funded test counts. */
+  wealth: number;
+  /** The "number": wealth at which the funded test is met today. */
+  funded_requirement: number;
+  /** Null when the requirement is zero. */
+  funded_ratio: number | null;
+  retirement_need: number;
+  retirement_tax: number;
+  future_income_value: number;
+  horizon_years: number;
+  /** Remaining years, per person. */
+  life_expectancy: number[];
+  expected_age_at_death: number[];
 }

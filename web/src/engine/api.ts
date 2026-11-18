@@ -2,15 +2,32 @@
 // (and await it) once before anything else here.
 import init, * as wasm from './pkg/firesight_wasm.js';
 import { toEngineError } from './errors';
-import type { Summary } from './output-types';
-import type { Reducer } from './pool';
+import type { Comparison, PlanPreview, Summary, SummaryDigest } from './output-types';
+import type { Aggregator } from './pool';
 import type { ExampleProfile, Lever, PatchOp, Profile, Report } from './types';
 
 let loading: Promise<void> | null = null;
+let compiled: Promise<WebAssembly.Module> | null = null;
 
-/** Loads and instantiates the wasm module. Safe to call more than once. */
-export function initEngine(): Promise<void> {
-  loading ??= init().then(() => undefined);
+/**
+ * Compiles the wasm module once, streaming, for the main thread and every worker
+ * (a `WebAssembly.Module` can be posted to a worker, which then only instantiates it).
+ */
+export function compileEngine(url: string | URL): Promise<WebAssembly.Module> {
+  compiled ??= (async () => {
+    try {
+      return await WebAssembly.compileStreaming(fetch(url));
+    } catch {
+      // A server that does not send `application/wasm` cannot stream.
+      return WebAssembly.compile(await (await fetch(url)).arrayBuffer());
+    }
+  })();
+  return compiled;
+}
+
+/** Instantiates the wasm module on this thread. Safe to call more than once. */
+export function initEngine(module?: WebAssembly.Module | Promise<WebAssembly.Module>): Promise<void> {
+  loading ??= (module ? Promise.resolve(module).then((m) => init({ module_or_path: m })) : init()).then(() => undefined);
   return loading;
 }
 
@@ -81,16 +98,65 @@ export function exampleProfiles(): ExampleProfile[] {
   return call(() => wasm.exampleProfiles());
 }
 
-/** Merge and summarise on the calling thread. See the note at the top of `pool.ts`. */
-export const mainThreadReducer: Reducer = {
-  merge(a, b) {
-    try {
-      return wasm.mergeChunks(a, b);
-    } catch (error) {
-      throw toEngineError(error);
-    }
-  },
-  summarize(acc, profileJson) {
-    return call<Summary>(() => wasm.summarize(acc, profileJson));
-  },
-};
+/**
+ * The deterministic facts of a plan (spending now and in retirement, the funded number,
+ * savings rate): about 1 ms, so it can run on every edit. Throws an `EngineError` of kind
+ * `invalid_profile` when the plan cannot be compiled.
+ */
+export function planPreview(profile: Profile | string): PlanPreview {
+  return call(() => wasm.planPreview(text(profile)));
+}
+
+/** The small form of a run for an LLM tool result, from its serialised accumulator. */
+export function digest(acc: Uint8Array, profile: Profile | string): SummaryDigest {
+  return call(() => wasm.digest(acc, text(profile)));
+}
+
+/** Paired comparison on the calling thread (decodes both accumulators: prefer `pool.comparison`). */
+export function compare(a: Uint8Array, b: Uint8Array, baseline: Profile | string): Comparison {
+  return call(() => wasm.compare(a, b, text(baseline)));
+}
+
+/**
+ * An `Aggregator` that merges and summarises on the calling thread, with the same wasm
+ * `Merger` the coordinator worker uses. For Node (tests, benchmarks) and as the
+ * fallback where workers are unavailable.
+ */
+export function createLocalAggregator(): Aggregator {
+  const jobs = new Map<number, { merger: wasm.Merger; json: string }>();
+  return {
+    open(job, profileJson) {
+      jobs.set(job, { merger: new wasm.Merger(), json: profileJson });
+    },
+    add(job, bytes) {
+      jobs.get(job)?.merger.add(bytes);
+    },
+    summarize(job, withBytes) {
+      try {
+        const entry = jobs.get(job);
+        if (!entry) throw new Error('The run was closed.');
+        const t0 = performance.now();
+        const summary = JSON.parse(entry.merger.summarize(entry.json)) as Summary;
+        const acc = withBytes ? entry.merger.bytes() : null;
+        return Promise.resolve({ summary, paths: entry.merger.paths(), ms: performance.now() - t0, acc });
+      } catch (error) {
+        return Promise.reject(toEngineError(error));
+      }
+    },
+    close(job) {
+      jobs.get(job)?.merger.free();
+      jobs.delete(job);
+    },
+    compare(a, b, baselineProfileJson) {
+      try {
+        return Promise.resolve(compare(a, b, baselineProfileJson));
+      } catch (error) {
+        return Promise.reject(toEngineError(error));
+      }
+    },
+    dispose() {
+      for (const { merger } of jobs.values()) merger.free();
+      jobs.clear();
+    },
+  };
+}

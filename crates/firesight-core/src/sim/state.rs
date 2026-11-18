@@ -13,7 +13,9 @@ use crate::housing::PropertyState;
 use crate::model::{EmployerPlan, YearMonth};
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEvent, TraceEventKind, YearRecord, YearSeries};
-use crate::tax::{FilingStatus, Indexation, StateCode, TaxDetail, TaxInputs, TaxYearParams};
+use crate::tax::{
+    FilingStatus, Indexation, LocalTax, StateCode, TaxDetail, TaxInputs, TaxYearParams,
+};
 use crate::MAX_PEOPLE;
 
 use super::plan::{Plan, Sched, StressPlan, TriggerPlan};
@@ -156,7 +158,7 @@ pub(crate) struct State {
     pub tax_state: StateCode,
     pub in_us: bool,
     pub foreign_rate: Option<f64>,
-    pub local_rate: f64,
+    pub local: LocalTax,
     pub index: Indexation,
     pub anchor_cpi: f64,
     pub anchor_price: f64,
@@ -186,6 +188,8 @@ pub(crate) struct State {
     pub share_state: f64,
     pub share_se: f64,
     pub aca_advance_m: f64,
+    /// Premium credit expected per month at the last plan, today's dollars.
+    pub aca_guess_real: f64,
     pub aca_advance_ytd: f64,
     pub aca_premium_ytd: f64,
     pub aca_people: u32,
@@ -208,6 +212,9 @@ pub(crate) struct State {
     pub sepp: [f64; MAX_PEOPLE],
     pub sepp_until: [i32; MAX_PEOPLE],
     pub retire_cash_cap: f64,
+    /// True once the taxable account has been left out of a rebalance to protect
+    /// the premium credit (see `State::rebalance`).
+    pub sheltered_rebalancing: bool,
     // Retirement.
     pub retired: bool,
     pub retire_month: i32,
@@ -242,6 +249,8 @@ pub(crate) struct State {
     pub depleted_year: bool,
     pub ever_depleted: bool,
     pub depletion_month: i32,
+    /// Month property was first sold because savings had run out.
+    pub home_sale_month: i32,
     pub ltc_real: f64,
     /// Long-term care cost so far when the money first ran out.
     pub ltc_at_depletion: f64,
@@ -341,7 +350,7 @@ impl State {
             tax_state: StateCode::NONE,
             in_us: true,
             foreign_rate: None,
-            local_rate: 0.0,
+            local: LocalTax::default(),
             index: Indexation::base(plan.start.year()),
             anchor_cpi: 1.0,
             anchor_price: 1.0,
@@ -369,6 +378,7 @@ impl State {
             share_state: 0.0,
             share_se: 0.0,
             aca_advance_m: 0.0,
+            aca_guess_real: 0.0,
             aca_advance_ytd: 0.0,
             aca_premium_ytd: 0.0,
             aca_people: 0,
@@ -389,6 +399,7 @@ impl State {
             sepp: [0.0; MAX_PEOPLE],
             sepp_until: [0; MAX_PEOPLE],
             retire_cash_cap: 0.0,
+            sheltered_rebalancing: false,
             retired: false,
             retire_month: i32::MAX,
             fi_month: i32::MAX,
@@ -419,6 +430,7 @@ impl State {
             depleted_year: false,
             ever_depleted: false,
             depletion_month: i32::MAX,
+            home_sale_month: i32::MAX,
             ltc_real: 0.0,
             ltc_at_depletion: 0.0,
             led: [0.0; N_SERIES],
@@ -655,7 +667,7 @@ impl State {
         self.tax_state = plan.state0;
         self.in_us = plan.in_us0;
         self.foreign_rate = plan.foreign_rate0;
-        self.local_rate = plan.local_rate0;
+        self.local = plan.local0;
         self.anchor_cpi = 1.0;
         self.anchor_price = 1.0;
         self.prev_cpi_factor = 1.0;
@@ -679,6 +691,7 @@ impl State {
         self.share_state = 0.0;
         self.share_se = 0.0;
         self.aca_advance_m = 0.0;
+        self.aca_guess_real = 0.0;
         self.aca_advance_ytd = 0.0;
         self.aca_premium_ytd = 0.0;
         self.aca_people = 0;
@@ -707,6 +720,7 @@ impl State {
         self.sepp = [0.0; MAX_PEOPLE];
         self.sepp_until = [0; MAX_PEOPLE];
         self.retire_cash_cap = 0.0;
+        self.sheltered_rebalancing = false;
 
         self.home_index = 1.0;
         self.eq_ring = [0.0; 12];
@@ -726,6 +740,7 @@ impl State {
         self.depleted_year = false;
         self.ever_depleted = false;
         self.depletion_month = i32::MAX;
+        self.home_sale_month = i32::MAX;
         self.ltc_real = 0.0;
         self.ltc_at_depletion = 0.0;
         self.led = [0.0; N_SERIES];
@@ -738,6 +753,11 @@ impl State {
         self.port_return = 0.0;
         self.trace_events.clear();
         self.tax_details.clear();
+        // The law, filing status and year-end ages of the first year must exist
+        // before month 0's calendar step: a household retired from the start runs
+        // the funded test before the first annual plan, and would otherwise read
+        // whatever the previous path in this workspace left behind.
+        self.init_first_year(plan);
     }
 
     /// Applies one stress overlay if its date is known. `at_retirement` is true when

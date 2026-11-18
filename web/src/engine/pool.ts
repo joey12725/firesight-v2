@@ -1,21 +1,38 @@
-// The worker pool: splits runs into chunks, hands them to idle workers, merges the
-// accumulators as they come back and summarises at a throttled cadence so charts
-// sharpen progressively.
+// The worker pool: splits runs into chunks, hands them to idle workers, and passes each
+// chunk to an `Aggregator` that holds the run's merged accumulator (the wasm `Merger`)
+// and summarises it at a throttled cadence, so charts sharpen progressively.
 //
-// Everything that touches wasm on the calling thread goes through `Reducer`, whose
-// methods may be async. Today it is the main-thread implementation in `api.ts`; if
-// merge + summarise at 100k+ paths turns out to jank the UI once the simulation exists,
-// implement `Reducer` over a coordinator worker and pass it in. Nothing else changes.
+// In the app the aggregator is the coordinator worker (`coordinator.ts`): at 100,000
+// paths one summarise costs about 70 ms and at 250,000 about 180 ms, which would drop
+// frames on the main thread several times a second. The pool itself never touches wasm;
+// tests and Node scripts pass `createLocalAggregator()` from `api.ts` instead.
 import { EngineError, toEngineError } from './errors';
 import { hashString } from './hash';
 import type { Comparison, PathTrace, Summary } from './output-types';
 import type { WorkerLike, WorkerResponse } from './protocol';
 import type { Profile } from './types';
 
-export interface Reducer {
-  /** Merges two serialised accumulators. Commutative and associative in the engine. */
-  merge(a: Uint8Array, b: Uint8Array): Uint8Array | Promise<Uint8Array>;
-  summarize(acc: Uint8Array, profileJson: string): Summary | Promise<Summary>;
+export interface AggregateResult {
+  summary: Summary;
+  /** Paths merged into `summary`. */
+  paths: number;
+  /** Time spent merging and summarising, where it ran. */
+  ms: number;
+  /** The serialised accumulator, when asked for. */
+  acc: Uint8Array | null;
+}
+
+/** Holds one running accumulator per job. Calls for a job are applied in order. */
+export interface Aggregator {
+  open(job: number, profileJson: string): void;
+  /** Merges a chunk. Ownership of `bytes` passes to the aggregator. */
+  add(job: number, bytes: Uint8Array): void;
+  /** Summary of everything added so far; with `withBytes`, the accumulator as well. */
+  summarize(job: number, withBytes: boolean): Promise<AggregateResult>;
+  close(job: number): void;
+  /** Paired comparison (B minus A) of two finished runs on the same seed and paths. */
+  compare(a: Uint8Array, b: Uint8Array, baselineProfileJson: string): Promise<Comparison>;
+  dispose?(): void;
 }
 
 export interface RunSettings {
@@ -28,11 +45,13 @@ export interface RunSettings {
 export interface RunProgress {
   /** Summary of the paths merged so far. */
   summary: Summary;
-  /** The merged accumulator behind `summary`. Do not mutate. */
-  acc: Uint8Array;
   done: number;
   total: number;
   pathsPerSecond: number;
+  /** Time since the run was requested. */
+  elapsedMs: number;
+  /** What the last merge + summarise cost off the main thread. */
+  summarizeMs: number;
   /** True for the last call, when `done === total`. */
   final: boolean;
 }
@@ -49,6 +68,7 @@ export interface RunOptions {
 
 export interface RunResult {
   summary: Summary;
+  /** The serialised accumulator (104 bytes per path): pass two of these to `comparison`. */
   acc: Uint8Array;
   paths: number;
   seed: number;
@@ -76,17 +96,13 @@ export interface ManyOptions {
 export interface CompareResult {
   base: RunResult;
   scenario: RunResult;
-  /**
-   * TODO(wasm): null until the wasm wrapper exports core's `compare(a, b)`. Both runs
-   * already share seed and path indices, so the two accumulators line up path by path;
-   * add `compare` to `Reducer` and call it here.
-   */
-  comparison: Comparison | null;
+  /** Core's paired statistics, scenario minus base, path by path. */
+  comparison: Comparison;
 }
 
 export interface PoolOptions {
   createWorker: () => WorkerLike;
-  reducer: Reducer;
+  aggregator: Aggregator;
   /** Defaults to `navigator.hardwareConcurrency - 1`, clamped to 1..12. */
   size?: number;
   /** Minimum time between progressive summaries. */
@@ -138,15 +154,16 @@ interface Job {
   onProgress?: (progress: RunProgress) => void;
   /** Paths handed to workers. */
   dispatched: number;
-  /** Paths merged into `acc`. */
+  /** Paths handed to the aggregator. */
+  arrived: number;
+  /** Paths that had arrived when the last summary was requested. */
+  requested: number;
+  /** Paths in the last summary reported. */
   done: number;
-  /** Chunks returned by workers, waiting to be merged. */
-  pending: { bytes: Uint8Array; count: number }[];
-  acc: Uint8Array | null;
-  flushing: boolean;
-  flushes: number;
-  lastFlushAt: number;
-  lastFlushCost: number;
+  summarizing: boolean;
+  summaries: number;
+  lastSummaryAt: number;
+  lastSummaryCost: number;
   timer: ReturnType<typeof setTimeout> | null;
   startedAt: number;
   active: boolean;
@@ -209,13 +226,13 @@ export class EnginePool {
         progressive: options.progressive ?? true,
         onProgress: options.onProgress,
         dispatched: 0,
+        arrived: 0,
+        requested: 0,
         done: 0,
-        pending: [],
-        acc: null,
-        flushing: false,
-        flushes: 0,
-        lastFlushAt: 0,
-        lastFlushCost: 0,
+        summarizing: false,
+        summaries: 0,
+        lastSummaryAt: 0,
+        lastSummaryCost: 0,
         timer: null,
         startedAt: this.now(),
         active: true,
@@ -230,6 +247,7 @@ export class EnginePool {
         job.detach = () => signal.removeEventListener('abort', onAbort);
       }
       this.jobs.set(job.id, job);
+      this.options.aggregator.open(job.id, json);
       this.pump();
     });
   }
@@ -283,11 +301,17 @@ export class EnginePool {
       ],
       { ...options, seed: settings.seed ?? base.simulation.seed },
     );
-    return {
-      base: results.get('base') as RunResult,
-      scenario: results.get('scenario') as RunResult,
-      comparison: null,
-    };
+    const a = results.get('base') as RunResult;
+    const b = results.get('scenario') as RunResult;
+    return { base: a, scenario: b, comparison: await this.comparison(a, b, base) };
+  }
+
+  /**
+   * Paired statistics of two finished runs made with the same seed and path count
+   * (B minus A). Computed off the main thread.
+   */
+  comparison(a: Pick<RunResult, 'acc' | 'seed'>, b: Pick<RunResult, 'acc'>, baseline: Profile): Promise<Comparison> {
+    return this.options.aggregator.compare(a.acc, b.acc, engineInput(baseline, a.seed).json);
   }
 
   /** Re-simulates one path with its full ledger. Jumps the queue. */
@@ -312,6 +336,7 @@ export class EnginePool {
     for (const trace of this.traces.splice(0)) trace.reject(error);
     for (const slot of this.slots) slot.worker.terminate();
     this.slots.length = 0;
+    this.options.aggregator.dispose?.();
   }
 
   // ---- scheduling ---------------------------------------------------------------
@@ -392,8 +417,9 @@ export class EnginePool {
     } else if (task.job.active) {
       if (message.type === 'chunk') {
         this.observe(message.ms, message.count);
-        task.job.pending.push({ bytes: message.bytes, count: message.count });
-        this.scheduleFlush(task.job);
+        task.job.arrived += message.count;
+        this.options.aggregator.add(task.job.id, message.bytes);
+        this.scheduleSummary(task.job);
       } else if (message.type === 'error') {
         this.fail(task.job, new EngineError(message.kind, message.message));
       }
@@ -422,68 +448,59 @@ export class EnginePool {
     );
   }
 
-  // ---- merging ------------------------------------------------------------------
+  // ---- summarising ---------------------------------------------------------------
 
-  private scheduleFlush(job: Job) {
-    if (job.flushing || !job.active || job.pending.length === 0) return;
-    const arrived = job.done + job.pending.reduce((n, p) => n + p.count, 0);
-    const interval = Math.max(this.options.summaryIntervalMs ?? 180, job.lastFlushCost * 4);
-    const due = job.lastFlushAt + interval;
+  private scheduleSummary(job: Job) {
+    if (job.summarizing || !job.active || job.arrived === job.requested) return;
+    const complete = job.arrived >= job.total;
+    if (!complete && !job.progressive) return;
+    // Never spend more than about a quarter of the time summarising.
+    const interval = Math.max(this.options.summaryIntervalMs ?? 200, job.lastSummaryCost * 3);
+    const due = job.lastSummaryAt + interval;
     const now = this.now();
-    if (arrived >= job.total || job.flushes === 0 || now >= due) {
+    if (complete || job.summaries === 0 || now >= due) {
       if (job.timer) clearTimeout(job.timer);
       job.timer = null;
-      void this.flush(job);
+      void this.summarize(job, complete);
     } else if (!job.timer) {
       job.timer = setTimeout(() => {
         job.timer = null;
-        this.scheduleFlush(job);
+        this.scheduleSummary(job);
       }, due - now);
     }
   }
 
-  private async flush(job: Job) {
-    job.flushing = true;
+  private async summarize(job: Job, final: boolean) {
+    job.summarizing = true;
+    job.requested = job.arrived;
     const started = this.now();
     try {
-      const batch = job.pending.splice(0);
-      // Fold the small new chunks together first, then touch the large accumulator once.
-      let part = (batch[0] as { bytes: Uint8Array }).bytes;
-      for (let i = 1; i < batch.length; i++) {
-        part = await this.options.reducer.merge(part, (batch[i] as { bytes: Uint8Array }).bytes);
-      }
-      const acc = job.acc ? await this.options.reducer.merge(job.acc, part) : part;
+      const { summary, paths, ms, acc } = await this.options.aggregator.summarize(job.id, final);
       if (!job.active) return;
-      job.acc = acc;
-      job.done += batch.reduce((n, p) => n + p.count, 0);
-      const final = job.done >= job.total;
-      if (final || job.progressive) {
-        const summary = await this.options.reducer.summarize(acc, job.json);
-        if (!job.active) return;
-        const elapsedMs = Math.max(this.now() - job.startedAt, 0.001);
-        const pathsPerSecond = (job.done / elapsedMs) * 1000;
-        job.onProgress?.({ summary, acc, done: job.done, total: job.total, pathsPerSecond, final });
-        if (final) {
-          this.finish(job);
-          job.resolve({
-            summary,
-            acc,
-            paths: job.total,
-            seed: job.seed,
-            elapsedMs,
-            pathsPerSecond,
-            profileKey: job.key,
-          });
-        }
+      job.done = paths;
+      const elapsedMs = Math.max(this.now() - job.startedAt, 0.001);
+      const pathsPerSecond = (paths / elapsedMs) * 1000;
+      job.onProgress?.({ summary, done: paths, total: job.total, pathsPerSecond, elapsedMs, summarizeMs: ms, final });
+      if (final) {
+        this.finish(job);
+        job.resolve({
+          summary,
+          acc: acc ?? new Uint8Array(),
+          paths: job.total,
+          seed: job.seed,
+          elapsedMs,
+          pathsPerSecond,
+          profileKey: job.key,
+        });
       }
     } catch (error) {
       this.fail(job, toEngineError(error));
     } finally {
-      job.flushing = false;
-      job.flushes += 1;
-      job.lastFlushAt = this.now();
-      job.lastFlushCost = job.lastFlushAt - started;
-      this.scheduleFlush(job);
+      job.summarizing = false;
+      job.summaries += 1;
+      job.lastSummaryAt = this.now();
+      job.lastSummaryCost = job.lastSummaryAt - started;
+      this.scheduleSummary(job);
     }
   }
 
@@ -492,8 +509,8 @@ export class EnginePool {
     job.detach();
     if (job.timer) clearTimeout(job.timer);
     job.timer = null;
-    job.pending.length = 0;
     this.jobs.delete(job.id);
+    this.options.aggregator.close(job.id);
   }
 
   private fail(job: Job, error: EngineError) {

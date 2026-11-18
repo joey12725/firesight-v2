@@ -2225,7 +2225,7 @@
   "crypto": {
     "summary": "A speculative asset with no cash flows: very high volatility, fat tails, positive and crisis-sensitive correlation with equities, and a real chance of permanent loss. Parameters are assumptions, not estimates, and the UI should say so.",
     "model": {
-      "equation": "Monthly log return = (mu_log - 0.5*0)/12 + sigma/sqrt(12) * t4, where t4 is a unit-variance Student-t draw with 4 degrees of freedom, correlated rho with the equity shock of the same month. mu_log is the assumed median annual real log growth. Each year, with probability ruin_hazard, the holding suffers a permanent 100% loss (protocol failure, ban, custody/exchange loss).",
+      "equation": "Monthly gross real return = norm x link(equity return) x exp(sigma_idio x t4), where t4 is a unit-variance Student-t draw with 4 degrees of freedom (capped at 8 standard deviations), link ties the return to the month's equity return (more strongly in equity sell-offs), and norm is set so that the expected real return, including the chance of a total loss, is the preset's. Each month, with the monthly equivalent of ruin_hazard_annual, the holding suffers a permanent 100% loss (protocol failure, ban, custody/exchange loss).",
       "sigma_annual": 0.7,
       "student_t_df": 4,
       "correlation_with_equities": 0.35,
@@ -2234,19 +2234,19 @@
         "bitcoin_or_ether": 0.01,
         "other_tokens": 0.08
       },
-      "median_real_growth_presets": {
-        "skeptic": -0.1,
+      "default_preset": "neutral",
+      "expected_real_return_presets": {
+        "skeptic": -0.05,
         "neutral": 0.0,
-        "believer": 0.05
-      },
-      "default_preset": "neutral"
+        "believer": 0.06
+      }
     },
     "reasoning": {
       "volatility": "Bitcoin's realised annualised volatility has mostly been 50-80% since 2018 (higher before); ether and smaller tokens 80-120%. Drawdowns of 75-85% occurred in 2014, 2018 and 2022.",
-      "expected_return": "There are no cash flows to anchor a return. The neutral preset assumes the median outcome just keeps pace with inflation. Because of the 70% volatility the arithmetic mean under that preset is still about +24%/yr: most paths drift down while a few go up enormously. Assigning crypto an equity-like arithmetic mean (about 6% real) would imply a median decay of about 18%/yr, which is the 'skeptic' neighbourhood.",
+      "expected_return": "There are no cash flows to anchor a return. The presets fix the expected (arithmetic mean) real return, collapse risk included: neutral 0% (on average the holding keeps pace with inflation), skeptic -5%, believer +6% (equity-like). With 70% volatility an expected real return of 0% means the typical (median) path loses about 22% a year while a few gain enormously; that is what an expected return of zero looks like at this volatility. An earlier version fixed the median at zero instead, which made the expected return about +25% a year and let a small crypto sleeve improve the median plan: that was an assumption nobody intended.",
       "correlation": "Near zero before 2020; rolling correlation of bitcoin with US equities has averaged roughly 0.3-0.4 since 2020 and rises in sell-offs (March 2020, 2022), so it does not hedge equity risk when it matters.",
       "permanent_loss": "More than half of all tokens ever listed on major trackers have died. Even for the largest assets a 1%/yr hazard (26% cumulative over 30 years) is a modest allowance for protocol, regulatory, quantum-cryptography and custody risk. Terra/Luna (2022) and exchange failures (Mt. Gox, FTX) are the reference events.",
-      "position_sizing": "With these parameters a 5% allocation changes plan success by well under one point either way; a 30% allocation makes outcomes bimodal. Show that sensitivity rather than a point forecast."
+      "position_sizing": "With these parameters a rebalanced 5% allocation costs about what 5 points of the stocks it replaces would have earned and adds dispersion; a 30% allocation makes outcomes bimodal. Show that sensitivity rather than a point forecast."
     },
     "knobs": [
       "outlook (skeptic / neutral / believer)",
@@ -2418,11 +2418,33 @@
       "note": "Life expectancy at ages 20, 25, ..., 70 from the IRS Single Life Table, 26 CFR 1.401(a)(9)-9(b) (effective 2022), used for the 72(t) amortisation payment (decumulation::SINGLE_LIFE_EXPECTANCY). Check against the regulation.",
       "first_age": 20,
       "age_step": 5,
-      "life_expectancy": [65.0, 60.2, 55.3, 50.5, 45.7, 41.0, 36.2, 31.6, 27.1, 22.9, 18.8]
+      "life_expectancy": [
+        65.0,
+        60.2,
+        55.3,
+        50.5,
+        45.7,
+        41.0,
+        36.2,
+        31.6,
+        27.1,
+        22.9,
+        18.8
+      ]
     },
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
     }
+  },
+  "long_run_assumptions": {
+    "summary": "Return levels for the asset classes whose history is too short to estimate one. Volatility and co-movement come from the data; the long-run level is an assumption, the same in every market model.",
+    "international_equity_return_vs_us": -0.01,
+    "gold_real_return": 0.01,
+    "reasoning": {
+      "international_equity_return_vs_us": "Annual geometric return of international equities less that of US equities. In the common sample (1975-2026) international trailed the US by 2.2 points a year; since 1900 the world outside the US trailed by about 2 points (Dimson, Marsh and Staunton, quoted from memory); valuation-based forecasts today put international at or above the US. One point below the US sits between the record and parity. Before this was fixed the three market models implied -1.3, -0.8 and +0.2 points, an accident of which sample each one averaged.",
+      "gold_real_return": "Annual geometric real return of gold. Gold kept its real value over the very long run (0 to 1% a year; 1926-2026 about 2.4% including the 1970s repricing after the end of the gold standard). 1% is the upper end of the long-run range. Before this was fixed the models implied 3.4%, 4.3% and 5.3%: the 1968-2026 nominal mean set against full-sample inflation."
+    },
+    "confidence": "judgement; the direction and rough size are supported by the long-run record, the exact values are not estimable"
   }
 }

@@ -1,14 +1,16 @@
-// Every tool executor against a fake simulation pool and the real profile store, patch
-// engine, validator, levers and schema (which work in every wasm build).
+// Every tool executor against the real engine (the wasm module, run in this thread) and
+// the real profile store. Runs use a few hundred lives where the number is not the point.
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { applyPatch, exampleProfiles, initEngineSync, levers, schema, validate } from '@/engine/api';
+import { applyPatch, compare, digest, exampleProfiles, initEngineSync, planPreview, schema, validate } from '@/engine/api';
 import { EngineError } from '@/engine/errors';
 import type { City } from '@/editor/cities';
+import { STATUSES, type PathTrace } from '@/engine/output-types';
+import { engineInput } from '@/engine/pool';
 import type { Profile } from '@/engine/types';
 import { useProfileStore } from '@/state/profile-store';
 import { EXAMPLE_INTAKE_PATCH, EXAMPLE_SCENARIO_PATCH } from '../prompt';
-import { defaultKnobs, fakePool, type FakePool } from '../testing/fake-engine';
+import { nodeEngine, type NodeEngine } from '../testing/node-engine';
 import { executeTool, MAX_RESULT_CHARS, RunRegistry, TOOLS, TOOL_NAMES, toolDefinitions, type Decision, type PlanStore, type Proposal, type ToolContext, type ToolRun } from './index';
 import { SCHEMA_TYPES } from './plan';
 import { pruneDefaults, typeNames, type SchemaNode } from './plan-view';
@@ -47,7 +49,7 @@ const city = (name: string, country: string, code: string, level: number): City 
 });
 const CITIES = [city('Denver', 'United States', 'US', 100), city('Lisbon', 'Portugal', 'PT', 60), city('Portland', 'United States', 'US', 95), city('Portland', 'Jamaica', 'JM', 50)];
 
-let pool: FakePool;
+let engine: NodeEngine;
 let ctx: ToolContext;
 let decide: (proposal: Proposal) => Decision;
 let proposals: Proposal[];
@@ -55,7 +57,7 @@ let proposals: Proposal[];
 function makeContext(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     store,
-    engine: { pool, applyPatch, levers, schema },
+    engine,
     runs: new RunRegistry(),
     requestApproval: async (_id, proposal) => {
       proposals.push(proposal);
@@ -81,11 +83,22 @@ async function call(name: string, input: unknown, context: ToolContext = ctx): P
 }
 
 const demo = (): Profile => exampleProfiles()[0]!.profile;
+const RETIRE_AT_55 = [{ op: 'set', path: '/retirement/trigger', value: { type: 'at_age', person: 0, age: 55 } }] as const;
+/** The record behind a run id in a tool result. */
+const record = (id: unknown) => ctx.runs.get(id as string)!;
+/** Simulating in this thread takes about half a second per thousand lives. */
+const SLOW = 60_000;
+/**
+ * The example plan retires when funded, so spending more also means working longer and
+ * success does not fall with spending. With a fixed retirement age the levers pull the
+ * way intuition says.
+ */
+const retireAtFixedAge = () => state().edit([{ op: 'set', path: '/retirement/trigger', value: { type: 'at_age', person: 0, age: 42 } }], { label: 'Retire at 42', target: 'base' });
 
 beforeEach(() => {
   state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
-  state().setRun({ paths: 10_000, seed: 7 });
-  pool = fakePool();
+  state().setRun({ paths: 2000, seed: 7 });
+  engine = nodeEngine();
   proposals = [];
   decide = () => ({ type: 'accept' });
   ctx = makeContext();
@@ -115,7 +128,7 @@ describe('tool definitions', () => {
     const r = await call('try_scenario', { name: 'x' });
     expect(r.reply.isError).toBe(true);
     expect(r.json.problems).toEqual(['input.ops is required']);
-    expect(pool.simulated).toBe(0);
+    expect(engine.simulated).toBe(0);
     expect((await call('launch_rocket', {})).reply.content).toMatch(/no tool named/);
   });
 });
@@ -129,13 +142,32 @@ describe('get_plan and get_schema', () => {
     const profile = demo();
     expect(plan.incomes.map((i) => i.id)).toEqual(profile.incomes.map((i) => i.id));
     expect(plan.accounts.map((a) => a.balance)).toEqual(profile.accounts.map((a) => a.balance));
-    expect((r.json.derived as { annual_budget_now: number }).annual_budget_now).toBeGreaterThan(0);
+    // The plan's facts are the engine's own preview, rounded, not a recomputation.
+    const core = planPreview(profile);
+    expect(r.json.preview).toMatchObject({
+      annual_spending: Math.round(core.annual_spending),
+      annual_spending_retired: Math.round(core.annual_spending_retired),
+      annual_income: Math.round(core.annual_income),
+      funded_requirement: Math.round(core.funded_requirement),
+      horizon_years: core.horizon_years,
+    });
+    expect((r.json.preview as { savings_rate: number }).savings_rate).toBeCloseTo(core.savings_rate, 3);
+    expect(Object.keys(r.json.preview as object).sort()).toEqual(Object.keys(core).sort());
+    expect((r.json.derived as { accounts_by_kind: Record<string, number> }).accounts_by_kind).toBeTypeOf('object');
     expect((r.json.validation as { can_run: boolean }).can_run).toBe(true);
     expect(r.json.scenarios).toEqual([expect.objectContaining({ id: 'retire_at_55', name: 'Retire at 55' })]);
-    expect(r.json.run_settings).toMatchObject({ paths: 10_000, seed: 7 });
+    expect(r.json.run_settings).toMatchObject({ paths: 2000, seed: 7 });
     // Much shorter than the raw profile, and within the result budget.
     expect(r.reply.content.length).toBeLessThan(JSON.stringify(profile).length * 0.7);
     expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+  });
+
+  it('shows a plan the engine cannot compile without a preview', async () => {
+    state().load({ meta: { id: 'blank', createdAt: 0, origin: 'test' }, profile: applyPatch('{}', []).profile });
+    const r = await call('get_plan', {});
+    expect(r.reply.isError).toBe(false);
+    expect((r.json.validation as { can_run: boolean }).can_run).toBe(false);
+    expect(r.json.preview).toBeUndefined();
   });
 
   it('prunes only values that equal their schema default, so the plan can be rebuilt from it', () => {
@@ -231,63 +263,107 @@ describe('propose_changes', () => {
 });
 
 describe('run_simulation and try_scenario', () => {
-  it('returns a compact digest with intervals, on the session seed', async () => {
+  it("returns the engine's digest of the run, on the session seed", async () => {
     const r = await call('run_simulation', {});
     expect(r.reply.isError).toBe(false);
-    expect(r.json).toMatchObject({ paths: 10_000, seed: 7, common_random_numbers: true });
+    const run = record(r.json.run_id);
+    // Core's digest of the run's accumulator, plus the id, the seed and the pairing note.
+    const core = digest(run.acc, engineInput(run.profile, 7).json);
+    expect(r.json).toEqual({ run_id: run.id, seed: 7, ...core, common_random_numbers: true });
+    expect(r.json).toMatchObject({ paths: 2000, seed: 7 });
     const success = r.json.success as { p: number; lo: number; hi: number };
+    expect(success.p).toBeCloseTo(run.summary.headline.success_rate.value, 3);
     expect(success.lo).toBeLessThan(success.p);
     expect(success.hi).toBeGreaterThan(success.p);
-    expect((r.json.by_age as { ages: number[] }).ages).toHaveLength(6);
-    expect((r.json.trace_paths as { median: number }).median).toBe(7);
+    expect((r.json.by_age as { ages: number[]; spending_p10: number[] }).ages).toHaveLength(6);
+    expect((r.json.by_age as { spending_p10: number[] }).spending_p10).toHaveLength(6);
+    expect(r.json.notes).toMatch(/today's dollars/);
+    for (const cause of r.json.failure_causes as { cause: string; share: number }[]) expect(cause.share).toBeGreaterThan(0);
+    expect((r.json.trace_paths as { median: number }).median).toBe(run.summary.picks.find((p) => p.label === 'median')!.path_index);
     expect(r.reply.content.length).toBeLessThan(2_500);
-    expect(r.view).toMatchObject({ title: 'Simulated 10,000 lives of the current plan', meta: { paths: 10_000, seed: 7 } });
+    expect(r.view).toMatchObject({ title: 'Simulated 2,000 lives of the current plan', meta: { paths: 2000, seed: 7 } });
     // The same inputs are not simulated twice.
     await call('run_simulation', {});
-    expect(pool.simulated).toBe(1);
-  });
+    expect(engine.simulated).toBe(1);
+  }, SLOW);
 
-  it('compares a scenario with the plan on the same lives, without touching the plan', async () => {
+  it("compares a scenario with the plan on the same lives from the engine's paired comparison, without touching the plan", async () => {
     const before = state().profile;
-    const r = await call('try_scenario', { name: 'Retire at 55', ops: [{ op: 'set', path: '/retirement/trigger', value: { type: 'at_age', person: 0, age: 55 } }], paths: 4000 });
+    const r = await call('try_scenario', { name: 'Retire at 55', ops: RETIRE_AT_55 });
     expect(r.reply.isError).toBe(false);
     expect(state().profile).toBe(before);
     expect(state().scenarios).toHaveLength(0);
-    const c = r.json.comparison as { paired: boolean; paired_paths: number; seed: number; success: { delta: number; std_error: number; rescued: number; harmed: number; within_noise: boolean; mcnemar_z: number } };
-    expect(c).toMatchObject({ paired: true, paired_paths: 4000, seed: 7 });
-    // Retiring earlier than the default costs success in the fake engine: lives are harmed, none rescued.
-    const expected = defaultKnobs(applyPatch(before!, [{ op: 'set', path: '/retirement/trigger', value: { type: 'at_age', person: 0, age: 55 } }]).profile).success - defaultKnobs(before!).success;
-    expect(c.success.delta).toBeCloseTo(expected, 2);
-    expect(c.success.rescued).toBe(0);
-    expect(c.success.harmed).toBeGreaterThan(0);
-    // The paired standard error is far smaller than that of two independent runs.
-    expect(c.success.std_error).toBeLessThan(0.01);
+    type Outcome = { a: number; b: number; delta: number; std_error: number; lo: number; hi: number; rescued: number; harmed: number; unchanged: number; within_noise: boolean; mcnemar_z: number };
+    const c = r.json.comparison as { paired: boolean; paired_paths: number; seed: number; success: Outcome; depleted: Outcome; scalars: { scalar: string; n: number; mean_delta: number; b_higher: number }[]; headline: { metric: string; a: number; b: number; delta: number }[] };
+    expect(c).toMatchObject({ paired: true, paired_paths: 2000, seed: 7 });
+
+    // Every figure is core's, from the two accumulators.
+    const base = record(r.json.base_run_id);
+    const scenario = record(r.json.scenario_run_id);
+    const core = compare(base.acc, scenario.acc, engineInput(base.profile, 7).json);
+    const success = core.outcomes.find((o) => o.outcome === 'success')!;
+    expect(c.success.delta).toBeCloseTo(success.difference.value, 4);
+    expect(c.success.std_error).toBeCloseTo(success.difference.std_error, 4);
+    expect(c.success).toMatchObject({ rescued: success.b_only, harmed: success.a_only, unchanged: success.both + success.neither, within_noise: success.within_noise });
+    // The flips account for the whole difference: this is a paired experiment.
+    expect(c.success.rescued + c.success.harmed + c.success.unchanged).toBe(2000);
+    expect((c.success.rescued - c.success.harmed) / 2000).toBeCloseTo(c.success.delta, 4);
+    expect(c.success.b - c.success.a).toBeCloseTo(c.success.delta, 2);
+    expect(c.success.lo).toBeLessThan(c.success.delta);
+    expect(c.success.hi).toBeGreaterThan(c.success.delta);
+    // Working to 55 instead of stopping when funded rescues far more lives than it harms.
+    expect(c.success.rescued).toBeGreaterThan(c.success.harmed);
     expect(c.success.within_noise).toBe(false);
-    expect(r.view.meta).toMatchObject({ paired: true, paths: 4000, runs: 2 });
-    expect(pool.batches).toEqual([2]);
+    // A life rescued from depletion is one that depleted under the plan only.
+    const depleted = core.outcomes.find((o) => o.outcome === 'depleted')!;
+    expect(c.depleted).toMatchObject({ rescued: depleted.a_only, harmed: depleted.b_only });
+    expect(c.depleted.delta).toBeLessThan(0);
+
+    const worth = core.scalars.find((x) => x.scalar === 'terminal_net_worth')!;
+    const shown = c.scalars.find((x) => x.scalar === 'terminal_net_worth')!;
+    expect(shown.n).toBe(worth.both);
+    expect(shown.mean_delta).toBe(Math.round(worth.mean_delta.value! / 1000) * 1000);
+    expect(shown.b_higher).toBeCloseTo(worth.b_higher!, 3);
+    expect(c.scalars.map((x) => x.scalar)).toEqual(expect.arrayContaining(['fi_age', 'retirement_age', 'terminal_net_worth']));
+    expect(c.headline.map((h) => h.metric)).toEqual(core.headline.map((h) => h.metric));
+    expect(c.headline.find((h) => h.metric === 'success_rate')).toMatchObject({ a: c.success.a, b: c.success.b });
+
+    // The scenario's own digest is core's too.
+    expect((r.json.scenario_detail as { fi_age: unknown }).fi_age).toEqual(digest(scenario.acc, engineInput(scenario.profile, 7).json).fi_age);
+    expect(r.view.meta).toMatchObject({ paired: true, paths: 2000, runs: 2 });
+    expect(engine.batches).toEqual([2]);
+    expect(engine.compared).toBe(1);
     expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
-  });
+  }, SLOW);
 
   it('saves the scenario when asked to keep it, and reuses the baseline run', async () => {
-    await call('run_simulation', { paths: 4000 });
-    const r = await call('try_scenario', { name: 'Spend less', ops: [{ op: 'set', path: '/spending/lifestyle_creep', value: 0 }], keep: true, paths: 4000 });
-    expect(r.json.saved_scenario).toEqual({ id: 'spend_less' });
-    expect(state().scenarios.map((s) => s.name)).toEqual(['Spend less']);
-    expect(pool.simulated).toBe(2);
-  });
+    await call('run_simulation', { paths: 400 });
+    const r = await call('try_scenario', { name: 'Work to 55', ops: RETIRE_AT_55, keep: true, paths: 400 });
+    expect(r.json.saved_scenario).toEqual({ id: 'work_to_55' });
+    expect(state().scenarios.map((s) => s.name)).toEqual(['Work to 55']);
+    expect(engine.simulated).toBe(2);
+  }, SLOW);
 
   it('flags a difference that cannot be told from zero', async () => {
-    const r = await call('try_scenario', { name: 'Rename', ops: [{ op: 'set', path: '/name', value: 'Renamed' }], paths: 2000 });
-    const c = r.json.comparison as { success: { delta: number; within_noise: boolean } };
-    expect(c.success.delta).toBe(0);
-    expect(c.success.within_noise).toBe(true);
-  });
+    const r = await call('try_scenario', { name: 'Rename', ops: [{ op: 'set', path: '/name', value: 'Renamed' }], paths: 400 });
+    const c = r.json.comparison as { success: { delta: number; rescued: number; harmed: number; within_noise: boolean } };
+    expect(c.success).toMatchObject({ delta: 0, rescued: 0, harmed: 0, within_noise: true });
+  }, SLOW);
+
+  it('reports a failed comparison instead of inventing one', async () => {
+    engine.compare = async () => {
+      throw new EngineError('worker', 'The two runs do not cover the same paths.');
+    };
+    const r = await call('try_scenario', { name: 'Retire at 55', ops: RETIRE_AT_55, paths: 400 });
+    expect(r.reply.isError).toBe(true);
+    expect(r.reply.content).toMatch(/do not cover the same paths/);
+  }, SLOW);
 
   it('passes patch errors back verbatim and blocks an invalid plan', async () => {
     const bad = await call('try_scenario', { name: 'Bad', ops: [{ op: 'set', path: '/retirement/triger', value: 1 }] });
     expect(bad.reply.isError).toBe(true);
     expect(bad.reply.content).toMatch(/patch/);
-    expect(pool.simulated).toBe(0);
+    expect(engine.simulated).toBe(0);
 
     state().load({ meta: { id: 'blank', createdAt: 0, origin: 'test' }, profile: applyPatch('{}', []).profile });
     const blocked = await call('run_simulation', {});
@@ -296,7 +372,7 @@ describe('run_simulation and try_scenario', () => {
   });
 
   it('says plainly when the engine cannot simulate yet', async () => {
-    pool = fakePool(defaultKnobs, { fail: () => new EngineError('not_implemented', 'not implemented: Engine::run_chunk') });
+    engine = nodeEngine({ fail: () => new EngineError('not_implemented', 'not implemented: Engine::run_chunk') });
     const r = await call('run_simulation', {}, makeContext());
     expect(r.reply.isError).toBe(true);
     expect(r.reply.content).toMatch(/no results/);
@@ -306,113 +382,170 @@ describe('run_simulation and try_scenario', () => {
 
 describe('rank_levers, solve and sweep', () => {
   it('ranks the engine levers and custom levers as one paired batch', async () => {
+    retireAtFixedAge();
     const r = await call('rank_levers', {
       metric: 'success_rate',
-      custom_levers: [{ label: 'Retire at 65', ops: [{ op: 'set', path: '/retirement/trigger', value: { type: 'at_age', person: 0, age: 65 } }] }],
+      custom_levers: [
+        { label: 'Work to 55', ops: RETIRE_AT_55 },
+        { label: 'Rename the plan', ops: [{ op: 'set', path: '/name', value: 'Renamed' }] },
+      ],
+      paths: 300,
     });
     expect(r.reply.isError).toBe(false);
-    const ranked = r.json.levers as { id: string; label: string; swing: number; settings: { label: string; delta: number; within_noise: boolean | null }[] }[];
-    expect(pool.batches).toHaveLength(1);
+    const ranked = r.json.levers as { id: string; label: string; swing: number; settings: { label: string; value: number; delta: number; std_error: number | null; within_noise: boolean | null }[] }[];
+    expect(engine.batches).toHaveLength(1);
     // One batch for the plan and every setting; a setting identical to the plan (Social Security paid in full) is not simulated twice.
     const settings = ranked.reduce((sum, l) => sum + l.settings.length, 0);
-    expect(pool.batches[0]).toBeGreaterThanOrEqual(settings);
-    expect(pool.batches[0]).toBeLessThanOrEqual(settings + 1);
-    expect(ranked.map((l) => l.id)).toContain('spending');
-    expect(ranked.map((l) => l.id)).toContain('custom_1');
+    expect(engine.batches[0]).toBeGreaterThanOrEqual(settings);
+    expect(engine.batches[0]).toBeLessThanOrEqual(settings + 1);
+    // Every setting is compared with the plan by the engine, life by life.
+    expect(engine.compared).toBe(settings);
+    expect(ranked.map((l) => l.id)).toEqual(expect.arrayContaining(['spending', 'salary', 'stock_returns', 'custom_1', 'custom_2']));
     const swings = ranked.map((l) => l.swing);
     expect(swings).toEqual([...swings].sort((a, b) => b - a));
+    // Spending less helps and spending more hurts.
     const spending = ranked.find((l) => l.id === 'spending')!;
     expect(spending.settings.map((s) => Math.sign(s.delta))).toEqual([1, -1]);
-    // Fees do nothing in the fake engine: reported, and marked as noise.
-    expect(ranked.find((l) => l.id === 'fees')!.settings.every((s) => s.delta === 0 && s.within_noise === true)).toBe(true);
-    expect(r.json).toMatchObject({ paired: true, paths: 2000, seed: 7 });
+    for (const s of ranked.flatMap((l) => l.settings)) {
+      expect(s.value - (r.json.plan_value as number)).toBeCloseTo(s.delta, 2);
+      expect(typeof s.within_noise).toBe('boolean');
+      expect(s.std_error).toBeGreaterThanOrEqual(0);
+    }
+    // Working to 55 is a real effect; a rename changes no life, and is reported as noise.
+    expect(ranked.find((l) => l.id === 'custom_1')!.settings[0]).toMatchObject({ within_noise: false });
+    expect(ranked.find((l) => l.id === 'custom_2')!.settings[0]).toMatchObject({ delta: 0, std_error: 0, within_noise: true });
+    expect(r.json).toMatchObject({ paired: true, paths: 300, seed: 7 });
     expect(typeof r.json.ranking_id).toBe('string');
     expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
-  });
+  }, SLOW);
 
   it('solves for the spending that meets a success target by bisection', async () => {
-    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.9 });
+    retireAtFixedAge();
+    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.9, paths: 200 });
     expect(r.json.status).toBe('converged');
-    // Check against the fake engine's known response: success falls 1 point per $1,500 a year.
-    const profile = state().profile!;
-    const check = applyPatch(profile, []).profile;
-    const now = (r.json.current_value as number) ?? 0;
-    const scale = (r.json.value as number) / now;
-    check.spending.items.forEach((item) => (item.amount *= scale));
-    expect(defaultKnobs(check).success).toBeCloseTo(0.9, 1);
     const bracket = r.json.bracket as { below: { value: number; metric: number }; above: { value: number; metric: number } };
     expect(bracket.below.metric).toBeGreaterThanOrEqual(0.9);
     expect(bracket.above.metric).toBeLessThanOrEqual(0.9);
+    expect(bracket.below.value).toBeLessThan(bracket.above.value);
+    expect(r.json.value as number).toBeGreaterThanOrEqual(bracket.below.value);
+    expect(r.json.value as number).toBeLessThanOrEqual(bracket.above.value);
     expect(r.json.metric_direction).toBe('falls as the quantity grows');
-    expect((r.json.evaluations as unknown[]).length).toBeLessThanOrEqual(9);
-    expect(r.view.meta).toMatchObject({ paths: 2000, seed: 7, paired: true });
-  });
+    const evaluations = r.json.evaluations as { value: number; metric: number }[];
+    expect(evaluations.length).toBeLessThanOrEqual(9);
+    // The bracket is two of the engine runs made, and the answer agrees with an independent run of the plan.
+    expect(evaluations).toEqual(expect.arrayContaining([bracket.below, bracket.above]));
+    const plan = await call('run_simulation', { paths: 200 });
+    const now = (plan.json.success as { p: number }).p;
+    expect(Math.sign((r.json.value as number) - (r.json.current_value as number))).toBe(now < bracket.below.metric ? -1 : 1);
+    expect(r.view.meta).toMatchObject({ paths: 200, seed: 7, paired: true });
+  }, SLOW);
+
+  it('reports the direction the metric really moves, and brackets the target either way', async () => {
+    // Retiring when funded: a bigger budget raises the funded number, so the household works longer.
+    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.9, paths: 200 });
+    expect(r.json.status).toBe('converged');
+    expect(r.json.metric_direction).toBe('rises as the quantity grows');
+    const bracket = r.json.bracket as { below: { value: number; metric: number }; above: { value: number; metric: number } };
+    expect(bracket.below.metric).toBeLessThanOrEqual(0.9);
+    expect(bracket.above.metric).toBeGreaterThanOrEqual(0.9);
+  }, SLOW);
 
   it('reports out of range with the closest end instead of inventing an answer', async () => {
-    const r = await call('solve', { variable: 'retirement_age', target_metric: 'success_rate', target_value: 0.999, lo: 50, hi: 55 });
+    const r = await call('solve', { variable: 'retirement_age', target_metric: 'success_rate', target_value: 0.2, lo: 50, hi: 55, paths: 200 });
     expect(r.json.status).toBe('out_of_range');
-    expect((r.json.closest as { value: number }).value).toBe(55);
-    expect(r.json.evaluations).toHaveLength(2);
-  });
+    const evaluations = r.json.evaluations as { value: number; metric: number }[];
+    expect(evaluations.map((e) => e.value)).toEqual([50, 55]);
+    const closest = [...evaluations].sort((a, b) => Math.abs(a.metric - 0.2) - Math.abs(b.metric - 0.2))[0]!;
+    expect((r.json.closest as { metric: number }).metric).toBe(closest.metric);
+    expect([50, 55]).toContain((r.json.closest as { value: number }).value);
+  }, SLOW);
 
   it('solves along a custom numeric path and rejects a non-numeric one', async () => {
-    const ok = await call('solve', { path: '/assumptions/market/equity_premium_adjustment', target_metric: 'success_rate', target_value: 0.7, lo: -0.05, hi: 0.02 });
+    const ok = await call('solve', { path: '/assumptions/market/equity_premium_adjustment', target_metric: 'median_terminal_net_worth', target_value: 3_000_000, lo: -0.05, hi: 0.02, paths: 200 });
     expect(ok.json.status).toBe('converged');
+    expect(ok.json.metric_direction).toBe('rises as the quantity grows');
     const bad = await call('solve', { path: '/retirement/trigger', target_metric: 'success_rate', target_value: 0.9 });
     expect(bad.reply.isError).toBe(true);
     expect(bad.reply.content).toMatch(/not a number/);
-  });
+  }, SLOW);
 
   it('sweeps a grid of two quantities at reduced paths', async () => {
-    const r = await call('sweep', { x: { variable: 'retirement_age', values: [55, 60, 65] }, y: { variable: 'annual_spending', lo: 50_000, hi: 80_000, steps: 4 }, metric: 'success_rate' });
+    const r = await call('sweep', { x: { variable: 'retirement_age', values: [55, 60, 65] }, y: { variable: 'annual_spending', lo: 40_000, hi: 70_000, steps: 4 }, metric: 'median_terminal_net_worth', paths: 200 });
     expect(r.reply.isError).toBe(false);
     const cells = r.json.cells as number[][];
     expect(cells).toHaveLength(4);
     expect(cells[0]).toHaveLength(3);
-    // Later retirement helps; more spending hurts.
+    // Working longer leaves more behind; spending more leaves less.
     expect(cells[0]![2]).toBeGreaterThan(cells[0]![0]!);
     expect(cells[3]![0]).toBeLessThan(cells[0]![0]!);
-    expect(pool.batches).toEqual([12]);
-    expect(r.json).toMatchObject({ paths: 1000, paired: true, cells_layout: 'cells[y index][x index]' });
+    expect(engine.batches).toEqual([12]);
+    expect(r.json).toMatchObject({ paths: 200, paired: true, cells_layout: 'cells[y index][x index]' });
     // Grid cells are not kept as runs.
     expect(ctx.runs.ids()).toEqual([]);
     const tooBig = await call('sweep', { x: { variable: 'retirement_age', values: [1, 2, 3, 4, 5, 6, 7, 8, 9] }, metric: 'success_rate' });
     expect(tooBig.reply.isError).toBe(true);
+  }, SLOW);
+
+  it('runs at the reduced number of lives unless told otherwise', () => {
+    const paths = (name: string) => (toolDefinitions().find((d) => d.name === name)!.input_schema as { properties: { paths: { description: string } } }).properties.paths.description;
+    expect(paths('rank_levers')).toMatch(/default \(2,000\)/);
+    expect(paths('solve')).toMatch(/default \(2,000\)/);
+    expect(paths('sweep')).toMatch(/default \(1,000 per cell\)/);
   });
 });
 
 describe('inspect_life and explain_tax', () => {
+  const column = (trace: PathTrace, key: string) => trace.annual.columns.find((c) => c.key === key)!.values.map((v) => Math.round((v ?? 0) / 1000));
+
   it('traces a picked life as a year table with its events', async () => {
     const none = await call('inspect_life', {});
     expect(none.reply.content).toMatch(/run_simulation first/);
-    const run = await call('run_simulation', { paths: 2000 });
+    const run = await call('run_simulation', {});
     const r = await call('inspect_life', { pick: 'failing' });
     expect(r.reply.isError).toBe(false);
-    expect(r.json).toMatchObject({ path: 17, run_id: run.json.run_id, one_life_of: 2000, seed: 7 });
+    const failing = record(run.json.run_id).summary.picks.find((p) => p.label === 'failing')!.path_index;
+    expect(r.json).toMatchObject({ path: failing, run_id: run.json.run_id, one_life_of: 2000, seed: 7 });
+    expect(failing).toBe((run.json.trace_paths as { failing: number }).failing);
+    // The table is the engine's ledger of that life, in thousands.
+    const trace = await engine.pool.trace(demo(), failing, 7);
     const table = r.json.table as Record<string, unknown[]>;
-    expect(table.year).toEqual([2026, 2027, 2028, 2029]);
-    expect(table.income).toEqual([128, 132, 0, 0]);
-    expect(table.status).toEqual(['working', 'working', 'retired_on_plan', 'retired_cutting']);
-    expect((r.json.events as { kind: string }[]).map((e) => e.kind)).toEqual(['market', 'laid_off', 'retired', 'spending_cut']);
-    expect(r.json.scalars).toEqual({ fi_age: 37, terminal_net_worth: 198_700, success: 0 });
-  });
+    expect(table.year).toEqual(trace.annual.years);
+    expect(table.income).toEqual(column(trace, 'gross_income'));
+    expect(table.spending).toEqual(column(trace, 'spending'));
+    expect(table.net_worth).toEqual(column(trace, 'net_worth'));
+    expect(table.status).toHaveLength(trace.annual.years.length);
+    for (const status of table.status!) expect(STATUSES).toContain(status);
+    // A failing life runs out: the ledger and the event log both say so.
+    expect(table.status).toContain('depleted');
+    const events = r.json.events as { month: string; kind: string; label: string }[];
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.map((e) => e.kind)).toEqual(trace.events.slice(0, 60).map((e) => e.kind));
+    expect(r.json.scalars).toMatchObject({ success: 0 });
+    expect((r.json.scalars as { depletion_age: number }).depletion_age).toBeGreaterThan(0);
+    expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+  }, SLOW);
 
   it('picks a life by quantile of a per-life quantity, or by path id', async () => {
-    await call('run_simulation', { paths: 2000 });
+    await call('run_simulation', {});
     const low = await call('inspect_life', { quantile: 0.05, by: 'terminal_net_worth' });
     const high = await call('inspect_life', { quantile: 0.95, by: 'terminal_net_worth' });
     expect(low.json.path).not.toBe(high.json.path);
+    expect((low.json.scalars as { terminal_net_worth: number }).terminal_net_worth).toBeLessThan((high.json.scalars as { terminal_net_worth: number }).terminal_net_worth);
     expect((await call('inspect_life', { path: 12 })).json.path).toBe(12);
     expect((await call('inspect_life', { path: 99_999 })).reply.content).toMatch(/does not exist/);
-  });
+  }, SLOW);
 
   it('returns the 1040-style lines of one simulated year', async () => {
-    await call('run_simulation', { paths: 2000 });
+    await call('run_simulation', {});
     const r = await call('explain_tax', { path: 7, year: 2027 });
-    expect(r.json).toMatchObject({ year: 2027, path: 7, price_level: 1.03, dollars: 'nominal dollars of the tax year' });
-    expect((r.json.lines as { key: string }[]).map((l) => l.key)).toEqual(['wages', 'standard_deduction', 'total_tax']);
-    expect((await call('explain_tax', { path: 7, year: 1999 })).reply.content).toMatch(/2026 to 2029/);
-  });
+    const trace = await engine.pool.trace(demo(), 7, 7);
+    const core = trace.tax_returns.find((t) => t.year === 2027)!;
+    expect(r.json).toMatchObject({ year: 2027, path: 7, price_level: Number(core.price_level.toPrecision(5)), dollars: 'nominal dollars of the tax year' });
+    const lines = r.json.lines as { key: string; amount: number }[];
+    expect(lines.map((l) => l.key)).toEqual(core.lines.map((l) => l.key));
+    expect(lines.find((l) => l.key === 'wages')!.amount).toBe(Math.round(core.lines.find((l) => l.key === 'wages')!.amount));
+    expect((await call('explain_tax', { path: 7, year: 1999 })).reply.content).toMatch(new RegExp(`${trace.tax_returns[0]!.year} to ${trace.tax_returns.at(-1)!.year}`));
+  }, SLOW);
 });
 
 describe('lookup_cost_of_living and show_chart', () => {
@@ -438,30 +571,42 @@ describe('lookup_cost_of_living and show_chart', () => {
 
   it('shows a chart only for results that exist', async () => {
     expect((await call('show_chart', { kind: 'fan', caption: 'Net worth' })).reply.content).toMatch(/run_simulation first/);
-    const run = await call('run_simulation', { paths: 2000 });
+    const run = await call('run_simulation', {});
     const fan = await call('show_chart', { kind: 'fan', caption: 'Net worth by age' });
     expect(fan.json).toEqual({ shown: true, kind: 'fan' });
     expect(fan.view.display).toEqual({ type: 'chart', kind: 'fan', caption: 'Net worth by age', runId: run.json.run_id, compareRunId: null, dataId: null });
     expect((await call('show_chart', { kind: 'tornado', caption: 'Levers' })).reply.content).toMatch(/ranking_id/);
-    const ranking = await call('rank_levers', { metric: 'success_rate' });
+    const ranking = await call('rank_levers', { metric: 'success_rate', paths: 200 });
     const tornado = await call('show_chart', { kind: 'tornado', caption: 'Levers', data_id: ranking.json.ranking_id });
     expect(tornado.view.display).toMatchObject({ type: 'chart', kind: 'tornado', dataId: ranking.json.ranking_id });
     expect((await call('show_chart', { kind: 'heatmap', caption: 'x', data_id: ranking.json.ranking_id })).reply.isError).toBe(true);
     expect((await call('show_chart', { kind: 'compare_delta', caption: 'x' })).reply.content).toMatch(/try_scenario/);
-  });
+  }, SLOW);
+
+  it('computes the comparison behind a chart once per pair of runs', async () => {
+    const r = await call('try_scenario', { name: 'Retire at 55', ops: RETIRE_AT_55, paths: 400 });
+    const base = record(r.json.base_run_id);
+    const scenario = record(r.json.scenario_run_id);
+    const again = await ctx.runs.compare(engine, base, scenario);
+    expect(engine.compared).toBe(1);
+    expect(again).toEqual(compare(base.acc, scenario.acc, engineInput(base.profile, 7).json));
+    // The other direction is a different comparison.
+    expect((await ctx.runs.compare(engine, scenario, base)).outcomes[0]!.difference.value).toBeCloseTo(-again.outcomes[0]!.difference.value, 6);
+    expect(engine.compared).toBe(2);
+  }, SLOW);
 });
 
 describe('result discipline', () => {
   it('keeps every tool result compact', async () => {
-    await call('run_simulation', { paths: 2000 });
+    await call('run_simulation', {});
     const inputs: Record<string, unknown> = {
       get_plan: {},
       get_schema: { section: 'EventKind', with_nested: true },
       run_simulation: {},
       try_scenario: { name: 'x', ops: [{ op: 'set', path: '/spending/lifestyle_creep', value: 0.1 }] },
-      rank_levers: { metric: 'median_fi_age' },
-      solve: { variable: 'salary_scale', target_metric: 'success_rate', target_value: 0.85 },
-      sweep: { x: { variable: 'retirement_age', lo: 50, hi: 68, steps: 8 }, y: { variable: 'annual_spending', steps: 8 }, metric: 'median_terminal_net_worth' },
+      rank_levers: { metric: 'median_fi_age', paths: 200 },
+      solve: { variable: 'salary_scale', target_metric: 'success_rate', target_value: 0.85, paths: 200 },
+      sweep: { x: { variable: 'retirement_age', lo: 50, hi: 68, steps: 8 }, y: { variable: 'annual_spending', steps: 8 }, metric: 'median_terminal_net_worth', paths: 200 },
       inspect_life: { pick: 'median' },
       explain_tax: { path: 7, year: 2026 },
       lookup_cost_of_living: { from: 'Denver', to: 'Lisbon' },
@@ -475,5 +620,5 @@ describe('result discipline', () => {
       expect(r.reply.content, tool.name).not.toContain('"quantiles"');
       expect(r.view.title.length, tool.name).toBeGreaterThan(8);
     }
-  });
+  }, 2 * SLOW);
 });

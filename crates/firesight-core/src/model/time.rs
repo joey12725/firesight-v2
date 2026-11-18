@@ -57,12 +57,14 @@ impl YearMonth {
 
     /// This month shifted by `months` (may be negative).
     pub const fn add_months(self, months: i32) -> Self {
-        Self(self.0 + months)
+        Self(self.0.saturating_add(months))
     }
 
     /// This month shifted by a fractional number of years, rounded to the nearest month.
     pub fn add_years_f64(self, years: f64) -> Self {
-        Self(self.0 + (years * 12.0).round() as i32)
+        // The cast saturates; so must the addition (an age of 1e9 is a validation
+        // error to report, not an overflow).
+        Self(self.0.saturating_add((years * 12.0).round() as i32))
     }
 
     /// Whole months from `self` to `later` (negative if `later` is earlier).

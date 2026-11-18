@@ -1036,9 +1036,181 @@ fn high_earners_in_new_york() {
         0.0202
     );
     assert_eq!(law.local_rate(TX, Some("Austin")), 0.0);
+    // The city's own graduated schedule on New York taxable income (600,000 less
+    // the 16,050 deduction): 21,600 at 3.078%, 23,400 at 3.762%, 45,000 at 3.819%,
+    // the rest at 3.876%.
     let mut p = params(NY);
-    p.state.local_rate = law.local_rate(NY, Some("new york city"));
-    close(compute(&p, &x).local, 0.03876 * 600_000.0);
+    law.local_tax(NY, Some("new york city")).apply(&mut p.state);
+    let city = 664.848 + 880.308 + 1_718.55 + 0.03876 * (583_950.0 - 90_000.0);
+    close(compute(&p, &x).local, city);
+}
+
+/// The app's city list calls the place "New York"; people type "NYC". All of them
+/// are the city, and every state's major taxing city must resolve from the name
+/// the city list (`data/col/cities.csv`) uses for it.
+#[test]
+fn a_city_resolves_by_any_of_its_names() {
+    let law = law();
+    let nyc = law.local_tax(NY, Some("New York City"));
+    assert!(nyc.brackets[0].len == 4);
+    for name in [
+        "New York",
+        "new york",
+        "NYC",
+        " Brooklyn ",
+        "New-York City",
+        "The Bronx",
+    ] {
+        assert_eq!(law.local_tax(NY, Some(name)), nyc, "{name}");
+    }
+    assert_ne!(law.local_tax(NY, Some("Yonkers")), nyc);
+    // Hand calculation, single with 60,000 of wages: city taxable income 52,000:
+    // 369.36 + 489.06 + 954.75 + 2,000 x 3.876% = 1,890.69.
+    let mut p = params(NY);
+    nyc.apply(&mut p.state);
+    let mut x = single(NY, 40.0);
+    x.wages[0] = 60_000.0;
+    close(compute(&p, &x).local, 1_890.69);
+
+    let csv = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../data/col/cities.csv"
+    ))
+    .expect("data/col/cities.csv");
+    let cities: std::collections::BTreeSet<String> = csv
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split(',').next())
+        .map(|c| c.trim_matches('"').to_ascii_lowercase())
+        .collect();
+    let majors = law.major_cities();
+    assert!(majors.len() >= 14);
+    for (state, _) in majors {
+        let average = law.local_tax(state, None);
+        let found = cities.iter().any(|c| {
+            let t = law.local_tax(state, Some(c));
+            t.rate != average.rate || t.brackets != average.brackets
+        });
+        // A city whose rate equals the statewide figure cannot be told apart; only
+        // require a match where the city tax differs.
+        let differs = law.major_cities().iter().any(|(s, n)| {
+            *s == state && {
+                let t = law.local_tax(state, Some(n));
+                t.rate != average.rate || t.brackets != average.brackets
+            }
+        });
+        assert!(
+            found || !differs,
+            "{}: no city in cities.csv matches",
+            state.as_str()
+        );
+    }
+}
+
+/// Local taxes have a base. The Portland area's taxes start above 125,000 single /
+/// 200,000 joint of taxable income; city wage and earnings taxes do not reach
+/// retirement or investment income.
+#[test]
+fn local_tax_follows_its_base_and_thresholds() {
+    let law = law();
+    let local = |state: &str, city: &str, x: &TaxInputs| {
+        let code = StateCode::parse(state).unwrap();
+        let mut p = law.for_year(Indexation::base(2026), code);
+        law.local_tax(code, Some(city)).apply(&mut p.state);
+        let mut x = *x;
+        x.state = code;
+        compute(&p, &x)
+    };
+    // Joint wages of 150,000 in Portland: under the threshold, nothing.
+    let mut workers = joint(TX, [40.0, 40.0]);
+    workers.wages = [90_000.0, 60_000.0];
+    close(local("OR", "Portland", &workers).local, 0.0);
+    // Joint wages of 500,000: Oregon taxable income above 200,000 at 2.5%, above
+    // 400,000 at 4%.
+    workers.wages = [300_000.0, 200_000.0];
+    let r = local("OR", "Portland", &workers);
+    assert!(r.local > 0.025 * 250_000.0 && r.local < 0.04 * 300_000.0);
+    // A retired couple: 50,000 from an IRA, 50,000 of Social Security, 30,000 of
+    // qualified dividends and gains. Wage taxes take nothing.
+    let mut retired = joint(TX, [67.0, 67.0]);
+    retired.traditional_distributions = 50_000.0;
+    retired.social_security = [25_000.0, 25_000.0];
+    retired.qualified_dividends = 10_000.0;
+    retired.long_term_gains = 20_000.0;
+    for (state, city) in [
+        ("OR", "Portland"),
+        ("OH", "Columbus"),
+        ("MO", "Kansas City"),
+        ("DE", "Wilmington"),
+        ("KY", "Louisville"),
+        ("PA", "Philadelphia"),
+        ("MI", "Detroit"),
+        ("OH", "Dayton"),
+    ] {
+        close(local(state, city, &retired).local, 0.0);
+    }
+    // Maryland and Indiana tax all income locally.
+    assert!(local("MD", "Baltimore", &retired).local > 500.0);
+    assert!(local("IN", "Indianapolis", &retired).local > 500.0);
+    // And a Columbus worker pays 2.5% of wages.
+    workers.wages = [90_000.0, 60_000.0];
+    close(local("OH", "Columbus", &workers).local, 3_750.0);
+}
+
+/// States that exempt retirement distributions exempt a Roth conversion, which is
+/// one; Illinois has no age test, Pennsylvania follows 59 and a half.
+#[test]
+fn exempt_states_do_not_tax_conversions() {
+    let il = StateCode::parse("IL").unwrap();
+    let pa = StateCode::parse("PA").unwrap();
+    let state_tax = |state: StateCode, age: f64, conversion: bool| {
+        let mut x = joint(state, [age, age]);
+        if conversion {
+            x.roth_conversions = 100_000.0;
+        } else {
+            x.traditional_distributions = 100_000.0;
+        }
+        compute(&params(state), &x).state
+    };
+    for age in [50.0, 62.0] {
+        close(state_tax(il, age, true), 0.0);
+        close(state_tax(il, age, false), 0.0);
+    }
+    close(state_tax(pa, 62.0, true), 0.0);
+    close(state_tax(pa, 62.0, false), 0.0);
+    assert!(state_tax(pa, 50.0, false) > 3_000.0);
+    for code in ["MS", "MI", "IA"] {
+        let state = StateCode::parse(code).unwrap();
+        close(state_tax(state, 62.0, true), state_tax(state, 62.0, false));
+    }
+    // New York's 20,000 per person applies to a conversion as to a distribution.
+    close(state_tax(NY, 62.0, true), state_tax(NY, 62.0, false));
+    // Pennsylvania taxes wages before 401(k) deferrals: 150,000 at 3.07%.
+    let mut x = joint(pa, [40.0, 40.0]);
+    x.wages = [150_000.0, 0.0];
+    x.pretax_deferrals = [10_000.0, 0.0];
+    let r = compute(&params(pa), &x);
+    close(r.state - r.local, 4_605.0);
+}
+
+/// California has a head-of-household schedule and deduction of its own.
+#[test]
+fn california_head_of_household_has_its_own_schedule() {
+    let p = params(CA);
+    let hoh = FilingStatus::HeadOfHousehold.index();
+    assert!(p.state.brackets[hoh].lower[1] > 1.9 * p.state.brackets[0].lower[1]);
+    assert_eq!(
+        p.state.standard_deduction[hoh],
+        p.state.standard_deduction[1]
+    );
+    let mut x = single(CA, 40.0);
+    x.filing_status = FilingStatus::HeadOfHousehold;
+    x.wages[0] = 90_000.0;
+    x.children_under_17 = 1;
+    let head = compute(&p, &x).state;
+    x.filing_status = FilingStatus::Single;
+    let alone = compute(&p, &x).state;
+    assert!(head < alone - 1_500.0, "{head} vs {alone}");
 }
 
 /// The same single earner in Texas pays no state tax and takes the standard

@@ -2,7 +2,7 @@
 // simulate many variants of the plan on the same seed and lives as one batch, at a
 // reduced number of lives, and say so in their results.
 import type { PatchOp, Profile } from '@/engine/types';
-import { compareRuns, METRICS, METRIC_UNIT, readMetric, roundMetric, type ComparisonDigest, type Metric } from './digest';
+import { digestComparison, METRICS, METRIC_UNIT, readMetric, roundMetric, type ComparisonDigest, type Metric } from './digest';
 import type { RunRecord } from './runs';
 import { asOps, clampPaths, count, explainEngineError, PATCH_OP_SCHEMA, PATHS_SCHEMA, REDUCED_PATHS, requireRunnable, SWEEP_PATHS } from './shared';
 import { ToolError, type ToolCallInfo, type ToolContext, type ToolSpec } from './types';
@@ -117,11 +117,17 @@ export const rankLevers: ToolSpec<RankInput> = {
     const records = await simulate(ctx, call, [{ label: 'Current plan', profile }, ...plan.map((p) => ({ label: `${p.label}: ${p.setting}`, profile: p.profile }))], paths, false);
     const base = records[0] as RunRecord;
     const baseValue = readMetric(base.summary, input.metric);
+    let comparisons: ComparisonDigest[];
+    try {
+      comparisons = (await Promise.all(plan.map((_, i) => ctx.engine.compare(base, records[i + 1] as RunRecord)))).map((c) => digestComparison(c, seed));
+    } catch (error) {
+      throw explainEngineError(error);
+    }
     const byLever = new Map<string, LeverRanking['levers'][number]>();
     plan.forEach((p, i) => {
       const record = records[i + 1] as RunRecord;
       const value = readMetric(record.summary, input.metric);
-      const noise = noiseFor(input.metric, compareRuns(base, record, ctx.engine.compare));
+      const noise = noiseFor(input.metric, comparisons[i] as ComparisonDigest);
       const entry = byLever.get(p.id) ?? { id: p.id, label: p.label, settings: [], swing: null };
       const delta = value === null || baseValue === null ? null : value - baseValue;
       entry.settings.push({ label: p.setting, value: roundMetric(input.metric, value), delta: roundMetric(input.metric, delta), std_error: noise?.std_error ?? null, within_noise: noise?.within_noise ?? null });

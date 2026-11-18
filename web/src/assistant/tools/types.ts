@@ -2,7 +2,7 @@
 // through `ToolContext`, so each executor runs unchanged against the real engine and
 // store in the app and against fakes in tests.
 import type { EnginePool } from '@/engine/pool';
-import type { Comparison, PathTrace } from '@/engine/output-types';
+import type { Comparison, PathTrace, PlanPreview, SummaryDigest } from '@/engine/output-types';
 import type { Lever, PatchOp, Profile, Report } from '@/engine/types';
 import type { City } from '@/editor/cities';
 import type { EditResult, Scenario } from '@/state/profile-store';
@@ -29,10 +29,12 @@ export interface EngineBridge {
   applyPatch(profile: Profile, ops: PatchOp[]): { profile: Profile; errors: Report['errors']; warnings: Report['warnings'] };
   levers(profile: Profile): Lever[];
   schema(): unknown;
-  /** Core's paired comparison, when the wasm build exports it. */
-  compare?(a: RunRecord, b: RunRecord): Comparison | null;
-  /** Core's deterministic plan preview, when the wasm build exports it. */
-  planPreview?(profile: Profile): unknown;
+  /** Core's deterministic plan facts. Throws an `EngineError` of kind `invalid_profile` when the plan cannot be compiled. */
+  planPreview(profile: Profile): PlanPreview;
+  /** Core's compact form of a finished run, computed from its accumulator. */
+  digest(run: RunRecord): SummaryDigest;
+  /** Core's paired comparison, B minus A life by life. Both runs must share a seed and a number of lives. */
+  compare(a: RunRecord, b: RunRecord): Promise<Comparison>;
 }
 
 export interface ChangeEntry {

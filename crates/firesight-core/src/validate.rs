@@ -1570,6 +1570,14 @@ impl Checker<'_> {
             }
             if from_year.is_some_and(|y| !(1800..=2020).contains(&y)) {
                 self.r.error("out_of_range", "/assumptions/market/kind/from_year", "from_year must be between 1800 and 2020 so that enough history remains to resample.");
+            } else if let Some(year) = from_year {
+                if let Some(message) = crate::economy::short_history_warning(year) {
+                    self.r.warn(
+                        "short_history",
+                        "/assumptions/market/kind/from_year",
+                        message,
+                    );
+                }
             }
         }
         self.r.range(

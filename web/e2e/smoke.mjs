@@ -23,9 +23,11 @@ const expect = (condition, message) => {
 
 async function open(context, url) {
   const page = await context.newPage();
-  page.on('console', (m) => m.type() === 'error' && problems.push(`console: ${m.text()}`));
+  // The dev server has no /api/chat (the hosted assistant probe 404s there); everything else must be clean.
+  page.on('console', (m) => m.type() === 'error' && !/status of 404/.test(m.text()) && problems.push(`console: ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('requestfailed', (r) => problems.push(`request failed: ${r.url()}`));
+  page.on('response', (r) => r.status() >= 400 && !r.url().includes('/api/') && problems.push(`HTTP ${r.status()}: ${r.url()}`));
   await page.goto(url);
   return page;
 }
@@ -43,18 +45,95 @@ try {
   await page.getByRole('heading', { level: 1, name: 'Dual-income family' }).waitFor();
   ok('demo household loads into the editor');
 
-  await page.getByTestId('run-notice').waitFor();
-  expect(/not part of this build/.test(await page.getByTestId('run-notice').innerText()), 'expected the engine-not-implemented notice');
-  ok('results area shows the engine-not-implemented state');
+  // The real engine: a first picture quickly, then refinement to the full run.
+  const runDone = (p = page) => p.waitForFunction(() => window.__firesight.run.getState().status === 'done', null, { timeout: 120_000 });
+  await page.getByTestId('outcome-sentence').waitFor();
+  const first = await page.evaluate(() => window.__firesight.run.getState().firstPictureMs);
+  await runDone();
+  const sentence = await page.getByTestId('outcome-sentence').innerText();
+  expect(/^In (all )?\d+ of 100 simulated lives the plan holds to the end\./.test(sentence), `unexpected outcome sentence: ${sentence}`);
+  const figures = await page.getByTestId('headline').innerText();
+  expect(/Work optional at\s+\d+\.\d/.test(figures) && /The plan holds in\s+\d+\s+(\d+\s+)?of 100/.test(figures), `headline figures missing: ${figures}`);
+  expect(/Spending \$[\d.]+[kM] a year now/.test(await page.getByTestId('plan-facts').innerText()), 'the plan facts line should come from planPreview');
+  expect((await page.getByTestId('run-notice').count()) === 0, 'no run notice expected when the engine runs');
+  const cards = await page.locator('[data-chart-card]').evaluateAll((els) => els.map((e) => e.getAttribute('data-chart-card')));
+  for (const card of ['age-work-becomes-optional', 'net-worth-by-age', 'life-stages-by-age', 'spending-by-age', 'what-could-go-wrong']) {
+    expect(cards.includes(card), `Overview should show the ${card} chart (found ${cards.join(', ')})`);
+  }
+  // Every canvas layer has ink on it.
+  const blank = await page.evaluate(() =>
+    [...document.querySelectorAll('canvas[data-chart-layer]')].filter((c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) return false;
+      return true;
+    }).length,
+  );
+  expect(blank === 0, `${blank} chart canvas(es) are blank`);
+  ok(`the engine runs: first picture ${Math.round(first)} ms after load, then "${sentence.slice(0, 58)}…"`);
   await page.screenshot({ path: `${shots}/02-workspace-light.png` });
+
+  // Crosshair and tooltip on the fan, by pointer and by keyboard; the other time charts follow.
+  const fan = page.locator('[data-chart-card="net-worth-by-age"]');
+  const cursor = fan.locator('[data-chart-cursor]').first();
+  await cursor.scrollIntoViewIfNeeded();
+  const box = await cursor.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+  await fan.getByText('Median', { exact: true }).last().waitFor();
+  expect((await fan.getByText(/lives still have someone alive/).count()) > 0, 'the fan tooltip should state how many lives are still alive');
+  await page.screenshot({ path: `${shots}/02b-fan-tooltip.png` });
+  await cursor.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  const spoken = await fan.locator('[aria-live="polite"]').innerText();
+  expect(/^Age \d+, \d{4}: median \$/.test(spoken), `keyboard reading should be announced, got "${spoken}"`);
+  await page.keyboard.press('Escape');
+  ok('fan crosshair: tooltip on hover, arrow keys announce the reading');
+
+  // Table view, CSV, and the dot plot's cumulative twin.
+  await fan.getByRole('button', { name: 'View as a table' }).click();
+  await fan.getByRole('columnheader', { name: 'Median' }).waitFor();
+  expect((await fan.locator('tbody tr').count()) > 40, 'the table view should list every year');
+  const [download] = await Promise.all([page.waitForEvent('download'), fan.getByRole('button', { name: 'Download the data (CSV)' }).click()]);
+  expect(download.suggestedFilename() === 'net-worth-by-age.csv', `unexpected CSV name ${download.suggestedFilename()}`);
+  await fan.getByRole('button', { name: 'Show the chart' }).click();
+  await page.getByRole('radio', { name: 'By this age' }).click();
+  await page.locator('[data-chart-card="age-work-becomes-optional"] canvas').waitFor();
+  await page.getByRole('radio', { name: '100 lives' }).click();
+  ok('table view, CSV download and the cumulative toggle work');
+
+  // A sample life opens in Life stories with its path index in the URL.
+  await page.getByRole('button', { name: 'a middling one' }).click();
+  expect(/^\/life-stories$/.test(new URL(page.url()).pathname) && /path=\d+&why=median/.test(new URL(page.url()).search), `expected a life-stories route, got ${page.url()}`);
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  ok('"open a life" routes to Life stories with the path index');
 
   // Edit a salary through the editor.
   await page.getByRole('button', { name: /^Income/ }).click();
   await page.getByRole('button', { name: /Product manager/ }).click();
   const salary = page.getByLabel('Salary', { exact: true });
+  // While the edit re-runs, the previous picture must stay on screen: no skeleton, no empty frame.
+  await page.evaluate(() => {
+    const w = window;
+    w.__flicker = { detached: 0, nullSummary: 0, first: 0, t0: performance.now() };
+    new MutationObserver(() => {
+      if (!document.querySelector('[data-testid="outcome-sentence"]') || document.querySelectorAll('canvas[data-chart-layer]').length < 2) w.__flicker.detached += 1;
+    }).observe(document.querySelector('#main'), { childList: true, subtree: true });
+    w.__firesight.run.subscribe((s2, p2) => {
+      if (s2.summary === null) w.__flicker.nullSummary += 1;
+      if (s2.summary !== p2.summary && !w.__flicker.first) w.__flicker.first = performance.now() - w.__flicker.t0;
+    });
+    w.__flicker.t0 = performance.now();
+  });
+  const before = await page.getByTestId('headline').innerText();
   await salary.fill('150k');
   await page.getByText('$150k/yr').first().waitFor();
   ok('number input accepts "150k" and the plan updates');
+  await runDone();
+  await page.waitForTimeout(600);
+  const flicker = await page.evaluate(() => window.__flicker);
+  expect(flicker.detached === 0 && flicker.nullSummary === 0, `charts flickered during the re-run: ${JSON.stringify(flicker)}`);
+  expect((await page.getByTestId('headline').innerText()) !== before, 'the headline should change after a pay rise');
+  ok(`an edit refines the charts in place (new picture ${Math.round(flicker.first)} ms after the edit, nothing unmounted)`);
 
   // Edits to one field within 1.5 s share an undo step; wait so this is its own.
   await page.waitForTimeout(1700);

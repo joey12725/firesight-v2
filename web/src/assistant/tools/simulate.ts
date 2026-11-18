@@ -1,12 +1,12 @@
 import type { PatchOp } from '@/engine/types';
-import { compareRuns, digestSummary } from './digest';
+import { digestComparison, digestRun } from './digest';
 import { asOps, count, explainEngineError, fullPaths, PATCH_OP_SCHEMA, PATHS_SCHEMA, requireRunnable, variant } from './shared';
 import { ToolError, type ToolSpec } from './types';
 
 export const runSimulation: ToolSpec<{ paths?: number }> = {
   name: 'run_simulation',
   description:
-    "Simulate the user's current plan and get the digest: probability of success, of reaching financial independence and of depletion (each with a 95% interval), FI and retirement age quantiles, net worth and spending bands at six ages, spending delivered against plan, the leading causes of failure, and the path ids of representative lives to inspect. Uses the session's fixed seed, so results are reproducible and comparable with every other run in this conversation. Identical inputs are served from memory.",
+    "Simulate the user's current plan and get the engine's digest of the run: success, fi and depletion as {p, lo, hi} (a probability with its 95% interval); fi_age, retirement_age and terminal_net_worth as {p10, p50, p90}; fi_by_age and depletion_by_age (the cumulative share of all lives, p, by each age in ages); by_age (the share of households alive and the p10, p50 and p90 of net worth and of spending at six ages); spending_delivery (delivered_ratio: retirement spending delivered over planned; paths_below_90 and paths_below_75: the share of retired lives with at least one year below 90% or 75% of planned spending; years_below_90: the share of retirement years below 90%; worst_cut_p90: the single-year cut, as a fraction of plan, that 90% of retired lives never exceed); failure_causes (the top first causes as {cause, share}, share of the failed lives); trace_paths (path ids of representative lives for inspect_life); and notes, which states the units and definitions. Uses the session's fixed seed, so results are reproducible and comparable with every other run in this conversation. Identical inputs are served from memory.",
   input_schema: { type: 'object', properties: { paths: PATHS_SCHEMA("the plan's setting, at most 10,000") }, additionalProperties: false },
   pending: (input) => `Simulating ${input.paths ? `${count(input.paths)} lives` : 'the plan'}`,
   async run(input, ctx, call) {
@@ -18,7 +18,7 @@ export const runSimulation: ToolSpec<{ paths?: number }> = {
       if (!run) throw new ToolError('The simulation returned nothing.');
       ctx.runs.latestBaseline = run.id;
       return {
-        result: { ...digestSummary(run.summary, run), common_random_numbers: true },
+        result: { ...digestRun(ctx.engine, run), common_random_numbers: true },
         view: { title: `Simulated ${count(paths)} lives of the current plan`, meta: { paths, seed, runs: 1 } },
       };
     } catch (error) {
@@ -37,7 +37,7 @@ interface TryScenarioInput {
 export const tryScenario: ToolSpec<TryScenarioInput> = {
   name: 'try_scenario',
   description:
-    "Answer a what-if without touching the user's plan: apply edits to a copy, simulate the plan and the copy on identical futures (same seed, same lives), and get the paired comparison. The comparison reports B (the scenario) minus A (the plan): the change in success with its paired standard error, how many lives are rescued and how many harmed, the per-life change in FI age, retirement age and terminal net worth, and the headline figures side by side. within_noise: true means the difference cannot be told from zero at this number of lives. Set keep to save it as a named scenario the user can see in the Scenarios view (do this when they ask to keep or compare it, not for every probe).",
+    "Answer a what-if without touching the user's plan: apply edits to a copy, simulate the plan and the copy on identical futures (same seed, same lives), and get the engine's paired comparison. The comparison reports B (the scenario) minus A (the plan): for success and for depleted, the change (delta) with its paired standard error and 95% interval, and how many lives are rescued (fail or deplete under the plan only) and how many harmed; under scalars, the per-life change in FI age, retirement age, terminal net worth, lifetime tax and lifetime spending over the n lives that have a value in both runs (mean_delta with its interval, delta_p10/p50/p90, and b_higher and a_higher, the shares of those lives where the scenario or the plan is higher); and the headline figures side by side. scenario_detail and base_detail carry the same fields as a run_simulation digest. within_noise: true means the difference cannot be told from zero at this number of lives. Set keep to save it as a named scenario the user can see in the Scenarios view (do this when they ask to keep or compare it, not for every probe).",
   input_schema: {
     type: 'object',
     properties: {
@@ -71,14 +71,20 @@ export const tryScenario: ToolSpec<TryScenarioInput> = {
     }
     if (!base || !changed) throw new ToolError('The simulation returned nothing.');
     ctx.runs.latestBaseline = base.id;
+    let comparison, a, b;
+    try {
+      comparison = digestComparison(await ctx.runs.compare(ctx.engine, base, changed), seed);
+      a = ctx.engine.digest(base);
+      b = ctx.engine.digest(changed);
+    } catch (error) {
+      throw explainEngineError(error);
+    }
+    // Saved only once there is a result to show for it.
     let saved: { id?: string; error?: string } | null = null;
     if (input.keep) {
       const added = ctx.store.addScenario({ name: input.name, patch: ops });
       saved = added.ok ? { id: added.id } : { error: added.error };
     }
-    const comparison = compareRuns(base, changed, ctx.engine.compare);
-    const a = digestSummary(base.summary, base);
-    const b = digestSummary(changed.summary, changed);
     return {
       result: {
         scenario: input.name,

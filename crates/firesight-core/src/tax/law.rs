@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use super::{
     index_rounded, AcaYear, Brackets, ContributionLimits, FederalYear, FilingStatus, Indexation,
-    IrmaaTable, RmdTable, StateCode, StateYear, TaxLaw, TaxYearParams, MAX_ACA_BANDS, MAX_BRACKETS,
-    MAX_IRMAA_TIERS,
+    IrmaaTable, LocalTax, RmdTable, StateCode, StateYear, TaxLaw, TaxYearParams, MAX_ACA_BANDS,
+    MAX_BRACKETS, MAX_IRMAA_TIERS,
 };
 use crate::data::{Data, DataError};
 use crate::model::TaxModel;
@@ -278,8 +278,25 @@ pub(super) struct StateBase {
     brackets_indexed: bool,
     standard_deduction_indexed: bool,
     standard_deduction_follows_federal: bool,
-    major_city: Option<String>,
+    /// Normalised names the major taxing city goes by (its name in the data, the
+    /// name without a parenthesis, and any aliases).
+    major_city_names: Vec<String>,
     major_city_rate: f64,
+    /// The major city's graduated schedule, when it has one.
+    major_city_brackets: [Brackets; FilingStatus::COUNT],
+}
+
+/// A place name reduced to lower-case letters, digits and single spaces.
+fn normalise_place(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with(' ') && !out.is_empty() {
+            out.push(' ');
+        }
+    }
+    out.trim_end().to_string()
 }
 
 /// Reads the Uniform Lifetime Table and RMD starting ages.
@@ -622,7 +639,15 @@ fn parse_state(
     if taxes_wages && !has_income_tax {
         return Err(node.err("taxes_wages without has_income_tax"));
     }
-    y.brackets = [single, joint, single];
+    // Head of household uses the single schedule unless the data has its own.
+    let head = match brackets.opt("head_of_household") {
+        Some(node) => brackets_over(&node)?,
+        None => single,
+    };
+    y.brackets = [single, joint, head];
+    if let Some(flag) = node.opt("taxes_pretax_deferrals") {
+        y.taxes_deferrals = flag.boolean()?;
+    }
 
     // Standard deduction or credit.
     let sd = node.get("standard_deduction")?;
@@ -630,6 +655,9 @@ fn parse_state(
     match sd.get("type")?.text()? {
         "deduction" => {
             y.standard_deduction = state_pair(&sd)?;
+            if let Some(head) = sd.opt("head_of_household") {
+                y.standard_deduction[FilingStatus::HeadOfHousehold.index()] = head.amount()?;
+            }
             y.allows_itemizing = true;
             if let Some(phase_out) = sd.opt("phase_out") {
                 for (status, key) in [(0, "single"), (1, "married_joint"), (2, "single")] {
@@ -705,8 +733,13 @@ fn parse_state(
     match retirement.get("taxed")?.text()? {
         "full" => {}
         "none" => {
+            // Exempt from the federal early-distribution age unless the state has
+            // its own test (Illinois: none; Iowa: 55).
             y.retirement_exclusion = f64::INFINITY;
-            y.retirement_exclusion_age = retirement_age;
+            y.retirement_exclusion_age = match retirement.opt("min_age") {
+                Some(age) => age.amount()?,
+                None => retirement_age,
+            };
         }
         "partial" => {
             if let Some(exclusion) = retirement.opt("exclusion") {
@@ -758,15 +791,44 @@ fn parse_state(
 
     // Local income tax.
     let local = node.get("local_income_tax")?;
-    let mut major_city = None;
+    let mut major_city_names = Vec::new();
     let mut major_city_rate = 0.0;
+    let mut major_city_brackets = [Brackets::default(); FilingStatus::COUNT];
     if local.get("has_local_income_tax")?.boolean()? {
         if let Some(rate) = local.opt("statewide_avg_effective_rate") {
             y.local_rate = rate.rate()?;
         }
+        if let Some(base) = local.opt("base") {
+            y.local_earned_only = match base.text()? {
+                "earned" => true,
+                "all_income" => false,
+                _ => return Err(base.err("base must be earned or all_income")),
+            };
+        }
         if let (Some(city), Some(rate)) = (local.opt("major_city"), local.opt("major_city_rate")) {
-            major_city = Some(city.text()?.to_ascii_lowercase());
+            let name = city.text()?;
+            major_city_names.push(normalise_place(name));
+            // "Indianapolis (Marion County)" is also "Indianapolis".
+            if let Some(short) = name.split('(').next() {
+                major_city_names.push(normalise_place(short));
+            }
+            if let Some(aliases) = local.opt("major_city_aliases") {
+                for alias in aliases.items()? {
+                    major_city_names.push(normalise_place(alias.text()?));
+                }
+            }
+            major_city_names.sort();
+            major_city_names.dedup();
             major_city_rate = rate.rate()?;
+            if let Some(schedule) = local.opt("major_city_brackets") {
+                let single = brackets_over(&schedule.get("single")?)?;
+                let joint = brackets_over(&schedule.get("married_joint")?)?;
+                let head = match schedule.opt("head_of_household") {
+                    Some(node) => brackets_over(&node)?,
+                    None => single,
+                };
+                major_city_brackets = [single, joint, head];
+            }
         }
     }
 
@@ -775,8 +837,9 @@ fn parse_state(
         brackets_indexed: node.get("inflation_indexed")?.boolean()?,
         standard_deduction_indexed: sd.get("inflation_indexed")?.boolean()?,
         standard_deduction_follows_federal: follows_federal,
-        major_city,
+        major_city_names,
         major_city_rate,
+        major_city_brackets,
     })
 }
 
@@ -933,13 +996,22 @@ impl TaxLaw {
     /// An unknown state code gives [`StateCode::NONE`] parameters (no state tax).
     /// Cheap: copies and scales a few hundred numbers, no allocation.
     pub fn for_year(&self, index: Indexation, state: StateCode) -> TaxYearParams {
+        let mut out = TaxYearParams::default();
+        self.for_year_into(index, state, &mut out);
+        out
+    }
+
+    /// [`TaxLaw::for_year`] written into an existing value, so the simulation's
+    /// January re-indexing makes no copy of the (large) result.
+    pub fn for_year_into(&self, index: Indexation, state: StateCode, out: &mut TaxYearParams) {
         let (cpi, wage) = if self.index_brackets {
             (index.cpi_factor, index.wage_factor)
         } else {
             (1.0, 1.0)
         };
         let base = &self.federal;
-        let mut f = base.year;
+        out.federal = base.year;
+        let f = &mut out.federal;
         let bracket = |x: f64| index_rounded(x, cpi, BRACKET_INCREMENT);
 
         for s in 0..FilingStatus::COUNT {
@@ -1026,14 +1098,11 @@ impl TaxLaw {
         f.fpl_base = first * index.fpl_factor;
         f.fpl_per_person = each * index.fpl_factor;
 
-        TaxYearParams {
-            kind: self.kind,
-            year: index.year,
-            cpi_factor: cpi,
-            federal: f,
-            state: self.state_year(state, cpi, &f),
-            foreign_tax_rate: None,
-        }
+        out.kind = self.kind;
+        out.year = index.year;
+        out.cpi_factor = cpi;
+        self.state_year_into(state, cpi, &out.federal, &mut out.state);
+        out.foreign_tax_rate = None;
     }
 
     fn state_base(&self, state: StateCode) -> Option<&StateBase> {
@@ -1043,17 +1112,24 @@ impl TaxLaw {
             .map(|i| &self.states[i])
     }
 
-    fn state_year(&self, state: StateCode, cpi: f64, federal: &FederalYear) -> StateYear {
+    fn state_year_into(
+        &self,
+        state: StateCode,
+        cpi: f64,
+        federal: &FederalYear,
+        y: &mut StateYear,
+    ) {
         let Some(base) = self.state_base(state) else {
-            return StateYear {
+            *y = StateYear {
                 code: StateCode::NONE,
                 capital_gains_rate: -1.0,
                 ss_max_taxable_fraction_of_benefits: 1.0,
                 property_tax_rate: self.national_property_tax_rate,
                 ..StateYear::default()
             };
+            return;
         };
-        let mut y = base.year;
+        *y = base.year;
         let bracket_factor = if base.brackets_indexed { cpi } else { 1.0 };
         let deduction_factor = if base.standard_deduction_indexed {
             cpi
@@ -1079,7 +1155,6 @@ impl TaxLaw {
         // Washington indexes the excise deduction (the state's own note in the data);
         // the $1,000,000 rate break is not indexed.
         y.capital_gains_excise_deduction *= cpi;
-        y
     }
 
     /// True if `state` is in the data (a state or DC).
@@ -1096,21 +1171,48 @@ impl TaxLaw {
             })
     }
 
-    /// Local income tax rate for a household in `city`: the rate of the state's major
-    /// taxing city when `city` names it, otherwise the statewide average share of
-    /// income. Assign it to `params.state.local_rate` to override the default
-    /// (the statewide average).
-    pub fn local_rate(&self, state: StateCode, city: Option<&str>) -> f64 {
+    /// Local income tax for a household in `city`: the tax of the state's major
+    /// taxing city when `city` names it (by its name in the data or an alias, compared
+    /// without case or punctuation: "New York", "NYC" and "New York City" are one
+    /// place), otherwise the statewide average share of income. Lay it over the
+    /// year's parameters with [`LocalTax::apply`].
+    pub fn local_tax(&self, state: StateCode, city: Option<&str>) -> LocalTax {
         let Some(base) = self.state_base(state) else {
-            return 0.0;
+            return LocalTax::default();
         };
-        if let (Some(city), Some(major)) = (city, base.major_city.as_deref()) {
-            let city = city.trim().to_ascii_lowercase();
-            // "indianapolis (marion county)" should match "Indianapolis".
-            if !city.is_empty() && (major == city || major.starts_with(&format!("{city} ("))) {
-                return base.major_city_rate;
+        if let Some(city) = city {
+            let city = normalise_place(city);
+            if !city.is_empty() && base.major_city_names.iter().any(|n| *n == city) {
+                return LocalTax {
+                    rate: base.major_city_rate,
+                    earned_only: base.year.local_earned_only,
+                    brackets: base.major_city_brackets,
+                };
             }
         }
-        base.year.local_rate
+        LocalTax {
+            rate: base.year.local_rate,
+            earned_only: base.year.local_earned_only,
+            brackets: [Brackets::default(); FilingStatus::COUNT],
+        }
+    }
+
+    /// The flat rate of [`TaxLaw::local_tax`] (the top rate where the place has a
+    /// graduated schedule).
+    pub fn local_rate(&self, state: StateCode, city: Option<&str>) -> f64 {
+        self.local_tax(state, city).rate
+    }
+
+    /// The major taxing city of each state that has one, as named in the data.
+    pub fn major_cities(&self) -> Vec<(StateCode, String)> {
+        self.states
+            .iter()
+            .filter_map(|s| {
+                s.major_city_names
+                    .iter()
+                    .max_by_key(|n| n.len())
+                    .map(|n| (s.year.code, n.clone()))
+            })
+            .collect()
     }
 }

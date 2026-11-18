@@ -14,7 +14,7 @@ export interface ScenarioComparison {
   profile: Profile;
   /** Null until the scenario's first chunk has been summarised. */
   summary: Summary | null;
-  /** Paired statistics against the baseline. Null until the engine provides them. */
+  /** Paired statistics against the baseline (scenario minus baseline, life by life). Null until both runs have finished. */
   paired: Comparison | null;
 }
 

@@ -2,7 +2,7 @@
 // simulated once however many scenarios are compared with it, and so charts and life
 // inspections can refer back to a run by id. Held in memory only.
 import { engineInput, type EnginePool, type RunResult } from '@/engine/pool';
-import type { Summary } from '@/engine/output-types';
+import type { Comparison, Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
 
 export interface RunRecord {
@@ -29,6 +29,8 @@ export class RunRegistry {
   private readonly byId = new Map<string, RunRecord>();
   /** Results other tools produced that a chart can draw (lever rankings, grids, traces). */
   private readonly data = new Map<string, unknown>();
+  /** Paired comparisons already computed, keyed by the two run ids (A then B). */
+  private readonly comparisons = new Map<string, Promise<Comparison>>();
   private counter = 0;
   private dataCounter = 0;
   /** The most recent run of the plan as it stood, for tools that default to "the baseline". */
@@ -59,10 +61,26 @@ export class RunRegistry {
     return this.data.get(id);
   }
 
+  /**
+   * Core's paired comparison of two remembered runs (B minus A), computed once per pair:
+   * a chart of a comparison reuses what `try_scenario` already asked for.
+   */
+  compare(engine: { compare(a: RunRecord, b: RunRecord): Promise<Comparison> }, a: RunRecord, b: RunRecord): Promise<Comparison> {
+    const key = `${a.id}|${b.id}`;
+    const hit = this.comparisons.get(key);
+    if (hit) return hit;
+    const pending = engine.compare(a, b);
+    this.comparisons.set(key, pending);
+    pending.catch(() => this.comparisons.delete(key));
+    if (this.comparisons.size > MAX_RECORDS) this.comparisons.delete(this.comparisons.keys().next().value as string);
+    return pending;
+  }
+
   clear() {
     this.byKey.clear();
     this.byId.clear();
     this.data.clear();
+    this.comparisons.clear();
     this.latestBaseline = null;
   }
 

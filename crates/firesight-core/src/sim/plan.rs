@@ -22,7 +22,7 @@ use crate::model::{
     WithdrawalOrder, YearMonth,
 };
 use crate::stats::{Accumulator, Summary, SummaryContext};
-use crate::tax::{StateCode, TaxLaw};
+use crate::tax::{LocalTax, StateCode, TaxLaw};
 use crate::validate::{validate, Report};
 use crate::MAX_PEOPLE;
 
@@ -36,6 +36,36 @@ use crate::MAX_PEOPLE;
 /// that cannot last until the benefit starts.
 pub const INCOME_DISCOUNT_RATE: f64 = 0.02;
 
+/// Horizon a withdrawal rate is taken to be designed for (Bengen's and the Trinity
+/// study's thirty years) when the funded test turns it into the discount rate for
+/// the years before future income starts.
+pub const BRIDGE_HORIZON_YEARS: f64 = 30.0;
+
+/// The real return `rho` at which withdrawing `rate` of the starting balance every
+/// year exhausts it in [`BRIDGE_HORIZON_YEARS`]: `(1 - (1 + rho)^-30) / rho = 1 /
+/// rate` (1.2% for 4%, 2.8% for 5%, negative below 3.3%).
+pub fn bridge_discount_rate(rate: f64) -> f64 {
+    let target = 1.0 / rate.clamp(0.005, 0.5);
+    let value = |rho: f64| {
+        if rho.abs() < 1e-9 {
+            BRIDGE_HORIZON_YEARS
+        } else {
+            (1.0 - math::pow(1.0 + rho, -BRIDGE_HORIZON_YEARS)) / rho
+        }
+    };
+    // The annuity value falls as the rate rises: bisect.
+    let (mut lo, mut hi) = (-0.5, 1.0);
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if value(mid) > target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 /// Inflation assumed when valuing a pension without a cost-of-living adjustment in
 /// the funded test (the same figure Social Security projections use,
 /// [`crate::benefits::PROJECTION_INFLATION`]).
@@ -48,6 +78,15 @@ pub const DEFAULT_LATEST_RETIREMENT_AGE: f64 = 70.0;
 /// Months a home purchase the household cannot yet afford is retried before the
 /// event is dropped.
 pub const PURCHASE_RETRY_MONTHS: u32 = 60;
+
+/// Selling costs when property is sold as a last resort
+/// (`retirement.home_equity: last_resort`): the default of a planned sale.
+pub const LAST_RESORT_SELLING_COST: f64 = 0.06;
+
+/// Rent a household pays after selling its home as a last resort, per year as a
+/// fraction of the sale price. A judgement: gross rental yields on typical homes
+/// are 5 to 7% of value, and a household in this position moves somewhere cheaper.
+pub const LAST_RESORT_RENT_YIELD: f64 = 0.04;
 
 /// A point in time that is either a month index (months since `profile.start`) or
 /// relative to the simulated retirement month.
@@ -262,7 +301,7 @@ pub(crate) enum EvKind {
         state: StateCode,
         in_us: bool,
         foreign_rate: Option<f64>,
-        local_rate: f64,
+        local: LocalTax,
         moving_cost: f64,
         factors: [f64; Category::COUNT],
     },
@@ -375,6 +414,9 @@ pub struct Plan {
     /// Age of the first person by which the plan expects retirement, for the
     /// success test of paths that never retire.
     pub(crate) latest_retirement_age: f64,
+    /// Real discount rate of the funded test's bridge: the return at which the
+    /// test's withdrawal rate exhausts a portfolio in [`BRIDGE_HORIZON_YEARS`].
+    pub(crate) bridge_discount: f64,
     /// Month by which Coast-FI is judged (the planned or latest retirement month).
     pub(crate) coast_month: i32,
     /// `(1 + expected real return)^-(years from month t to coast_month)`: what a
@@ -397,7 +439,7 @@ pub struct Plan {
     pub(crate) state0: StateCode,
     pub(crate) in_us0: bool,
     pub(crate) foreign_rate0: Option<f64>,
-    pub(crate) local_rate0: f64,
+    pub(crate) local0: LocalTax,
     /// Home-sale exclusion by filing status index.
     pub(crate) home_exclusion: [f64; 3],
     /// Mortgage debt on which interest is deductible.
@@ -527,11 +569,12 @@ impl Plan {
             data,
         );
         let career_params = CareerParams::from_data(data);
-        let income_discount = match profile.retirement.trigger {
+        let funded_rate = match profile.retirement.trigger {
             RetirementTrigger::WhenFunded(rule) => rule.withdrawal_rate,
             _ => WhenFunded::default().withdrawal_rate,
-        }
-        .max(INCOME_DISCOUNT_RATE);
+        };
+        let income_discount = funded_rate.max(INCOME_DISCOUNT_RATE);
+        let bridge_discount = bridge_discount_rate(funded_rate);
 
         // Incomes.
         let mut jobs = Vec::new();
@@ -891,7 +934,7 @@ impl Plan {
                         state,
                         in_us,
                         foreign_rate: if in_us { None } else { r.foreign_tax_rate },
-                        local_rate: law.local_rate(state, r.city.as_deref()),
+                        local: law.local_tax(state, r.city.as_deref()),
                         moving_cost: r.moving_cost.max(0.0),
                         factors,
                     }
@@ -1127,7 +1170,7 @@ impl Plan {
                 }
             }
         }
-        let local_rate0 = law.local_rate(state0, location.city.as_deref());
+        let local0 = law.local_tax(state0, location.city.as_deref());
         let foreign_rate0 = if in_us0 {
             None
         } else if matches!(profile.assumptions.taxes.kind, TaxKind::UsCurrentLaw) {
@@ -1161,6 +1204,7 @@ impl Plan {
             trigger,
             partner_offset: (profile.retirement.partner_offset_years * 12.0).round() as i32,
             latest_retirement_age,
+            bridge_discount,
             coast_month,
             coast_discount,
             econ,
@@ -1178,7 +1222,7 @@ impl Plan {
             state0,
             in_us0,
             foreign_rate0,
-            local_rate0,
+            local0,
             home_exclusion,
             acquisition_debt_limit,
             retirement_rate,

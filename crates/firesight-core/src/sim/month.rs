@@ -12,7 +12,9 @@ use crate::decumulation::{cover_shortfall, execute_plan, Executed};
 use crate::economy::EconomyPath;
 use crate::health::{CoveragePhase, HealthContext, LTC_FACILITY_SPENDING_OFFSET};
 use crate::math;
-use crate::model::{AssetClass, Category, Cola, DebtStrategy, EmployerPlan, PropertyUse, N_ASSETS};
+use crate::model::{
+    AssetClass, Category, Cola, DebtStrategy, EmployerPlan, HomeEquity, PropertyUse, N_ASSETS,
+};
 use crate::stats::{Recorder, TraceEventKind, YearSeries};
 use crate::MAX_PEOPLE;
 
@@ -82,12 +84,13 @@ impl State {
         }
         for j in 0..self.jobs.len() {
             let jp = &plan.jobs[j];
+            let age = self.age(plan, jp.owner, t);
             let rt = &mut self.jobs[j];
             if !rt.begun && !rt.ended && ti >= jp.start.month(self.retire_month) {
                 if self.present[jp.owner]
                     && !(jp.ends_at_retirement && self.person_retired[jp.owner])
                 {
-                    jp.model.begin(&mut rt.st);
+                    jp.model.begin(&mut rt.st, age);
                     rt.begun = true;
                     self.req_dirty = true;
                 } else if !self.alive[jp.owner] {
@@ -100,6 +103,19 @@ impl State {
                 self.req_dirty = true;
             }
         }
+        // The turn of the year comes before January's events, so that what they add
+        // to the tax year (a sale's gain, a taxable windfall) is on this year's
+        // return and not on the one being closed.
+        let new_year = month == 1 && t > 0;
+        if new_year {
+            self.close_year(plan, econ, t);
+        }
+        // On a marketplace plan the year is re-planned in October on what has
+        // actually been earned and realised, so that the last quarter's money comes
+        // from sources that keep income under the premium-credit cliff.
+        if month == 10 && self.has_plan && self.pinputs.on_aca && self.guards_aca_credit(plan) {
+            replan = true;
+        }
         // 2. Events due this month (before planning, so the plan sees them).
         if ti >= self.next_event {
             self.run_events(plan, econ, t);
@@ -107,7 +123,7 @@ impl State {
         }
         let price = econ.price_level[t];
         if replan {
-            self.annual_plan(plan, econ, t, month == 1 && t > 0);
+            self.annual_plan(plan, econ, t, new_year);
         }
         if self.budget_dirty || ti >= self.next_item_change {
             self.rebudget(plan, t);
@@ -227,6 +243,7 @@ impl State {
                     let net = jm.equity_retained * (1.0 - self.wh_rate - payroll).max(0.0);
                     self.acc.cash -= net;
                     self.acc.contribute(Bucket::Taxable, net, &SINGLE_STOCK_MIX);
+                    self.acc.keep_single_stock = true;
                     self.led[YearSeries::SaveTaxable.index()] += net;
                 }
             }
@@ -271,13 +288,12 @@ impl State {
                 equity_return: eq_return,
                 equity_return_12m: self.eq12,
             };
+            let years = self.se_years(plan, k, t);
             let rt = &mut self.selfemp[k];
-            let profit = sp.model.step(
-                &mut rt.st,
-                t as f64 / 12.0,
-                &climate,
-                &mut self.rng_career[p],
-            ) * rt.scale;
+            let profit = sp
+                .model
+                .step(&mut rt.st, years, &climate, &mut self.rng_career[p])
+                * rt.scale;
             let rm = self.retire_month;
             let active = self.present[p]
                 && !rt.ended
@@ -587,10 +603,7 @@ impl State {
         self.track_portfolio(self.port_return, econ.inflation[t]);
         if let Some(width) = plan.rebalance_band {
             if self.acc.max_drift(&self.target) > width {
-                let r = self
-                    .acc
-                    .rebalance_to(&self.target, plan.profile.portfolio.location);
-                self.ty.long_term_gains += r.long_term_gain;
+                self.rebalance(plan);
             }
         }
 
@@ -631,6 +644,17 @@ impl State {
             }
         }
         next
+    }
+
+    /// Years since self-employment income `k` began (since the plan's start for
+    /// one already running): the clock its real growth runs on, so that an income
+    /// that starts later starts at the amount entered.
+    pub(crate) fn se_years(&self, plan: &Plan, k: usize, t: usize) -> f64 {
+        let start = plan.selfemp[k].start.month(self.retire_month);
+        if start == i32::MAX {
+            return 0.0;
+        }
+        f64::from((t as i32 - start.max(0)).max(0)) / 12.0
     }
 
     /// Month in which person `p` stops working.
@@ -1177,10 +1201,13 @@ impl State {
         let overdraft = (-self.cash_start).max(0.0);
         let mut essentials_cut = false;
         if -self.acc.cash - overdraft > DUST {
-            // Nothing left to sell. Spending is cut to what there is: what can be
-            // postponed first, then the essentials. Obligations that cannot be cut
+            // Nothing liquid is left to sell. Spending is cut to what there is: what
+            // can be postponed first; then property is sold if the plan allows it;
+            // then the essentials. Obligations that cannot be cut
             // (housing costs, debt service, tax) stay unpaid as an overdraft, which
             // is reported as debt and repaid from later surpluses.
+            let mut release = plan.profile.retirement.home_equity == HomeEquity::LastResort
+                && self.props.iter().any(|p| p.owned);
             const CUTS: [(YearSeries, bool); 6] = [
                 (YearSeries::SpendDiscretionary, false),
                 (YearSeries::SpendOneOff, true),
@@ -1190,9 +1217,18 @@ impl State {
                 (YearSeries::SpendLongTermCare, true),
             ];
             for (series, essential) in CUTS {
-                let missing = -self.acc.cash - overdraft;
+                let mut missing = -self.acc.cash - overdraft;
                 if missing <= DUST {
                     break;
+                }
+                if essential && release {
+                    // Before an essential is cut, property is sold.
+                    release = false;
+                    self.release_home_equity(plan, t, price, missing);
+                    missing = -self.acc.cash - overdraft;
+                    if missing <= DUST {
+                        break;
+                    }
                 }
                 let cut = missing.min(self.led[series.index()]);
                 if cut > 0.0 {
@@ -1201,6 +1237,14 @@ impl State {
                     essentials_cut |= essential && cut > DUST;
                 }
             }
+        }
+        // Housing costs, debt service and tax cannot be cut: if they alone are more
+        // than there is, property goes too.
+        if -self.acc.cash - overdraft > DUST
+            && plan.profile.retirement.home_equity == HomeEquity::LastResort
+            && self.props.iter().any(|p| p.owned)
+        {
+            self.release_home_equity(plan, t, price, -self.acc.cash - overdraft);
         }
         let depleted = essentials_cut || -self.acc.cash - overdraft > DUST;
         if depleted {
@@ -1250,7 +1294,6 @@ impl State {
         } else {
             self.led[YearSeries::WithdrawCash.index()] = -delta;
         }
-        let _ = price;
     }
 
     /// Cash held back for tax already assessed and due next April.

@@ -1,0 +1,184 @@
+{
+ "source": "data/history/calibration.json (tools/build_history.py)",
+ "record": {
+  "start": "1926-07",
+  "end": "2026-09",
+  "rows": 1203
+ },
+ "note": "The historical record, 1926 to 2026. Annual figures are calendar years 1927 to 2025, after inflation unless stated. Not simulation output.",
+ "assets": [
+  {
+   "key": "equity_us",
+   "label": "US stocks",
+   "years": 99,
+   "mean_geo": 0.0708,
+   "mean_arith": 0.09,
+   "sd": 0.1976,
+   "worst": [
+    1931,
+    -0.3799
+   ],
+   "best": [
+    1933,
+    0.5561
+   ],
+   "share_negative_years": 0.333,
+   "max_drawdown": {
+    "depth": -0.792,
+    "peak": "1929-08",
+    "trough": "1932-06",
+    "recovered": "1945-02"
+   }
+  },
+  {
+   "key": "bond10",
+   "label": "10-year Treasury bonds",
+   "years": 99,
+   "mean_geo": 0.0165,
+   "mean_arith": 0.0204,
+   "sd": 0.0903,
+   "worst": [
+    2022,
+    -0.2144
+   ],
+   "best": [
+    1982,
+    0.3386
+   ],
+   "share_negative_years": 0.424,
+   "max_drawdown": {
+    "depth": -0.601,
+    "peak": "1940-12",
+    "trough": "1981-09",
+    "recovered": "1989-06"
+   }
+  },
+  {
+   "key": "tbill",
+   "label": "Treasury bills (cash)",
+   "years": 99,
+   "mean_geo": 0.003,
+   "mean_arith": 0.0037,
+   "sd": 0.0375,
+   "worst": [
+    1946,
+    -0.1504
+   ],
+   "best": [
+    1932,
+    0.125
+   ],
+   "share_negative_years": 0.434,
+   "max_drawdown": {
+    "depth": -0.487,
+    "peak": "1933-05",
+    "trough": "1951-12",
+    "recovered": "2001-08"
+   }
+  },
+  {
+   "key": "home",
+   "label": "Home prices",
+   "years": 99,
+   "mean_geo": 0.0107,
+   "mean_arith": 0.0117,
+   "sd": 0.0457,
+   "worst": [
+    2008,
+    -0.1053
+   ],
+   "best": [
+    1945,
+    0.2032
+   ],
+   "share_negative_years": 0.424,
+   "max_drawdown": {
+    "depth": -0.301,
+    "peak": "2006-11",
+    "trough": "2012-02",
+    "recovered": "2020-04"
+   }
+  }
+ ],
+ "inflation": {
+  "years": 99,
+  "mean_geo": 0.0298,
+  "mean_arith": 0.0305,
+  "sd": 0.0391,
+  "worst": [
+   1946,
+   0.1813
+  ],
+  "lowest": [
+   1932,
+   -0.1027
+  ]
+ },
+ "models_30y_real_us_equity": {
+  "source": "docs/internal/module-economy.md: 30-year real US equity return a year, 5,000 paths per model, measured when the models were calibrated",
+  "levels": [
+   "p5",
+   "p25",
+   "p50",
+   "p75",
+   "p95"
+  ],
+  "rows": [
+   {
+    "kind": "bootstrap",
+    "label": "History reshuffled (5-year blocks)",
+    "values": [
+     0.0182,
+     0.0503,
+     0.0726,
+     0.0946,
+     0.1241
+    ]
+   },
+   {
+    "kind": "regime",
+    "label": "Calm and turbulent regimes",
+    "values": [
+     -0.0006,
+     0.0488,
+     0.0791,
+     0.1089,
+     0.1498
+    ]
+   },
+   {
+    "kind": "lognormal",
+    "label": "Textbook random walk",
+    "values": [
+     0.0138,
+     0.0479,
+     0.0715,
+     0.0959,
+     0.1326
+    ]
+   },
+   {
+    "kind": "historical",
+    "label": "History as it happened",
+    "values": [
+     0.0496,
+     0.0621,
+     0.0723,
+     0.0804,
+     0.0934
+    ]
+   },
+   {
+    "kind": "record",
+    "label": "Actual 30-year windows, 1926 to 2026",
+    "values": [
+     0.0479,
+     0.0599,
+     0.0721,
+     0.0816,
+     0.0958
+    ]
+   }
+  ]
+ }
+}

@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
-// Engine worker: loads the wasm module once, keeps compiled engines keyed by profile
-// hash, and simulates chunks of paths on request.
+// Engine worker: instantiates the wasm module it is sent (compiled once on the main
+// thread and shared by every worker), keeps compiled engines keyed by profile hash, and
+// simulates chunks of paths on request.
 import init, { Engine } from './pkg/firesight_wasm.js';
 import { toEngineError } from './errors';
 import type { WorkerRequest, WorkerResponse } from './protocol';
@@ -35,7 +36,7 @@ function post(message: WorkerResponse, transfer: Transferable[] = []) {
   scope.postMessage(message, transfer);
 }
 
-function handle(request: WorkerRequest) {
+function handle(request: Exclude<WorkerRequest, { type: 'init' }>) {
   switch (request.type) {
     case 'cancel':
       cancelled.add(request.jobId);
@@ -71,35 +72,37 @@ function handle(request: WorkerRequest) {
   }
 }
 
-// Requests that arrive while the wasm module is still loading wait here.
-const backlog: WorkerRequest[] = [];
+// Requests that arrive before the module is instantiated wait here.
+type Work = Exclude<WorkerRequest, { type: 'init' }>;
+const backlog: Work[] = [];
 let ready = false;
+let failed: string | null = null;
+
+function refuse(r: Work) {
+  if (r.type !== 'cancel') post({ type: 'error', taskId: r.taskId, kind: 'worker', message: `The engine failed to load: ${failed}` });
+}
 
 scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
-  if (ready) handle(event.data);
-  else backlog.push(event.data);
+  const r = event.data;
+  if (r.type === 'init') return void boot(r.module);
+  if (failed !== null) refuse(r);
+  else if (ready) handle(r);
+  else backlog.push(r);
 };
 
-init()
-  .then(() => {
-    ready = true;
-    post({ type: 'ready' });
-    // Cancels first, so a queued chunk for a cancelled job is skipped.
-    for (const r of backlog) if (r.type === 'cancel') handle(r);
-    for (const r of backlog) if (r.type !== 'cancel') handle(r);
-    backlog.length = 0;
-  })
-  .catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    for (const r of backlog) {
-      if (r.type !== 'cancel') {
-        post({ type: 'error', taskId: r.taskId, kind: 'worker', message: `The engine failed to load: ${message}` });
-      }
-    }
-    scope.onmessage = (event: MessageEvent<WorkerRequest>) => {
-      const r = event.data;
-      if (r.type !== 'cancel') {
-        post({ type: 'error', taskId: r.taskId, kind: 'worker', message: `The engine failed to load: ${message}` });
-      }
-    };
-  });
+function boot(module: WebAssembly.Module) {
+  init({ module_or_path: module })
+    .then(() => {
+      ready = true;
+      post({ type: 'ready' });
+      // Cancels first, so a queued chunk for a cancelled job is skipped.
+      for (const r of backlog) if (r.type === 'cancel') handle(r);
+      for (const r of backlog) if (r.type !== 'cancel') handle(r);
+      backlog.length = 0;
+    })
+    .catch((error: unknown) => {
+      failed = error instanceof Error ? error.message : String(error);
+      for (const r of backlog) refuse(r);
+      backlog.length = 0;
+    });
+}

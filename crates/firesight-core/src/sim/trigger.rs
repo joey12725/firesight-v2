@@ -8,12 +8,30 @@
 //! need        = retirement budget + home running costs + modelled healthcare
 //!               - income already being received that continues
 //!               + tax on the withdrawals that pay for it
-//! requirement = need / withdrawal_rate
+//! gross       = need / withdrawal_rate
 //!               + mortgages on homes (investable basis) + child costs still due
-//!               - present value of Social Security and pensions not yet started
-//!                 (only with count_future_income)
+//! requirement = gross                                   (count_future_income off)
+//!             = max(gross - PV(income not yet started),
+//!                   min(gross, bridge))                 (count_future_income on)
 //! funded when wealth >= requirement
 //! ```
+//!
+//! `bridge` is what liquid savings must be able to do on their own, because
+//! income that starts in twenty years cannot be spent today: pay the whole need
+//! until each income starts, and the remaining need after it,
+//!
+//! ```text
+//! bridge = sum over the years before each income starts of the need still unmet,
+//!          discounted at rho
+//!        + (need - all future income) / withdrawal_rate, discounted at rho
+//!        + the same lumps
+//! rho    = the real return at which the withdrawal rate exhausts a portfolio in
+//!          30 years (1.2% for a 4% rule): the horizon the rule was designed for
+//! ```
+//!
+//! For a household close to its Social Security claim the present-value form
+//! binds; for one decades away the bridge binds and future income counts for
+//! little or nothing, which is what the simulated depletion rates say it is worth.
 //!
 //! * The retirement budget is the budget as it would be if the household retired
 //!   this month: each line's `in_retirement` treatment, the lifestyle creep so far,
@@ -23,10 +41,12 @@
 //!   the next thirty years, less the premium credit the retirement income would earn.
 //! * Tax is `tax::compute` on a year of retirement income: the withdrawals split in
 //!   proportion to the accounts held (traditional money as ordinary income, the gain
-//!   share of taxable money as long-term gain), grossed up at its average rate.
+//!   share of taxable money as long-term gain), grossed up at its marginal rate (the
+//!   tax has to be withdrawn, and taxed, too).
 //! * Income that has started (a pension in payment, Social Security already claimed,
 //!   rent) reduces the annual need. Income still to come is worth its present value
-//!   at a 2% real discount rate with the person's survival curve.
+//!   with the person's survival curve, discounted at the rule's own withdrawal rate
+//!   (never below 2% real: `INCOME_DISCOUNT_RATE`).
 //!
 //! The requirement is recomputed when something material changes (each January, a
 //! life event, a death, a job lost or found) and compared with wealth every month.
@@ -67,14 +87,33 @@ pub(crate) struct Requirement {
     pub need: f64,
     /// Tax on the withdrawals, per year.
     pub tax: f64,
+    /// Sums set aside rather than funded for ever: mortgage balances (investable
+    /// basis) and child costs still due.
+    pub lumps: f64,
     /// `(need + tax) / withdrawal_rate + lumps`.
     pub gross: f64,
     /// Present value now of income not yet started.
     pub pv_income: f64,
     /// Present value of that income at the Coast-FI target month.
     pub pv_income_at_coast: f64,
-    /// `gross - pv_income`, not below zero.
+    /// What savings must cover on their own until future income starts (see the
+    /// module documentation); equals `gross` when no income is still to come.
+    pub bridge: f64,
+    /// The requirement: `gross`, or with future income counted the larger of
+    /// `gross - pv_income` and `min(gross, bridge)`; not below zero.
     pub total: f64,
+}
+
+/// Most future incomes the bridge calculation follows individually.
+const MAX_BRIDGE_INCOMES: usize = 8;
+
+/// Present value of one real dollar a year for `years` at real rate `rho`.
+fn annuity(years: f64, rho: f64) -> f64 {
+    if rho.abs() < 1e-9 {
+        years
+    } else {
+        (1.0 - crate::math::pow(1.0 + rho, -years)) / rho
+    }
 }
 
 impl State {
@@ -206,6 +245,9 @@ impl State {
         let mut other_taxable = 0.0;
         let mut pv = 0.0;
         let mut pv_coast = 0.0;
+        // Income still to come: (years until it starts, annual amount).
+        let mut future = [(0.0f64, 0.0f64); MAX_BRIDGE_INCOMES];
+        let mut n_future = 0;
         let coast = plan.coast_month.max(ti) as usize;
         for (rt, sp) in self.streams.iter().zip(&plan.streams) {
             if rt.ended {
@@ -234,6 +276,11 @@ impl State {
             } else if rule.count_future_income && owner_alive && !sp.pv.is_empty() {
                 pv += annual / 12.0 * sp.pv.get(t).copied().unwrap_or(0.0);
                 pv_coast += annual / 12.0 * sp.pv.get(coast).copied().unwrap_or(0.0);
+                if n_future < MAX_BRIDGE_INCOMES {
+                    let wait = (sp.start.month(self.retire_month) - ti).max(0);
+                    future[n_future] = (f64::from(wait) / 12.0, annual);
+                    n_future += 1;
+                }
             }
         }
         let mut benefits = [0.0; MAX_PEOPLE];
@@ -255,6 +302,16 @@ impl State {
             } else if rule.count_future_income {
                 pv += plan.people[i].ss_annuity.value(t as u32, pia);
                 pv_coast += plan.people[i].ss_annuity.value(coast as u32, pia);
+                if n_future < MAX_BRIDGE_INCOMES {
+                    let fra = plan.ss.full_retirement_age_months(c.birth.year());
+                    let claim = (c.claim_age.clamp(62.0, 70.0) * 12.0).round() as u32;
+                    let wait = (claim as i32 - self.age_months(plan, i, t)).max(0);
+                    future[n_future] = (
+                        f64::from(wait) / 12.0,
+                        pia * plan.ss.claim_factor(claim, fra) * 12.0,
+                    );
+                    n_future += 1;
+                }
             }
         }
         need -= continuing;
@@ -290,28 +347,52 @@ impl State {
             x.aca_benchmark_premium = aca_benchmark * price;
         }
         let withdrawals = need.max(0.0) * price;
-        // One return on the net withdrawals, grossed up at its own average rate
-        // (the tax has to be withdrawn, and taxed, too).
+        // One return on the net withdrawals. The tax has to be withdrawn, and taxed,
+        // too: G = W + tax(G) gives, to first order, tax(G) = tax(W) / (1 - m) with
+        // m the marginal rate on one more dollar withdrawn in the same proportions.
         x.traditional_distributions = withdrawals * trad_share;
         x.long_term_gains = withdrawals * gain_share;
         let r = tax::compute(&self.params, &x);
         let credit = r.aca_premium_credit;
         let mut tax_total = r.total.max(0.0);
-        if withdrawals > 0.0 && tax_total < 0.9 * withdrawals {
-            tax_total /= 1.0 - tax_total / (withdrawals + tax_total);
+        if withdrawals > 0.0 && tax_total > 0.0 {
+            let average = tax_total / (withdrawals + tax_total);
+            let marginal = (trad_share * r.marginal_ordinary_rate).max(average);
+            tax_total /= 1.0 - marginal.min(0.9);
         }
         let tax_real = tax_total / price;
         need -= credit / price * pre65_weight;
 
         let rate = rule.withdrawal_rate.max(1e-4);
-        let gross = (need + tax_real).max(0.0) / rate + lumps;
+        let annual = (need + tax_real).max(0.0);
+        let gross = annual / rate + lumps;
+
+        // The bridge: the need until each income starts, then what is left of it.
+        future[..n_future].sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        let rho = plan.bridge_discount;
+        let mut bridge = lumps;
+        let mut level = annual;
+        let mut from = 0.0;
+        for &(wait, income) in &future[..n_future] {
+            bridge += level * (annuity(wait, rho) - annuity(from, rho));
+            level = (level - income.max(0.0)).max(0.0);
+            from = wait;
+        }
+        bridge += level / rate * crate::math::pow(1.0 + rho, -from);
+        let total = if rule.count_future_income {
+            (gross - pv).max(bridge.min(gross))
+        } else {
+            gross
+        };
         Requirement {
             need,
             tax: tax_real,
+            lumps,
             gross,
             pv_income: pv,
             pv_income_at_coast: pv_coast,
-            total: (gross - pv).max(0.0),
+            bridge,
+            total: total.max(0.0),
         }
     }
 

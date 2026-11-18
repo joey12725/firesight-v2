@@ -24,11 +24,13 @@
 
 use crate::accounts::{self, Bucket, PersonSavings, SavingsContext};
 use crate::career::Employment;
-use crate::decumulation::{plan_year, PlanInputs, SpendingInputs};
+use crate::decumulation::{plan_year_from, Funding, PlanInputs, SpendingInputs};
 use crate::economy::EconomyPath;
 use crate::health::{CoveragePhase, HealthContext};
 use crate::math;
-use crate::model::{GlidePath, PropertyUse, TaxKind};
+use crate::model::{
+    AssetLocation, GlidePath, PropertyUse, SpendingRule, TaxKind, WealthBasis, WithdrawalOrder,
+};
 use crate::stats::TraceEventKind;
 use crate::tax::{self, FilingStatus, Indexation, TaxInputs};
 use crate::MAX_PEOPLE;
@@ -40,10 +42,17 @@ use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_PENALTY, TAX_STATE};
 /// bridging the published thresholds to the start of the plan.
 const BRIDGE_INFLATION: f64 = 0.025;
 
-/// A mortgage is refinanced each January when the market rate is at least this far
-/// below the loan's rate (the usual rule of thumb; it stands in for closing costs,
-/// which are not charged).
+/// A mortgage is refinanced in January when the market rate is at least this far
+/// below the loan's rate (the usual rule of thumb) and the closing costs pay for
+/// themselves.
 const REFINANCE_THRESHOLD: f64 = 0.01;
+/// Closing costs of a refinance: this share of the balance plus a fixed amount in
+/// today's dollars (lender, title and appraisal fees; a judgement in the usual
+/// 2 to 5% range, at the low end because nothing is paid for points).
+const REFINANCE_COST_FRACTION: f64 = 0.02;
+const REFINANCE_COST_FIXED: f64 = 2_000.0;
+/// The interest saved over this many years must exceed the closing costs.
+const REFINANCE_PAYBACK_YEARS: f64 = 4.0;
 
 /// Highest share of wage-like income withheld for income tax.
 const MAX_WITHHOLDING_RATE: f64 = 0.6;
@@ -96,8 +105,16 @@ pub(crate) struct RunRate {
     pub housing: f64,
     /// Expected rental income net of operating costs.
     pub rental_noi: f64,
-    /// Modelled healthcare before any premium credit.
+    /// Modelled healthcare before any premium credit, including long-term care
+    /// already under way.
     pub health: f64,
+    /// The part of `health` an HSA may pay tax-free: out-of-pocket costs, Medicare
+    /// premiums and long-term care, but not marketplace or employer premiums.
+    pub medical: f64,
+    /// Premiums of the people expected on a marketplace plan.
+    pub aca_premium: f64,
+    /// True while someone is in a long-term care episode.
+    pub care: bool,
     /// Benchmark ACA premium for the people expected on the marketplace.
     pub aca_benchmark: f64,
     /// People expected on a marketplace plan.
@@ -175,11 +192,38 @@ impl State {
             return Indexation { year, ..published };
         }
         let cpi = self.anchor_cpi * price / self.anchor_price;
+        // Coverage in year Y uses the poverty guideline published in Y - 1, which
+        // carries the prices of Y - 2: chain it from the latest published guideline
+        // (the one for the year after the law's base year) with the inflation since.
         let index = law
             .index_from_cpi(year, cpi)
-            .with_fpl_factor(self.prev_cpi_factor);
+            .with_fpl_factor(law.published_next_year.fpl_factor * self.prev_cpi_factor);
         self.prev_cpi_factor = cpi;
         index
+    }
+
+    /// Sets up the tax law, filing status and year-end ages of the first calendar
+    /// year. Called at the end of [`State::begin`] so that nothing in month 0 can read
+    /// values left over from the previous path in the workspace.
+    pub(crate) fn init_first_year(&mut self, plan: &Plan) {
+        let year = plan.start.year();
+        self.index = self.indexation(plan, year, 1.0);
+        plan.law
+            .for_year_into(self.index, self.tax_state, &mut self.params);
+        self.params.foreign_tax_rate = self.foreign_rate;
+        if self.params.state.code == self.tax_state && self.tax_state != tax::StateCode::NONE {
+            self.local.apply(&mut self.params.state);
+        }
+        self.fica_on = self.params.kind == TaxKind::UsCurrentLaw && self.foreign_rate.is_none();
+        let (status, _, _, _) = self.household_for_tax(plan, year);
+        self.filing = status;
+        for i in 0..MAX_PEOPLE {
+            self.age_ye[i] = if i < self.n && self.present[i] {
+                f64::from(year - plan.people[i].birth.year())
+            } else {
+                0.0
+            };
+        }
     }
 
     /// Expected monthly spending outside the budget lines, and the coverage the
@@ -233,9 +277,24 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             });
-            r.health += plan.health.expected_annual_cost_at(age, phase, t as u32) / 12.0 * price
-                + self.irmaa_m[i];
+            let (premium, pocket) = plan.health.expected_annual_parts_at(age, phase, t as u32);
+            let (premium, pocket) = (premium / 12.0 * price, pocket / 12.0 * price);
+            r.health += premium + pocket + self.irmaa_m[i];
+            r.medical += pocket;
+            if phase == CoveragePhase::Medicare {
+                r.medical += premium + self.irmaa_m[i];
+            }
+            // A care episode that has begun is expected to go on: the household
+            // does not know when it ends.
+            let h = &self.health[i];
+            if (t as u32) >= h.ltc_start_month && (t as u32) < h.ltc_end_month {
+                let care = h.ltc_monthly_cost * plan.health.excess_growth(t as u32) * price;
+                r.health += care;
+                r.medical += care;
+                r.care = true;
+            }
             if phase == CoveragePhase::Aca {
+                r.aca_premium += premium;
                 r.aca_people += 1;
                 r.aca_benchmark += plan.health.aca_benchmark_monthly(age)
                     * plan.health.excess_growth(t as u32)
@@ -327,9 +386,97 @@ impl State {
         self.year_months = 12;
     }
 
+    /// The turn of the year, in January before anything else happens: Social
+    /// Security records, last year's tax return, the Roth clocks, refinancing,
+    /// lifestyle creep and the retirement spending smile. Events dated in January
+    /// fire after this, so what they add to the tax year lands on the new year's
+    /// return.
+    pub(crate) fn close_year(&mut self, plan: &Plan, econ: &EconomyPath, t: usize) {
+        let now = plan.start + t as i32;
+        let year = now.year();
+        let price = econ.price_level[t];
+        // Social Security records and benefits for the year just ended.
+        for i in 0..self.n {
+            if !self.alive[i] {
+                continue;
+            }
+            if matches!(
+                plan.people[i].basis,
+                crate::benefits::BenefitBasis::FromEarnings
+            ) {
+                plan.ss.record_earnings(
+                    &mut self.records[i],
+                    plan.people[i].birth,
+                    year - 1,
+                    self.year_earned[i],
+                    price,
+                );
+                let pia = plan
+                    .ss
+                    .pia_real(&self.records[i], plan.people[i].birth, now, price);
+                if let Some(c) = &mut self.claimants[i] {
+                    c.pia_real = Some(pia);
+                }
+            }
+        }
+        self.year_earned = [0.0; MAX_PEOPLE];
+        self.close_tax_year(plan, year - 1, false);
+        self.acc.roll_year();
+        self.prior_return_negative = self.year_port < 1.0;
+        self.year_port = 1.0;
+        self.prior_inflation = price / self.price_jan - 1.0;
+        // Refinance any mortgage the market now beats by a point or more, when the
+        // household does that and the costs pay for themselves.
+        let market = econ.mortgage_rate[t];
+        for i in 0..self.props.len() {
+            if !plan.profile.debt_policy.refinance_mortgages || !self.props[i].owned {
+                continue;
+            }
+            let costs = REFINANCE_COST_FRACTION * self.props[i].mortgage_balance()
+                + REFINANCE_COST_FIXED * price;
+            if self.props[i].refinance(market, REFINANCE_THRESHOLD, costs, REFINANCE_PAYBACK_YEARS)
+            {
+                self.spend(crate::stats::YearSeries::SpendOneOff, costs);
+                self.req_dirty = true;
+                self.event(now, TraceEventKind::LifeEvent, None, || {
+                    format!(
+                        "Refinanced {} at {:.2}%",
+                        plan.props[i].name,
+                        market * 100.0
+                    )
+                });
+            }
+        }
+        // Lifestyle creep: a share of real income growth beyond its previous
+        // high becomes discretionary spending, while the household works.
+        if !self.retired && plan.income_rate0 > 0.0 {
+            let rate = self.income_rate(plan, t);
+            if rate > self.income_hwm {
+                self.income_hwm = rate;
+                self.creep = 1.0
+                    + plan.profile.spending.lifestyle_creep.clamp(0.0, 1.0)
+                        * (self.income_hwm / plan.income_rate0 - 1.0);
+                self.budget_dirty = true;
+            }
+        }
+        // The retirement spending smile: real spending drifts down with age.
+        if self.retired && plan.profile.spending.retirement_smile {
+            let mut age: f64 = 0.0;
+            for i in 0..self.n {
+                if self.present[i] {
+                    age = age.max(self.age(plan, i, t));
+                }
+            }
+            if age >= 60.0 && self.smile_target > 0.0 {
+                self.smile *= 1.0 + smile_delta(age, self.smile_target).min(0.0);
+                self.budget_dirty = true;
+            }
+        }
+    }
+
     /// The plan for the rest of the calendar year, made in month `t`. `new_year` is
-    /// true in January (not in the first month of the path): the previous year is
-    /// closed first.
+    /// true in January (not in the first month of the path), after
+    /// [`State::close_year`] has closed the previous year.
     pub(crate) fn annual_plan(
         &mut self,
         plan: &Plan,
@@ -344,77 +491,6 @@ impl State {
         let m_left = f64::from(13 - month);
         let first = t == 0;
 
-        if new_year {
-            // Social Security records and benefits for the year just ended.
-            for i in 0..self.n {
-                if !self.alive[i] {
-                    continue;
-                }
-                if matches!(
-                    plan.people[i].basis,
-                    crate::benefits::BenefitBasis::FromEarnings
-                ) {
-                    plan.ss.record_earnings(
-                        &mut self.records[i],
-                        plan.people[i].birth,
-                        year - 1,
-                        self.year_earned[i],
-                        price,
-                    );
-                    let pia = plan
-                        .ss
-                        .pia_real(&self.records[i], plan.people[i].birth, now, price);
-                    if let Some(c) = &mut self.claimants[i] {
-                        c.pia_real = Some(pia);
-                    }
-                }
-            }
-            self.year_earned = [0.0; MAX_PEOPLE];
-            self.close_tax_year(plan, year - 1, false);
-            self.acc.roll_year();
-            self.prior_return_negative = self.year_port < 1.0;
-            self.year_port = 1.0;
-            self.prior_inflation = price / self.price_jan - 1.0;
-            // Refinance any mortgage the market now beats by a point or more.
-            let market = econ.mortgage_rate[t];
-            for i in 0..self.props.len() {
-                if self.props[i].owned && self.props[i].refinance(market, REFINANCE_THRESHOLD) {
-                    self.req_dirty = true;
-                    self.event(now, TraceEventKind::LifeEvent, None, || {
-                        format!(
-                            "Refinanced {} at {:.2}%",
-                            plan.props[i].name,
-                            market * 100.0
-                        )
-                    });
-                }
-            }
-            // Lifestyle creep: a share of real income growth beyond its previous
-            // high becomes discretionary spending, while the household works.
-            if !self.retired && plan.income_rate0 > 0.0 {
-                let rate = self.income_rate(plan, t);
-                if rate > self.income_hwm {
-                    self.income_hwm = rate;
-                    self.creep = 1.0
-                        + plan.profile.spending.lifestyle_creep.clamp(0.0, 1.0)
-                            * (self.income_hwm / plan.income_rate0 - 1.0);
-                    self.budget_dirty = true;
-                }
-            }
-            // The retirement spending smile: real spending drifts down with age.
-            if self.retired && plan.profile.spending.retirement_smile {
-                let mut age: f64 = 0.0;
-                for i in 0..self.n {
-                    if self.present[i] {
-                        age = age.max(self.age(plan, i, t));
-                    }
-                }
-                if age >= 60.0 && self.smile_target > 0.0 {
-                    self.smile *= 1.0 + smile_delta(age, self.smile_target).min(0.0);
-                    self.budget_dirty = true;
-                }
-            }
-        }
         if new_year || first {
             self.price_jan = price;
             self.index = self.indexation(plan, year, price);
@@ -427,11 +503,12 @@ impl State {
             || (self.tax_state == tax::StateCode::NONE
                 && self.params.state.code != tax::StateCode::NONE)
         {
-            self.params = plan.law.for_year(self.index, self.tax_state);
+            plan.law
+                .for_year_into(self.index, self.tax_state, &mut self.params);
             self.params.foreign_tax_rate = self.foreign_rate;
         }
         if self.params.state.code == self.tax_state && self.tax_state != tax::StateCode::NONE {
-            self.params.state.local_rate = self.local_rate;
+            self.local.apply(&mut self.params.state);
         }
         self.fica_on = self.params.kind == TaxKind::UsCurrentLaw && self.foreign_rate.is_none();
         let (status, adults, young, other) = self.household_for_tax(plan, year);
@@ -452,10 +529,7 @@ impl State {
             self.target = accounts::glide_target(&plan.profile.portfolio, years);
         }
         if new_year && plan.rebalance_annual {
-            let r = self
-                .acc
-                .rebalance_to(&self.target, plan.profile.portfolio.location);
-            self.ty.long_term_gains += r.long_term_gain;
+            self.rebalance(plan);
         }
 
         if self.budget_dirty || new_year || first {
@@ -466,7 +540,14 @@ impl State {
         }
         let rate = self.run_rate(plan, t, price, self.retired);
         let budget = (self.ess_real + self.disc_real) * price;
-        let planned_month = budget + rate.total();
+        // The premium credit the household can expect to be advanced each month:
+        // last plan's figure until this plan has been costed.
+        let mut advance = if rate.aca_people > 0 {
+            (self.aca_guess_real * price).min(rate.aca_premium)
+        } else {
+            0.0
+        };
+        let planned_month = budget + rate.total() - advance;
         self.efund_target = plan.profile.portfolio.emergency_months.max(0.0) * planned_month;
 
         // What the rest of the year is expected to bring in.
@@ -481,7 +562,7 @@ impl State {
                     / 12.0;
             }
         }
-        for (rt, sp) in self.selfemp.iter().zip(&plan.selfemp) {
+        for (k, (rt, sp)) in self.selfemp.iter().zip(&plan.selfemp).enumerate() {
             let p = sp.owner;
             let ti = t as i32;
             if self.present[p]
@@ -490,7 +571,7 @@ impl State {
                 && ti < sp.end.month(self.retire_month)
                 && !(sp.ends_at_retirement && self.person_retired[p])
             {
-                business[p] += sp.model.expected_real_annual(t as f64 / 12.0)
+                business[p] += sp.model.expected_real_annual(self.se_years(plan, k, t))
                     * rt.st.factor
                     * rt.scale
                     * price
@@ -628,10 +709,31 @@ impl State {
 
         // Retirement: this year's spending under the rule.
         let investable = self.acc.investable();
-        let ess_annual = (self.ess_real * price + rate.total()) * 12.0;
+        let ess_annual = (self.ess_real * price + rate.total() - advance) * 12.0;
         let disc_annual = self.disc_real * price * 12.0;
         if self.retired && (new_year || !self.planner_started) {
             let other_income = ((income_rest - tax_rest_base) * 12.0 / m_left).max(0.0) / price;
+            // The rules that follow a withdrawal rate measure it on the funded
+            // test's quantities, future income always counted.
+            let mut rule = self.funding_rule(plan);
+            let funding = if matches!(
+                plan.profile.retirement.spending_rule,
+                SpendingRule::Guardrails { .. }
+                    | SpendingRule::VanguardDynamic { .. }
+                    | SpendingRule::FloorCeiling { .. }
+            ) {
+                rule.count_future_income = true;
+                rule.basis = WealthBasis::Investable;
+                let req = self.requirement(plan, t, price, &rule);
+                Some(Funding {
+                    base_real: (self.wealth(WealthBasis::Investable, price) - req.lumps
+                        + req.pv_income)
+                        .max(0.0),
+                    need_real: (req.need + req.tax).max(0.0),
+                })
+            } else {
+                None
+            };
             let inputs = SpendingInputs {
                 budget_real: (ess_annual + disc_annual) / price,
                 essential_real: ess_annual / price,
@@ -642,11 +744,19 @@ impl State {
                     - plan.fee_monthly * 12.0,
                 prior_return_negative: self.prior_return_negative,
                 prior_inflation: self.prior_inflation,
+                funding,
+                reference_floor: rule.withdrawal_rate,
+                hold_raises: rate.care,
             };
             if !self.planner_started {
                 self.sp_state = plan.planner.start(&inputs);
                 self.planner_started = true;
-                self.initial_wr = self.sp_state.initial_withdrawal_rate;
+                // The first year's actual draw on the portfolio.
+                self.initial_wr = if inputs.portfolio_real > 0.0 {
+                    (inputs.budget_real - other_income).max(0.0) / inputs.portfolio_real
+                } else {
+                    f64::NAN
+                };
             }
             let decision = plan.planner.decide(&mut self.sp_state, &inputs);
             let wanted = decision.spending_real * price - ess_annual;
@@ -669,10 +779,6 @@ impl State {
         } else if !self.retired {
             self.disc_mult = 1.0;
         }
-        let spend_month = budget - self.disc_real * price * (1.0 - self.disc_mult) + rate.total();
-        self.retire_cash_cap =
-            plan.profile.portfolio.retirement_cash_years.max(0.0) * 12.0 * spend_month
-                + RETIRED_CASH_MONTHS * spend_month;
 
         // Required minimum distributions on the balances at the start of the year.
         let mut rmd = [0.0; MAX_PEOPLE];
@@ -709,68 +815,98 @@ impl State {
             ..PlanInputs::default()
         };
         let mut est_total = base_result.total / annualise;
-        let mut est_inputs = base;
         self.has_plan = self.retired || rmd.iter().any(|r| *r > 0.0);
+        self.aca_advance_m = 0.0;
+        // The plan depends on the premium credit (it lowers what must be withdrawn)
+        // and the credit on the plan (withdrawals are income): cost the plan, and
+        // once more if the credit it earns is not the one assumed.
+        for pass in 0..2 {
+            let spend_month =
+                budget - self.disc_real * price * (1.0 - self.disc_mult) + rate.total() - advance;
+            self.retire_cash_cap =
+                plan.profile.portfolio.retirement_cash_years.max(0.0) * 12.0 * spend_month
+                    + RETIRED_CASH_MONTHS * spend_month;
+            est_total = base_result.total / annualise;
+            let mut est_inputs = base;
+            if self.has_plan {
+                let due: f64 = if month <= 4 {
+                    self.due.iter().sum()
+                } else {
+                    0.0
+                };
+                let net_need = spend_month * m_left + tax_rest_base - income_rest + due;
+                self.pinputs = PlanInputs {
+                    // The plan works at the tax year's scale: amounts for the months
+                    // still to come, annualised when the year started part-way.
+                    net_need: net_need * annualise,
+                    ages: ages_now,
+                    rmd: [rmd[0] * annualise, rmd[1] * annualise],
+                    base_tax_inputs: base,
+                    on_aca: rate.aca_people > 0,
+                    sepp_available: [
+                        self.sepp[0] * share * annualise,
+                        self.sepp[1] * share * annualise,
+                    ],
+                    penalty_exempt: [false; MAX_PEOPLE],
+                    // What an HSA may pay tax-free: not marketplace premiums.
+                    medical_need: rate.medical * m_left * annualise,
+                    cash_target: plan.profile.portfolio.retirement_cash_years.max(0.0)
+                        * 12.0
+                        * spend_month,
+                    cash_floor: 0.0,
+                    in_drawdown: self.in_drawdown(),
+                };
+                self.wplan = plan_year_from(
+                    &plan.profile.retirement.withdrawal_order,
+                    plan.profile.retirement.early_access,
+                    &self.acc,
+                    &self.pinputs,
+                    &self.params,
+                    &base_result,
+                );
+                self.exec_frac = 1.0 / (m_left * annualise);
+                self.plan_fresh = true;
+                est_total = self.wplan.estimated_tax / annualise;
+                let gain_share = {
+                    let value = self.acc.total(Bucket::Taxable);
+                    if value > 0.0 {
+                        (self.acc.unrealized_gain() / value).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }
+                };
+                for p in 0..MAX_PEOPLE {
+                    est_inputs.traditional_distributions += self.wplan.from_traditional[p];
+                    est_inputs.roth_conversions += self.wplan.roth_conversion[p];
+                }
+                est_inputs.long_term_gains +=
+                    self.wplan.from_taxable * gain_share + self.wplan.gain_harvest;
+            }
+            // Premium credit advanced through the rest of the year.
+            if rate.aca_people == 0 {
+                break;
+            }
+            let credit = tax::compute(&self.params, &est_inputs).aca_premium_credit / annualise;
+            self.aca_advance_m = (credit - self.aca_advance_ytd).max(0.0) / m_left;
+            let expected = self.aca_advance_m.min(rate.aca_premium);
+            if pass > 0 || !self.has_plan || (expected - advance).abs() <= 0.01 * spend_month {
+                break;
+            }
+            advance = expected;
+        }
+        if rate.aca_people > 0 {
+            self.aca_guess_real = self.aca_advance_m.min(rate.aca_premium) / price;
+        }
         if self.has_plan {
-            let due: f64 = if month <= 4 {
-                self.due.iter().sum()
-            } else {
-                0.0
-            };
-            let net_need = spend_month * m_left + tax_rest_base - income_rest + due;
-            self.pinputs = PlanInputs {
-                // The plan works at the tax year's scale: amounts for the months
-                // still to come, annualised when the year started part-way.
-                net_need: net_need * annualise,
-                ages: ages_now,
-                rmd: [rmd[0] * annualise, rmd[1] * annualise],
-                base_tax_inputs: base,
-                on_aca: rate.aca_people > 0,
-                sepp_available: [
-                    self.sepp[0] * share * annualise,
-                    self.sepp[1] * share * annualise,
-                ],
-                penalty_exempt: [false; MAX_PEOPLE],
-                medical_need: rate.health * m_left * annualise,
-                cash_target: plan.profile.portfolio.retirement_cash_years.max(0.0)
-                    * 12.0
-                    * spend_month,
-                cash_floor: 0.0,
-                in_drawdown: self.in_drawdown(),
-            };
-            self.wplan = plan_year(
-                &plan.profile.retirement.withdrawal_order,
-                plan.profile.retirement.early_access,
-                &self.acc,
-                &self.pinputs,
-                &self.params,
-            );
-            self.exec_frac = 1.0 / (m_left * annualise);
-            self.plan_fresh = true;
             for p in 0..MAX_PEOPLE {
                 if self.wplan.sepp[p] > 0.0 && self.sepp[p] <= 0.0 && p < self.n {
                     // A 72(t) schedule, once started, runs for five years or until
-                    // 59 and a half, whichever is later.
+                    // 59 and a half, whichever is later, at the amount it began with.
                     self.sepp[p] = self.wplan.sepp[p] / (share * annualise);
                     let to_60 = (59 * 12 + 6 - self.age_months(plan, p, t)).max(0);
                     self.sepp_until[p] = t as i32 + to_60.max(60);
                 }
             }
-            est_total = self.wplan.estimated_tax / annualise;
-            let gain_share = {
-                let value = self.acc.total(Bucket::Taxable);
-                if value > 0.0 {
-                    (self.acc.unrealized_gain() / value).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                }
-            };
-            for p in 0..MAX_PEOPLE {
-                est_inputs.traditional_distributions += self.wplan.from_traditional[p];
-                est_inputs.roth_conversions += self.wplan.roth_conversion[p];
-            }
-            est_inputs.long_term_gains +=
-                self.wplan.from_taxable * gain_share + self.wplan.gain_harvest;
             if self.detail {
                 let converted: f64 = self.wplan.roth_conversion.iter().sum::<f64>() / annualise;
                 if converted > 1.0 {
@@ -799,12 +935,7 @@ impl State {
             ((base_result.state + base_result.foreign) / nonfica_est).clamp(0.0, 1.0);
         self.share_se = (se_est / nonfica_est).clamp(0.0, 1.0 - self.share_state);
 
-        // Premium credit advanced through the year, and Medicare surcharges.
-        self.aca_advance_m = 0.0;
-        if rate.aca_people > 0 {
-            let credit = tax::compute(&self.params, &est_inputs).aca_premium_credit / annualise;
-            self.aca_advance_m = (credit - self.aca_advance_ytd).max(0.0) / m_left;
-        }
+        // Medicare surcharges.
         if new_year || first {
             let magi = if self.magi_known >= 2 {
                 self.magi_hist[0]
@@ -864,6 +995,40 @@ impl State {
         self.req_dirty = true;
     }
 
+    /// Rebalances to the current target.
+    ///
+    /// On a marketplace plan a taxable sale made only to rebalance can cost the
+    /// whole premium credit, so a household that protects the credit trades inside
+    /// its tax-advantaged accounts and leaves the taxable account alone. Once it
+    /// has done that, the taxable account is off target on purpose; from then on it
+    /// is rebalanced tax-efficiently (sold only where the household as a whole is
+    /// overweight) rather than snapped back to the target in one taxable sale.
+    pub(crate) fn rebalance(&mut self, plan: &Plan) {
+        if self.guards_aca_credit(plan) {
+            self.acc.rebalance_sheltered(&self.target);
+            self.sheltered_rebalancing = true;
+            return;
+        }
+        let location = if self.sheltered_rebalancing {
+            AssetLocation::TaxEfficient
+        } else {
+            plan.profile.portfolio.location
+        };
+        let r = self.acc.rebalance_to(&self.target, location);
+        self.ty.long_term_gains += r.long_term_gain;
+    }
+
+    /// True when the plan protects the marketplace premium credit and someone in
+    /// the household is on a marketplace plan.
+    pub(crate) fn guards_aca_credit(&self, plan: &Plan) -> bool {
+        matches!(
+            plan.profile.retirement.withdrawal_order,
+            WithdrawalOrder::TaxAware { mind_aca: true, .. }
+        ) && self.params.kind == TaxKind::UsCurrentLaw
+            && self.foreign_rate.is_none()
+            && (0..self.n).any(|i| self.present[i] && self.last_phase[i] == CoveragePhase::Aca)
+    }
+
     /// Employee FICA withheld so far this year (the exact amounts paid through
     /// payroll), reconstructed from the wage tally.
     fn fica_paid_estimate(&self) -> f64 {
@@ -888,14 +1053,16 @@ impl State {
                 rate += rt.st.real_salary * (1.0 + jp.bonus_target) + jp.commission_real;
             }
         }
-        for (rt, sp) in self.selfemp.iter().zip(&plan.selfemp) {
+        for (k, (rt, sp)) in self.selfemp.iter().zip(&plan.selfemp).enumerate() {
             let ti = t as i32;
             if self.present[sp.owner]
                 && !rt.ended
                 && ti >= sp.start.month(self.retire_month)
                 && ti < sp.end.month(self.retire_month)
             {
-                rate += sp.model.expected_real_annual(t as f64 / 12.0) * rt.st.factor * rt.scale;
+                rate += sp.model.expected_real_annual(self.se_years(plan, k, t))
+                    * rt.st.factor
+                    * rt.scale;
             }
         }
         rate

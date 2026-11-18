@@ -49,44 +49,61 @@
   --scrim: rgb(27 26 23 / 0.32);
   --elev-overlay: 0 1px 2px rgb(27 26 23 / 0.06), 0 12px 32px -8px rgb(27 26 23 / 0.18);
 
-  /* ---- Chart palette ---- */
-  /* Baseline plan: ember. Quantile bands from the outer (5-95) to the inner (25-75). */
-  --chart-baseline: #cf4a12;
-  --chart-band-outer: rgb(207 74 18 / 0.1);
-  --chart-band-mid: rgb(207 74 18 / 0.18);
-  --chart-band-inner: rgb(207 74 18 / 0.3);
-  --chart-median: #cf4a12;
-  --chart-sample-path: rgb(27 26 23 / 0.14);
-  /* Scenario under comparison: cool. */
-  --chart-scenario: #2a6a96;
-  --chart-scenario-band-outer: rgb(42 106 150 / 0.1);
-  --chart-scenario-band-mid: rgb(42 106 150 / 0.18);
-  --chart-scenario-band-inner: rgb(42 106 150 / 0.3);
-  /* Life-stage stack ("rich, broke or dead"). */
-  --chart-status-working: #8794a3;
-  --chart-status-retired: #1f8a7a;
-  --chart-status-cutting: #d9a021;
-  --chart-status-depleted: #b4234f;
-  --chart-status-dead: #d9d5cc;
-  /* Categorical series (Okabe-Ito order, tuned for this background). */
-  --chart-cat-1: #2a6a96;
-  --chart-cat-2: #cf4a12;
-  --chart-cat-3: #1f8a7a;
-  --chart-cat-4: #b8860b;
-  --chart-cat-5: #7a5aa6;
-  --chart-cat-6: #b4234f;
-  --chart-cat-7: #5f8f3a;
-  --chart-cat-8: #6f6b62;
-  /* Sequential single-hue ramp for heat maps, low to high. */
-  --chart-seq-1: #f3ede4;
-  --chart-seq-2: #f1d3bd;
-  --chart-seq-3: #e9a57c;
-  --chart-seq-4: #d9702f;
-  --chart-seq-5: #a83e0c;
+  /* ---- Chart palette ----
+     Every chart colour does one job (see src/ui/charts/README.md) and the values below
+     are validated in both themes by src/ui/charts/palette.test.ts: lightness band,
+     chroma floor, colour-blind separation of neighbours, contrast against the page. */
+  /* Baseline plan: ember (categorical slot 2). Scenario under comparison: blue (slot 1). */
+  --chart-baseline: #ce4714;
+  --chart-band-outer: rgb(206 71 20 / 0.1);
+  --chart-band-mid: rgb(206 71 20 / 0.18);
+  --chart-band-inner: rgb(206 71 20 / 0.3);
+  --chart-median: #b33c0e;
+  --chart-sample-path: rgb(27 26 23 / 0.2);
+  --chart-scenario: #1b6999;
+  --chart-scenario-band-outer: rgb(27 105 153 / 0.1);
+  --chart-scenario-band-mid: rgb(27 105 153 / 0.18);
+  --chart-scenario-band-inner: rgb(27 105 153 / 0.3);
+  /* Life stages ("rich, broke or dead"), in stacking order from the baseline up.
+     `dead` is deliberately neutral: it is absence, not a series. */
+  --chart-status-depleted: #b01f4f;
+  --chart-status-cutting: #de9d16;
+  --chart-status-on-plan: #1a9480;
+  --chart-status-surplus: #004dab;
+  --chart-status-working: #a573c9;
+  --chart-status-dead: #dbd8cf;
+  /* Categorical series, assigned in this order and never cycled. 8 is "Other". */
+  --chart-cat-1: #1b6999;
+  --chart-cat-2: #ce4714;
+  --chart-cat-3: #008872;
+  --chart-cat-4: #cd9226;
+  --chart-cat-5: #7860c4;
+  --chart-cat-6: #a4083c;
+  --chart-cat-7: #5b9138;
+  --chart-cat-8: #8b877d;
+  /* Sequential single-hue ramps, low to high. Ember for the baseline, blue when a
+     second ramp shares the view. Steps 1-3 recede into the page (continuous magnitude
+     only); discrete ordered marks start at step 4. */
+  --chart-seq-1: #fdece5;
+  --chart-seq-2: #fcd4c3;
+  --chart-seq-3: #f9b597;
+  --chart-seq-4: #f19266;
+  --chart-seq-5: #df6c32;
+  --chart-seq-6: #c24e00;
+  --chart-seq-7: #9a3c00;
+  --chart-seq-8: #772e00;
+  --chart-seq-cool-1: #e8f2f9;
+  --chart-seq-cool-2: #cae2f3;
+  --chart-seq-cool-3: #a3ceed;
+  --chart-seq-cool-4: #77b6e2;
+  --chart-seq-cool-5: #499bd0;
+  --chart-seq-cool-6: #207fb6;
+  --chart-seq-cool-7: #0e6492;
+  --chart-seq-cool-8: #014d73;
   /* Scaffolding */
-  --chart-grid: #e9e6de;
+  --chart-grid: #e7e4dc;
   --chart-axis: #cbc7bd;
-  --chart-label: #8b877d;
+  --chart-label: #77736a;
   --chart-annotation: #57544c;
 
   /* ---- Scales ---- */
@@ -146,37 +163,49 @@
   --scrim: rgb(0 0 0 / 0.55);
   --elev-overlay: 0 0 0 1px rgb(255 255 255 / 0.04), 0 16px 40px -8px rgb(0 0 0 / 0.6);
 
-  --chart-baseline: #f2733b;
-  --chart-band-outer: rgb(242 115 59 / 0.12);
-  --chart-band-mid: rgb(242 115 59 / 0.22);
-  --chart-band-inner: rgb(242 115 59 / 0.36);
-  --chart-median: #f2733b;
-  --chart-sample-path: rgb(238 235 229 / 0.16);
-  --chart-scenario: #6aaad8;
-  --chart-scenario-band-outer: rgb(106 170 216 / 0.12);
-  --chart-scenario-band-mid: rgb(106 170 216 / 0.22);
-  --chart-scenario-band-inner: rgb(106 170 216 / 0.36);
-  --chart-status-working: #6d7a89;
-  --chart-status-retired: #3aa896;
-  --chart-status-cutting: #e0aa42;
-  --chart-status-depleted: #ef6b93;
-  --chart-status-dead: #3a3834;
-  --chart-cat-1: #6aaad8;
-  --chart-cat-2: #f2733b;
-  --chart-cat-3: #43bfa9;
-  --chart-cat-4: #e0aa42;
-  --chart-cat-5: #a98bd6;
-  --chart-cat-6: #ef6b93;
-  --chart-cat-7: #93c36a;
-  --chart-cat-8: #a39f96;
-  --chart-seq-1: #26211c;
-  --chart-seq-2: #4a2a17;
-  --chart-seq-3: #84401a;
-  --chart-seq-4: #c75d26;
-  --chart-seq-5: #f79566;
-  --chart-grid: #262421;
+  --chart-baseline: #df6632;
+  --chart-band-outer: rgb(223 102 50 / 0.12);
+  --chart-band-mid: rgb(223 102 50 / 0.22);
+  --chart-band-inner: rgb(223 102 50 / 0.36);
+  --chart-median: #f28c5c;
+  --chart-sample-path: rgb(238 235 229 / 0.24);
+  --chart-scenario: #4e97c9;
+  --chart-scenario-band-outer: rgb(78 151 201 / 0.12);
+  --chart-scenario-band-mid: rgb(78 151 201 / 0.22);
+  --chart-scenario-band-inner: rgb(78 151 201 / 0.36);
+  --chart-status-depleted: #de5c83;
+  --chart-status-cutting: #bc8302;
+  --chart-status-on-plan: #2ca494;
+  --chart-status-surplus: #196696;
+  --chart-status-working: #8e84cb;
+  --chart-status-dead: #33312d;
+  --chart-cat-1: #4e97c9;
+  --chart-cat-2: #df6632;
+  --chart-cat-3: #07978f;
+  --chart-cat-4: #bd8205;
+  --chart-cat-5: #9980c6;
+  --chart-cat-6: #c62864;
+  --chart-cat-7: #6aa148;
+  --chart-cat-8: #7f7b72;
+  --chart-seq-1: #2b1b13;
+  --chart-seq-2: #492515;
+  --chart-seq-3: #6b3317;
+  --chart-seq-4: #904016;
+  --chart-seq-5: #b95115;
+  --chart-seq-6: #dc692e;
+  --chart-seq-7: #f28c5c;
+  --chart-seq-8: #feb391;
+  --chart-seq-cool-1: #162128;
+  --chart-seq-cool-2: #1b3343;
+  --chart-seq-cool-3: #224963;
+  --chart-seq-cool-4: #276085;
+  --chart-seq-cool-5: #2f7cac;
+  --chart-seq-cool-6: #4698cc;
+  --chart-seq-cool-7: #6eb3e3;
+  --chart-seq-cool-8: #9ecef1;
+  --chart-grid: #24221f;
   --chart-axis: #423f3a;
-  --chart-label: #7f7b72;
+  --chart-label: #8f8b82;
   --chart-annotation: #b3afa6;
 
   color-scheme: dark;

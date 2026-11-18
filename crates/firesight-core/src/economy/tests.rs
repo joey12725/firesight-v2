@@ -840,7 +840,10 @@ fn historical_cohort_zero_equals_the_data_and_cohorts_wrap() {
 
 #[test]
 fn regime_calibration_reproduces_the_published_hmm_fit() {
-    let p = RegimeParams::calibrate(&Data::embedded().history);
+    let p = RegimeParams::calibrate(
+        &Data::embedded().history,
+        &super::long_run_from_json(&Data::embedded().actuarial),
+    );
     let hmm = "/equity_regimes/gaussian_hmm";
     let mut c = Checks::default();
     c.close(
@@ -982,7 +985,7 @@ fn bond_return_formula_matches_published_examples_and_the_history() {
     let c4 = regime::par_bond_convexity(0.04);
     assert!(c4 > 74.0 && c4 < 82.0, "{c4}");
     let h = &Data::embedded().history;
-    let p = RegimeParams::calibrate(h);
+    let p = RegimeParams::calibrate(h, &super::long_run_from_json(&Data::embedded().actuarial));
     // Carry only when the yield does not move; a 1-point rise at 4% costs duration
     // less the convexity gain.
     assert!((p.bond_return(0.04, 0.0) - 0.04 / 12.0).abs() < 1e-12);

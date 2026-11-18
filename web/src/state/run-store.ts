@@ -2,8 +2,8 @@
 // run settings change. The first chunks give a quick picture within moments; the same
 // run then refines up to the chosen path count, so no work is thrown away.
 import { create } from 'zustand';
-import { getPool, isAbort, toEngineError, type EngineErrorKind } from '@/engine';
-import type { Summary } from '@/engine/output-types';
+import { getPool, isAbort, planPreview, toEngineError, type EngineErrorKind, type RunResult } from '@/engine';
+import type { Comparison, PlanPreview, Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
 import { useProfileStore } from './profile-store';
 
@@ -24,6 +24,8 @@ export interface ScenarioRun {
   profile: Profile;
   summary: Summary | null;
   done: number;
+  /** Paired statistics against the baseline (scenario minus baseline, life by life). Null until both runs finish. */
+  paired: Comparison | null;
 }
 
 export interface RunState {
@@ -42,6 +44,12 @@ export interface RunState {
   /** Enabled scenarios, simulated on the same seed and path indices as the baseline. */
   scenarios: ScenarioRun[];
   elapsedMs: number;
+  /** Time from the edit to the first summary of the new run on screen. */
+  firstPictureMs: number;
+  /** What the latest merge + summarise cost in the coordinator worker. */
+  summarizeMs: number;
+  /** The deterministic facts of the baseline plan (no simulation). Null when it cannot be compiled. */
+  preview: PlanPreview | null;
 }
 
 const initial: RunState = {
@@ -56,11 +64,24 @@ const initial: RunState = {
   stale: false,
   scenarios: [],
   elapsedMs: 0,
+  firstPictureMs: 0,
+  summarizeMs: 0,
+  preview: null,
 };
 
 export const useRunStore = create<RunState>(() => initial);
 
-const DEBOUNCE_MS = 250;
+/** Long enough to fold a burst of edits into one run, short enough that the first picture lands within ~150 ms. */
+const DEBOUNCE_MS = 50;
+let editedAt = 0;
+
+function previewOf(profile: Profile): PlanPreview | null {
+  try {
+    return planPreview(profile);
+  } catch {
+    return null;
+  }
+}
 let controller: AbortController | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -70,20 +91,24 @@ function start() {
   const s = useProfileStore.getState();
   if (!s.profile) return useRunStore.setState(initial);
   if (s.report.errors.length > 0) {
-    return useRunStore.setState({ status: 'blocked', error: null, done: 0, total: 0, stale: true });
+    return useRunStore.setState({ status: 'blocked', error: null, done: 0, total: 0, stale: true, preview: null });
   }
 
   const scenarios: ScenarioRun[] = s.scenarios.flatMap((sc) => {
     const r = s.resolved[sc.id];
     if (!sc.enabled || !r?.profile || (r.report?.errors.length ?? 0) > 0) return [];
-    return [{ id: sc.id, name: sc.name, profile: r.profile, summary: null, done: 0 }];
+    return [{ id: sc.id, name: sc.name, profile: r.profile, summary: null, done: 0, paired: null }];
   });
   const { paths, seed } = s.run;
   const jobs = [{ id: 'base', profile: s.profile, paths }, ...scenarios.map((x) => ({ id: x.id, profile: x.profile, paths }))];
   const total = paths * jobs.length;
   const mine = (controller = new AbortController());
   const startedAt = performance.now();
+  const since = editedAt || startedAt;
+  editedAt = 0;
   const doneBy = new Map<string, number>();
+  const base = s.profile;
+  let first = true;
 
   useRunStore.setState((prev) => ({
     status: 'running',
@@ -93,7 +118,11 @@ function start() {
     seed,
     pathsPerSecond: 0,
     stale: prev.summary !== null,
-    scenarios: scenarios.map((x) => ({ ...x, summary: prev.scenarios.find((p) => p.id === x.id)?.summary ?? null })),
+    preview: previewOf(base),
+    scenarios: scenarios.map((x) => {
+      const before = prev.scenarios.find((p) => p.id === x.id);
+      return { ...x, summary: before?.summary ?? null, paired: before?.paired ?? null };
+    }),
   }));
 
   getPool()
@@ -110,14 +139,30 @@ function start() {
           done,
           elapsedMs,
           pathsPerSecond: (done / Math.max(elapsedMs, 1)) * 1000,
+          summarizeMs: p.summarizeMs,
+          ...(id === 'base' && first ? { firstPictureMs: performance.now() - since } : {}),
           ...(id === 'base'
             ? { summary: p.summary, summaryPaths: p.done, stale: false }
             : { scenarios: prev.scenarios.map((x) => (x.id === id ? { ...x, summary: p.summary, done: p.done } : x)) }),
         }));
+        if (id === 'base') first = false;
       },
     })
-    .then(() => {
-      if (!mine.signal.aborted) useRunStore.setState({ status: 'done', elapsedMs: performance.now() - startedAt });
+    .then((results) => {
+      if (mine.signal.aborted) return;
+      useRunStore.setState({ status: 'done', elapsedMs: performance.now() - startedAt });
+      const a = results.get('base') as RunResult;
+      for (const sc of scenarios) {
+        const b = results.get(sc.id);
+        if (!b) continue;
+        void getPool()
+          .comparison(a, b, base)
+          .then((paired) => {
+            if (mine.signal.aborted) return;
+            useRunStore.setState((prev) => ({ scenarios: prev.scenarios.map((x) => (x.id === sc.id ? { ...x, paired } : x)) }));
+          })
+          .catch(() => {});
+      }
     })
     .catch((error: unknown) => {
       if (mine.signal.aborted || isAbort(error)) return;
@@ -131,6 +176,7 @@ function schedule() {
   controller?.abort();
   controller = null;
   if (useProfileStore.getState().profile) useRunStore.setState({ status: 'queued' });
+  editedAt ||= performance.now();
   timer = setTimeout(start, DEBOUNCE_MS);
 }
 

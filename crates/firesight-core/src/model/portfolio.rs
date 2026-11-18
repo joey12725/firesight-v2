@@ -31,8 +31,10 @@ pub enum AssetClass {
     RealEstate,
     /// Gold.
     Gold,
-    /// Cryptocurrency, modelled as an extremely volatile asset with a modest expected
-    /// return.
+    /// Cryptocurrency: an extremely volatile asset (70% a year) with a real chance
+    /// of total loss, whose expected return just keeps pace with inflation. The
+    /// typical outcome is the loss of most of the holding; a few paths gain
+    /// enormously.
     Crypto,
     /// A concentrated position in one company's stock, configured in
     /// `portfolio.single_stock`.

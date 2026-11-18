@@ -565,10 +565,41 @@ pub struct StateYear {
     /// Gains exempt from the excise.
     pub capital_gains_excise_deduction: f64,
     /// Local income tax as a flat share of state adjusted income (the statewide
-    /// average; replace with [`TaxLaw::local_rate`] for a known city).
+    /// average; apply [`TaxLaw::local_tax`] for a known city).
     pub local_rate: f64,
+    /// True when the local tax reaches only wages and self-employment profit (city
+    /// wage, earnings and occupational taxes); false when it follows state income.
+    pub local_earned_only: bool,
+    /// A graduated local schedule on state taxable income by filing status (New York
+    /// City; the Portland area's taxes, which start above a threshold). When it has
+    /// brackets it replaces `local_rate`.
+    pub local_brackets: [Brackets; FilingStatus::COUNT],
+    /// True when the state taxes wages before 401(k) deferrals (Pennsylvania): the
+    /// year's pre-tax deferrals are added back to state income.
+    pub taxes_deferrals: bool,
     /// Average effective property tax rate, used when a property gives none.
     pub property_tax_rate: f64,
+}
+
+/// The local income tax of one place, to be laid over a state's parameters with
+/// [`LocalTax::apply`].
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct LocalTax {
+    /// Flat rate on the base (the top rate when `brackets` apply).
+    pub rate: f64,
+    /// True when only wages and self-employment profit are taxed.
+    pub earned_only: bool,
+    /// Graduated schedule on state taxable income (empty: the flat rate applies).
+    pub brackets: [Brackets; FilingStatus::COUNT],
+}
+
+impl LocalTax {
+    /// Writes this local tax into a state's parameters.
+    pub fn apply(&self, state: &mut StateYear) {
+        state.local_rate = self.rate;
+        state.local_earned_only = self.earned_only;
+        state.local_brackets = self.brackets;
+    }
 }
 
 /// The law for one tax year after indexing, as plain data.

@@ -195,8 +195,21 @@ fn income_lines(x: &TaxInputs, w: &Work, lines: &mut Lines) {
     lines.push_nonzero(
         "other_income",
         "Other income",
-        w.other_income,
-        "Other taxable income, including non-medical HSA withdrawals".into(),
+        x.other_ordinary + x.hsa_nonqualified.max(0.0) + x.depreciation_recapture.max(0.0),
+        "Other taxable income, including non-medical HSA withdrawals and recaptured depreciation"
+            .into(),
+    );
+    lines.push_nonzero(
+        "adjustments",
+        "IRA and HSA contributions deducted",
+        -x.adjustments.max(0.0),
+        "Deductible contributions made outside payroll".into(),
+    );
+    lines.push_nonzero(
+        "passive_loss_released",
+        "Rental losses released by a sale",
+        -x.passive_loss_released.max(0.0),
+        "Losses suspended in earlier years, deductible when the property is sold".into(),
     );
     lines.push_nonzero(
         "half_se_tax_deduction",
@@ -501,11 +514,21 @@ fn state_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) {
         "local_income_tax",
         "Local income tax",
         o.local,
-        format!(
-            "{} of state adjusted income {}",
-            pct(st.local_rate),
-            usd(o.agi)
-        ),
+        if st.local_brackets[x.filing_status.index()].len > 0 {
+            format!(
+                "The city's graduated schedule (top rate {}) on state taxable income {}",
+                pct(st.local_rate),
+                usd(o.taxable)
+            )
+        } else if st.local_earned_only {
+            format!("{} of wages and business profit", pct(st.local_rate))
+        } else {
+            format!(
+                "{} of state adjusted income {}",
+                pct(st.local_rate),
+                usd(o.agi)
+            )
+        },
     );
 }
 

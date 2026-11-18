@@ -279,6 +279,12 @@ impl State {
         if self.ever_depleted {
             end.set(PathScalar::DepletionAge, age_at(self.depletion_month));
         }
+        if self.home_sale_month != i32::MAX {
+            end.set(PathScalar::HomeSaleAge, age_at(self.home_sale_month));
+        }
+        if self.retired && self.initial_wr.is_finite() {
+            end.set(PathScalar::InitialWithdrawalRate, self.initial_wr);
+        }
         for (i, scalar) in [PathScalar::DeathAge0, PathScalar::DeathAge1]
             .into_iter()
             .enumerate()

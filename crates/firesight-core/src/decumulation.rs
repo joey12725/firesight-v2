@@ -69,8 +69,16 @@ pub const ACA_CLIFF_FPL_MULTIPLE: f64 = 4.0;
 
 /// Planning cushion under the ACA cliff. Not a statutory number: the plan is made in
 /// January on estimated dividends and gains, and one dollar over the cliff loses the
-/// whole credit, so the plan aims 2% below it.
-pub const ACA_PLANNING_MARGIN: f64 = 0.02;
+/// whole credit, so the plan aims 8% below it (measured January-estimate errors in
+/// investment income run to about 3% of the cliff; `sim` also re-plans in October on
+/// the year's actual income).
+pub const ACA_PLANNING_MARGIN: f64 = 0.08;
+
+/// Tolerance when a traditional withdrawal or a Roth conversion is judged against
+/// the bracket rate being filled: the federal tax and lost premium credit it causes
+/// per dollar may exceed `fill_to_bracket` by this much (rounding of thresholds,
+/// small phase-outs) before the amount is cut back.
+pub const FILL_RATE_TOLERANCE: f64 = 0.02;
 
 /// A 0% gain harvest is kept only if it costs less than this fraction of the gain in
 /// total tax and lost premium credit. The federal 0% bracket alone does not show
@@ -203,6 +211,26 @@ pub struct SpendingState {
     pub years_retired: u32,
 }
 
+/// The funded test's view of the household, which the guardrails, Vanguard and
+/// floor-and-ceiling rules measure their withdrawal rate against.
+///
+/// The rate a rule compares with its reference is `need / base`, not this year's
+/// cash withdrawal over the portfolio: in a real household the first differs from
+/// year to year for reasons that are part of the plan (a mortgage being paid off,
+/// children leaving, health insurance before Medicare, Social Security not yet
+/// claimed, a partner still earning), and a rule anchored on it cuts spending when
+/// the plan is exactly on track.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Funding {
+    /// Wealth available for the long run, today's dollars: investable assets less
+    /// other debts, less the sums set aside for temporary costs (mortgage balances,
+    /// child costs still due), plus the present value of income not yet started.
+    pub base_real: f64,
+    /// The steady annual draw on that wealth at a budget multiple of 1, today's
+    /// dollars: the retirement budget and its tax, less income already in payment.
+    pub need_real: f64,
+}
+
 /// Inputs to the spending rule for one year.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct SpendingInputs {
@@ -228,6 +256,32 @@ pub struct SpendingInputs {
     /// Inflation over the previous calendar year as a decimal (guardrails: the size
     /// of the raise that is skipped).
     pub prior_inflation: f64,
+    /// The funded test's quantities (see [`Funding`]). `None`: the rules fall back
+    /// to `portfolio_real` and `budget_real - other_income_real`, which is the
+    /// published definition for a household with a constant budget.
+    pub funding: Option<Funding>,
+    /// Guardrails: the capital-preservation cut is measured against the larger of
+    /// the household's own initial rate and this rate (the funded test's withdrawal
+    /// rate), so a household drawing far less than it could is not told to cut
+    /// because a small rate became a slightly less small one. 0 disables the floor.
+    pub reference_floor: f64,
+    /// True while spending must not be raised (a long-term care episode is under
+    /// way): the rules may cut but not increase the multiple.
+    pub hold_raises: bool,
+}
+
+impl SpendingInputs {
+    /// `(funding base, steady draw at a multiple of 1)`.
+    fn anchor(&self) -> (f64, f64) {
+        let clean = |x: f64| if x.is_finite() { x.max(0.0) } else { 0.0 };
+        match self.funding {
+            Some(f) => (clean(f.base_real), clean(f.need_real)),
+            None => (
+                clean(self.portfolio_real),
+                clean(clean(self.budget_real) - clean(self.other_income_real)),
+            ),
+        }
+    }
 }
 
 /// The rule's decision for one year.
@@ -288,13 +342,9 @@ impl SpendingPlanner {
     /// Initialises the state at retirement. Call once, then [`Self::decide`] for the
     /// first retirement year and every January after.
     pub fn start(&self, inputs: &SpendingInputs) -> SpendingState {
-        let need = (inputs.budget_real - inputs.other_income_real).max(0.0);
+        let (base, need) = inputs.anchor();
         SpendingState {
-            initial_withdrawal_rate: if inputs.portfolio_real > 0.0 {
-                need / inputs.portfolio_real
-            } else {
-                0.0
-            },
+            initial_withdrawal_rate: if base > 0.0 { need / base } else { 0.0 },
             last_real_spending: inputs.budget_real.max(0.0),
             budget_multiple: 1.0,
             years_retired: 0,
@@ -303,24 +353,30 @@ impl SpendingPlanner {
 
     /// This year's spending; updates `state`.
     ///
-    /// Notation: `B` portfolio, `budget` this year's budget, `m` last year's multiple,
-    /// `planned = m * budget`, `other` income needing no withdrawal, `W = planned -
-    /// other` the withdrawal that would keep last year's standard of living, `IWR`
-    /// the withdrawal rate of the first year with a withdrawal.
+    /// Notation: `budget` this year's budget, `m` last year's multiple, `planned =
+    /// m * budget`, `other` income needing no withdrawal, `P` the investable
+    /// portfolio. For the three rules that follow a withdrawal *rate*: `A` the
+    /// funding base and `N` the steady draw at a multiple of 1 ([`Funding`]; without
+    /// it `A = P` and `N = budget - other`), `W = N + (m - 1) * budget` the draw
+    /// that keeps last year's standard of living, `IWR` the value of `W / A` in the
+    /// first year with a draw.
     ///
     /// * `ConstantReal` (Bengen): the budget, whatever the portfolio does.
-    /// * `PercentOfPortfolio`: `rate * B + other`.
+    /// * `PercentOfPortfolio`: `rate * P + other`.
     /// * `Guardrails` (Guyton-Klinger 2006), from the second year: (1) withdrawal
-    ///   rule: `W` keeps its real value, except that the inflation raise is skipped
-    ///   (`W / (1 + inflation)`) after a year of negative return if `W / B > IWR`;
-    ///   (2) capital preservation: if `W / B > (1 + upper) * IWR`, cut `W` by
-    ///   `adjust`, unless 15 or fewer years remain; (3) prosperity: if `W / B <
-    ///   (1 - lower) * IWR`, raise `W` by `adjust`. Spending is `W + other`.
-    /// * `VanguardDynamic`, from the second year: target `IWR * B + other`, limited
-    ///   to between `planned * (1 - floor)` and `planned * (1 + ceiling)`.
-    /// * `Vpw`: `min(vpw_rate(r, n), 10%) * B + other`.
-    /// * `FloorCeiling`, from the second year: target `IWR * B + other`, limited to
-    ///   between `floor * budget` and `ceiling * budget`.
+    ///   rule: spending keeps its real value, except that the inflation raise on the
+    ///   draw is skipped (`W / (1 + inflation)`) after a year of negative return if
+    ///   `W / A > IWR`; (2) capital preservation: if `W / A > (1 + upper) *
+    ///   max(IWR, reference_floor)`, cut spending by `adjust`, unless 15 or fewer
+    ///   years remain; (3) prosperity: if `W / A < (1 - lower) * IWR`, raise
+    ///   spending by `adjust`. With no other income, spending is the draw and this
+    ///   is the published rule.
+    /// * `VanguardDynamic`, from the second year: target `rate * A + (budget - N)`
+    ///   (the spending at which the draw is `rate * A`; `rate` defaults to `IWR`),
+    ///   limited to between `planned * (1 - floor)` and `planned * (1 + ceiling)`.
+    /// * `Vpw`: `min(vpw_rate(r, n), 10%) * P + other`.
+    /// * `FloorCeiling`, from the second year: the same target, limited to between
+    ///   `floor * budget` and `ceiling * budget`.
     ///
     /// Whatever the rule says, spending is never set below the essential part of the
     /// budget; if the portfolio cannot pay for that, `sim` records the shortfall.
@@ -347,10 +403,13 @@ impl SpendingPlanner {
             1.0
         };
         let planned = previous * budget;
-        let planned_withdrawal = (planned - other).max(0.0);
-        if state.initial_withdrawal_rate <= 0.0 && planned_withdrawal > 0.0 && portfolio > 0.0 {
-            state.initial_withdrawal_rate = planned_withdrawal / portfolio;
+        let (base, steady) = inputs.anchor();
+        let planned_withdrawal = (steady + (previous - 1.0) * budget).max(0.0);
+        if state.initial_withdrawal_rate <= 0.0 && planned_withdrawal > 0.0 && base > 0.0 {
+            state.initial_withdrawal_rate = planned_withdrawal / base;
         }
+        // Spending at which the steady draw is zero: what income covers.
+        let covered = (budget - steady).max(0.0);
         let iwr = state.initial_withdrawal_rate;
         let p = &self.params;
 
@@ -362,22 +421,30 @@ impl SpendingPlanner {
                 lower,
                 adjust,
             } => {
-                if first || portfolio <= 0.0 || iwr <= 0.0 {
+                if first || base <= 0.0 || iwr <= 0.0 {
                     planned
                 } else {
                     let mut w = planned_withdrawal;
-                    if inputs.prior_return_negative && w / portfolio > iwr {
-                        w /= 1.0 + inputs.prior_inflation.max(0.0);
+                    let mut spend = planned;
+                    if inputs.prior_return_negative && w / base > iwr {
+                        let kept = w / (1.0 + inputs.prior_inflation.max(0.0));
+                        spend -= w - kept;
+                        w = kept;
                     }
-                    let rate = w / portfolio;
-                    if rate > iwr * (1.0 + upper) {
+                    let rate = w / base;
+                    let floor = if inputs.reference_floor.is_finite() {
+                        inputs.reference_floor.max(0.0)
+                    } else {
+                        0.0
+                    };
+                    if rate > iwr.max(floor) * (1.0 + upper) {
                         if inputs.years_remaining > p.guardrail_sunset_years {
-                            w *= 1.0 - adjust;
+                            spend *= 1.0 - adjust;
                         }
                     } else if rate < iwr * (1.0 - lower) {
-                        w *= 1.0 + adjust;
+                        spend *= 1.0 + adjust;
                     }
-                    w + other.min(planned)
+                    spend
                 }
             }
             SpendingRule::VanguardDynamic {
@@ -395,7 +462,7 @@ impl SpendingPlanner {
                     } else {
                         p.vanguard_default_rate
                     };
-                    let target = rate * portfolio + other;
+                    let target = rate * base + covered;
                     target
                         .max(planned * (1.0 - floor))
                         .min(planned * (1.0 + ceiling))
@@ -421,18 +488,21 @@ impl SpendingPlanner {
                     } else {
                         p.floor_ceiling_default_rate
                     };
-                    let target = rate * portfolio + other;
+                    let target = rate * base + covered;
                     target.max(floor * budget).min(ceiling * budget)
                 }
             }
         };
 
         let essential = inputs.essential_real.max(0.0).min(budget);
-        let spending = if rule_spending.is_finite() {
+        let mut spending = if rule_spending.is_finite() {
             rule_spending.max(essential)
         } else {
             budget
         };
+        if inputs.hold_raises && !first {
+            spending = spending.min(planned.max(essential));
+        }
         let multiple = if budget > 0.0 { spending / budget } else { 1.0 };
         let adjustment = if first || (multiple / previous - 1.0).abs() < 1e-12 {
             0.0
@@ -832,6 +902,9 @@ struct Setup<'a> {
     fill_rate: f64,
     /// Share of a taxable sale that is gain (0 when the bucket is at a loss).
     gain_share: f64,
+    /// Most that may be converted to Roth this year (infinite until the plan has
+    /// been costed: see `plan_year`).
+    conversion_cap: f64,
 }
 
 impl Setup<'_> {
@@ -955,9 +1028,11 @@ impl Setup<'_> {
             plan.cash_refill = refill - dropped;
             d.want -= dropped;
             costly = d.want > 0.0;
-            // 72(t): start a schedule of at most the amortisation payment.
+            // 72(t): start a schedule of at most the amortisation payment. A
+            // schedule already running is fixed: what its owner needs beyond it is
+            // an ordinary early withdrawal.
             for p in 0..MAX_PEOPLE {
-                if self.restricted[p] && d.want > 0.0 {
+                if self.restricted[p] && d.want > 0.0 && inp.sepp_available[p] <= 0.0 {
                     let cap = sepp_payment(d.rem[TRAD + p], inp.ages[p], SEPP_MAX_RATE);
                     plan.sepp[p] += d.group(&[TRAD + p], cap);
                 }
@@ -978,7 +1053,10 @@ impl Setup<'_> {
         // comfortably funded and taxable money can pay the tax on them.
         if self.convert && !costly && self.bracket_room.is_finite() {
             let aca_left = self.aca_room - bracket_used - d.out[TAXABLE] * self.gain_share.max(0.0);
-            let mut room = (self.bracket_room - bracket_used).min(aca_left).max(0.0);
+            let mut room = (self.bracket_room - bracket_used)
+                .min(aca_left)
+                .min(self.conversion_cap)
+                .max(0.0);
             if self.fill_rate > 0.0 {
                 room = room.min((d.rem[CASH] + d.rem[TAXABLE]) / self.fill_rate);
             }
@@ -1004,15 +1082,6 @@ impl Setup<'_> {
             plan.from_roth[p] = d.out[ROTH + p] + d.out[ROTH_EXTRA + p];
         }
         plan
-    }
-
-    /// Runs the plan on a copy of the accounts and returns the year's return under
-    /// it, with what the copy did.
-    fn preview(&self, plan: &WithdrawalPlan) -> (TaxInputs, Executed, Accounts) {
-        let mut copy = *self.accounts;
-        let mut t = self.inputs.base_tax_inputs;
-        let done = execute_plan(plan, 1.0, &mut copy, self.inputs, &mut t, None);
-        (t, done, copy)
     }
 }
 
@@ -1088,7 +1157,36 @@ pub fn plan_year(
     inputs: &PlanInputs,
     tax: &TaxYearParams,
 ) -> WithdrawalPlan {
-    plan_year_with(order, early_access, accounts, inputs, tax, &tax::compute)
+    plan_year_impl(
+        order,
+        early_access,
+        accounts,
+        inputs,
+        tax,
+        tax::compute,
+        None,
+    )
+}
+
+/// [`plan_year`] when the caller has already computed the return on
+/// `inputs.base_tax_inputs` with the same parameters (saves one tax computation).
+pub fn plan_year_from(
+    order: &WithdrawalOrder,
+    early_access: EarlyAccess,
+    accounts: &Accounts,
+    inputs: &PlanInputs,
+    tax: &TaxYearParams,
+    base_result: &TaxResult,
+) -> WithdrawalPlan {
+    plan_year_impl(
+        order,
+        early_access,
+        accounts,
+        inputs,
+        tax,
+        tax::compute,
+        Some(*base_result),
+    )
 }
 
 /// [`plan_year`] with the tax function supplied by the caller (tests, what-if tools).
@@ -1100,8 +1198,84 @@ pub fn plan_year_with(
     tax: &TaxYearParams,
     compute: &dyn Fn(&TaxYearParams, &TaxInputs) -> TaxResult,
 ) -> WithdrawalPlan {
+    plan_year_impl(order, early_access, accounts, inputs, tax, compute, None)
+}
+
+/// One evaluation of a candidate plan: the plan, the return under it, and what
+/// carrying it out did to a copy of the accounts.
+struct Eval {
+    plan: WithdrawalPlan,
+    t: TaxInputs,
+    done: Executed,
+    after: Accounts,
+    result: TaxResult,
+}
+
+/// What a discretionary dollar of income is judged by when it is compared with the
+/// bracket being filled: federal tax plus the premium credit it loses. State tax is
+/// left out because `fill_to_bracket` names a federal bracket and the state will tax
+/// the money whenever it comes out.
+fn burden(r: &TaxResult) -> f64 {
+    r.total - r.state - r.foreign - r.aca_premium_credit
+}
+
+/// Grosses a plan up for the tax its own withdrawals cause: finds the cash amount
+/// `g` with `g = net_need + extra_tax(g)`, by a fixed-point step followed by secant
+/// steps on `f(g) = g - net_need - extra_tax(g)`. The result is left in `best`.
+fn gross_up<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
+    setup: &Setup,
+    tax: &TaxYearParams,
+    compute: &F,
+    base_total: f64,
+    best: &mut Eval,
+) {
+    let evaluate = |need: f64, e: &mut Eval| {
+        e.plan = setup.allocate(need);
+        e.after = *setup.accounts;
+        e.t = setup.inputs.base_tax_inputs;
+        e.done = execute_plan(&e.plan, 1.0, &mut e.after, setup.inputs, &mut e.t, None);
+        e.result = compute(tax, &e.t);
+    };
+    let n = setup.inputs.net_need;
+    let residual = |g: f64, r: &TaxResult| g - n - (r.total - base_total);
+    let mut ga = n;
+    evaluate(ga, best);
+    let mut fa = residual(ga, &best.result);
+    if fa.abs() > CENT {
+        let mut gb = ga - fa;
+        evaluate(gb, best);
+        let mut fb = residual(gb, &best.result);
+        for _ in 0..GROSS_UP_SECANT_STEPS {
+            if fb.abs() <= CENT || (gb - ga).abs() <= CENT {
+                break;
+            }
+            // f' = 1 - marginal rate; keep it away from zero across cliffs.
+            let slope = ((fb - fa) / (gb - ga)).max(1.0 - MAX_GROSS_UP_RATE);
+            let gc = gb - fb / slope;
+            ga = gb;
+            fa = fb;
+            gb = gc;
+            evaluate(gb, best);
+            fb = residual(gb, &best.result);
+        }
+    }
+}
+
+#[inline]
+fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
+    order: &WithdrawalOrder,
+    early_access: EarlyAccess,
+    accounts: &Accounts,
+    inputs: &PlanInputs,
+    tax: &TaxYearParams,
+    compute: F,
+    known_base: Option<TaxResult>,
+) -> WithdrawalPlan {
     let base = &inputs.base_tax_inputs;
-    let base_result = compute(tax, base);
+    let base_result = match known_base {
+        Some(r) => r,
+        None => compute(tax, base),
+    };
     let status = base.filing_status.index();
 
     let mut restricted = [false; MAX_PEOPLE];
@@ -1126,6 +1300,7 @@ pub fn plan_year_with(
         } else {
             0.0
         },
+        conversion_cap: f64::INFINITY,
     };
 
     let mut aca_cliff = f64::INFINITY;
@@ -1197,44 +1372,101 @@ pub fn plan_year_with(
             if cliff > 0.0 && forced_result.magi < cliff {
                 aca_cliff = cliff * (1.0 - ACA_PLANNING_MARGIN);
                 setup.aca_room = (aca_cliff - forced_result.magi).max(0.0);
+                // On the marketplace a traditional dollar costs its tax and the
+                // premium credit it loses (10 to 17 cents between 138% and 400% of
+                // the poverty line). Fill the bracket only as far as the two
+                // together stay within the rate being filled: first the unused
+                // deduction, then the rest of the bracket.
+                let limit = setup.bracket_room.min(setup.aca_room);
+                if limit > CENT {
+                    let allowed = fill_to_bracket.max(0.0) + FILL_RATE_TOLERANCE;
+                    let unused_deduction = if forced_result.taxable_income <= 0.0 {
+                        (forced_result.deduction - forced_result.agi)
+                            .max(0.0)
+                            .min(limit)
+                    } else {
+                        0.0
+                    };
+                    let mut room = 0.0;
+                    let mut cost = burden(&forced_result);
+                    for x in [unused_deduction, limit] {
+                        if x - room <= CENT {
+                            continue;
+                        }
+                        let mut t = forced;
+                        t.traditional_distributions += x;
+                        let c = burden(&compute(tax, &t));
+                        if c - cost > allowed * (x - room) {
+                            break;
+                        }
+                        room = x;
+                        cost = c;
+                    }
+                    setup.bracket_room = room;
+                }
             }
         }
     }
 
-    let evaluate = |need: f64| {
-        let plan = setup.allocate(need);
-        let (t, done, after) = setup.preview(&plan);
-        let result = compute(tax, &t);
-        (plan, t, done, after, result)
+    let mut best = Eval {
+        plan: WithdrawalPlan::default(),
+        t: *base,
+        done: Executed::default(),
+        after: *accounts,
+        result: base_result,
     };
+    gross_up(&setup, tax, &compute, base_result.total, &mut best);
 
-    // Gross up for the tax the withdrawals themselves cause: find the cash amount
-    // `g` with g = net_need + extra_tax(g), by a fixed-point step followed by secant
-    // steps on f(g) = g - net_need - extra_tax(g).
-    let n = inputs.net_need;
-    let residual = |g: f64, r: &TaxResult| g - n - (r.total - base_result.total);
-    let mut ga = n;
-    let mut best = evaluate(ga);
-    let mut fa = residual(ga, &best.4);
-    if fa.abs() > CENT {
-        let mut gb = ga - fa;
-        best = evaluate(gb);
-        let mut fb = residual(gb, &best.4);
-        for _ in 0..GROSS_UP_SECANT_STEPS {
-            if fb.abs() <= CENT || (gb - ga).abs() <= CENT {
+    // A conversion is sized on the ordinary bracket, but its real cost includes
+    // what it does to the rest of the return: gains realised by this year's sales
+    // (and qualified dividends) are pushed from the 0% rate to 15%, Social Security
+    // becomes taxable, the premium credit shrinks. Keep only the part whose federal
+    // tax and lost credit per converted dollar stay within the rate being filled.
+    let converted: f64 = best.plan.roth_conversion.iter().sum();
+    if converted > CENT {
+        let allowed = setup.fill_rate + FILL_RATE_TOLERANCE;
+        let mut without = best.t;
+        without.roth_conversions = (without.roth_conversions - converted).max(0.0);
+        let r0 = compute(tax, &without);
+        let preferential = without.long_term_gains.max(0.0) + without.qualified_dividends.max(0.0);
+        let zero_top = bracket_top(&tax.federal.capital_gains[status], 0.0);
+        // Up to here the conversion leaves the 0% gains bracket alone.
+        let kink = if preferential > CENT && zero_top.is_finite() {
+            (zero_top - r0.taxable_income).clamp(0.0, converted)
+        } else {
+            0.5 * converted
+        };
+        let mut cap = 0.0;
+        let mut cost = burden(&r0);
+        for x in [kink, converted] {
+            if x - cap <= CENT {
+                continue;
+            }
+            let c = if x >= converted {
+                burden(&best.result)
+            } else {
+                let mut t = without;
+                t.roth_conversions += x;
+                burden(&compute(tax, &t))
+            };
+            if c - cost > allowed * (x - cap) {
                 break;
             }
-            // f' = 1 - marginal rate; keep it away from zero across cliffs.
-            let slope = ((fb - fa) / (gb - ga)).max(1.0 - MAX_GROSS_UP_RATE);
-            let gc = gb - fb / slope;
-            ga = gb;
-            fa = fb;
-            gb = gc;
-            best = evaluate(gb);
-            fb = residual(gb, &best.4);
+            cap = x;
+            cost = c;
+        }
+        if cap < converted - CENT {
+            setup.conversion_cap = cap;
+            gross_up(&setup, tax, &compute, base_result.total, &mut best);
         }
     }
-    let (mut plan, t, done, after, mut result) = best;
+    let Eval {
+        mut plan,
+        t,
+        done,
+        after,
+        mut result,
+    } = best;
 
     // Harvest gains in the 0% bracket, if that is really free.
     if matches!(order, WithdrawalOrder::TaxAware { .. }) && plan.shortfall <= 0.0 {
@@ -1307,6 +1539,7 @@ pub fn cover_shortfall(
         convert: false,
         fill_rate: 0.0,
         gain_share: 0.0,
+        conversion_cap: f64::INFINITY,
     };
     let mut plan = setup.allocate(amount);
     // Without a schedule the "72(t)" tier is just an early withdrawal.

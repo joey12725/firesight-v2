@@ -1,14 +1,14 @@
 // The whole assistant below the UI: a session driving the real agent loop, tools and
-// profile store against a scripted model and a fake simulation pool.
+// profile store against a scripted model and the real engine, run in this thread.
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { applyPatch, exampleProfiles, initEngineSync, levers, schema } from '@/engine/api';
+import { exampleProfiles, initEngineSync } from '@/engine/api';
 import { useProfileStore } from '@/state/profile-store';
 import type { ApiMessage } from './agent/types';
 import { settle, type AssistantItem, type ConversationStorage, type StoredConversation, type ToolPart, type UserItem } from './conversation';
 import { promptFingerprint } from './prompt';
 import { AssistantSession, useAssistant, type SessionDeps } from './session';
-import { fakePool } from './testing/fake-engine';
+import { nodeEngine } from './testing/node-engine';
 import { scriptedTransport, type FakeTransport, type Scripted } from './testing/fake-model';
 import { toolDefinitions, type PlanStore } from './tools';
 import { HOSTED_OFF } from './transport';
@@ -44,10 +44,10 @@ let settings: { apiKey: string; model: 'claude-opus-5-5'; accessCode: string; au
 
 function session(script: Scripted[] | null, overrides: Partial<SessionDeps> = {}): AssistantSession {
   transport = script ? scriptedTransport(script) : null;
-  const pool = fakePool();
+  const engine = nodeEngine();
   return new AssistantSession({
     store,
-    engine: () => ({ pool, applyPatch, levers, schema }),
+    engine: () => engine,
     storage,
     settings: () => settings,
     hosted: async () => HOSTED_OFF,
@@ -93,7 +93,7 @@ describe('a conversation', () => {
     // The model saw the plan with the question, and its tool result on the next request.
     const first = texts(transport!.requests[0]!.messages[0]);
     expect(first[0]).toMatch(/^<plan_state>/);
-    expect(first[0]).toContain('"annual_budget_now"');
+    expect(first[0]).toContain('"annual_spending"');
     expect(first.at(-1)).toBe('How does my plan look?');
     expect(transport!.requests[0]!.system).toContain('FIRESight');
     expect(transport!.requests[0]!.tools.map((t) => t.name)).toContain('try_scenario');

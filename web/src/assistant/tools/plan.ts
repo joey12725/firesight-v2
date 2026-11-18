@@ -1,4 +1,5 @@
 import { toEngineError } from '@/engine/errors';
+import type { PlanPreview } from '@/engine/output-types';
 import type { PatchOp } from '@/engine/types';
 import { describeRoot, describeType, diffEntries, newIssues, planView, referencedTypes, typeNames, type SchemaNode } from './plan-view';
 import { asOps, PATCH_OP_SCHEMA, requireProfile } from './shared';
@@ -7,11 +8,12 @@ import { ToolError, type Assumption, type Proposal, type ToolContext, type ToolS
 /** The current plan as the model should see it. Also attached to user turns when the plan has changed. */
 export function currentPlanView(ctx: ToolContext) {
   const profile = requireProfile(ctx);
-  let preview: unknown;
+  // The preview needs a plan the engine can compile; one with errors is shown without it.
+  let preview: PlanPreview | null;
   try {
-    preview = ctx.engine.planPreview?.(profile);
+    preview = ctx.engine.planPreview(profile);
   } catch {
-    preview = undefined;
+    preview = null;
   }
   return planView({
     profile,
@@ -27,7 +29,7 @@ export function currentPlanView(ctx: ToolContext) {
 export const getPlan: ToolSpec<Record<string, never>> = {
   name: 'get_plan',
   description:
-    "Read the user's current plan: every non-default field with the ids that patches address, derived totals (income, budget, balances), the validation report (errors block simulation; warnings are worth raising), the engine's plan preview when available, the saved scenarios and the run settings. The plan is also attached to the user's message whenever it has changed, so call this only when you need to re-read it after edits made during this turn.",
+    "Read the user's current plan: every non-default field with the ids that patches address, the engine's plan preview (what the plan implies before any simulation: annual_spending now and annual_spending_retired, each the whole cost of living including housing, modelled healthcare, children and debt payments; annual_income; annual_tax; savings_rate; investable; funded_requirement, the wealth at which the retirement trigger's funded test is met today, with funded_ratio; life expectancy; left out while the plan has errors), balances by account kind, the validation report (errors block simulation; warnings are worth raising), the saved scenarios and the run settings. The plan is also attached to the user's message whenever it has changed, so call this only when you need to re-read it after edits made during this turn.",
   input_schema: { type: 'object', properties: {}, additionalProperties: false },
   pending: () => 'Reading the plan',
   async run(_input, ctx) {

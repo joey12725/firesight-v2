@@ -911,10 +911,21 @@ impl JobModel {
         }
     }
 
-    /// Starts a job that was [`Employment::NotStarted`]. No effect otherwise.
-    pub fn begin(&self, state: &mut JobState) {
+    /// Starts a job that was [`Employment::NotStarted`], at the owner's age `age`.
+    /// No effect otherwise.
+    ///
+    /// The salary entered for a job is its pay in today's dollars when it starts:
+    /// the wage curve is anchored at the starting age, so the first pay is the
+    /// entered amount and growth runs from there (not from `profile.start`).
+    pub fn begin(&self, state: &mut JobState, age: f64) {
         if state.employment == Employment::NotStarted {
             state.employment = Employment::Employed;
+            let curve = self.curve_lookup(age);
+            if curve > 0.0 {
+                state.anchor = self.salary / curve;
+            }
+            state.curve = curve;
+            state.real_salary = self.salary;
         }
     }
 

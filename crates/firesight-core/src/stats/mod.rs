@@ -501,8 +501,10 @@ keyed_enum! {
         LifetimeTax => "lifetime_tax",
         /// Derived: total spending over the path.
         LifetimeSpending => "lifetime_spending",
-        /// Derived: spending delivered over all retired years divided by spending
-        /// planned (1.0 = on plan); NaN if never retired.
+        /// Derived: the share of planned retirement spending that was delivered:
+        /// the sum over retired years of `min(delivered, planned)` divided by the sum
+        /// of planned spending. Never above 1.0 (spending beyond the plan is in
+        /// `extra_spending_ratio`); NaN if never retired.
         DeliveredSpendingRatio => "delivered_spending_ratio",
         /// Derived: the lowest single-year delivered / planned ratio in retirement;
         /// NaN if never retired.
@@ -521,6 +523,20 @@ keyed_enum! {
         /// age ("Coast FI"). Appended after the derived scalars to keep indices
         /// stable.
         CoastFiAge => "coast_fi_age",
+        /// Derived: retirement spending above the plan (a spending rule raising
+        /// spending in good times) as a fraction of planned retirement spending:
+        /// the sum over retired years of `max(delivered - planned, 0)` over the sum
+        /// of planned spending. NaN if never retired.
+        ExtraSpendingRatio => "extra_spending_ratio",
+        /// Supplied: the portfolio draw of the first retired year (the budget less
+        /// income after tax) as a fraction of investable assets on the retirement
+        /// date. The rate the household actually starts on, whatever the trigger's
+        /// rule says; NaN if never retired.
+        InitialWithdrawalRate => "initial_withdrawal_rate",
+        /// Supplied: first person's age when a home was sold to fund retirement
+        /// because savings had run out (`retirement.home_equity: last_resort`); NaN
+        /// if that never happened.
+        HomeSaleAge => "home_sale_age",
     }
 }
 
@@ -528,8 +544,9 @@ impl PathScalar {
     /// True if the recorder computes this scalar from the year records and
     /// overwrites whatever [`PathEnd`] holds for it.
     pub const fn is_derived(self) -> bool {
-        self.index() >= PathScalar::YearsSimulated.index()
-            && self.index() <= PathScalar::YearsDepleted.index()
+        (self.index() >= PathScalar::YearsSimulated.index()
+            && self.index() <= PathScalar::YearsDepleted.index())
+            || self.index() == PathScalar::ExtraSpendingRatio.index()
     }
 
     /// The unit of the value.
@@ -540,6 +557,7 @@ impl PathScalar {
             | PathScalar::RetirementAge
             | PathScalar::DepletionAge
             | PathScalar::DeathAge0
+            | PathScalar::HomeSaleAge
             | PathScalar::DeathAge1 => ScalarUnit::Age,
             PathScalar::InvestableAtRetirement
             | PathScalar::LongTermCareCost
@@ -548,10 +566,13 @@ impl PathScalar {
             | PathScalar::MinInvestable
             | PathScalar::LifetimeTax
             | PathScalar::LifetimeSpending => ScalarUnit::Dollars,
-            PathScalar::EarlyRetirementReturn | PathScalar::Inflation => ScalarUnit::Rate,
+            PathScalar::EarlyRetirementReturn
+            | PathScalar::Inflation
+            | PathScalar::InitialWithdrawalRate => ScalarUnit::Rate,
             PathScalar::WorstDrawdown
             | PathScalar::FundedRatio
             | PathScalar::DeliveredSpendingRatio
+            | PathScalar::ExtraSpendingRatio
             | PathScalar::WorstSpendingRatio => ScalarUnit::Ratio,
             PathScalar::MonthsUnemployed => ScalarUnit::Months,
             PathScalar::FailureCause => ScalarUnit::Index,
@@ -906,7 +927,7 @@ mod tests {
         );
         assert_eq!(Status::COUNT, 6);
         assert_eq!(YearSeries::COUNT, 43);
-        assert_eq!(PathScalar::COUNT, 27);
+        assert_eq!(PathScalar::COUNT, 30);
         assert_eq!(YearSeries::from_key("mortgage"), Some(YearSeries::Mortgage));
         assert_eq!(PathScalar::from_index(0), Some(PathScalar::FiAge));
         assert_eq!(PathScalar::from_key("nope"), None);

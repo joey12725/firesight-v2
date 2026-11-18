@@ -1,5 +1,5 @@
 // A real conversation with Claude, using the same loop, prompt, tool definitions and
-// executors as the app, with the simulation pool stubbed. It costs a few cents and
+// executors as the app, with the engine run in this thread. It costs a few cents and
 // needs network access, so it runs only when asked for:
 //
 //   FIRESIGHT_LIVE_SMOKE=1 ANTHROPIC_API_KEY=sk-ant-... npx vitest run src/assistant/live.test.ts
@@ -7,13 +7,13 @@
 // Optional: FIRESIGHT_LIVE_MODEL=claude-opus-5-5 (default: the app's default model).
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { applyPatch, exampleProfiles, initEngineSync, levers, schema } from '@/engine/api';
+import { exampleProfiles, initEngineSync } from '@/engine/api';
 import { useProfileStore } from '@/state/profile-store';
 import { runTurn } from './agent/loop';
 import type { ApiMessage, TurnUsage } from './agent/types';
 import { DEFAULT_MODEL, isAssistantModel } from './models';
 import { SYSTEM_PROMPT } from './prompt';
-import { fakePool } from './testing/fake-engine';
+import { nodeEngine } from './testing/node-engine';
 import { currentPlanView, executeTool, RunRegistry, toolDefinitions, type PlanStore, type ToolContext } from './tools';
 import { createByokTransport } from './transport';
 
@@ -43,7 +43,7 @@ describe.skipIf(!enabled)('live smoke conversation', () => {
       };
       const ctx: ToolContext = {
         store,
-        engine: { pool: fakePool(), applyPatch, levers, schema },
+        engine: nodeEngine(),
         runs: new RunRegistry(),
         requestApproval: async () => ({ type: 'accept' }),
         autoAccept: () => false,

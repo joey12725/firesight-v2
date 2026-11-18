@@ -58,7 +58,7 @@ pub enum DebtKind {
 }
 
 /// How spare cash is used to pay debts down faster.
-#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct DebtPolicy {
     /// Which debt receives extra payments. "minimum" pays only what is required.
@@ -66,6 +66,23 @@ pub struct DebtPolicy {
     /// Extra amount per month, in today's dollars, paid on top of the required
     /// payments. As debts are paid off their payments roll into this amount. 0 for none.
     pub extra_monthly: f64,
+    /// Refinance a mortgage when market rates have fallen far enough to repay the
+    /// cost of doing so: each January, if the market rate is at least one point
+    /// below the loan's rate and four years of interest saved exceed the closing
+    /// costs (2% of the balance plus $2,000 in today's dollars), the loan is
+    /// refinanced at the market rate over the term it had left and the costs are
+    /// paid. Set to false to keep every mortgage at its original rate.
+    pub refinance_mortgages: bool,
+}
+
+impl Default for DebtPolicy {
+    fn default() -> Self {
+        Self {
+            strategy: DebtStrategy::default(),
+            extra_monthly: 0.0,
+            refinance_mortgages: true,
+        }
+    }
 }
 
 /// Order in which extra debt payments are applied.

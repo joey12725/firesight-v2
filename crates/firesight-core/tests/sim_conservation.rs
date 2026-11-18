@@ -274,6 +274,7 @@ pub fn kitchen_sink() -> Profile {
         debt_policy: DebtPolicy {
             strategy: DebtStrategy::Avalanche,
             extra_monthly: 300.0,
+            ..DebtPolicy::default()
         },
         retirement: RetirementPlan {
             trigger: RetirementTrigger::WhenFunded(WhenFunded {

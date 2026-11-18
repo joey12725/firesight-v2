@@ -236,6 +236,7 @@ fn early_career_saver(start: YearMonth) -> Profile {
         debt_policy: DebtPolicy {
             strategy: DebtStrategy::Avalanche,
             extra_monthly: 200.0,
+            ..DebtPolicy::default()
         },
         events: vec![LifeEvent {
             id: "first_home".into(),
@@ -753,6 +754,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
         debt_policy: DebtPolicy {
             strategy: DebtStrategy::Avalanche,
             extra_monthly: 150.0,
+            ..DebtPolicy::default()
         },
         events: vec![
             LifeEvent {

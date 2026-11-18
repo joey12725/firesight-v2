@@ -55,7 +55,10 @@ export interface AssistantChartProps {
   summary: Summary | null;
   /** The plan that produced `summary`. */
   profile: Profile | null;
-  /** Present when the chart compares a scenario (B) with `summary` (A), both on the same seed and lives. */
+  /**
+   * Present when the chart compares a scenario (B) with `summary` (A), both on the same seed and lives.
+   * `paired` is core's comparison; it is computed off the main thread, so it is null on the first render.
+   */
   comparison?: { name: string; summary: Summary; paired: Comparison | null };
   /** `tornado`: the ranking from rank_levers. */
   ranking?: LeverRanking;

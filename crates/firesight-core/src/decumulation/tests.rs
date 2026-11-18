@@ -65,6 +65,7 @@ fn spend(budget: f64, portfolio: f64) -> SpendingInputs {
         expected_real_return: 0.0376,
         prior_return_negative: false,
         prior_inflation: 0.0,
+        ..SpendingInputs::default()
     }
 }
 
@@ -205,7 +206,7 @@ fn guyton_klinger_inflation_rule_and_sunset() {
 }
 
 #[test]
-fn guardrails_act_on_the_withdrawal_and_pass_budget_changes_through() {
+fn guardrails_measure_the_draw_and_adjust_total_spending() {
     // Budget 60k, of which 20k is covered by a pension: the withdrawal is 40k (4%).
     let planner = SpendingPlanner::new(guardrails());
     let mut first = spend(60_000.0, 1_000_000.0);
@@ -213,16 +214,16 @@ fn guardrails_act_on_the_withdrawal_and_pass_budget_changes_through() {
     let mut state = planner.start(&first);
     assert_close(state.initial_withdrawal_rate, 0.04);
     planner.decide(&mut state, &first);
-    // 40k / 800k = 5%: the 10% cut applies to the withdrawal: 36k + 20k.
+    // 40k / 800k = 5%, above 4.8%: spending as a whole is cut 10%, to 54k.
     let mut year = first;
     year.portfolio_real = 800_000.0;
     let d = planner.decide(&mut state, &year);
-    assert_close(d.spending_real, 56_000.0);
+    assert_close(d.spending_real, 54_000.0);
     // The mortgage ends: budget 45k. Planned spending is the same multiple of the new
-    // budget (42k), a 22k withdrawal = 2.75% of 800k, under 3.2%: prosperity +10%.
+    // budget (40.5k), a 20.5k draw = 2.56% of 800k, under 3.2%: prosperity +10%.
     year.budget_real = 45_000.0;
     let d = planner.decide(&mut state, &year);
-    assert_close(d.spending_real, 22_000.0 * 1.1 + 20_000.0);
+    assert_close(d.spending_real, 40_500.0 * 1.1);
 
     // Retiring with a partner still earning: no withdrawal yet, so the reference
     // rate is fixed in the first year the portfolio is actually drawn on.
@@ -236,6 +237,79 @@ fn guardrails_act_on_the_withdrawal_and_pass_budget_changes_through() {
     covered.portfolio_real = 800_000.0;
     assert_close(planner.decide(&mut state, &covered).spending_real, 50_000.0);
     assert_close(state.initial_withdrawal_rate, 0.05);
+}
+
+/// The auditors' case: the household retires while a partner still earns 76k of
+/// an 80k budget for three years. A 4% draw on 2M is exactly what the plan
+/// intends once that income stops. Measured on the first year's cash withdrawal
+/// the reference rate is 0.2% and the rule cuts 10% a year for ever; measured on
+/// the funded test's quantities nothing is cut, because nothing went wrong.
+#[test]
+fn guardrails_do_not_cut_when_bridge_income_ends_as_planned() {
+    for rule in [
+        guardrails(),
+        SpendingRule::VanguardDynamic {
+            ceiling: 0.05,
+            floor: 0.025,
+            rate: None,
+        },
+        SpendingRule::FloorCeiling {
+            floor: 0.85,
+            ceiling: 1.2,
+            rate: None,
+        },
+    ] {
+        let planner = SpendingPlanner::new(rule);
+        let funded = |portfolio: f64, other: f64| SpendingInputs {
+            other_income_real: other,
+            funding: Some(Funding {
+                base_real: portfolio,
+                need_real: 80_000.0,
+            }),
+            reference_floor: 0.04,
+            ..spend(80_000.0, portfolio)
+        };
+        let first = funded(2_000_000.0, 76_000.0);
+        let mut state = planner.start(&first);
+        assert_close(state.initial_withdrawal_rate, 0.04);
+        for (portfolio, other) in [
+            (2_000_000.0, 76_000.0),
+            (2_080_000.0, 76_000.0),
+            (2_160_000.0, 76_000.0),
+            (2_240_000.0, 0.0),
+            (2_240_000.0, 0.0),
+            (2_240_000.0, 0.0),
+        ] {
+            let d = planner.decide(&mut state, &funded(portfolio, other));
+            assert!(
+                d.spending_real >= 80_000.0 - 1e-6,
+                "{rule:?}: {} with {portfolio} and {other}",
+                d.spending_real
+            );
+        }
+    }
+}
+
+#[test]
+fn the_cut_guardrail_has_a_floor_and_care_holds_raises() {
+    // A household drawing 1% is not told to cut because 1% became 1.3%.
+    let planner = SpendingPlanner::new(guardrails());
+    let mut first = spend(10_000.0, 1_000_000.0);
+    first.reference_floor = 0.04;
+    let mut state = planner.start(&first);
+    planner.decide(&mut state, &first);
+    let mut year = first;
+    year.portfolio_real = 770_000.0;
+    assert_close(planner.decide(&mut state, &year).spending_real, 10_000.0);
+    // Without the floor it is (the published rule).
+    year.reference_floor = 0.0;
+    assert_close(planner.decide(&mut state, &year).spending_real, 9_000.0);
+    // Prosperity is measured on the household's own rate, but not during care.
+    year.portfolio_real = 2_000_000.0;
+    year.hold_raises = true;
+    assert_close(planner.decide(&mut state, &year).spending_real, 9_000.0);
+    year.hold_raises = false;
+    assert_close(planner.decide(&mut state, &year).spending_real, 9_900.0);
 }
 
 #[test]
@@ -906,15 +980,15 @@ fn bracket_room_accounts_for_an_unused_standard_deduction() {
 
 #[test]
 fn tax_aware_keeps_magi_under_the_aca_cliff() {
-    // One person on an ACA plan: 400% of 15,650 is 62,600, planned with a 2% margin
-    // at 61,348. Pension 20,000 leaves 41,348 of MAGI room, less than the 95,000 of
+    // One person on an ACA plan: 400% of 15,650 is 62,600, planned with the margin
+    // below it. A pension of 20,000 leaves the rest as MAGI room, less than the 95,000 of
     // room in the 22% bracket.
     let a = holdings(0.0, 500_000.0, 1_000_000.0, 200_000.0);
     let mut i = need(90_000.0, 60.0);
     i.base_tax_inputs.pensions = 20_000.0;
     i.base_tax_inputs.aca_household_size = 1;
     i.on_aca = true;
-    let cliff = 62_600.0 * 0.98;
+    let cliff = 62_600.0 * (1.0 - ACA_PLANNING_MARGIN);
     let p = plan(
         &tax_aware(0.22, true, true),
         EarlyAccess::Auto,
@@ -936,8 +1010,10 @@ fn tax_aware_keeps_magi_under_the_aca_cliff() {
         &i,
         &law(),
     );
-    assert_near(p.estimated_magi, cliff, 0.01);
-    assert!(p.roth_conversion[0] > 30_000.0);
+    // (and where it would start to push the year's realised gains out of the 0%
+    // bracket, which comes first here).
+    assert!(p.estimated_magi <= cliff + 0.01);
+    assert!(p.roth_conversion[0] > 25_000.0);
 
     // Gains count toward MAGI: a taxable account that is half gain can only supply
     // twice the remaining room before the Roth takes over.

@@ -1161,6 +1161,22 @@ impl HealthModel {
         (premium * 12.0 + oop.mean) * scale
     }
 
+    /// The two parts of [`HealthModel::expected_annual_cost_at`]: `(premiums, mean
+    /// out-of-pocket)` per year.
+    pub fn expected_annual_parts_at(
+        &self,
+        age: f64,
+        phase: CoveragePhase,
+        months_since_start: u32,
+    ) -> (f64, f64) {
+        if !self.modeled {
+            return (0.0, 0.0);
+        }
+        let (premium, oop, scale) = self.price(age, phase);
+        let growth = scale * self.excess_growth(months_since_start);
+        (premium * 12.0 * growth, oop.mean * growth)
+    }
+
     /// [`HealthModel::expected_annual_cost`] at a future month: today's dollars
     /// (deflated by CPI) including the excess medical inflation accumulated by then.
     /// This is the figure for the FI test's projection of retirement spending.

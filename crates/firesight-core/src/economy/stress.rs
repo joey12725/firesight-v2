@@ -38,11 +38,14 @@ const DERIVED_BETA_ASSETS: [AssetClass; 5] = [
 pub enum ResolvedStress {
     /// US equities fall by exactly `drawdown` over the [`CRASH_MONTHS`] months from
     /// `at_month` (the sampled returns of those months are replaced by an even
-    /// geometric decline), then earn their sampled returns plus a constant recovery
-    /// drift for `recovery_months`, sized so that at the end of the recovery the
-    /// equity index is exactly where it would have been without the stress. Every
-    /// other risky asset moves by its equity beta times the change imposed on US
-    /// equities. The crash months are flagged as a recession.
+    /// geometric decline). Over the `recovery_months` that follow, each month's
+    /// sampled gross return is scaled by one constant so that at the end of the
+    /// recovery the index is back at its pre-crash level in nominal terms, and not
+    /// before: the shape of the sampled path is kept, its level is not. After that
+    /// the sampled returns resume, so the stressed index stays below the unstressed
+    /// one for good (by whatever the unstressed path earned over crash and
+    /// recovery). Every other risky asset moves by its equity beta times the change
+    /// imposed on US equities. The crash months are flagged as a recession.
     Crash {
         at_month: usize,
         drawdown: f64,
@@ -66,9 +69,14 @@ pub enum ResolvedStress {
     },
 }
 
-/// `r + beta * delta`, never below a total loss.
+/// `r + beta * delta`, never below a total loss. A return of exactly -1.0 marks a
+/// collapse (a failed token or company) and is left alone: an imposed market move
+/// does not bring it back.
 #[inline]
 fn shifted(r: f64, beta: f64, delta: f64) -> f64 {
+    if r <= -1.0 {
+        return -1.0;
+    }
     (r + beta * delta).max(-1.0)
 }
 
@@ -113,19 +121,35 @@ impl EconomyModel {
         let depth = drawdown.clamp(0.0, MAX_DRAWDOWN);
         let crash_end = at.saturating_add(CRASH_MONTHS).min(out.months);
         let monthly = math::pow(1.0 - depth, 1.0 / CRASH_MONTHS as f64);
-        // What the unstressed path did over the crash window, and what the stressed
-        // one does: the recovery has to make up the ratio.
-        let mut unstressed = 1.0;
         let mut stressed = 1.0;
         for t in at..crash_end {
-            unstressed *= 1.0 + out.returns[us][t];
             stressed *= monthly;
             self.set_equity(out, t, monthly - 1.0, &BETA_ASSETS);
             out.recession[t] = 1;
         }
+        // The recovery: the sampled returns of the window, scaled so that together
+        // they just make good the fall.
         let recovery = recovery_months.max(1);
-        let drift = math::pow(unstressed / stressed, 1.0 / recovery as f64);
-        for t in crash_end..crash_end.saturating_add(recovery).min(out.months) {
+        let recovery_end = crash_end.saturating_add(recovery).min(out.months);
+        if recovery_end <= crash_end {
+            return;
+        }
+        let mut sampled = 1.0;
+        for t in crash_end..recovery_end {
+            sampled *= 1.0 + out.returns[us][t];
+        }
+        // A path that ends inside the recovery gets the same monthly scaling as if
+        // the window were complete only when the whole window is there; a truncated
+        // window recovers the share of the fall its length is of the whole.
+        let share = (recovery_end - crash_end) as f64 / recovery as f64;
+        let target = math::pow(1.0 / stressed, share);
+        let n = (recovery_end - crash_end) as f64;
+        let drift = if sampled > 0.0 {
+            math::pow(target / sampled, 1.0 / n)
+        } else {
+            1.0
+        };
+        for t in crash_end..recovery_end {
             let new = (1.0 + out.returns[us][t]) * drift - 1.0;
             self.set_equity(out, t, new, &BETA_ASSETS);
         }

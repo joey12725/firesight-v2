@@ -727,7 +727,7 @@ fn salary_events_and_job_lifecycle() {
         assert_eq!(pay, JobMonth::default());
     }
     assert_eq!(s.employment, Employment::NotStarted);
-    m.begin(&mut s);
+    m.begin(&mut s, 30.0);
     assert_eq!(s.employment, Employment::Employed);
 
     // Set salary: exact now, shocks wiped, then follows the curve from here.
@@ -1272,7 +1272,7 @@ fn draw_counts_do_not_depend_on_state() {
             let mut c = climate(t, 28.0);
             c.recession = u8::from(t % 40 < 10);
             if variant == 2 && t == 100 {
-                m.begin(&mut s);
+                m.begin(&mut s, 30.0);
                 m.start_break(&mut s, 30, 0.5);
             }
             m.step(&mut s, &c, &mut career, &mut equity);

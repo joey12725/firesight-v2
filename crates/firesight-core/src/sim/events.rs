@@ -28,7 +28,10 @@ use crate::model::{Category, IncomeChangeKind, PropertyUse, SpendingChangeKind};
 use crate::stats::{TraceEventKind, YearSeries};
 use crate::tax::StateCode;
 
-use super::plan::{EvKind, IncomeRef, Plan, SpendRef, PURCHASE_RETRY_MONTHS};
+use super::plan::{
+    EvKind, IncomeRef, Plan, SpendRef, LAST_RESORT_RENT_YIELD, LAST_RESORT_SELLING_COST,
+    PURCHASE_RETRY_MONTHS,
+};
 use super::state::State;
 
 impl State {
@@ -56,6 +59,95 @@ impl State {
         }
         self.next_event = next;
         self.req_dirty = true;
+    }
+
+    /// Sells the property in `slot`: proceeds into cash (or the shortfall of an
+    /// underwater sale out of it), the gain, recaptured depreciation and released
+    /// passive losses onto the year's return, and `then_rent` (today's dollars a
+    /// month) added to the budget. Returns the net proceeds.
+    pub(crate) fn sell_slot(
+        &mut self,
+        plan: &Plan,
+        t: usize,
+        slot: usize,
+        cost_fraction: f64,
+        then_rent: f64,
+    ) -> f64 {
+        let before = self.props[slot];
+        let exclusion = plan.home_exclusion[self.filing.index()];
+        let sale = plan.props[slot]
+            .model
+            .sell(&mut self.props[slot], t, cost_fraction, exclusion);
+        if sale.net_proceeds >= 0.0 {
+            self.recv(YearSeries::PropertySale, sale.net_proceeds);
+        } else {
+            self.spend(YearSeries::SpendOneOff, -sale.net_proceeds);
+        }
+        if self.check {
+            self.chk_prop_flow -= before.value;
+            self.chk_mort_flow -= sale.mortgage_payoff;
+        }
+        self.ty.long_term_gains += sale.taxable_gain;
+        self.ty.depreciation_recapture += sale.depreciation_recapture;
+        if matches!(before.usage, PropertyUse::Rental(_)) {
+            // The household-level suspended losses are released with the
+            // property (the return tracks them for all rentals together).
+            self.ty.passive_loss_released += self.rental_carry;
+            self.rental_carry = 0.0;
+        }
+        if then_rent > 0.0 {
+            self.extra_rent += then_rent;
+        }
+        self.budget_dirty = true;
+        self.req_dirty = true;
+        sale.net_proceeds
+    }
+
+    /// Savings are gone and this month cannot be paid: sells property, the least
+    /// needed first (vacation homes, rentals, then the home), until the month is
+    /// covered. After selling its home the household rents.
+    pub(crate) fn release_home_equity(&mut self, plan: &Plan, t: usize, price: f64, short: f64) {
+        let now = plan.start + t as i32;
+        let mut missing = short;
+        for pass in 0..3 {
+            for slot in 0..self.props.len() {
+                let st = &self.props[slot];
+                let order = match st.usage {
+                    PropertyUse::Vacation => 0,
+                    PropertyUse::Rental(_) => 1,
+                    PropertyUse::Primary => 2,
+                };
+                if !st.owned || order != pass {
+                    continue;
+                }
+                let net = st.value * (1.0 - LAST_RESORT_SELLING_COST) - st.mortgage_balance();
+                if net <= 0.0 {
+                    continue;
+                }
+                // The rent line grows from the plan's start like every budget line;
+                // set its level so that it is 4% of the sale price today.
+                let rent = if pass == 2 {
+                    let years = (t / 12) as i32;
+                    LAST_RESORT_RENT_YIELD * st.value
+                        / price
+                        / 12.0
+                        / crate::math::powi(1.0 + Category::Rent.default_real_growth(), years)
+                } else {
+                    0.0
+                };
+                let got = self.sell_slot(plan, t, slot, LAST_RESORT_SELLING_COST, rent);
+                if self.home_sale_month == i32::MAX {
+                    self.home_sale_month = t as i32;
+                }
+                self.event(now, TraceEventKind::SoldHome, Some(got / price), || {
+                    format!("Sold {} because savings ran out", plan.props[slot].name)
+                });
+                missing -= got;
+                if missing <= 0.0 {
+                    return;
+                }
+            }
+        }
     }
 
     /// Applies event `e`. Returns false if it must wait.
@@ -126,47 +218,16 @@ impl State {
                     // Not bought yet (the purchase was postponed): wait for it.
                     return self.events[e].retries >= PURCHASE_RETRY_MONTHS;
                 }
-                let before = self.props[slot];
-                let exclusion = plan.home_exclusion[self.filing.index()];
-                let sale = plan.props[slot].model.sell(
-                    &mut self.props[slot],
-                    t,
-                    *cost_fraction,
-                    exclusion,
-                );
-                if sale.net_proceeds >= 0.0 {
-                    self.recv(YearSeries::PropertySale, sale.net_proceeds);
-                } else {
-                    self.spend(YearSeries::SpendOneOff, -sale.net_proceeds);
-                }
-                if self.check {
-                    self.chk_prop_flow -= before.value;
-                    self.chk_mort_flow -= sale.mortgage_payoff;
-                }
-                self.ty.long_term_gains += sale.taxable_gain;
-                self.ty.depreciation_recapture += sale.depreciation_recapture;
-                if matches!(before.usage, PropertyUse::Rental(_)) {
-                    // The household-level suspended losses are released with the
-                    // property (the return tracks them for all rentals together).
-                    self.ty.passive_loss_released += self.rental_carry;
-                    self.rental_carry = 0.0;
-                }
-                if *then_rent > 0.0 {
-                    self.extra_rent += *then_rent;
-                }
-                self.budget_dirty = true;
-                self.event(
-                    now,
-                    TraceEventKind::SoldHome,
-                    Some(sale.net_proceeds / price),
-                    || format!("{}: sold {}", ev.name, plan.props[slot].name),
-                );
+                let net = self.sell_slot(plan, t, slot, *cost_fraction, *then_rent);
+                self.event(now, TraceEventKind::SoldHome, Some(net / price), || {
+                    format!("{}: sold {}", ev.name, plan.props[slot].name)
+                });
             }
             EvKind::Relocate {
                 state,
                 in_us,
                 foreign_rate,
-                local_rate,
+                local,
                 moving_cost,
                 factors,
             } => {
@@ -179,7 +240,7 @@ impl State {
                 self.extra_rent *= factors[Category::Rent.index()];
                 self.tax_state = *state;
                 self.in_us = *in_us;
-                self.local_rate = *local_rate;
+                self.local = *local;
                 self.foreign_rate = if *in_us {
                     None
                 } else {
@@ -205,8 +266,9 @@ impl State {
                 let nominal = amount * price;
                 self.recv(YearSeries::IncomeOther, nominal);
                 if *taxable {
+                    // Its tax is in the instalments of the re-plan this event
+                    // triggers; it is not pay that withholding applies to.
                     self.ty.other_ordinary += nominal;
-                    self.wage_like += nominal;
                 }
                 self.event(now, TraceEventKind::Windfall, Some(*amount), || {
                     ev.name.clone()
@@ -253,11 +315,11 @@ impl State {
                         }
                     }
                     Some(IncomeRef::Se(k)) => {
+                        let years = self.se_years(plan, k, t);
                         let rt = &mut self.selfemp[k];
                         match *change {
                             IncomeChangeKind::SetSalary { amount } => {
-                                let expected =
-                                    plan.selfemp[k].model.expected_real_annual(t as f64 / 12.0);
+                                let expected = plan.selfemp[k].model.expected_real_annual(years);
                                 rt.scale = if expected > 0.0 {
                                     amount.max(0.0) / (expected * rt.st.factor.max(1e-9))
                                 } else {

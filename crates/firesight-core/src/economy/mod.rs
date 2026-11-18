@@ -99,7 +99,7 @@ use crate::model::{
 };
 use crate::rng::Rng;
 
-use regime::{LognormalParams, RegimeParams};
+use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
@@ -142,7 +142,19 @@ const CRYPTO_T_DOF: u32 = 4;
 const CRYPTO_EQUITY_CORR: f64 = 0.35;
 const CRYPTO_DRAWDOWN_CORR: f64 = 0.60;
 const CRYPTO_RUIN_ANNUAL: f64 = 0.01;
-const CRYPTO_MEDIAN_REAL_GROWTH: f64 = 0.0;
+const CRYPTO_EXPECTED_REAL_RETURN: f64 = 0.0;
+/// Fallbacks for `long_run_assumptions` in `data/actuarial/params.json`.
+const INTL_SPREAD_VS_US: f64 = -0.01;
+const GOLD_REAL_RETURN: f64 = 0.01;
+/// Bootstrap: monthly pull of the long yield and the mortgage rate toward their
+/// long-run means (a half-life of about seven years; yields are very persistent).
+const RATE_REVERSION: f64 = 1.0 / 120.0;
+/// Bootstrap: the long yield is kept at or above this (the lowest month-end 10-year
+/// yield in the history is about 0.6%).
+const MIN_LONG_YIELD: f64 = 0.005;
+/// Bootstrap: the mortgage rate stays within this spread over the long yield (the
+/// history's spread has ranged from about 0.5 to 4 points).
+const MORTGAGE_SPREAD_RANGE: (f64, f64) = (0.005, 0.04);
 /// The crisis correlation applies to the part of an equity month that is more than
 /// this many monthly standard deviations below the mean (judgement: "in equity
 /// drawdowns" read as a worse than one-sigma month).
@@ -377,6 +389,10 @@ struct Row {
     m: Month,
     intl_sd: f64,
     gold_sd: f64,
+    /// Change of the long yield and of the mortgage rate from the row before it in
+    /// the history (0 for the first row).
+    d_long: f64,
+    d_mortgage: f64,
 }
 
 /// The equity premium and inflation adjustments as monthly factors.
@@ -444,6 +460,10 @@ struct HistBase {
     stagflation_real: [f64; 3],
     crypto: CryptoSpec,
     stock_presets: [(f64, f64); 3],
+    /// Long yield and mortgage rate in the last row of the history (today's levels)
+    /// and their means over the rows used.
+    rate_now: (f64, f64),
+    rate_mean: (f64, f64),
 }
 
 /// The crypto assumptions read from params.json.
@@ -454,7 +474,8 @@ struct CryptoSpec {
     equity_corr: f64,
     drawdown_corr: f64,
     ruin_annual: f64,
-    median_real_growth: f64,
+    /// Expected (arithmetic mean) real return per year, collapse risk included.
+    expected_real_return: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -678,11 +699,12 @@ impl CryptoSpec {
                 CRYPTO_RUIN_ANNUAL,
             )
             .clamp(0.0, 1.0),
-            median_real_growth: json_f64(
+            expected_real_return: json_f64(
                 actuarial,
-                &format!("/crypto/model/median_real_growth_presets/{preset}"),
-                CRYPTO_MEDIAN_REAL_GROWTH,
-            ),
+                &format!("/crypto/model/expected_real_return_presets/{preset}"),
+                CRYPTO_EXPECTED_REAL_RETURN,
+            )
+            .max(-0.99),
         }
     }
 }
@@ -800,6 +822,42 @@ impl HistBase {
             intl_sd.push(isd);
             gold_sd.push(gsd);
         }
+        // International equities and gold: keep each month's variation, set the
+        // long-run level by assumption. The series are short (1975 and 1968) and
+        // partly synthesised, so their own means are not comparable with a
+        // full-sample US mean or full-sample inflation: scale every month's gross
+        // return by one constant so that the geometric mean over the rows used is
+        // the US one plus the stated spread (international) or inflation plus the
+        // stated real return (gold).
+        let long_run = long_run_from_json(actuarial);
+        {
+            let count = rows.len().max(1) as f64;
+            let (mut us, mut intl, mut gold, mut cpi) = (0.0, 0.0, 0.0, 0.0);
+            for (r, (isd, gsd)) in rows.iter().zip(intl_sd.iter().zip(&gold_sd)) {
+                us += math::ln_1p(r.eq);
+                cpi += math::ln_1p(r.cpi);
+                // E ln(1 + r + s e) is about ln(1 + r) - s^2 / (2 (1 + r)^2).
+                let gi = 1.0 + r.intl;
+                let gg = 1.0 + r.gold;
+                intl += math::ln(gi) - 0.5 * isd * isd / (gi * gi);
+                gold += math::ln(gg) - 0.5 * gsd * gsd / (gg * gg);
+            }
+            let k_intl = math::exp((us - intl) / count + math::ln_1p(long_run.intl_spread) / 12.0);
+            let k_gold = math::exp((cpi - gold) / count + math::ln_1p(long_run.gold_real) / 12.0);
+            for (r, (isd, gsd)) in rows.iter_mut().zip(intl_sd.iter_mut().zip(&mut gold_sd)) {
+                r.intl = (1.0 + r.intl) * k_intl - 1.0;
+                r.gold = (1.0 + r.gold) * k_gold - 1.0;
+                *isd *= k_intl;
+                *gsd *= k_gold;
+            }
+        }
+        let rate_now = rows
+            .last()
+            .map_or((0.0, 0.0), |r| (r.long_yield, r.mortgage));
+        let rate_mean = (
+            fit::mean_sd(rows.iter().map(|r| r.long_yield)).0,
+            fit::mean_sd(rows.iter().map(|r| r.mortgage)).0,
+        );
         let (eq_mean, eq_sd, _) = fit::mean_sd(rows.iter().map(|r| r.eq));
         let home_real_mean = fit::mean_sd(rows.iter().map(|r| r.home - r.cpi)).0;
 
@@ -836,6 +894,8 @@ impl HistBase {
             stagflation_real,
             crypto: CryptoSpec::from_json(actuarial),
             stock_presets: stock_presets_from_json(actuarial),
+            rate_now,
+            rate_mean,
         }
     }
 
@@ -850,13 +910,73 @@ impl HistBase {
 /// The regime calibration of the embedded history, computed once per process.
 fn regime_params(data: &Data) -> Arc<RegimeParams> {
     static EMBEDDED: OnceLock<Arc<RegimeParams>> = OnceLock::new();
+    let long_run = long_run_from_json(&data.actuarial);
     if std::ptr::eq(data, Data::embedded()) {
         EMBEDDED
-            .get_or_init(|| Arc::new(RegimeParams::calibrate(&data.history)))
+            .get_or_init(|| Arc::new(RegimeParams::calibrate(&data.history, &long_run)))
             .clone()
     } else {
-        Arc::new(RegimeParams::calibrate(&data.history))
+        Arc::new(RegimeParams::calibrate(&data.history, &long_run))
     }
+}
+
+/// The long-run assumptions for the short series (`long_run_assumptions` in
+/// `data/actuarial/params.json`).
+fn long_run_from_json(actuarial: &Value) -> LongRun {
+    LongRun {
+        intl_spread: json_f64(
+            actuarial,
+            "/long_run_assumptions/international_equity_return_vs_us",
+            INTL_SPREAD_VS_US,
+        )
+        .clamp(-0.2, 0.2),
+        gold_real: json_f64(
+            actuarial,
+            "/long_run_assumptions/gold_real_return",
+            GOLD_REAL_RETURN,
+        )
+        .clamp(-0.2, 0.2),
+    }
+}
+
+/// Shortest resampling window, in years, that gets no warning.
+pub const SHORT_HISTORY_YEARS: i32 = 50;
+
+/// A warning for a bootstrap `from_year` that leaves less than
+/// [`SHORT_HISTORY_YEARS`] of history to resample: what the window actually is and
+/// what it returned against the full record. `None` when the window is long enough.
+pub fn short_history_warning(from_year: i32) -> Option<String> {
+    let h = &Data::embedded().history;
+    let n = h.len();
+    if n == 0 {
+        return None;
+    }
+    let last_year = (h.start + (n as i32 - 1)).year();
+    if from_year <= last_year - SHORT_HISTORY_YEARS {
+        return None;
+    }
+    let offset =
+        (i64::from(from_year) - i64::from(h.start.year())) * 12 - (i64::from(h.start.month()) - 1);
+    let first = usize::try_from(offset)
+        .unwrap_or(0)
+        .min(n.saturating_sub(MIN_BOOTSTRAP_MONTHS));
+    let real = |series: &[f64], from: usize| -> f64 {
+        let mut log = 0.0;
+        for t in from..n {
+            log += math::ln_1p(series[t]) - math::ln_1p(h.cpi[t]);
+        }
+        (math::exp(log * 12.0 / (n - from) as f64) - 1.0) * 100.0
+    };
+    let start = h.start + first as i32;
+    Some(format!(
+        "Resampling history from {start} only ({:.0} years). Over that window US stocks returned {:.1}% a year after inflation and bonds {:.1}%, against {:.1}% and {:.1}% over the whole record from {}: results will look like that period, not like history. Use at least {SHORT_HISTORY_YEARS} years.",
+        (n - first) as f64 / 12.0,
+        real(&h.equity_us, first),
+        real(&h.bond10, first),
+        real(&h.equity_us, 0),
+        real(&h.bond10, 0),
+        h.start.year(),
+    ))
 }
 
 impl EconomyModel {
@@ -890,7 +1010,10 @@ impl EconomyModel {
             },
             MarketKind::Historical => Kind::Historical,
             MarketKind::Regime => Kind::Regime(regime_params(data)),
-            MarketKind::Lognormal => Kind::Lognormal(Arc::new(LognormalParams::calibrate(h))),
+            MarketKind::Lognormal => Kind::Lognormal(Arc::new(LognormalParams::calibrate(
+                h,
+                &long_run_from_json(&data.actuarial),
+            ))),
         };
         let adjust = Adjust::new(market);
 
@@ -912,6 +1035,23 @@ impl EconomyModel {
         let crypto_shock = Arc::new(sampler::student_t(spec.dof).transformed(|x| {
             math::exp(idio_sd * x.clamp(-CRYPTO_SHOCK_CAP_SD, CRYPTO_SHOCK_CAP_SD))
         }));
+        // The preset fixes the expected return, not the median: the mean of the
+        // equity link, the mean of the fat-tailed shock and the chance of a collapse
+        // are all divided out, so that the average real return of the sleeve is the
+        // stated one. With 70% volatility the typical path then loses most of its
+        // value; a few gain enormously; on average the holding keeps what the
+        // preset says.
+        let link_arithmetic = fit::mean_sd(
+            base.rows
+                .iter()
+                .map(|r| base.crypto_link(crypto_beta, crypto_beta_extra, r.eq)),
+        )
+        .0;
+        let crypto_ruin = probability_bits(monthly_hazard(spec.ruin_annual));
+        let survive = 1.0 - crypto_ruin as f64 / TWO_POW_32;
+        let _ = link_mean;
+        let crypto_norm = math::pow(1.0 + spec.expected_real_return, 1.0 / 12.0)
+            / (link_arithmetic * crypto_shock.mean() * survive).max(1e-9);
 
         let assets = AssetParams {
             eq_mean: (1.0 + base.eq_mean) * adjust.equity * adjust.inflation - 1.0,
@@ -925,8 +1065,8 @@ impl EconomyModel {
             crypto_beta,
             crypto_beta_extra,
             crypto_threshold: CRYPTO_DRAWDOWN_SIGMAS * base.eq_sd,
-            crypto_norm: math::exp(spec.median_real_growth / 12.0 - link_mean),
-            crypto_ruin: probability_bits(monthly_hazard(spec.ruin_annual)),
+            crypto_norm,
+            crypto_ruin,
             custom_mean: 0.0,
             custom_beta: 0.0,
             custom_sigma: 0.0,
@@ -1011,8 +1151,15 @@ impl EconomyModel {
                     m: self.assets.month(&self.adjust, core),
                     intl_sd: isd * ke,
                     gold_sd: gsd * ki,
+                    d_long: 0.0,
+                    d_mortgage: 0.0,
                 })
                 .collect();
+            let mut rows = rows;
+            for i in 1..rows.len() {
+                rows[i].d_long = self.base.rows[i].long_yield - self.base.rows[i - 1].long_yield;
+                rows[i].d_mortgage = self.base.rows[i].mortgage - self.base.rows[i - 1].mortgage;
+            }
             self.rows = rows.into();
         }
         self
@@ -1056,6 +1203,14 @@ impl EconomyModel {
                 let rows = &self.rows[..];
                 let n = rows.len();
                 let mut i = 0usize;
+                // Returns are resampled; rate levels are not. A block that begins
+                // in 1981 brings 1981's returns, not a 17% mortgage rate overnight:
+                // the long yield and the mortgage rate start from today's values and
+                // move by each sampled month's own change, with a weak pull toward
+                // their long-run means that keeps them bounded.
+                let shift = self.adjust.inflation_annual;
+                let (mut long, mut mortgage) = self.base.rate_now;
+                let (long_mean, mortgage_mean) = self.base.rate_mean;
                 for t in 0..months {
                     let bits = rng.next_u64();
                     if t == 0 || (bits >> 32) < *restart {
@@ -1066,7 +1221,21 @@ impl EconomyModel {
                             i = 0;
                         }
                     }
-                    self.put_row(&emit, &mut sink, t, &rows[i], rng);
+                    let row = &rows[i];
+                    if t > 0 {
+                        long = (long + row.d_long + RATE_REVERSION * (long_mean - long))
+                            .max(MIN_LONG_YIELD);
+                        mortgage = (mortgage
+                            + row.d_mortgage
+                            + RATE_REVERSION * (mortgage_mean - mortgage))
+                            .clamp(
+                                long + MORTGAGE_SPREAD_RANGE.0,
+                                long + MORTGAGE_SPREAD_RANGE.1,
+                            );
+                    }
+                    self.put_row(&emit, &mut sink, t, row, rng);
+                    sink.long_yield[t] = long + shift;
+                    sink.mortgage[t] = mortgage + shift;
                 }
             }
             Kind::Historical => {

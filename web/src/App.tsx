@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { initEngine } from '@/engine';
+import { startEngine } from '@/engine';
 import { openHousehold, refreshHouseholds, startAutosave } from '@/state/households';
 import { startRunController } from '@/state/run-store';
 import { startThemeSync, useSettings } from '@/state/settings-store';
@@ -15,7 +15,7 @@ let booting: Promise<void> | null = null;
 function boot(): Promise<void> {
   booting ??= (async () => {
     startThemeSync();
-    await initEngine();
+    await startEngine();
     startAutosave();
     startRunController();
     await refreshHouseholds();

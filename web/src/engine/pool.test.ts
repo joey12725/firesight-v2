@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EngineError } from './errors';
 import type { Summary } from './output-types';
-import { EnginePool, FIRST_CHUNK, defaultPoolSize, engineInput, nextChunkSize, type Reducer } from './pool';
+import { EnginePool, FIRST_CHUNK, defaultPoolSize, engineInput, nextChunkSize, type Aggregator } from './pool';
 import type { WorkerLike, WorkerRequest, WorkerResponse } from './protocol';
 import type { Profile } from './types';
 
@@ -12,18 +12,41 @@ const encode = (key: string, ranges: Range[]) =>
   new TextEncoder().encode(JSON.stringify({ key, ranges: [...ranges].sort((a, b) => a[0] - b[0]) }));
 const decode = (bytes: Uint8Array) => JSON.parse(new TextDecoder().decode(bytes)) as { key: string; ranges: Range[] };
 
-const reducer: Reducer = {
-  merge(a, b) {
-    const x = decode(a);
-    const y = decode(b);
-    if (x.key !== y.key) throw new Error('merged accumulators of different profiles');
-    return encode(x.key, [...x.ranges, ...y.ranges]);
-  },
-  summarize(acc) {
-    const { key, ranges } = decode(acc);
-    return { key, ranges, paths: ranges.reduce((n, r) => n + r[1], 0) } as unknown as Summary;
-  },
-};
+/** An in-memory aggregator over the fake accumulators; records what it was asked to do. */
+function fakeAggregator() {
+  const jobs = new Map<number, { key: string; ranges: Range[] }>();
+  const log: string[] = [];
+  const aggregator: Aggregator = {
+    open(job) {
+      jobs.set(job, { key: '', ranges: [] });
+      log.push(`open ${job}`);
+    },
+    add(job, bytes) {
+      const entry = jobs.get(job);
+      if (!entry) return;
+      const chunk = decode(bytes);
+      if (entry.key && entry.key !== chunk.key) throw new Error('merged accumulators of different profiles');
+      entry.key = chunk.key;
+      entry.ranges.push(...chunk.ranges);
+    },
+    async summarize(job, withBytes) {
+      await Promise.resolve();
+      const entry = jobs.get(job);
+      if (!entry) throw new Error('closed');
+      const ranges = [...entry.ranges].sort((a, b) => a[0] - b[0]);
+      const paths = ranges.reduce((n, r) => n + r[1], 0);
+      return { summary: { key: entry.key, ranges, paths } as unknown as Summary, paths, ms: 1, acc: withBytes ? encode(entry.key, ranges) : null };
+    },
+    close(job) {
+      jobs.delete(job);
+      log.push(`close ${job}`);
+    },
+    compare(a, b) {
+      return Promise.resolve({ paths: decode(a).ranges.length, same: JSON.stringify(decode(a).ranges) === JSON.stringify(decode(b).ranges) } as never);
+    },
+  };
+  return { aggregator, jobs, log };
+}
 
 type Mode = 'manual' | 'auto';
 
@@ -81,9 +104,10 @@ class FakeWorker implements WorkerLike {
 
 function makePool(size: number, mode: Mode = 'auto') {
   const workers: FakeWorker[] = [];
+  const agg = fakeAggregator();
   const pool = new EnginePool({
     size,
-    reducer,
+    aggregator: agg.aggregator,
     summaryIntervalMs: 0,
     createWorker: () => {
       const w = new FakeWorker(mode);
@@ -91,7 +115,7 @@ function makePool(size: number, mode: Mode = 'auto') {
       return w;
     },
   });
-  return { pool, workers };
+  return { pool, workers, agg };
 }
 
 const profile = (seed = 7, tag = 'a') =>
@@ -246,6 +270,17 @@ describe('cancellation', () => {
     expect(decode(result.acc).key).toBe(engineInput(profile(2, 'fresh')).key);
   });
 
+  it('releases the accumulator of a finished or cancelled run', async () => {
+    const { pool, agg } = makePool(2);
+    await pool.run(profile(), { paths: 500 });
+    const controller = new AbortController();
+    const stale = pool.run(profile(2), { paths: 50_000 }, { signal: controller.signal, onProgress: () => controller.abort() });
+    await expect(stale).rejects.toMatchObject({ kind: 'aborted' });
+    expect(agg.jobs.size).toBe(0);
+    expect(agg.log.filter((l) => l.startsWith('open'))).toHaveLength(2);
+    expect(agg.log.filter((l) => l.startsWith('close'))).toHaveLength(2);
+  });
+
   it('does not report progress after abort even when a merge is in flight', async () => {
     const { pool } = makePool(3);
     const controller = new AbortController();
@@ -329,7 +364,7 @@ describe('runMany and compare', () => {
     expect(result.base.seed).toBe(3);
     expect(result.scenario.seed).toBe(3);
     expect(decode(result.base.acc).ranges).toEqual(decode(result.scenario.acc).ranges.map((r) => r));
-    expect(result.comparison).toBeNull();
+    expect(result.comparison).toMatchObject({ same: true });
   });
 });
 

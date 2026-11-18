@@ -252,7 +252,9 @@ fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
         business += (profit - (deferral - wages).max(0.0)).max(0.0);
     }
     w.qbi = business; // provisional: turned into the deduction in `deductions`
-    w.earned_income = (w.wages + w.self_employment - w.half_se).max(0.0);
+                      // Earned income for the refundable child credit is taxable earned income:
+                      // after pre-tax deferrals and payroll HSA money (Schedule 8812).
+    w.earned_income = (w.wages + w.self_employment - w.deferrals - w.half_se).max(0.0);
 
     // Capital gains: net short against long; a net loss offsets ordinary income up
     // to the limit and the rest carries forward.
@@ -385,7 +387,11 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
     if schedule.len > 0 {
         o.ss_taxed = state_taxable_ss(st, x, w);
 
-        let retirement = x.traditional_distributions.max(0.0) + x.pensions.max(0.0);
+        // A conversion to a Roth account is a distribution from the traditional
+        // one: states that exempt retirement distributions exempt it too.
+        let retirement = x.traditional_distributions.max(0.0)
+            + x.roth_conversions.max(0.0)
+            + x.pensions.max(0.0);
         let mut eligible = 0.0;
         for &age in &x.ages {
             if age > 0.0 && age >= st.retirement_exclusion_age {
@@ -399,6 +405,11 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
         o.gains_exclusion = (w.pref_gain * st.capital_gains_exclusion_fraction)
             .max(st.capital_gains_exclusion_amount.min(w.pref_gain));
         o.agi = w.agi - w.taxable_ss + o.ss_taxed - o.retirement_exclusion - o.gains_exclusion;
+        if st.taxes_deferrals {
+            for d in &x.pretax_deferrals {
+                o.agi += d.max(0.0);
+            }
+        }
 
         let mut standard = st.standard_deduction[s];
         let (start, end) = (
@@ -442,7 +453,17 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
             o.surtax +=
                 st.investment_surtax_rate * (w.nii - st.investment_surtax_threshold).max(0.0);
         }
-        o.local = st.local_rate * o.agi.max(0.0);
+        o.local = if st.local_brackets[s].len > 0 {
+            st.local_brackets[s].tax(o.taxable)
+        } else if st.local_earned_only {
+            let mut earned = 0.0;
+            for p in 0..MAX_PEOPLE {
+                earned += x.wages[p].max(0.0) + x.self_employment[p].max(0.0);
+            }
+            st.local_rate * earned
+        } else {
+            st.local_rate * o.agi.max(0.0)
+        };
     }
     o.total = o.income_tax + o.surtax + o.excise + o.local;
     o

@@ -1,6 +1,6 @@
 // Renderings of the plan and its schema for the model: short, faithful, and always
 // carrying the ids that patches address elements by.
-import { annualIncome, budgetTotals } from '@/editor/labels';
+import type { PlanPreview } from '@/engine/output-types';
 import type { Issue, PatchOp, Profile, Report } from '@/engine/types';
 import type { Scenario } from '@/state/profile-store';
 import { canonicalPath, getAt, parsePointer } from '@/state/pointer';
@@ -89,7 +89,32 @@ export interface PlanViewInput {
   run: { paths: number; seed: number };
   schema: SchemaNode;
   today: string;
-  preview?: unknown;
+  /** Core's plan preview; null when the plan cannot be compiled. */
+  preview: PlanPreview | null;
+}
+
+const whole = (v: number) => Math.round(v);
+const tenth = (v: number) => Math.round(v * 10) / 10;
+
+/** Core's plan preview as the model reads it: whole dollars, rates to three places. */
+function previewView(p: PlanPreview) {
+  return {
+    annual_spending: whole(p.annual_spending),
+    annual_spending_retired: whole(p.annual_spending_retired),
+    annual_income: whole(p.annual_income),
+    annual_tax: whole(p.annual_tax),
+    savings_rate: Math.round(p.savings_rate * 1000) / 1000,
+    investable: whole(p.investable),
+    wealth: whole(p.wealth),
+    funded_requirement: whole(p.funded_requirement),
+    funded_ratio: p.funded_ratio === null ? null : Math.round(p.funded_ratio * 1000) / 1000,
+    retirement_need: whole(p.retirement_need),
+    retirement_tax: whole(p.retirement_tax),
+    future_income_value: whole(p.future_income_value),
+    horizon_years: p.horizon_years,
+    life_expectancy: p.life_expectancy.map(tenth),
+    expected_age_at_death: p.expected_age_at_death.map(tenth),
+  };
 }
 
 /** What `get_plan` returns, and what is attached to a user turn when the plan has changed. */
@@ -97,7 +122,6 @@ export function planView(input: PlanViewInput) {
   const { profile, report, scenarios, schema } = input;
   const { simulation: _simulation, schema_version: _version, ...rest } = profile;
   const plan = pruneDefaults(schema, { properties: schema.properties }, rest) as Record<string, unknown>;
-  const totals = budgetTotals(profile);
   const byKind: Record<string, number> = {};
   for (const account of profile.accounts) byKind[account.kind] = (byKind[account.kind] ?? 0) + account.balance;
   const propertyEquity = profile.properties.reduce((n, p) => n + p.value - (p.mortgage?.balance ?? 0), 0);
@@ -110,15 +134,11 @@ export function planView(input: PlanViewInput) {
     plan,
     derived: {
       ages_today: profile.household.people.map((p) => ({ id: p.id, age: ageAt(p.birth, input.today) })),
-      annual_income_now: Math.round(annualIncome(profile)),
-      annual_budget_now: Math.round(totals.now),
-      annual_budget_essential_now: Math.round(totals.essentialNow),
-      annual_budget_retired: Math.round(totals.retired),
       accounts_by_kind: byKind,
       property_equity: Math.round(propertyEquity),
       non_mortgage_debt: Math.round(debt),
     },
-    ...(input.preview !== undefined && input.preview !== null ? { preview: input.preview } : {}),
+    ...(input.preview ? { preview: previewView(input.preview) } : {}),
     validation: {
       can_run: report.errors.length === 0,
       errors: report.errors.slice(0, 20).map(issue),

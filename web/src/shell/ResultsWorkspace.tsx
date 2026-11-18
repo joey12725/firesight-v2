@@ -1,21 +1,24 @@
 import { Suspense, useMemo } from 'react';
 import { getPool } from '@/engine';
+import type { PlanPreview, Summary } from '@/engine/output-types';
 import { useProfileStore } from '@/state/profile-store';
 import { navigateToView, useActiveView } from '@/state/route';
 import { rerun, useRunStore, type RunState } from '@/state/run-store';
 import { useUi } from '@/state/ui-store';
-import { Button, EmptyState, Icon, Skeleton, TabPanel, Tabs, count, cx } from '@/ui';
+import { Button, EmptyState, Icon, Skeleton, TabPanel, Tabs, count, cx, moneyCompact } from '@/ui';
+import { AnimatedNumber, age, ofHundred } from '@/ui/charts';
 import { VIEWS } from '@/views/registry';
 import type { ScenarioComparison, ViewProps } from '@/views/types';
 
 const TABS = VIEWS.map((v) => ({ id: v.id, label: v.label }));
 
 function statusLine(run: RunState): string {
+  const speed = run.pathsPerSecond > 0 ? ` · ${count(Math.round(run.pathsPerSecond / 100) * 100)} lives a second` : '';
   switch (run.status) {
     case 'running':
-      return run.done === 0 ? 'Starting the simulation…' : `Simulating: ${count(run.done)} of ${count(run.total)} lives`;
+      return run.done === 0 ? 'Starting the simulation…' : `Simulating: ${count(run.done)} of ${count(run.total)} lives${speed}`;
     case 'done':
-      return `${count(run.total)} lives simulated in ${(run.elapsedMs / 1000).toFixed(1)} s`;
+      return `${count(run.total)} lives simulated in ${(run.elapsedMs / 1000).toFixed(1)} s${speed}`;
     case 'queued':
       return 'Change noted. Simulating in a moment…';
     case 'blocked':
@@ -27,7 +30,91 @@ function statusLine(run: RunState): string {
   }
 }
 
-/** Plan title, run status and a hairline progress indicator. Headline figures land here. */
+function Figure({ label, children, note, testId }: { label: string; children: React.ReactNode; note: React.ReactNode; testId: string }) {
+  return (
+    <div className="min-w-0" data-testid={testId}>
+      <dt className="text-xs text-ink-3">{label}</dt>
+      <dd className="mt-0.5 text-xl font-semibold tracking-tight whitespace-nowrap text-ink-1">{children}</dd>
+      <dd className="mt-0.5 text-xs leading-snug text-pretty text-ink-2">{note}</dd>
+    </div>
+  );
+}
+
+/** A share as an animated count: "83 of 100" (of 1,000 when the share is under 1 in 100 either way). */
+function Lives({ share, paths }: { share: number; paths: number }) {
+  // Fewer than 100 lives simulated: count the lives themselves rather than imply a hundred.
+  const of = paths < 100 ? paths : share > 0 && share < 1 && (share < 0.01 || share > 0.99) ? 1000 : 100;
+  return (
+    <>
+      <AnimatedNumber value={share * of} format={(v) => String(Math.round(v))} />
+      <span className="ml-1.5 text-sm font-medium text-ink-2">of {of === 1000 ? '1,000' : of}</span>
+    </>
+  );
+}
+
+/** The four figures every view answers to, tweened as the run refines. */
+function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean }) {
+  const h = summary.headline;
+  const fi = h.fi_age;
+  const sp = summary.spending;
+  const success = h.success_rate;
+  const short = h.depletion_rate.value;
+  const ratio = h.delivered_spending_ratio.value;
+  const cutYears = sp.years_below_90.value;
+  return (
+    <dl className={cx('mt-4 grid grid-cols-2 gap-x-6 gap-y-4 transition-opacity duration-[var(--duration-slow)] @xl:grid-cols-4', stale && 'opacity-60')} data-testid="headline">
+      <Figure
+        testId="headline-fi-age"
+        label="Work optional at"
+        note={
+          fi.p50 === null
+            ? `It happens in only ${ofHundred(h.fi_rate.value).text} lives`
+            : fi.p10 !== null && fi.p90 !== null
+              ? `${age(fi.p10)} to ${age(fi.p90)} in 80 of 100 lives`
+              : `from ${fi.p10 === null ? 'later' : age(fi.p10)}; 1 in 10 never`
+        }
+      >
+        {fi.p50 === null ? <span className="text-ink-2">No typical age</span> : <AnimatedNumber value={fi.p50} format={(v) => v.toFixed(1)} />}
+        {fi.p50 !== null && <span className="ml-1.5 text-sm font-medium text-ink-2">median age</span>}
+      </Figure>
+      <Figure testId="headline-success" label="The plan holds in" note={`${(success.lo * 100).toFixed(1)}% to ${(success.hi * 100).toFixed(1)}%, 95% sampling interval`}>
+        <Lives share={success.value} paths={summary.paths} />
+      </Figure>
+      <Figure
+        testId="headline-short"
+        label="Money runs short in"
+        note={short === 0 ? 'in no simulated life' : h.depletion_age.p50 === null ? 'of the simulated lives' : `typically around age ${Math.round(h.depletion_age.p50)}`}
+      >
+        <Lives share={short} paths={summary.paths} />
+      </Figure>
+      <Figure
+        testId="headline-spending"
+        label="Spending delivered"
+        note={cutYears === null ? 'no retired years to measure' : cutYears < 0.005 ? 'never more than 10% under plan' : `under 90% of plan in ${Math.round(cutYears * 100)}% of retired years`}
+      >
+        {ratio === null ? <span className="text-ink-2">n/a</span> : <AnimatedNumber value={ratio * 100} format={(v) => `${Math.round(v)}%`} />}
+        {ratio !== null && <span className="ml-1.5 text-sm font-medium text-ink-2">of plan</span>}
+      </Figure>
+    </dl>
+  );
+}
+
+/** What the plan says before any simulation: the deterministic line. */
+function PlanFacts({ preview }: { preview: PlanPreview }) {
+  const facts: string[] = [`Spending ${moneyCompact(preview.annual_spending)} a year now, ${moneyCompact(preview.annual_spending_retired)} in retirement`];
+  if (preview.funded_requirement > 0) {
+    facts.push(`funded at ${moneyCompact(preview.funded_requirement)}${preview.funded_ratio !== null ? ` (${Math.round(Math.min(preview.funded_ratio, 9.99) * 100)}% there today)` : ''}`);
+  }
+  if (preview.annual_income > 0) facts.push(`saving ${Math.round(preview.savings_rate * 100)}% of income`);
+  return (
+    <p className="mt-3 text-xs leading-relaxed text-pretty text-ink-2" data-testid="plan-facts">
+      <span className="text-ink-3">As entered, in today’s dollars: </span>
+      {facts.join(' · ')}.
+    </p>
+  );
+}
+
+/** Plan title, the headline figures, run status and a hairline progress indicator. */
 function HeadlineStrip({ run }: { run: RunState }) {
   const name = useProfileStore((s) => s.profile?.name);
   const description = useProfileStore((s) => s.profile?.description);
@@ -35,18 +122,21 @@ function HeadlineStrip({ run }: { run: RunState }) {
   const fraction = run.total > 0 ? run.done / run.total : 0;
   const busy = run.status === 'running' || run.status === 'queued';
   return (
-    <div className="relative px-5 pb-4 pt-5 lg:px-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-balance">{name || 'Untitled household'}</h1>
-      {description && <p className="mt-1 max-w-2xl text-sm text-pretty text-ink-2">{description}</p>}
-      <p className={cx('mt-2 flex items-center gap-2 text-xs', run.status === 'blocked' || (run.status === 'error' && run.error?.kind !== 'not_implemented') ? 'text-bad' : 'text-ink-3')} role="status">
-        <span>{statusLine(run)}</span>
-        {scenarioCount > 0 && run.status !== 'idle' && (
-          <span className="text-ink-3">
-            · baseline and {scenarioCount} {scenarioCount === 1 ? 'scenario' : 'scenarios'}
-          </span>
-        )}
-      </p>
-      {/* Headline figures (summary.headline: success_rate, fi_age, ...) render here once the engine can run. */}
+    <div className="@container relative px-5 pb-4 pt-5 lg:px-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance">{name || 'Untitled household'}</h1>
+        <p className={cx('num flex items-center gap-2 text-xs', run.status === 'blocked' || (run.status === 'error' && run.error?.kind !== 'not_implemented') ? 'text-bad' : 'text-ink-3')} role="status" data-testid="run-status">
+          <span>{statusLine(run)}</span>
+          {scenarioCount > 0 && run.status !== 'idle' && (
+            <span className="text-ink-3">
+              · baseline and {scenarioCount} {scenarioCount === 1 ? 'scenario' : 'scenarios'}
+            </span>
+          )}
+        </p>
+      </div>
+      {description && <p className="mt-1 hidden max-w-2xl text-sm text-pretty text-ink-2 @2xl:block">{description}</p>}
+      {run.summary && <HeadlineFigures summary={run.summary} stale={run.stale} />}
+      {run.preview && <PlanFacts preview={run.preview} />}
       <div aria-hidden className="absolute inset-x-0 bottom-0 h-px overflow-hidden bg-line">
         {busy && run.done === 0 ? (
           <div className="h-full w-1/4 animate-progress bg-accent" />
@@ -131,7 +221,7 @@ export function ResultsWorkspace() {
   const view = VIEWS.find((v) => v.id === active) ?? VIEWS[0];
 
   const comparison = useMemo<ScenarioComparison[]>(
-    () => run.scenarios.map((s) => ({ id: s.id, name: s.name, profile: s.profile, summary: s.summary, paired: null })),
+    () => run.scenarios.map((s) => ({ id: s.id, name: s.name, profile: s.profile, summary: s.summary, paired: s.paired })),
     [run.scenarios],
   );
 

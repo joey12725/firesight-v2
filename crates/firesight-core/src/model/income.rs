@@ -270,7 +270,9 @@ pub struct EquityGrant {
     /// today's dollars. Each refresh vests over four years. 0 for none.
     pub refresh_annual_value: f64,
     /// Sell shares as soon as they vest and invest the proceeds according to the
-    /// portfolio. When false, vested shares are held as a single-stock position.
+    /// portfolio. When false, vested shares are kept as a single-stock position in
+    /// the taxable account: rebalancing leaves them alone, and they are sold only
+    /// when that account is drawn on for cash.
     pub sell_on_vest: bool,
 }
 

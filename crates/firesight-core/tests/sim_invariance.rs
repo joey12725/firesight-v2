@@ -228,3 +228,49 @@ fn adding_an_event_does_not_move_the_ones_before_it() {
         assert_eq!(a.column("return_us_stocks"), b.column("return_us_stocks"));
     }
 }
+
+/// A household that is retired in month 0 runs the funded test before the first
+/// annual plan. Everything that test reads (the year's tax law, the filing status)
+/// must come from this path, not from the path the workspace simulated before it:
+/// the order in which paths run, and the workspace they run in, must not matter.
+#[test]
+fn a_household_retired_at_the_start_does_not_depend_on_path_order() {
+    let mut p = Profile::example();
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    let plan = compile(&p);
+    let n = 16u64;
+    // Every path alone in a fresh workspace.
+    let fresh: Vec<Vec<f32>> = (0..n)
+        .map(|i| {
+            let acc = run(&plan, 5, i..i + 1);
+            acc.path_scalars(i).unwrap().to_vec()
+        })
+        .collect();
+    // All paths in one workspace, forward and in reverse.
+    for reverse in [false, true] {
+        let mut ws = sim::Workspace::new(&plan);
+        let mut acc = plan.new_accumulator();
+        let order: Vec<u64> = if reverse {
+            (0..n).rev().collect()
+        } else {
+            (0..n).collect()
+        };
+        for i in order {
+            sim::run_path(&plan, 5, i, &mut ws, &mut acc);
+        }
+        for i in 0..n {
+            let row = acc.path_scalars(i).unwrap();
+            for (k, (a, b)) in row.iter().zip(&fresh[i as usize]).enumerate() {
+                assert!(
+                    a.to_bits() == b.to_bits(),
+                    "path {i} scalar {k} (reverse {reverse}): {a} vs {b}"
+                );
+            }
+        }
+    }
+    // Everyone starts from the same balance sheet, so the funded ratio on the
+    // retirement date is one number.
+    let acc = run(&plan, 5, 0..n);
+    let ratios = acc.scalar_column(PathScalar::FundedRatio);
+    assert!(ratios.iter().all(|r| r.to_bits() == ratios[0].to_bits()));
+}

@@ -95,6 +95,23 @@ pub(super) const MIN_MONTHLY_INFLATION: f64 = -0.2;
 /// Minimum observations in a regime before its own moments are used for a series.
 const MIN_REGIME_OBS: usize = 24;
 
+/// Long-run return assumptions for the asset classes whose history is too short to
+/// estimate one (`data/actuarial/params.json`, `long_run_assumptions`). The same
+/// two numbers apply in every market model; volatility and co-movement still come
+/// from the data.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct LongRun {
+    /// Annual geometric return of international equities less that of US equities.
+    pub(super) intl_spread: f64,
+    /// Annual geometric real return of gold.
+    pub(super) gold_real: f64,
+}
+
+/// Horizon at which the regime model's home-price dispersion is matched to history.
+const HOME_SPREAD_MONTHS: usize = 120;
+/// Largest monthly pull of the real home-price level toward its trend considered.
+const HOME_PULL_MAX: f64 = 0.2;
+
 /// The state carried from month to month.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RegimeState {
@@ -106,6 +123,8 @@ pub(super) struct RegimeState {
     pub(super) expected_inflation: f64,
     /// Home-price momentum: expected real monthly growth in excess of its mean.
     pub(super) home_momentum: f64,
+    /// Log of the real home-price level relative to its trend (0 at the start).
+    pub(super) home_gap: f64,
     /// Long yield minus the annualised bill rate.
     pub(super) spread: f64,
     pub(super) recession: u8,
@@ -142,6 +161,9 @@ pub(super) struct RegimeParams {
     spread_sd: f64,
     pub(super) home_real_mean: f64,
     pub(super) home: Arma11,
+    /// Monthly pull of the real home-price level back toward its trend, sized so
+    /// that the spread of ten-year real price changes matches the history's.
+    pub(super) home_pull: f64,
     mortgage_spread: f64,
     /// P(recession this month | recession last month, current regime).
     pub(super) recession_prob: [[f64; 2]; 2],
@@ -194,7 +216,7 @@ pub(super) fn par_bond_convexity(y: f64) -> f64 {
 
 impl RegimeParams {
     /// Fits everything from the history. See the module documentation.
-    pub(super) fn calibrate(h: &History) -> RegimeParams {
+    pub(super) fn calibrate(h: &History, long_run: &LongRun) -> RegimeParams {
         let n = h.len();
         let home = forward_fill(&h.home);
         let log_bill: Vec<f64> = h.tbill.iter().map(|&r| math::ln_1p(r)).collect();
@@ -322,11 +344,19 @@ impl RegimeParams {
             // Shift both regime means so the long-run average equals the sample
             // average (returns) or zero (surprises): the regime shares of a short
             // sample differ from the stationary shares.
-            let target = if matches!(i, INTL | GOLD) {
-                all_mean
-            } else {
-                0.0
+            // International equities and gold are short series whose own-sample
+            // means are not comparable with the full-sample means of the rest: both
+            // follow the stated long-run assumptions instead (`LongRun`).
+            let target = match i {
+                INTL => {
+                    (1.0 - p_stationary) * mean[0][EQ]
+                        + p_stationary * mean[1][EQ]
+                        + math::ln_1p(long_run.intl_spread) / 12.0
+                }
+                GOLD => math::ln_1p(long_run.gold_real) / 12.0,
+                _ => 0.0,
             };
+            let _ = all_mean;
             let long_run = (1.0 - p_stationary) * mean[0][i] + p_stationary * mean[1][i];
             for k in 0..2 {
                 mean[k][i] += target - long_run;
@@ -371,6 +401,57 @@ impl RegimeParams {
             }
         }
 
+        // Momentum alone lets the real price level wander without limit: the spread
+        // of ten-year real changes comes out three to four times the history's.
+        // Add a pull of the level toward its trend, sized to match that spread.
+        let home_pull = {
+            let real_log: Vec<f64> = (first_home..n)
+                .map(|t| math::ln_1p(home[t]) - math::ln_1p(h.cpi[t]))
+                .collect();
+            let mut changes = Vec::new();
+            if real_log.len() > HOME_SPREAD_MONTHS {
+                let mut window: f64 = real_log[..HOME_SPREAD_MONTHS].iter().sum();
+                changes.push(window);
+                for t in HOME_SPREAD_MONTHS..real_log.len() {
+                    window += real_log[t] - real_log[t - HOME_SPREAD_MONTHS];
+                    changes.push(window);
+                }
+            }
+            let target = fit::mean_sd(changes.iter().copied()).1;
+            let var_v = (1.0 - p_stationary)
+                * (sd[0][HOME] * sd[0][HOME] + mean[0][HOME] * mean[0][HOME])
+                + p_stationary * (sd[1][HOME] * sd[1][HOME] + mean[1][HOME] * mean[1][HOME]);
+            // Variance of the level after HOME_SPREAD_MONTHS from a known start, for
+            // the linear system (momentum, gap) driven by one shock.
+            let spread_at = |pull: f64| -> f64 {
+                let (phi, gain) = (home_arma.phi, home_arma.gain);
+                // Covariance entries: mm, mg, gg.
+                let (mut mm, mut mg, mut gg) = (0.0f64, 0.0f64, 0.0f64);
+                let a = 1.0 - pull;
+                for _ in 0..HOME_SPREAD_MONTHS {
+                    let n_mm = phi * phi * mm + gain * gain * var_v;
+                    let n_mg = phi * (mm + a * mg) + gain * var_v;
+                    let n_gg = mm + 2.0 * a * mg + a * a * gg + var_v;
+                    (mm, mg, gg) = (n_mm, n_mg, n_gg);
+                }
+                gg.max(0.0).sqrt()
+            };
+            if changes.len() < 24 || target <= 0.0 || spread_at(0.0) <= target {
+                0.0
+            } else {
+                let (mut lo, mut hi) = (0.0, HOME_PULL_MAX);
+                for _ in 0..40 {
+                    let mid = 0.5 * (lo + hi);
+                    if spread_at(mid) > target {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                0.5 * (lo + hi)
+            }
+        };
+
         // Recession indicator given the previous indicator and the current regime.
         let mut counts = [[[1.0f64; 2]; 2]; 2];
         for t in 1..n {
@@ -401,7 +482,17 @@ impl RegimeParams {
                 .unwrap_or(yield_mean)
                 .clamp(YIELD_RANGE.0, YIELD_RANGE.1),
             expected_inflation: expected.last().copied().unwrap_or(inflation_mean),
-            home_momentum: momentum.last().copied().unwrap_or(momentum_mean) - momentum_mean,
+            // The index is not seasonally adjusted: the last month alone carries the
+            // season. Start from the average momentum of the last twelve months.
+            home_momentum: {
+                let tail = &momentum[momentum.len().saturating_sub(12)..];
+                if tail.is_empty() {
+                    0.0
+                } else {
+                    tail.iter().sum::<f64>() / tail.len() as f64 - momentum_mean
+                }
+            },
+            home_gap: 0.0,
             spread: spread.last().copied().unwrap_or(spread_mean),
             recession: h.recession.last().copied().unwrap_or(0),
         };
@@ -422,6 +513,7 @@ impl RegimeParams {
             spread_sd,
             home_real_mean,
             home: home_arma,
+            home_pull,
             mortgage_spread: mortgage_spread(h),
             recession_prob,
             start,
@@ -497,7 +589,7 @@ impl RegimeParams {
             bond: self.bond_return(y0, y1 - y0),
             cash,
             cpi,
-            home: m + self.home_real_mean + s.home_momentum + e[HOME],
+            home: m + self.home_real_mean + s.home_momentum - self.home_pull * s.home_gap + e[HOME],
             gold: (1.0 + cpi) * math::exp(e[GOLD]) - 1.0,
             long_yield: y1,
             mortgage: y1 + self.mortgage_spread,
@@ -507,6 +599,7 @@ impl RegimeParams {
         s.expected_inflation = self.inflation_mean
             + self.inflation.phi * (m - self.inflation_mean)
             + self.inflation.gain * (cpi - m);
+        s.home_gap += core.home - cpi - self.home_real_mean;
         s.home_momentum = self.home.phi * s.home_momentum + self.home.gain * e[HOME];
         s.spread = self.spread_mean
             + self.spread_phi * (s.spread - self.spread_mean)
@@ -538,7 +631,7 @@ pub(super) struct LognormalParams {
 }
 
 impl LognormalParams {
-    pub(super) fn calibrate(h: &History) -> LognormalParams {
+    pub(super) fn calibrate(h: &History, long_run: &LongRun) -> LognormalParams {
         let home = forward_fill(&h.home);
         let log = |v: &[f64]| -> Vec<f64> { v.iter().map(|&r| math::ln_1p(r)).collect() };
         let series: [Vec<f64>; LN_DIM] = [
@@ -561,6 +654,11 @@ impl LognormalParams {
                 c[j][i] = r;
             }
         }
+        // International equities and gold are short series: their own-sample means
+        // would be set against full-sample inflation. Both follow the long-run
+        // assumptions instead (index 0 US equities, 1 international, 5 gold, 6 CPI).
+        mu[1] = mu[0] + math::ln_1p(long_run.intl_spread) / 12.0;
+        mu[5] = mu[6] + math::ln_1p(long_run.gold_real) / 12.0;
         let l = fit::correlation_cholesky(&c);
         let mut chol = [[0.0; LN_DIM]; LN_DIM];
         for i in 0..LN_DIM {
@@ -619,7 +717,8 @@ impl LognormalParams {
             eq: r[0],
             intl: r[1],
             bond: r[2],
-            cash: r[3],
+            // A bill cannot pay less than nothing.
+            cash: r[3].max(0.0),
             cpi: r[6],
             home: r[4],
             gold: r[5],

@@ -20,6 +20,6 @@ export default tseslint.config(
   {
     files: ['scripts/**', 'e2e/**', '*.config.{js,ts}'],
     // e2e scripts also contain callbacks that Playwright runs inside the page.
-    languageOptions: { globals: { ...globals.node, document: 'readonly' } },
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );

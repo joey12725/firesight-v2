@@ -131,8 +131,19 @@ pub struct Headline {
     pub terminal_net_worth: Spread,
     /// Investable assets on the retirement date among paths that retire.
     pub investable_at_retirement: Spread,
-    /// Mean over retired paths of retirement spending delivered / planned.
+    /// Mean over retired paths of the share of planned retirement spending that
+    /// was delivered (`sum of min(delivered, planned) / sum of planned`): never
+    /// above 1.
     pub delivered_spending_ratio: Estimate,
+    /// Mean over retired paths of retirement spending above the plan as a fraction
+    /// of planned spending (a spending rule raising spending in good times).
+    pub extra_spending_ratio: Estimate,
+    /// First-year portfolio draw as a fraction of investable assets on the
+    /// retirement date, among paths that retire.
+    pub initial_withdrawal_rate: Spread,
+    /// Share of all paths on which a home was sold to fund retirement after
+    /// savings ran out.
+    pub home_sale_rate: Estimate,
     /// Share of retired path-years in the `retired_cutting` or `depleted` status.
     #[serde(with = "nan")]
     #[schemars(with = "Option<f64>")]
@@ -673,6 +684,14 @@ fn headline(acc: &Accumulator, table: &Table, sorted: &[Vec<f32>]) -> Headline {
                 .map(|v| f64::from(*v)),
         )
         .rounded(4),
+        extra_spending_ratio: Estimate::mean(
+            col(PathScalar::ExtraSpendingRatio)
+                .iter()
+                .map(|v| f64::from(*v)),
+        )
+        .rounded(4),
+        initial_withdrawal_rate: Spread::of(col(PathScalar::InitialWithdrawalRate), 4),
+        home_sale_rate: Estimate::proportion(finite(PathScalar::HomeSaleAge), n).rounded(5),
         years_cutting_share: share(cutting, retired_years),
         median_lifetime_tax: lifetime_tax.p50,
         lifetime_tax,
@@ -1323,10 +1342,14 @@ pub struct DigestBands {
 /// Spending delivery in the digest.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DigestSpending {
-    /// Mean retirement spending delivered / planned.
+    /// Mean share of planned retirement spending delivered (never above 1).
     #[serde(with = "nan")]
     #[schemars(with = "Option<f64>")]
     pub delivered_ratio: f64,
+    /// Mean retirement spending above the plan, as a fraction of the plan.
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub extra_ratio: f64,
     /// Share of retired paths with a year below 90% of plan.
     #[serde(with = "nan")]
     #[schemars(with = "Option<f64>")]
@@ -1349,6 +1372,7 @@ impl Default for DigestSpending {
     fn default() -> Self {
         DigestSpending {
             delivered_ratio: f64::NAN,
+            extra_ratio: f64::NAN,
             paths_below_90: f64::NAN,
             paths_below_75: f64::NAN,
             years_below_90: f64::NAN,
@@ -1546,6 +1570,7 @@ impl Summary {
             },
             spending_delivery: DigestSpending {
                 delivered_ratio: round_dp(self.headline.delivered_spending_ratio.value, 3),
+                extra_ratio: round_dp(self.headline.extra_spending_ratio.value, 3),
                 paths_below_90: round_dp(self.spending.paths_below_90.value, 3),
                 paths_below_75: round_dp(self.spending.paths_below_75.value, 3),
                 years_below_90: round_dp(self.spending.years_below_90.value, 3),

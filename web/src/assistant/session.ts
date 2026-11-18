@@ -3,6 +3,7 @@
 // functions exported at the bottom; nothing here imports React.
 import { create } from 'zustand';
 import { loadCities } from '@/editor/cities';
+import type { Comparison } from '@/engine/output-types';
 import { useProfileStore } from '@/state/profile-store';
 import { useSettings, type AssistantModel } from '@/state/settings-store';
 import { currentYearMonth } from '@/ui/format';
@@ -108,6 +109,21 @@ export class AssistantSession {
 
   constructor(deps: SessionDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Core's paired comparison of two runs still in memory (B minus A), for a chart. The
+   * one `try_scenario` computed is reused. Null when either run is gone or it fails.
+   */
+  async comparison(runId: string, compareRunId: string): Promise<Comparison | null> {
+    const a = this.runs.get(runId);
+    const b = this.runs.get(compareRunId);
+    if (!a || !b) return null;
+    try {
+      return await this.runs.compare(this.deps.engine(), a, b);
+    } catch {
+      return null;
+    }
   }
 
   // ---- loading and saving -----------------------------------------------------------

@@ -16,7 +16,9 @@
    "personal_exemption.type": "'deduction' reduces taxable income; 'credit' reduces tax. dependent_type is given separately because some states mix them.",
    "social_security.status": "'none' = benefits not taxed; 'partial' = taxed only above an income/age test or partly; 'follows_federal' = federally taxable portion is taxed.",
    "retirement_distributions.taxed": "'none', 'partial' (broad exclusion; see exclusion and notes) or 'full' for traditional IRA/401(k) distributions.",
-   "local_income_tax.statewide_avg_effective_rate": "Tax Foundation estimate of local income tax as a share of AGI (2023 data)."
+   "local_income_tax.statewide_avg_effective_rate": "Tax Foundation estimate of local income tax as a share of AGI (2023 data).",
+   "local_income_tax": "base: 'earned' when the local taxes reach only wages and self-employment profit (city wage, earnings and occupational taxes), 'all_income' when they follow state income. major_city_brackets: a graduated schedule on state taxable income that replaces major_city_rate (NYC; the Portland area's threshold taxes). major_city_aliases: other names the city goes by.",
+   "retirement_distributions.min_age": "For taxed 'none': the age from which the exemption applies when it is not the federal 59.5 (0 = no age test)."
   },
   "sources": [
    "https://taxfoundation.org/data/all/state/state-income-tax-rates-2026/",
@@ -154,7 +156,8 @@
    "major_city": "Birmingham",
    "major_city_rate": 0.01,
    "statewide_avg_effective_rate": 0.0007,
-   "notes": "Occupational taxes in some cities."
+   "notes": "Occupational taxes in some cities.",
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0037,
   "sales_tax_combined_rate": 0.0946,
@@ -406,6 +409,48 @@
      "over": 1536426,
      "rate": 0.133
     }
+   ],
+   "head_of_household": [
+    {
+     "over": 0,
+     "rate": 0.01
+    },
+    {
+     "over": 22928,
+     "rate": 0.02
+    },
+    {
+     "over": 54316,
+     "rate": 0.04
+    },
+    {
+     "over": 70017,
+     "rate": 0.06
+    },
+    {
+     "over": 86654,
+     "rate": 0.08
+    },
+    {
+     "over": 102356,
+     "rate": 0.093
+    },
+    {
+     "over": 522385,
+     "rate": 0.103
+    },
+    {
+     "over": 626864,
+     "rate": 0.113
+    },
+    {
+     "over": 1000000,
+     "rate": 0.123
+    },
+    {
+     "over": 1044770,
+     "rate": 0.133
+    }
    ]
   },
   "inflation_indexed": true,
@@ -414,7 +459,8 @@
    "married_joint": 11800,
    "type": "deduction",
    "follows_federal": false,
-   "inflation_indexed": true
+   "inflation_indexed": true,
+   "head_of_household": 11800
   },
   "personal_exemption": {
    "single": 158,
@@ -439,7 +485,8 @@
   "sales_tax_combined_rate": 0.0903,
   "sales_tax_state_rate": 0.0725,
   "notes": [
-   "2026 figures from FTB Tax News October 2026 (indexed 2026 schedules, standard deduction, exemption credits). Rates include the 1% Mental Health Services Tax on taxable income over $1,000,000 (threshold not indexed, same for all filing statuses). Excludes 1.3% SDI payroll tax on all wages (Tax Foundation: 1.3% for the 2025/2026 table). Exemption credits phase out at high AGI."
+   "2026 figures from FTB Tax News October 2026 (indexed 2026 schedules, standard deduction, exemption credits). Rates include the 1% Mental Health Services Tax on taxable income over $1,000,000 (threshold not indexed, same for all filing statuses). Excludes 1.3% SDI payroll tax on all wages (Tax Foundation: 1.3% for the 2025/2026 table). Exemption credits phase out at high AGI.",
+   "Head-of-household schedule: the Franchise Tax Board's 2024 head-of-household thresholds scaled by this file's 2026 single thresholds over the 2024 single ones (the same indexation factor applies to every status); the standard deduction is the joint amount."
   ]
  },
  "CO": {
@@ -711,7 +758,8 @@
    "has_local_income_tax": true,
    "major_city": "Wilmington",
    "major_city_rate": 0.0125,
-   "statewide_avg_effective_rate": null
+   "statewide_avg_effective_rate": null,
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0054,
   "sales_tax_combined_rate": 0.0,
@@ -996,7 +1044,8 @@
   },
   "retirement_distributions": {
    "taxed": "none",
-   "notes": "Retirement income exempt from age 55; taxable before 55."
+   "notes": "Retirement income exempt from age 55; taxable before 55.",
+   "min_age": 55
   },
   "long_term_capital_gains": {
    "treatment": "ordinary"
@@ -1006,7 +1055,8 @@
    "major_city": "Des Moines",
    "major_city_rate": 0.00085,
    "statewide_avg_effective_rate": 0.0008,
-   "notes": "School district surtaxes only."
+   "notes": "School district surtaxes only.",
+   "base": "all_income"
   },
   "property_tax_effective_rate": 0.0133,
   "sales_tax_combined_rate": 0.0694,
@@ -1111,7 +1161,8 @@
   },
   "retirement_distributions": {
    "taxed": "none",
-   "notes": "Qualified retirement plan, IRA and pension income fully exempt."
+   "notes": "Qualified retirement plan, IRA and pension income fully exempt, at any age, including amounts converted to a Roth IRA (35 ILCS 5/203(a)(2)(F), IDOR Publication 120).",
+   "min_age": 0
   },
   "long_term_capital_gains": {
    "treatment": "ordinary"
@@ -1173,7 +1224,8 @@
    "major_city": "Indianapolis (Marion County)",
    "major_city_rate": 0.0202,
    "statewide_avg_effective_rate": 0.0035,
-   "notes": "County-level local income taxes."
+   "notes": "County-level local income taxes.",
+   "base": "all_income"
   },
   "property_tax_effective_rate": 0.0076,
   "sales_tax_combined_rate": 0.07,
@@ -1297,7 +1349,8 @@
    "major_city": "Louisville",
    "major_city_rate": 0.0145,
    "statewide_avg_effective_rate": 0.0093,
-   "notes": "Occupational licence taxes on wages; school district add-ons in some places."
+   "notes": "Occupational licence taxes on wages; school district add-ons in some places.",
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0074,
   "sales_tax_combined_rate": 0.06,
@@ -1549,7 +1602,8 @@
    "major_city": "Baltimore",
    "major_city_rate": 0.032,
    "statewide_avg_effective_rate": 0.024,
-   "notes": "Counties and Baltimore City levy local income taxes; statewide average about 2.4% of AGI."
+   "notes": "Counties and Baltimore City levy local income taxes; statewide average about 2.4% of AGI.",
+   "base": "all_income"
   },
   "property_tax_effective_rate": 0.0092,
   "sales_tax_combined_rate": 0.06,
@@ -1687,7 +1741,8 @@
    "has_local_income_tax": true,
    "major_city": "Detroit",
    "major_city_rate": 0.024,
-   "statewide_avg_effective_rate": 0.0016
+   "statewide_avg_effective_rate": 0.0016,
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0119,
   "sales_tax_combined_rate": 0.06,
@@ -1886,7 +1941,8 @@
    "major_city": "Kansas City",
    "major_city_rate": 0.01,
    "statewide_avg_effective_rate": 0.0018,
-   "notes": "1% earnings tax in Kansas City."
+   "notes": "1% earnings tax in Kansas City.",
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0089,
   "sales_tax_combined_rate": 0.0844,
@@ -2623,7 +2679,74 @@
    "major_city": "New York City",
    "major_city_rate": 0.03876,
    "statewide_avg_effective_rate": 0.016,
-   "notes": "NYC resident income tax is graduated; 3.876% is the top rate."
+   "notes": "NYC resident income tax is graduated on New York taxable income: 3.078% to 3.876% (thresholds 12,000 / 25,000 / 50,000 single; 21,600 / 45,000 / 90,000 joint; 14,400 / 30,000 / 60,000 head of household). major_city_rate is the top rate.",
+   "base": "all_income",
+   "major_city_aliases": [
+    "New York",
+    "NYC",
+    "Manhattan",
+    "Brooklyn",
+    "Queens",
+    "Bronx",
+    "The Bronx",
+    "Staten Island"
+   ],
+   "major_city_brackets": {
+    "single": [
+     {
+      "over": 0,
+      "rate": 0.03078
+     },
+     {
+      "over": 12000,
+      "rate": 0.03762
+     },
+     {
+      "over": 25000,
+      "rate": 0.03819
+     },
+     {
+      "over": 50000,
+      "rate": 0.03876
+     }
+    ],
+    "married_joint": [
+     {
+      "over": 0,
+      "rate": 0.03078
+     },
+     {
+      "over": 21600,
+      "rate": 0.03762
+     },
+     {
+      "over": 45000,
+      "rate": 0.03819
+     },
+     {
+      "over": 90000,
+      "rate": 0.03876
+     }
+    ],
+    "head_of_household": [
+     {
+      "over": 0,
+      "rate": 0.03078
+     },
+     {
+      "over": 14400,
+      "rate": 0.03762
+     },
+     {
+      "over": 30000,
+      "rate": 0.03819
+     },
+     {
+      "over": 60000,
+      "rate": 0.03876
+     }
+    ]
+   }
   },
   "property_tax_effective_rate": 0.013,
   "sales_tax_combined_rate": 0.0854,
@@ -2688,7 +2811,8 @@
    "major_city": "Columbus",
    "major_city_rate": 0.025,
    "statewide_avg_effective_rate": 0.012,
-   "notes": "Most cities and many school districts levy income taxes."
+   "notes": "Most cities and many school districts levy income taxes; municipal taxes reach wages and business profit only, not retirement or investment income.",
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0136,
   "sales_tax_combined_rate": 0.0729,
@@ -2847,7 +2971,38 @@
    "major_city": "Portland",
    "major_city_rate": 0.04,
    "statewide_avg_effective_rate": 0.0018,
-   "notes": "4% is the combined top rate of the 1% regional (Metro) and 3% Multnomah County taxes, which apply only above income thresholds."
+   "notes": "Portland area: Metro supportive housing services tax 1% and Multnomah County preschool-for-all tax 1.5% on Oregon taxable income above 125,000 single / 200,000 joint, plus a further 1.5% county rate above 250,000 / 400,000 (4% combined top rate). Nothing is owed below the thresholds.",
+   "base": "all_income",
+   "major_city_brackets": {
+    "single": [
+     {
+      "over": 0,
+      "rate": 0.0
+     },
+     {
+      "over": 125000,
+      "rate": 0.025
+     },
+     {
+      "over": 250000,
+      "rate": 0.04
+     }
+    ],
+    "married_joint": [
+     {
+      "over": 0,
+      "rate": 0.0
+     },
+     {
+      "over": 200000,
+      "rate": 0.025
+     },
+     {
+      "over": 400000,
+      "rate": 0.04
+     }
+    ]
+   }
   },
   "property_tax_effective_rate": 0.0081,
   "sales_tax_combined_rate": 0.0,
@@ -2894,7 +3049,7 @@
   },
   "retirement_distributions": {
    "taxed": "none",
-   "notes": "Traditional retirement income (pensions, 401(k), IRA) is not taxed."
+   "notes": "Traditional retirement income (pensions, 401(k), IRA) is not taxed after 59.5, and a traditional-to-Roth conversion is not a taxable event. Wages are taxed before 401(k) deferrals."
   },
   "long_term_capital_gains": {
    "treatment": "ordinary"
@@ -2904,12 +3059,14 @@
    "major_city": "Philadelphia",
    "major_city_rate": 0.038712,
    "statewide_avg_effective_rate": 0.0099,
-   "notes": "Philadelphia wage tax rate is the 2023 resident rate; most municipalities levy an earned income tax of about 1%."
+   "notes": "Philadelphia wage tax rate is the 2023 resident rate; most municipalities levy an earned income tax of about 1%.",
+   "base": "earned"
   },
   "property_tax_effective_rate": 0.0126,
   "sales_tax_combined_rate": 0.0634,
   "sales_tax_state_rate": 0.06,
-  "notes": []
+  "notes": [],
+  "taxes_pretax_deferrals": true
  },
  "RI": {
   "name": "Rhode Island",

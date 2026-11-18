@@ -238,6 +238,11 @@ pub struct Accounts {
     /// is rebalanced on a schedule anyway: the steering then changes almost nothing
     /// and costs a pass over every holding for each contribution.
     pub plain_mix: bool,
+    /// When true, the single-stock holding of the taxable bucket is employer stock
+    /// the household has chosen to keep (`sell_on_vest: false`): rebalancing leaves
+    /// it alone and arranges everything else around the target. It is sold only
+    /// when the taxable bucket is drawn on for cash.
+    pub keep_single_stock: bool,
 }
 
 /// Blended interest terms of the pooled cash bucket, fixed at compile time from the
@@ -1030,6 +1035,73 @@ impl Accounts {
     ///   and HSA take what remains (the highest-growth assets). So the target is met
     ///   by trading in tax-advantaged buckets first and taxable sales are minimal.
     pub fn rebalance_to(&mut self, target: &Weights, location: AssetLocation) -> Realized {
+        let kept = self.set_aside_kept_stock();
+        let r = self.rebalance_rest(target, location);
+        self.restore_kept_stock(kept);
+        r
+    }
+
+    /// Takes employer stock that is being kept out of the taxable bucket for the
+    /// duration of a rebalance; returns its `(value, basis)`.
+    fn set_aside_kept_stock(&mut self) -> (f64, f64) {
+        if !self.keep_single_stock {
+            return (0.0, 0.0);
+        }
+        let i = AssetClass::SingleStock.index();
+        let kept = (self.taxable.value[i], self.taxable.basis[i]);
+        self.taxable.value[i] = 0.0;
+        self.taxable.basis[i] = 0.0;
+        kept
+    }
+
+    fn restore_kept_stock(&mut self, kept: (f64, f64)) {
+        let i = AssetClass::SingleStock.index();
+        self.taxable.value[i] += kept.0;
+        self.taxable.basis[i] += kept.1;
+    }
+
+    /// Moves the household mix toward `target` by trading only inside the
+    /// tax-advantaged buckets: the taxable bucket is left exactly as it is, so
+    /// nothing is realised. Each tax-advantaged bucket ends with the same mix, the
+    /// household target less what the taxable bucket already holds (as far as their
+    /// size allows). Returns the dollars sold.
+    pub fn rebalance_sheltered(&mut self, target: &Weights) -> f64 {
+        let w = normalized(target);
+        let kept = self.set_aside_kept_stock();
+        let mut sheltered = 0.0;
+        for p in &self.person {
+            sheltered += sum(&p.traditional) + sum(&p.roth.value) + sum(&p.hsa);
+        }
+        let mut turnover = 0.0;
+        if sheltered > 0.0 {
+            let total = sheltered + sum(&self.taxable.value);
+            let mut want = [0.0; N_ASSETS];
+            let mut want_total = 0.0;
+            for i in 0..N_ASSETS {
+                want[i] = (w[i] * total - self.taxable.value[i]).max(0.0);
+                want_total += want[i];
+            }
+            if want_total > 0.0 {
+                let mut new = [0.0; N_ASSETS];
+                for p in &mut self.person {
+                    for h in [&mut p.traditional, &mut p.roth.value, &mut p.hsa] {
+                        let t = sum(h);
+                        if t <= 0.0 {
+                            continue;
+                        }
+                        for i in 0..N_ASSETS {
+                            new[i] = want[i] / want_total * t;
+                        }
+                        turnover += retarget(h, &new);
+                    }
+                }
+            }
+        }
+        self.restore_kept_stock(kept);
+        turnover
+    }
+
+    fn rebalance_rest(&mut self, target: &Weights, location: AssetLocation) -> Realized {
         let w = normalized(target);
         match location {
             AssetLocation::Mirror => {
@@ -1183,7 +1255,11 @@ impl Accounts {
     /// Largest absolute difference between the current household mix and `target`,
     /// for band rebalancing (0 when nothing is invested).
     pub fn max_drift(&self, target: &Weights) -> f64 {
-        let totals = self.asset_totals();
+        let mut totals = self.asset_totals();
+        if self.keep_single_stock {
+            let i = AssetClass::SingleStock.index();
+            totals[i] = (totals[i] - self.taxable.value[i]).max(0.0);
+        }
         let total = sum(&totals);
         if total <= 0.0 {
             return 0.0;

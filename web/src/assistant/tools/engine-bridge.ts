@@ -1,24 +1,13 @@
-// The real engine behind the tools: the worker pool for simulation, and the wasm
-// module's main-thread calls for everything else.
-//
-// `compare` and `planPreview` are being added to the wasm wrapper; they are looked up
-// on the module at call time, so the tools use core's exact paired statistics and plan
-// preview as soon as a build exports them, and the TypeScript fallbacks until then.
-import { applyPatch, getPool, levers, schema } from '@/engine';
-import * as wasm from '@/engine/pkg/firesight_wasm.js';
-import type { Comparison } from '@/engine/output-types';
+// The real engine behind the tools: the worker pool for simulation and paired
+// comparison, and the wasm module's main-thread calls for everything else.
+import { applyPatch, digest, engineInput, getPool, levers, planPreview, schema, type RunResult } from '@/engine';
+import type { RunRecord } from './runs';
 import type { EngineBridge } from './types';
 
-const optional = wasm as unknown as Record<string, unknown>;
-
-function callJson<T>(name: string, ...args: unknown[]): T | null {
-  const fn = optional[name];
-  if (typeof fn !== 'function') return null;
-  const out = (fn as (...a: unknown[]) => unknown)(...args);
-  return typeof out === 'string' ? (JSON.parse(out) as T) : (out as T);
-}
-
 let cachedSchema: unknown;
+
+/** The part of a pool result that `pool.comparison` reads, rebuilt from a stored run. */
+const asResult = (run: RunRecord): RunResult => ({ summary: run.summary, acc: run.acc, paths: run.paths, seed: run.seed, elapsedMs: 0, pathsPerSecond: 0, profileKey: run.key });
 
 export function realEngine(): EngineBridge {
   return {
@@ -28,7 +17,10 @@ export function realEngine(): EngineBridge {
     applyPatch,
     levers,
     schema: () => (cachedSchema ??= schema()),
-    compare: (a, b) => callJson<Comparison>('compare', a.acc, b.acc, JSON.stringify(a.profile)),
-    planPreview: (profile) => callJson<unknown>('planPreview', JSON.stringify(profile)),
+    planPreview,
+    // About 10 ms at 10,000 lives; the accumulator is already on this thread.
+    digest: (run) => digest(run.acc, engineInput(run.profile, run.seed).json),
+    // Off the main thread: decoding two accumulators is the expensive part.
+    compare: (a, b) => getPool().comparison(asResult(a), asResult(b), a.profile),
   };
 }
