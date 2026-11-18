@@ -94,26 +94,27 @@ income + withdrawals + property_sale + save_employer
     = taxes + spending + saving + property_purchase
 ```
 
-### `PathScalar` (26; one `f32` per path, `null`/NaN = did not happen)
+### `PathScalar` (27; one `f32` per path, `null`/NaN = did not happen)
 
 Supplied by the simulation in `PathEnd`:
 
 | Key | Unit | Meaning |
 |---|---|---|
-| `fi_age` | age | First month the retirement trigger is satisfied |
+| `fi_age` | age | First month the funded test is met (the trigger's own rule for `when_funded` and `fixed_number`; the default rule, 4% of investable assets counting future income, for `at_age`, `at_date` and `already_retired`, evaluated until the retirement date) |
+| `coast_fi_age` | age | First month today's wealth, with no further saving, grown at the plan's expected real return to the planned (or latest) retirement age, would meet the funded test then. Index 26, after the derived scalars |
 | `retirement_age` | age | Month retirement begins |
 | `depletion_age` | age | First month liquid assets cannot cover essentials |
-| `death_age_0` | age | First person's age at death (or at the horizon) |
+| `death_age_0` | age | First person's age at death (or at the end of the path if alive then) |
 | `death_age_1` | age | Second person's own age at death; null if single |
 | `investable_at_retirement` | dollars | Investable assets on the retirement date |
 | `early_retirement_return` | rate | Annualised real portfolio return, first 10 retirement years |
-| `worst_drawdown` | ratio | Worst peak-to-trough fall of the real investable balance from returns |
+| `worst_drawdown` | ratio | Worst peak-to-trough fall of the real portfolio return index (returns only, not contributions or withdrawals) |
 | `months_unemployed` | months | Involuntary unemployment, all people |
 | `long_term_care_cost` | dollars | Total long-term care cost |
 | `inflation` | rate | Annualised CPI inflation over the path |
-| `funded_ratio` | ratio | Funded ratio at retirement; null if not computed |
+| `funded_ratio` | ratio | Wealth counted by the funded test divided by its requirement, on the retirement date; null if never retired or the requirement is zero |
 | `failure_cause` | index | `FailureCause` index; null if the path succeeded |
-| `success` | flag | 1 if retired by the plan's latest age and never depleted |
+| `success` | flag | 1 if never depleted, the bequest target (if any) is met at the end, and the household retired, or died before the plan's latest retirement age (`max_age`; the trigger age; 70 for `fixed_number`) |
 
 Derived by the recorder from the year records (anything the simulation puts there is
 overwritten):
@@ -137,7 +138,19 @@ overwritten):
 
 `market_sequence`, `job_loss`, `health`, `longevity`, `overspending`, `inflation`,
 `other`. One first cause per failed path, chosen by the simulation
-(`PathEnd::set_outcome`).
+(`PathEnd::set_outcome`) as the first rule that holds:
+
+1. `health`: long-term care paid before the money ran out was at least a quarter of
+   the savings held at retirement (two years of the budget if never retired);
+2. `job_loss`: at least 18 months of involuntary unemployment, or at least 12 and the
+   money ran out before retirement;
+3. `inflation`: inflation over the path averaged 4.5% a year or more;
+4. `market_sequence`: the real portfolio return over the first ten retirement years
+   was more than two points a year below the plan's expected real return;
+5. `longevity`: the money ran out at 90 or later;
+6. `overspending`: the first-year withdrawal rate was above 5%, or the spending rule
+   had raised spending above the plan;
+7. `other`.
 
 ### `TraceEventKind`
 
@@ -173,7 +186,7 @@ year the record covers (1..=12); `retired` is true once the retirement date has
 passed; `status` from `Status::classify`. The histogram quantities are computed from
 `values`, so there is nothing else to fill.
 
-`PathEnd { scalars: [f32; 26] }`: defaults to all NaN; set the fourteen supplied
+`PathEnd { scalars: [f32; 27] }`: defaults to all NaN; set the fifteen supplied
 scalars with `set(scalar, value)` and `set_outcome(None | Some(cause))`.
 
 `MonthRecord { month, price_level, status, retired, values: [f64; 43],
@@ -208,7 +221,7 @@ Summary {
   survival:   { household[year], people[person][year] },
   composition:[ { series, kind, values[year] } ]                     // all 43 YearSeries
   fi, retirement, depletion: AgeCurve,
-  distributions: [ ScalarDistribution ]                              // all 26 PathScalars
+  distributions: [ ScalarDistribution ]                              // all 27 PathScalars
   scatter:    { paths[], columns: [ { scalar, values[] } ] },
   failure:    FailureAttribution,
   picks:      [ { label, scalar, path_index, value } ],
@@ -346,7 +359,7 @@ when the 95% interval contains zero. `headline` metrics: `success_rate`, `fi_rat
   annual:  { years[], months[], status[], columns: [ { key, unit, values[year] } ] },
   tax_returns: [ { year, price_level, result: {..TaxResult}, lines: [ {key, label, amount, note} ] } ],
   events:  [ { month: "YYYY-MM", kind, label, amount } ],
-  scalars: [ { scalar, value } ] }            // all 26, same as the aggregate row
+  scalars: [ { scalar, value } ] }            // all 27, same as the aggregate row
 ```
 
 Monthly column keys: `net_worth`, `investable`, every `YearSeries` key that is not
@@ -357,6 +370,56 @@ today's dollars; multiply by `price_level` for nominal. A missing series is zero
 `gross_income` and `total_tax`. Tax-return amounts are nominal dollars of the tax
 year; divide by that return's `price_level` for today's dollars.
 
+## What the simulation records, precisely
+
+* **Deflators**: flows of a month are divided by the price level at the start of the
+  month, balances by the level at its end. `MonthRecord.price_level` (and the trace
+  column) is the end-of-month level.
+* **Tax series are cash basis**: FICA withheld from each pay cheque, income tax
+  prepaid through the year (a withholding rate on wage-like income plus a level
+  instalment, both set from the January estimate), and the balance of the actual
+  return in April of the next year. A refund first nets against tax paid that month
+  in the same category; any remainder is `income_other`. The last return of a life is
+  settled in its last month.
+* **The first calendar year** is usually partial. Its return is computed on the
+  simulated months scaled to a full year and the tax scaled back; the traced return
+  for that year shows the annualised figures.
+* **Overdraft**: when nothing is left to sell and costs that cannot be cut (housing,
+  debt service, tax) exceed income, the unpaid amount is carried as an overdraft and
+  reported under `debt`; `balance_cash` is never negative.
+* **Advance premium credit**: `spend_healthcare` is net of the ACA credit advanced
+  during the year (estimated each January); the difference from the credit actually
+  earned is settled with the return, in `tax_federal`.
+* **A partner joining** brings their accounts: the amount is `income_other` and the
+  matching `save_*` series that month.
+* **Depletion status** of a year is `depleted` if any month of it cut essential
+  spending or grew the overdraft.
+* **Trace events** also include `life_event` entries for refinancing, postponed or
+  abandoned purchases, and income, spending and contribution changes.
+
+## `PlanPreview` (`Plan::preview()`, wasm `planPreview(profileJson)`)
+
+Deterministic, no simulation, today's dollars:
+
+```
+{ annual_spending, annual_spending_retired,   // budget + home costs + modelled healthcare + children + debt payments
+  annual_income, savings_rate, annual_tax,    // gross earned income; share not spent or taxed; estimated tax this year
+  investable, wealth,                         // wealth = what the funded test counts
+  funded_requirement, funded_ratio,           // null ratio when the requirement is zero
+  retirement_need, retirement_tax, future_income_value,
+  horizon_years, life_expectancy[], expected_age_at_death[] }
+```
+
+## wasm API
+
+As in `docs/architecture.md` section 6. Beyond the original list: `Engine.warnings()`,
+`class Merger { add(bytes), paths(), summarize(profileJson), digest(profileJson),
+bytes() }`, `compare(aBytes, bBytes, baselineProfileJson)` (the `Comparison` JSON, B
+minus A), `digest(accBytes, profileJson)`, `planPreview(profileJson)` and
+`exampleProfiles()`. Every function returning a document returns a JSON string.
+`Accumulator::VERSION` is 3 (the scalar table gained `coast_fi_age`); bytes from an
+older build do not decode.
+
 ## Sizes and timings
 
 Measured natively on one Apple M-series core, 60-year horizon, synthetic lives.
@@ -366,7 +429,7 @@ Measured natively on one Apple M-series core, 60-year horizon, synthetic lives.
 | `record_year` | about 21 ns |
 | 500-path chunk, serialised | 111 KB (161 KB for the first chunk, which carries the 96 sample paths); 52 KB of it is the scalar table |
 | 500-path chunk: encode / decode / merge | 0.8 ms / 0.4 ms / 0.2 ms |
-| 100,000-path accumulator, serialised | 10.6 MB: histograms 0.16 MB, scalars 10.4 MB (26 x 4 bytes x paths) |
+| 100,000-path accumulator, serialised | 10.6 MB: histograms 0.16 MB, scalars 10.4 MB (27 x 4 bytes x paths) |
 | `Summary::from_accumulator`, 100,000 paths | about 51 ms |
 | `Summary` JSON, 100,000 paths | 530 KB |
 | `SummaryDigest` JSON | about 1.7 KB |

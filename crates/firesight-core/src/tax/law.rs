@@ -37,6 +37,9 @@ const IRA_CATCH_UP_INCREMENT: f64 = 100.0;
 const HSA_INCREMENT: f64 = 50.0;
 /// Roth IRA phase-out range ($1,000 increments).
 const ROTH_PHASEOUT_INCREMENT: f64 = 1_000.0;
+/// The 401(a)(17) compensation limit moves in $5,000 steps
+/// (`retirement_accounts.employer_plans_401k_403b_457b_tsp.indexing`).
+const COMPENSATION_INCREMENT: f64 = 5_000.0;
 /// OASDI wage base (`fica.oasdi_wage_base_rounding`: nearest $300).
 const WAGE_BASE_INCREMENT: f64 = 300.0;
 /// IRMAA tier thresholds: nearest $1,000 (42 USC 1395r(i)(5)); the data file states
@@ -400,6 +403,18 @@ fn parse_limits(root: &Node) -> Result<ContributionLimits, DataError> {
         limits.roth_ira_phaseout_start[status.index()] = range.get_amount("start")?;
         limits.roth_ira_phaseout_end[status.index()] = range.get_amount("end")?;
     }
+    limits.compensation_limit = plans.get_amount("compensation_limit_401a17")?;
+    let deduction = accounts.get("traditional_ira_deduction_phase_out_magi")?;
+    let covered = deduction.get("covered_by_workplace_plan")?;
+    for status in FilingStatus::ALL {
+        let range = covered.get(status.key())?;
+        limits.ira_deduction_phaseout_start[status.index()] = range.get_amount("start")?;
+        limits.ira_deduction_phaseout_end[status.index()] = range.get_amount("end")?;
+    }
+    let spouse = deduction
+        .get("not_covered_but_spouse_covered")?
+        .get(FilingStatus::MarriedJoint.key())?;
+    limits.ira_deduction_phaseout_spouse = [spouse.get_amount("start")?, spouse.get_amount("end")?];
     Ok(limits)
 }
 
@@ -943,6 +958,16 @@ impl TaxLaw {
                 cpi,
                 ROTH_PHASEOUT_INCREMENT,
             );
+            f.limits.ira_deduction_phaseout_start[s] = index_rounded(
+                f.limits.ira_deduction_phaseout_start[s],
+                cpi,
+                ROTH_PHASEOUT_INCREMENT,
+            );
+            f.limits.ira_deduction_phaseout_end[s] = index_rounded(
+                f.limits.ira_deduction_phaseout_end[s],
+                cpi,
+                ROTH_PHASEOUT_INCREMENT,
+            );
             let table = &mut f.irmaa[s];
             for tier in 1..table.len {
                 let top_frozen =
@@ -969,6 +994,11 @@ impl TaxLaw {
         f.limits.k401_catch_up_60_63 =
             index_rounded(f.limits.k401_catch_up_60_63, cpi, K401_INCREMENT);
         f.limits.k401_total = index_rounded(f.limits.k401_total, cpi, K401_TOTAL_INCREMENT);
+        f.limits.compensation_limit =
+            index_rounded(f.limits.compensation_limit, cpi, COMPENSATION_INCREMENT);
+        for bound in &mut f.limits.ira_deduction_phaseout_spouse {
+            *bound = index_rounded(*bound, cpi, ROTH_PHASEOUT_INCREMENT);
+        }
         f.limits.ira = index_rounded(f.limits.ira, cpi, IRA_INCREMENT);
         f.limits.ira_catch_up = index_rounded(f.limits.ira_catch_up, cpi, IRA_CATCH_UP_INCREMENT);
         f.limits.hsa_self = index_rounded(f.limits.hsa_self, cpi, HSA_INCREMENT);

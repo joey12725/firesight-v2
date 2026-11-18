@@ -424,6 +424,11 @@ pub struct CustomAsset {
     pub volatility: f64,
     /// Correlation with US stocks, from -1 to 1.
     pub equity_corr: f64,
+    /// Share of the asset's value paid out in cash each year (interest, rent,
+    /// distributions), as a decimal: 0.08 for a private credit fund yielding 8%. It
+    /// is part of the return above, not on top of it, and is taxed each year as
+    /// ordinary income in a taxable account. 0 for an asset that pays nothing.
+    pub income_yield: f64,
 }
 
 impl Default for CustomAsset {
@@ -433,6 +438,7 @@ impl Default for CustomAsset {
             mean: 0.06,
             volatility: 0.12,
             equity_corr: 0.3,
+            income_yield: 0.0,
         }
     }
 }

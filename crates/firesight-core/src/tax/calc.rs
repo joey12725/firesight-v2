@@ -275,7 +275,13 @@ fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
     w.pref_income = w.pref_gain + x.qualified_dividends.max(0.0);
     w.retirement_income =
         x.traditional_distributions.max(0.0) + x.roth_conversions.max(0.0) + x.pensions.max(0.0);
-    w.other_income = x.other_ordinary + x.hsa_nonqualified.max(0.0);
+    // Recaptured depreciation is ordinary income (its rate cap is applied in
+    // `federal_tax`); above-the-line adjustments and passive losses released by a
+    // sale are ordinary deductions.
+    w.other_income =
+        x.other_ordinary + x.hsa_nonqualified.max(0.0) + x.depreciation_recapture.max(0.0)
+            - x.adjustments.max(0.0)
+            - x.passive_loss_released.max(0.0);
 
     let before_rental = w.wages + w.self_employment - w.deferrals
         + w.investment_income
@@ -508,6 +514,14 @@ fn federal_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     let s = x.filing_status.index();
     w.tax_ordinary = f.ordinary[s].tax(w.ordinary_taxable);
+    // Unrecaptured section 1250 gain sits on top of other ordinary income and is
+    // taxed at the ordinary rates but never above 25%.
+    let recapture = x.depreciation_recapture.max(0.0).min(w.ordinary_taxable);
+    if recapture > 0.0 {
+        let without = f.ordinary[s].tax(w.ordinary_taxable - recapture);
+        let capped = without + super::UNRECAPTURED_1250_MAX_RATE * recapture;
+        w.tax_ordinary = w.tax_ordinary.min(capped);
+    }
     w.tax_pref =
         f.capital_gains[s].tax(w.taxable_income) - f.capital_gains[s].tax(w.ordinary_taxable);
     w.niit = f.niit_rate * w.nii.min((w.agi - f.niit_threshold[s]).max(0.0));

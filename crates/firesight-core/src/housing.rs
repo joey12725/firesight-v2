@@ -11,8 +11,8 @@
 //!
 //! * The plan has a fixed table of property slots: `profile.properties` first, then
 //!   one slot per `buy_home` event in event order. A slot is inactive until bought and
-//!   after sale. Slot `i` draws only from `Stream::Housing(i)`: two normals and one
-//!   uniform per month, whether owned or not.
+//!   after sale. Slot `i` draws only from `Stream::Housing(i)`: three 64-bit words per
+//!   month, whether owned or not.
 //! * All amounts are nominal dollars. Mortgage payments are fixed in nominal terms;
 //!   property tax, insurance, maintenance and HOA scale with the property's value or
 //!   with CPI as documented on each field.
@@ -56,15 +56,16 @@
 //!   ordinary deduction when the property is sold ([`Sale::passive_loss_released`]).
 //! * A loss on the sale of a home or second home is not deductible (taxable gain 0);
 //!   a loss on a rental is reported as a negative `taxable_gain`.
-//! * No refinancing, no insurance repricing above CPI, no rent sensitivity to the
-//!   economy.
+//! * Refinancing is a helper ([`PropertyState::refinance`]) the simulation calls once
+//!   a year; it has no closing costs. No insurance repricing above CPI, no rent
+//!   sensitivity to the economy.
 
 use serde_json::Value;
 
 use crate::data::Data;
 use crate::math;
 use crate::model::{BuyHome, Property, PropertyUse};
-use crate::rng::Rng;
+use crate::rng::{normal_from_bits, Rng};
 
 /// Residential rental property is depreciated over 27.5 years (IRC section
 /// 168(c)), i.e. 330 months.
@@ -210,8 +211,9 @@ pub struct PropertyState {
     pub rent_growth: f64,
     /// True while a rental stands empty.
     pub vacant: bool,
-    /// The latest transaction-noise normal; used if the property is sold this month.
-    pub sale_noise: f64,
+    /// The latest transaction-noise draw, as 64 random bits; turned into a normal
+    /// (`rng::normal_from_bits`) if the property is sold this month.
+    pub sale_noise: u64,
     /// Net rental income for tax accumulated since the last
     /// [`PropertyState::close_tax_year`].
     pub rental_year_to_date: f64,
@@ -509,6 +511,38 @@ impl PropertyModel {
         model
     }
 
+    /// Expected cash flows of an owned property over one month at its current
+    /// state, nominal dollars: `(operating costs, mortgage payment including PMI,
+    /// expected rent collected net of vacancy and the management fee)`. All zero for
+    /// a slot that is not owned. For planning (the funded test, the annual budget);
+    /// draws nothing.
+    pub fn expected_month(&self, state: &PropertyState, price_level: f64) -> (f64, f64, f64) {
+        if !state.owned {
+            return (0.0, 0.0, 0.0);
+        }
+        let operating = (state.assessed_value.max(state.value) * self.tax_rate
+            + state.value * (self.insurance_rate + self.maintenance_rate))
+            / 12.0
+            + self.hoa_real * price_level;
+        let mortgage = state.mortgage.map_or(0.0, |m| {
+            m.payment.min(m.balance * (1.0 + m.rate / 12.0)) + m.pmi_monthly
+        });
+        let rent = self.rental.as_ref().map_or(0.0, |r| {
+            let occupied = if r.p_vacate + r.p_fill > 0.0 {
+                r.p_fill / (r.p_vacate + r.p_fill)
+            } else {
+                1.0
+            };
+            r.rent_real * state.rent_growth * price_level * occupied * (1.0 - r.management_fee)
+        });
+        (operating, mortgage, rent)
+    }
+
+    /// True if the slot is (or will be) a rental.
+    pub fn is_rental(&self) -> bool {
+        self.rental.is_some()
+    }
+
     /// State at `profile.start`: owned for existing properties, empty for future
     /// purchases.
     pub fn initial_state(&self) -> PropertyState {
@@ -586,7 +620,7 @@ impl PropertyModel {
     }
 
     /// Advances one month: costs, amortisation, rent, then appreciation. Consumes
-    /// exactly two normals and one uniform from `rng` (the slot's `Stream::Housing`),
+    /// exactly three 64-bit words from `rng` (the slot's `Stream::Housing`),
     /// owned or not. `home_national` is the national index change this month;
     /// `price_level` scales CPI-linked costs (HOA) and rent.
     pub fn step(
@@ -596,8 +630,10 @@ impl PropertyModel {
         price_level: f64,
         rng: &mut Rng,
     ) -> HousingMonth {
-        let z_local = rng.normal();
-        state.sale_noise = rng.normal();
+        // Three 64-bit words every month, owned or not; they become normals only
+        // for a property that is owned.
+        let r_local = rng.next_u64();
+        let r_sale = rng.next_u64();
         let u_vacancy = rng.uniform();
         let rent_growth = state.rent_growth;
         if let Some(r) = &self.rental {
@@ -607,6 +643,8 @@ impl PropertyModel {
         if !state.owned {
             return out;
         }
+        let z_local = normal_from_bits(r_local);
+        state.sale_noise = r_sale;
 
         let value = state.value;
         if state.assessment_clock == 0 {
@@ -692,7 +730,7 @@ impl PropertyModel {
         }
         let x = self.sigma_sale;
         let price = if x > 0.0 {
-            state.value * math::exp(x * state.sale_noise - 0.5 * x * x)
+            state.value * math::exp(x * normal_from_bits(state.sale_noise) - 0.5 * x * x)
         } else {
             state.value
         };
@@ -764,6 +802,34 @@ impl PropertyState {
             self.mortgage = None;
         }
         applied
+    }
+
+    /// Refinances the mortgage at `market_rate` if that is at least `threshold`
+    /// below the loan's rate: the balance is re-amortised at the new rate over the
+    /// term the old loan had left, so the payment falls. Closing costs are ignored
+    /// (the threshold stands in for them). Returns true if the loan was refinanced.
+    pub fn refinance(&mut self, market_rate: f64, threshold: f64) -> bool {
+        let Some(m) = &mut self.mortgage else {
+            return false;
+        };
+        if !market_rate.is_finite() || market_rate < 0.0 || m.rate - market_rate < threshold {
+            return false;
+        }
+        // Months left on the old schedule: n = -ln(1 - B r / P) / ln(1 + r).
+        let r = m.rate / 12.0;
+        let interest = m.balance * r;
+        if m.payment <= interest || m.balance <= 0.0 {
+            return false;
+        }
+        let months = if r > 0.0 {
+            -math::ln(1.0 - interest / m.payment) / math::ln_1p(r)
+        } else {
+            m.balance / m.payment
+        };
+        let months = months.ceil().clamp(1.0, 480.0) as u32;
+        m.rate = market_rate;
+        m.payment = amortized_payment(m.balance, market_rate, months);
+        true
     }
 
     /// Closes the tax year for this property and returns its taxable rental income

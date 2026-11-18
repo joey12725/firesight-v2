@@ -75,7 +75,7 @@ Profile {
 
 Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Location }
 Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
-            health: Excellent|Average|Poor,          // scales mortality
+            health: Excellent|Good|Average|Poor,     // scales mortality; default Good (0.85x)
             joins: Option<YearMonth>,               // future partner: not in household before this
             social_security: SocialSecurity }
 SocialSecurity { claim_age: f64 (62..=70, default 67),
@@ -138,7 +138,7 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   expense_ratio: f64, advisory_fee: f64,
                   emergency_months: f64 (6),          // of current spending, recomputed every year
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
-                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr }>,
+                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
                   single_stock: SingleStock{ volatility, beta } }
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
@@ -174,7 +174,7 @@ RetirementPlan {
          | AlreadyRetired,
   partner_offset_years: f64,                     // second earner keeps working this much longer (can be negative)
   spending_rule: ConstantReal | PercentOfPortfolio{rate} | Guardrails{upper, lower, adjust}
-               | VanguardDynamic{ceiling, floor} | Vpw | FloorCeiling{floor, ceiling},
+               | VanguardDynamic{ceiling, floor, rate?} | Vpw | FloorCeiling{floor, ceiling, rate?},
   withdrawal_order: Conventional | Proportional
                   | TaxAware{ fill_to_bracket: f64, roth_conversions: bool, mind_aca: bool },
   early_access: Auto | PayPenalty,               // Auto: taxable, Roth basis, seasoned conversions, 72(t)
@@ -258,7 +258,8 @@ for each month t:
   month's essential spending. Recorded with age; the path continues on Social Security
   and other income with spending cut to what is available, so the size of the shortfall
   is measured, not just the fact of it.
-* **Success**: retired before `max_age` and never depleted while anyone is alive. Reported
+* **Success**: never depleted while anyone is alive, the bequest target met, and
+  retired (or died first) by the plan's latest retirement age. Reported
   together with spending actually delivered vs planned, because a path that "succeeds" by
   cutting spending 40% under a guardrail rule is not the same as one that did not.
 
@@ -288,26 +289,33 @@ for each month t:
 `Accumulator` is mergeable (`merge(&mut self, other)`), so worker chunks combine in any
 order. It holds:
 
-* **Annual histograms** on a signed-log grid (512 bins, about 1% resolution from $100 to
-  $1B, negative side included) for: net worth, investable assets, spending, gross income,
-  total tax. These give every quantile band and the density fan without storing paths.
-* **Status counts per year**: working, retired and on plan, retired and cutting spending,
-  depleted, dead. (The "rich, broke or dead" view.)
-* **Per-year sums** (and counts) for composition charts: balances by bucket kind, home
-  equity, debts; flows by kind (wages, Social Security, pensions, rental, withdrawals by
-  account kind, taxes by kind, spending by group, savings by destination).
-* **Per-path scalars**, columnar `f32`: FI age, retirement age, depletion age, death ages,
-  terminal net worth, minimum investable, lifetime tax, lifetime spending, delivered/planned
-  spending ratio, real portfolio return in the first 10 retirement years, worst drawdown,
-  months unemployed, long-term-care cost, peak net worth. These feed distributions,
-  scatterplots and failure attribution, and let the UI pick "the path at the 10th
-  percentile" and ask for its trace.
+* **Annual histograms** on a symmetric grid of 2,945 bins (an exact-zero bin, `$16`
+  linear bins below `$1,024`, then 64 bins per doubling up to `2^32`, negative side
+  included: 0.8% to 1.6% wide) for: net worth, investable assets, spending, gross
+  income, total tax. These give every quantile band and the density fan without
+  storing paths.
+* **Status counts per year**: working, retired with surplus, retired and on plan,
+  retired and cutting spending, depleted; dead is derived. (The "rich, broke or dead"
+  view.)
+* **Per-year sums** of the 43 `YearSeries`: balances by bucket kind, property value,
+  mortgages, debts; flows by kind (wages, Social Security, pensions, rental,
+  withdrawals by account kind, taxes by kind, spending by group, savings by
+  destination).
+* **Per-path scalars**, 27 columns of `f32`: FI age, Coast-FI age, retirement age,
+  depletion age, death ages, investable at retirement, funded ratio, real portfolio
+  return in the first 10 retirement years, worst drawdown, months unemployed,
+  long-term-care cost, inflation, failure cause, success, and the derived ones
+  (terminal and peak net worth, minimum investable, lifetime tax and spending,
+  delivered/planned spending ratios, years retired, cut and depleted). These feed
+  distributions, scatterplots and failure attribution, and let the UI pick "the path
+  at the 10th percentile" and ask for its trace.
 * **Sample paths**: annual net worth, investable and spending for the first 96 paths.
 
 `Summary::from(&Accumulator)` produces the JSON the UI and the AI consume: headline
 metrics with standard errors, quantile curves, FI-by-age cumulative curve, survival
 curves, attribution of failures (first cause: market sequence, job loss, health/LTC,
-longevity, overspending), and compact tables.
+longevity, overspending, inflation, other), and compact tables. `docs/engine-output.md`
+is the field-by-field reference.
 
 `trace_path(i) -> PathTrace`: monthly ledger of every balance and flow, the annual tax
 return lines, and an event log ("laid off", "bought home", "Roth conversion $38k",
@@ -319,19 +327,34 @@ return lines, and an event log ("laid off", "bought home", "Roth conversion $38k
 class Engine {
   constructor(profileJson: string)            // validate + compile; throws a JSON error list
   horizonYears(): number
+  warnings(): string
   runChunk(firstPath: number, count: number): Uint8Array   // serialised Accumulator
   trace(path: number): string                 // PathTrace JSON
 }
+class Merger {                                // holds the running accumulator of one run
+  constructor()
+  add(bytes: Uint8Array): void
+  paths(): number
+  summarize(profileJson: string): string      // Summary JSON
+  digest(profileJson: string): string         // SummaryDigest JSON
+  bytes(): Uint8Array
+}
 function mergeChunks(a: Uint8Array, b: Uint8Array): Uint8Array
-function summarize(acc: Uint8Array): string   // Summary JSON
+function summarize(acc: Uint8Array, profileJson: string): string   // Summary JSON
+function digest(acc: Uint8Array, profileJson: string): string      // SummaryDigest JSON
+function compare(a: Uint8Array, b: Uint8Array, baselineProfileJson: string): string // Comparison JSON, B minus A
+function planPreview(profileJson: string): string        // PlanPreview JSON, no simulation
 function validate(profileJson: string): string           // { errors, warnings }
 function applyPatch(profileJson: string, patchJson: string): string
 function migrateV1(v1Json: string): string    // { profile, notes }
 function levers(profileJson: string): string  // sensitivity levers as { id, label, low, high } patches
 function schema(): string
 function defaultProfile(): string
+function exampleProfiles(): string
 function taxDetail(profileJson: string, year: number, inputsJson: string): string // explain a tax computation
 ```
+
+A profile with no `start` starts in the current month of the caller's clock.
 
 The web app owns a pool of `navigator.hardwareConcurrency - 1` workers. A run is split
 into chunks of ~500 paths handed out to idle workers; results merge on arrival, so

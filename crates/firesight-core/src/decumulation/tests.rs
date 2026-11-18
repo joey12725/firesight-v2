@@ -243,6 +243,7 @@ fn vanguard_dynamic_ceiling_and_floor() {
     let (planner, mut state) = started(SpendingRule::VanguardDynamic {
         ceiling: 0.05,
         floor: 0.025,
+        rate: None,
     });
     // 4% of 1.2M is 48k, but the raise is capped at +5%: 42k.
     let d = planner.decide(&mut state, &spend(40_000.0, 1_200_000.0));
@@ -260,6 +261,7 @@ fn vanguard_dynamic_ceiling_and_floor() {
     let (planner, mut state) = started(SpendingRule::VanguardDynamic {
         ceiling: 0.0,
         floor: 0.0,
+        rate: None,
     });
     for portfolio in [2e6, 5e5] {
         assert_close(
@@ -276,6 +278,7 @@ fn floor_and_ceiling_are_relative_to_the_budget() {
     let (planner, mut state) = started(SpendingRule::FloorCeiling {
         floor: 0.85,
         ceiling: 1.2,
+        rate: None,
     });
     // 4% of 700k = 28k: the floor holds spending at 85% of the budget.
     let d = planner.decide(&mut state, &spend(40_000.0, 700_000.0));
@@ -360,11 +363,13 @@ fn spending_rules_survive_degenerate_inputs() {
         SpendingRule::VanguardDynamic {
             ceiling: 0.05,
             floor: 0.025,
+            rate: None,
         },
         SpendingRule::Vpw,
         SpendingRule::FloorCeiling {
             floor: 0.85,
             ceiling: 1.2,
+            rate: None,
         },
     ];
     let mut rng = Rng::from_seed(3);

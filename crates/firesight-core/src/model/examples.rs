@@ -252,8 +252,11 @@ fn early_career_saver(start: YearMonth) -> Profile {
             ..LifeEvent::default()
         }],
         retirement: RetirementPlan {
+            // Decades from Social Security, she does not count on it: the target is
+            // 3.5% of savings alone.
             trigger: RetirementTrigger::WhenFunded(WhenFunded {
                 withdrawal_rate: 0.035,
+                count_future_income: false,
                 ..WhenFunded::default()
             }),
             ..RetirementPlan::default()
@@ -783,6 +786,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             spending_rule: SpendingRule::VanguardDynamic {
                 ceiling: 0.05,
                 floor: 0.025,
+                rate: None,
             },
             ..RetirementPlan::default()
         },

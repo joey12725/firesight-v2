@@ -94,7 +94,8 @@ impl Default for MarketKind {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Stress {
-    /// Stocks crash in the year the household retires: the worst case for sequence risk.
+    /// Stocks crash over the six months after the household retires, then recover:
+    /// the worst case for sequence risk.
     CrashAtRetirement {
         /// Peak-to-trough fall in stocks as a positive decimal (0.4 = a 40% fall).
         #[serde(default = "d_drawdown")]

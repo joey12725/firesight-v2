@@ -94,6 +94,7 @@ fn annual_tax_functions_do_not_allocate() {
                 aca_months: 12,
                 aca_benchmark_premium: 16_000.0,
                 on_medicare: [k > 20, k > 25],
+                ..TaxInputs::default()
             };
             let r = compute(&p, &x);
             checksum += r.total + r.aca_premium_credit + r.irmaa_surcharge;

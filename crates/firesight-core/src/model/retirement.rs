@@ -159,6 +159,11 @@ pub enum SpendingRule {
         /// Largest real decrease in one year, as a positive decimal (0.025 = -2.5%).
         #[serde(default = "d_vg_floor")]
         floor: f64,
+        /// Share of the portfolio targeted each year, as a decimal (0.04 = 4%). Leave
+        /// empty to use the household's own withdrawal rate in its first year of
+        /// retirement.
+        #[serde(default)]
+        rate: Option<f64>,
     },
     /// Variable percentage withdrawal: each year spend the amount that would exhaust
     /// the portfolio exactly at the end of the plan given expected returns. Spends
@@ -175,6 +180,11 @@ pub enum SpendingRule {
         /// than 20% above).
         #[serde(default = "d_fc_ceiling")]
         ceiling: f64,
+        /// Share of the portfolio targeted each year, as a decimal (0.045 = 4.5%).
+        /// Leave empty to use the household's own withdrawal rate in its first year
+        /// of retirement.
+        #[serde(default)]
+        rate: Option<f64>,
     },
 }
 

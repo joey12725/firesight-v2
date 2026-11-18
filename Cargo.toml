@@ -17,6 +17,11 @@ serde_json = { version = "1", features = ["preserve_order"] }
 schemars = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 
+# The simulation tests run thousands of paths; unoptimised they take minutes. Core is
+# optimised in dev and test builds too (debug assertions and overflow checks stay on).
+[profile.dev.package.firesight-core]
+opt-level = 2
+
 [profile.release]
 opt-level = 3
 lto = "fat"

@@ -515,6 +515,12 @@ keyed_enum! {
         YearsBelow75 => "years_below_75",
         /// Derived: years ending in the `Depleted` status.
         YearsDepleted => "years_depleted",
+        /// Supplied: first person's age in the first month the household's savings,
+        /// with no further contributions and grown at the plan's expected real
+        /// return, would meet the funded test at the planned (or latest) retirement
+        /// age ("Coast FI"). Appended after the derived scalars to keep indices
+        /// stable.
+        CoastFiAge => "coast_fi_age",
     }
 }
 
@@ -523,12 +529,14 @@ impl PathScalar {
     /// overwrites whatever [`PathEnd`] holds for it.
     pub const fn is_derived(self) -> bool {
         self.index() >= PathScalar::YearsSimulated.index()
+            && self.index() <= PathScalar::YearsDepleted.index()
     }
 
     /// The unit of the value.
     pub const fn unit(self) -> ScalarUnit {
         match self {
             PathScalar::FiAge
+            | PathScalar::CoastFiAge
             | PathScalar::RetirementAge
             | PathScalar::DepletionAge
             | PathScalar::DeathAge0
@@ -898,7 +906,7 @@ mod tests {
         );
         assert_eq!(Status::COUNT, 6);
         assert_eq!(YearSeries::COUNT, 43);
-        assert_eq!(PathScalar::COUNT, 26);
+        assert_eq!(PathScalar::COUNT, 27);
         assert_eq!(YearSeries::from_key("mortgage"), Some(YearSeries::Mortgage));
         assert_eq!(PathScalar::from_index(0), Some(PathScalar::FiAge));
         assert_eq!(PathScalar::from_key("nope"), None);

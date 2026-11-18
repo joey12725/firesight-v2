@@ -48,6 +48,7 @@ fn limits_2026() -> ContributionLimits {
         hsa_catch_up: 1_000.0,
         roth_ira_phaseout_start: [153_000.0, 242_000.0, 153_000.0],
         roth_ira_phaseout_end: [168_000.0, 252_000.0, 168_000.0],
+        ..ContributionLimits::default()
     }
 }
 

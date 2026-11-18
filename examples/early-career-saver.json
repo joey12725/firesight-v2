@@ -10,7 +10,7 @@
         "name": "Maya",
         "birth": "1999-07",
         "sex": "female",
-        "health": "average",
+        "health": "good",
         "joins": null,
         "social_security": {
           "claim_age": 67.0,
@@ -413,7 +413,7 @@
       "type": "when_funded",
       "withdrawal_rate": 0.035,
       "basis": "investable",
-      "count_future_income": true,
+      "count_future_income": false,
       "min_age": null,
       "max_age": 70.0
     },

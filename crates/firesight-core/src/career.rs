@@ -78,7 +78,7 @@ use crate::model::{
     EquityCompany, EquityKind, Job, LifecycleProfile, RiskLevel, SelfEmployment, WageGrowth,
     YearMonth,
 };
-use crate::rng::Rng;
+use crate::rng::{normal_from_bits, Rng};
 
 /// Maximum equity grants tracked per job. Refresh grants are pooled inside the slot
 /// of the grant that spawns them, so this is the number of `job.equity` entries used;
@@ -948,10 +948,9 @@ impl JobModel {
     /// Advances one month and returns what was paid. Called for every job every
     /// month, whatever its status, so the draw count per stream is constant.
     ///
-    /// Draws, in order. From `career`: one uniform (layoff), four normals (spell
-    /// length, scar, commission, bonus), and in January two more normals (persistent
-    /// and transitory wage shock). From `equity`: one normal (stock), three uniforms
-    /// (liquidity event, outcome class, multiple).
+    /// Draws, in order, one 64-bit word each. From `career`: layoff, spell length,
+    /// scar, commission, bonus, and in January two more (persistent and transitory
+    /// wage shock). From `equity`: stock, liquidity event, outcome class, multiple.
     pub fn step(
         &self,
         state: &mut JobState,
@@ -961,18 +960,20 @@ impl JobModel {
     ) -> JobMonth {
         let s = state;
         let c = climate;
+        // Every variate is one 64-bit word, drawn whether or not it is used; the
+        // words are turned into normals only where a branch needs them.
         let u_layoff = career.uniform();
-        let z_spell = career.normal();
-        let z_scar = career.normal();
-        let z_commission = career.normal();
-        let z_bonus = career.normal();
+        let r_spell = career.next_u64();
+        let r_scar = career.next_u64();
+        let r_commission = career.next_u64();
+        let r_bonus = career.next_u64();
         let january = c.now.month() == 1;
-        let (z_eta, z_eps) = if january {
-            (career.normal(), career.normal())
+        let (r_eta, r_eps) = if january {
+            (career.next_u64(), career.next_u64())
         } else {
-            (0.0, 0.0)
+            (0, 0)
         };
-        let z_stock = equity.normal();
+        let r_stock = equity.next_u64();
         let u_liquidity = equity.uniform();
         let u_class = equity.uniform();
         let u_multiple = equity.uniform();
@@ -981,6 +982,8 @@ impl JobModel {
 
         // Annual wage shocks. The first step keeps the entered salary.
         if january && s.steps > 0 && self.wage_risk {
+            let z_eta = normal_from_bits(r_eta);
+            let z_eps = normal_from_bits(r_eps);
             s.persistent_shock = self.rho * s.persistent_shock + self.sigma_eta * z_eta;
             s.persistent_variance =
                 self.rho * self.rho * s.persistent_variance + self.sigma_eta * self.sigma_eta;
@@ -1003,6 +1006,8 @@ impl JobModel {
             && u_layoff < self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)]
         {
             let p = &self.params;
+            let z_spell = normal_from_bits(r_spell);
+            let z_scar = normal_from_bits(r_scar);
             let median = p.spell_median[slack] * p.spell_age_multiplier[spell_age_band(c.age)];
             let spell = (median * math::exp(p.spell_sigma[slack] * z_spell))
                 .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
@@ -1075,7 +1080,7 @@ impl JobModel {
                     let factor = if self.pay_noise && b.log_sd > 0.0 {
                         let rho = VARIABLE_PAY_MARKET_CORRELATION;
                         let mix = rho * self.params.market_signal(c.equity_return_12m)
-                            + (1.0 - rho * rho).sqrt() * z_bonus;
+                            + (1.0 - rho * rho).sqrt() * normal_from_bits(r_bonus);
                         math::exp(b.log_sd * mix - 0.5 * b.log_sd * b.log_sd)
                     } else {
                         1.0
@@ -1085,7 +1090,7 @@ impl JobModel {
             }
             if let Some(k) = &self.commission {
                 let factor = if self.pay_noise && k.log_sd > 0.0 {
-                    math::exp(k.log_sd * z_commission - 0.5 * k.log_sd * k.log_sd)
+                    math::exp(k.log_sd * normal_from_bits(r_commission) - 0.5 * k.log_sd * k.log_sd)
                 } else {
                     1.0
                 };
@@ -1094,7 +1099,7 @@ impl JobModel {
         }
 
         if self.n_grants > 0 {
-            self.step_equity(s, c, z_stock, u_liquidity, u_class, u_multiple, &mut out);
+            self.step_equity(s, c, r_stock, u_liquidity, u_class, u_multiple, &mut out);
         }
         out
     }
@@ -1105,7 +1110,7 @@ impl JobModel {
         &self,
         s: &mut JobState,
         c: &CareerClimate,
-        z_stock: f64,
+        r_stock: u64,
         u_liquidity: f64,
         u_class: f64,
         u_multiple: f64,
@@ -1113,7 +1118,9 @@ impl JobModel {
     ) {
         match &self.company {
             Company::None => {}
-            Company::Public(stock) => s.stock_price *= stock.gross_return(c.equity_return, z_stock),
+            Company::Public(stock) => {
+                s.stock_price *= stock.gross_return(c.equity_return, normal_from_bits(r_stock));
+            }
             Company::Private {
                 monthly_hazard,
                 fail_prob,
@@ -1163,7 +1170,8 @@ impl JobModel {
                     }
                 }
                 Liquidity::Exited => {
-                    s.stock_price *= after_exit.gross_return(c.equity_return, z_stock);
+                    s.stock_price *=
+                        after_exit.gross_return(c.equity_return, normal_from_bits(r_stock));
                 }
                 Liquidity::Liquid | Liquidity::Failed => {}
             },
@@ -1230,6 +1238,26 @@ impl JobModel {
                 s.refresh_strike[g][ring_slot] = if grant.strike.is_some() { price } else { 0.0 };
             }
         }
+    }
+
+    /// Consumes exactly the draws [`JobModel::step`] would, without doing anything.
+    /// For a job that has ended for good and has no private-company payout pending,
+    /// this keeps both streams aligned at a fraction of the cost.
+    #[inline]
+    pub fn skip(&self, january: bool, career: &mut Rng, equity: &mut Rng) {
+        for _ in 0..if january { 7 } else { 5 } {
+            career.next_u64();
+        }
+        for _ in 0..4 {
+            equity.next_u64();
+        }
+    }
+
+    /// True when stepping the job can no longer produce anything: it has ended and
+    /// no private-company liquidity event is pending.
+    #[inline]
+    pub fn is_inert(&self, state: &JobState) -> bool {
+        state.employment == Employment::Ended && state.liquidity != Liquidity::Pending
     }
 
     /// Ends the job (retirement or event). Unvested equity is forfeited; vested
@@ -1389,8 +1417,9 @@ impl SelfEmploymentModel {
         climate: &CareerClimate,
         career: &mut Rng,
     ) -> f64 {
-        let z = career.normal();
+        let bits = career.next_u64();
         if self.risk && climate.now.month() == 1 && state.steps > 0 {
+            let z = normal_from_bits(bits);
             let phi = SELF_EMPLOYMENT_PERSISTENCE;
             let rho = VARIABLE_PAY_MARKET_CORRELATION;
             let innovation_var = self.log_sd * self.log_sd * (1.0 - phi * phi);

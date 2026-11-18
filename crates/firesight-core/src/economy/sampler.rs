@@ -116,7 +116,7 @@ impl ShockTable {
 
 /// Standard normal CDF.
 pub(super) fn normal_cdf(x: f64) -> f64 {
-    0.5 * libm::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
+    0.5 * crate::math::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
 }
 
 /// Standard normal quantile: Acklam's rational approximation (relative error about

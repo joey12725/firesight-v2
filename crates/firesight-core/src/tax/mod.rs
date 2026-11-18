@@ -260,6 +260,54 @@ pub struct ContributionLimits {
     pub roth_ira_phaseout_start: [f64; FilingStatus::COUNT],
     /// Roth IRA eligibility phase-out end, by filing status (MAGI).
     pub roth_ira_phaseout_end: [f64; FilingStatus::COUNT],
+    /// Pay above this amount is ignored when working out plan contributions and the
+    /// employer match (IRC 401(a)(17)).
+    pub compensation_limit: f64,
+    /// MAGI at which the deduction for a traditional IRA contribution starts to
+    /// phase out for someone covered by a workplace plan, by filing status.
+    pub ira_deduction_phaseout_start: [f64; FilingStatus::COUNT],
+    /// MAGI at which that deduction is gone.
+    pub ira_deduction_phaseout_end: [f64; FilingStatus::COUNT],
+    /// The same phase-out for someone who is not covered but whose spouse is
+    /// (joint returns only): `[start, end]`.
+    pub ira_deduction_phaseout_spouse: [f64; 2],
+}
+
+/// Share of a traditional IRA contribution that is deductible (1.0 = all of it).
+///
+/// Fully deductible when neither spouse is covered by a workplace plan; otherwise it
+/// phases out linearly over the MAGI range for the contributor's situation
+/// (`retirement_accounts.traditional_ira_deduction_phase_out_magi`). The statutory
+/// $10 rounding and $200 minimum are ignored.
+pub fn ira_deductible_fraction(
+    params: &TaxYearParams,
+    status: FilingStatus,
+    magi: f64,
+    covered: bool,
+    spouse_covered: bool,
+) -> f64 {
+    let limits = &params.federal.limits;
+    let (start, end) = if covered {
+        let s = status.index();
+        (
+            limits.ira_deduction_phaseout_start[s],
+            limits.ira_deduction_phaseout_end[s],
+        )
+    } else if spouse_covered && status == FilingStatus::MarriedJoint {
+        (
+            limits.ira_deduction_phaseout_spouse[0],
+            limits.ira_deduction_phaseout_spouse[1],
+        )
+    } else {
+        return 1.0;
+    };
+    if magi <= start || end <= 0.0 {
+        1.0
+    } else if magi >= end || end <= start {
+        0.0
+    } else {
+        (end - magi) / (end - start)
+    }
 }
 
 /// Maximum number of bands in the ACA applicable-percentage table.
@@ -745,9 +793,12 @@ pub struct TaxInputs {
     /// Charitable gifts.
     pub charitable: f64,
     /// Early distributions subject to the 10% penalty (traditional withdrawals and
-    /// Roth earnings before 59 and a half without an exception).
+    /// Roth earnings before 59 and a half without an exception). A penalty base
+    /// only: the income itself is in `traditional_distributions` or `other_ordinary`.
     pub early_distributions: f64,
-    /// Non-medical HSA withdrawals before 65 (taxable plus 20% penalty).
+    /// Non-medical HSA withdrawals before 65. `compute` both taxes this amount as
+    /// ordinary income and charges the 20% penalty on it; do not also add it to
+    /// `other_ordinary`.
     pub hsa_nonqualified: f64,
     /// People covered by an ACA marketplace plan (0 if none).
     pub aca_household_size: u32,
@@ -757,7 +808,21 @@ pub struct TaxInputs {
     pub aca_benchmark_premium: f64,
     /// Whether each person is on Medicare (pays IRMAA when MAGI is high).
     pub on_medicare: [bool; MAX_PEOPLE],
+    /// Above-the-line deductions not taken through payroll: deductible traditional
+    /// IRA contributions and HSA contributions made directly. They reduce income tax
+    /// (and AGI), not FICA.
+    pub adjustments: f64,
+    /// Depreciation recaptured on the sale of a rental property (unrecaptured
+    /// section 1250 gain): ordinary income, taxed at no more than
+    /// [`UNRECAPTURED_1250_MAX_RATE`].
+    pub depreciation_recapture: f64,
+    /// Suspended passive rental losses released by the sale of the property: an
+    /// ordinary deduction in the year of sale (IRC 469(g)).
+    pub passive_loss_released: f64,
 }
+
+/// Highest federal rate on unrecaptured section 1250 gain (IRC 1(h)(1)(E)): 25%.
+pub const UNRECAPTURED_1250_MAX_RATE: f64 = 0.25;
 
 /// The computed return, nominal dollars.
 #[derive(Clone, Copy, Debug, PartialEq, Default, Serialize)]

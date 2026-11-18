@@ -98,6 +98,12 @@ pub const STEP_DRAWS: u32 = 2;
 /// directly.
 const GROWTH_TABLE_MONTHS: usize = 120 * 12 + 1;
 
+/// Mortality multiplier of `HealthStatus::Good`, the schema default: between the
+/// population table (1.0) and the research's `healthy_high_income` preset (0.75,
+/// which the research proposes as the default for this audience). A judgement: most
+/// planners are healthier than average, not all are in the top income quartile.
+pub const GOOD_HEALTH_MULTIPLIER: f64 = 0.85;
+
 /// Highest age with its own entry in the per-age cost tables.
 const MAX_TABLE_AGE: usize = 120;
 
@@ -163,7 +169,7 @@ fn inverse_normal_cdf(p: f64) -> f64 {
 
 /// Standard normal distribution function (pure-Rust `erfc`, deterministic).
 fn normal_cdf(x: f64) -> f64 {
-    0.5 * libm::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
+    0.5 * math::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
 }
 
 /// One uniform strictly inside `(0, 1)` from exactly one 64-bit draw.
@@ -204,7 +210,8 @@ impl MortalityModel {
     /// and the month's survival probability is `(1 - q)^(1/12)` (constant force of
     /// mortality within the year of age). `m` is the health multiplier from
     /// `params.json` `mortality.health_multiplier.presets`: excellent 0.75
-    /// (`healthy_high_income`), average 1.0, poor 1.5. Improvement factors are 1 when
+    /// (`healthy_high_income`), good 0.85 ([`GOOD_HEALTH_MULTIPLIER`]), average 1.0,
+    /// poor 1.5. Improvement factors are 1 when
     /// `improvement` is off. Nobody outlives the last age of the table.
     ///
     /// `Longevity::FixedAge` gives a curve that is 1 until the month the person
@@ -253,6 +260,7 @@ impl MortalityModel {
         let presets = &mortality["health_multiplier"]["presets"];
         let multiplier = match health {
             HealthStatus::Excellent => num(presets, &["healthy_high_income"]),
+            HealthStatus::Good => GOOD_HEALTH_MULTIPLIER,
             HealthStatus::Average => num(presets, &["average"]),
             HealthStatus::Poor => num(presets, &["poor_health"]),
         };
@@ -423,6 +431,11 @@ pub struct HealthState {
     /// This year's total standardised shock (persistent plus transitory), mean 0 and
     /// variance 1.
     pub oop_shock: f64,
+    /// The year's out-of-pocket amount for the plan and age it was last priced for
+    /// (`oop_cache_key`), so the lognormal is evaluated once a year, not monthly.
+    pub oop_cache: f64,
+    /// Identifies what `oop_cache` was priced for; `u32::MAX` when empty.
+    pub oop_cache_key: u32,
 }
 
 impl Default for HealthState {
@@ -434,6 +447,8 @@ impl Default for HealthState {
             ltc_care: CareType::None,
             oop_persistent: 0.0,
             oop_shock: 0.0,
+            oop_cache: 0.0,
+            oop_cache_key: u32::MAX,
         }
     }
 }
@@ -1103,7 +1118,13 @@ impl HealthModel {
         let growth = self.excess_growth(t) * ctx.price_level;
         let (premium, oop, scale) = self.price(ctx.age, phase);
         let annual_oop = if self.risk {
-            oop.draw(state.oop_shock)
+            // The draw changes with the year's shock, the plan and the age band.
+            let key = ((t / 12) << 12) | ((phase as u32) << 8) | (ctx.age.max(0.0) as u32 & 0xff);
+            if state.oop_cache_key != key {
+                state.oop_cache = oop.draw(state.oop_shock);
+                state.oop_cache_key = key;
+            }
+            state.oop_cache
         } else {
             oop.mean
         };

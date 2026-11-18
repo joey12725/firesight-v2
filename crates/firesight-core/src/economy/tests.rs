@@ -1578,6 +1578,7 @@ fn custom_asset_follows_the_user_parameters() {
                     mean,
                     volatility,
                     equity_corr,
+                    income_yield: 0.0,
                 }),
                 ..PortfolioPolicy::default()
             });
@@ -1609,6 +1610,7 @@ fn custom_asset_follows_the_user_parameters() {
             mean: f64::INFINITY,
             volatility: f64::NAN,
             equity_corr: 9.0,
+            income_yield: 0.0,
         }),
         ..PortfolioPolicy::default()
     });
@@ -1925,6 +1927,7 @@ fn portfolio_parameters_do_not_move_the_market() {
             mean: 0.2,
             volatility: 0.5,
             equity_corr: -0.9,
+            income_yield: 0.0,
         }),
         ..PortfolioPolicy::default()
     };

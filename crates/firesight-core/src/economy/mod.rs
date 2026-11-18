@@ -102,7 +102,7 @@ use crate::rng::Rng;
 use regime::{LognormalParams, RegimeParams};
 use sampler::ShockTable;
 
-pub use stress::ResolvedStress;
+pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
 // Assumptions that are not in data/. Each is a named constant with its source.

@@ -1527,13 +1527,13 @@ impl Checker<'_> {
                 self.r
                     .range(&format!("{sr}/adjust"), "Adjustment", adjust, 0.01, 0.5);
             }
-            SpendingRule::VanguardDynamic { ceiling, floor } => {
+            SpendingRule::VanguardDynamic { ceiling, floor, .. } => {
                 self.r
                     .range(&format!("{sr}/ceiling"), "Ceiling", ceiling, 0.0, 0.5);
                 self.r
                     .range(&format!("{sr}/floor"), "Floor", floor, 0.0, 0.5);
             }
-            SpendingRule::FloorCeiling { floor, ceiling } => {
+            SpendingRule::FloorCeiling { floor, ceiling, .. } => {
                 self.r
                     .range(&format!("{sr}/floor"), "Floor", floor, 0.0, 1.0);
                 self.r
@@ -1761,6 +1761,23 @@ impl Checker<'_> {
                 self.r.warn("withdrawal_rate_high", "/retirement/trigger/withdrawal_rate", format!("A {:.1}% withdrawal rate has failed often historically over 30 years or more. 3.5% to 4% is the usual range.", w.withdrawal_rate * 100.0));
             }
         }
+        for (i, person) in p.household.people.iter().enumerate() {
+            let earns = p.incomes.iter().any(|inc| {
+                inc.owner == i
+                    && matches!(inc.kind, IncomeKind::Job(_) | IncomeKind::SelfEmployment(_))
+            });
+            if matches!(
+                person.social_security.basis,
+                SocialSecurityBasis::FromEarnings { .. }
+            ) && !earns
+            {
+                self.r.warn(
+                    "social_security_no_earnings",
+                    &format!("/household/people/{}/social_security/basis", seg(&person.id, i)),
+                    "Social Security is estimated from earnings, but this person has no job or self-employment income in the plan, so the estimate is zero. Enter the benefit from their SSA statement (known_benefit) instead.",
+                );
+            }
+        }
         if let SpendingRule::PercentOfPortfolio { rate } = p.retirement.spending_rule {
             if rate > 0.06 {
                 self.r.warn("withdrawal_rate_high", "/retirement/spending_rule/rate", "Spending more than 6% of the portfolio each year shrinks it quickly in real terms.");
@@ -1786,6 +1803,12 @@ impl Checker<'_> {
             if let IncomeKind::Job(job) = &inc.kind {
                 if job.salary > 0.0 && job.salary < 12_000.0 {
                     self.r.warn("salary_looks_monthly", &format!("{k}/salary"), format!("A salary of {:.0} a year is very low. Salaries are annual amounts; multiply a monthly figure by 12.", job.salary));
+                }
+                if job.equity.len() > crate::career::MAX_GRANTS {
+                    self.r.warn("too_many_grants", &format!("{k}/equity"), format!("Only the first {} equity grants of a job are simulated; combine the smaller ones.", crate::career::MAX_GRANTS));
+                }
+                if job.equity.windows(2).any(|w| w[0].company != w[1].company) {
+                    self.r.warn("mixed_grant_companies", &format!("{k}/equity"), "All grants of one job follow the company settings of its first grant. Put grants from another employer on their own income.");
                 }
                 if job.salary > 2_000_000.0 {
                     self.r.warn(

@@ -5,20 +5,20 @@
 //! `HashMap` iteration in anything that reaches a result, and `std` transcendental
 //! functions (use [`math`]). See `docs/architecture.md` for the contract.
 //!
-//! Module map (owners fill the stub modules in parallel; the public signatures in each
-//! stub are the agreed interface, change them only with the other owners):
+//! Module map (all implemented; each module's own documentation lists what it
+//! simplifies):
 //!
-//! | Module | State |
+//! | Module | Responsibility |
 //! |---|---|
-//! | [`model`], [`rng`], [`patch`], [`validate`], [`legacy`], [`math`] | implemented and tested |
-//! | [`data`] | history and life tables typed; tax and actuarial JSON embedded, typed views pending |
-//! | [`stats`] | `Accumulator` container, merge and codec implemented; recording and `Summary` pending |
-//! | [`scenario`] | `Solver`, `GridSweep`, first `levers` implemented |
-//! | [`sim`] | `Plan::compile` validates and sizes the horizon; the loop is pending |
-//! | [`economy`], [`tax`], [`benefits`], [`career`], [`health`], [`housing`], [`accounts`], [`decumulation`] | interface stubs (`todo!()`) |
-//!
-//! Each stub module starts with `#![allow(dead_code, unused_variables)]`; delete that
-//! line when the module is implemented.
+//! | [`model`], [`validate`], [`patch`], [`legacy`] | the profile schema, its checks, patches and v1 migration |
+//! | [`rng`], [`math`], [`data`] | deterministic random streams and elementary functions, embedded datasets |
+//! | [`economy`] | joint market, rate, inflation and home-price paths; stress overlays |
+//! | [`tax`], [`benefits`], [`health`] | the annual return; Social Security; mortality, health and care costs |
+//! | [`career`], [`housing`] | jobs and equity compensation; properties and mortgages |
+//! | [`accounts`], [`decumulation`] | tax buckets and their mechanics; spending rules and the withdrawal plan |
+//! | [`sim`] | `Plan::compile` and the monthly loop that ties the modules together |
+//! | [`stats`] | recorders, the mergeable `Accumulator`, `Summary`, `Comparison`, `PathTrace` |
+//! | [`scenario`] | sensitivity levers, the goal-seek solver, grid sweeps |
 
 pub mod accounts;
 pub mod benefits;

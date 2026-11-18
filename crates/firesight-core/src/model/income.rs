@@ -153,7 +153,9 @@ pub struct CareerRisk {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskLevel {
-    /// No randomness: pay follows the growth curve exactly and the job is never lost.
+    /// No pay shocks and no layoffs: base pay follows the growth curve exactly. A
+    /// bonus or commission keeps the volatility entered for it (switch
+    /// `assumptions.career_risk` off to silence those too).
     None,
     /// Stable employment such as tenured or government work.
     Low,
@@ -328,9 +330,9 @@ pub enum EquityCompany {
         /// Around 0.5 for a venture-backed company.
         #[serde(default = "default_fail_prob")]
         fail_prob: f64,
-        /// Spread of the value when the outcome is a success, as the standard deviation
-        /// of the log of the payout. 1.0 is a wide spread; the expected payout across
-        /// successes and failures equals the stated grant value.
+        /// Not used by the engine at present: the size of a successful outcome is
+        /// drawn from three outcome classes (modest, good, large) whose mix depends on
+        /// `fail_prob`. Kept so that existing profiles still load.
         #[serde(default = "default_exit_volatility")]
         exit_volatility: f64,
     },

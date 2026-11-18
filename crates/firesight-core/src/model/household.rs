@@ -79,10 +79,16 @@ pub enum Sex {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
-    /// Healthier than average: lower mortality, roughly 3 more years of life expectancy.
+    /// Markedly healthier than average (mortality 25% below the population table):
+    /// roughly 2.5 more years of life expectancy at 65.
     Excellent,
-    /// Population-average mortality.
+    /// The default: somewhat healthier than the population (mortality 15% below the
+    /// table, about 1.5 more years at 65). People who plan for early retirement are
+    /// on average better off and longer-lived than the population the life tables
+    /// describe, so planning on the unadjusted table understates longevity risk.
     #[default]
+    Good,
+    /// Population-average mortality, straight from the Social Security life table.
     Average,
     /// Chronic conditions: higher mortality, roughly 4 fewer years of life expectancy.
     Poor,

@@ -10,7 +10,7 @@
         "name": "Sam",
         "birth": "1993-02",
         "sex": "male",
-        "health": "average",
+        "health": "good",
         "joins": null,
         "social_security": {
           "claim_age": 67.0,
@@ -465,7 +465,8 @@
     "spending_rule": {
       "type": "vanguard_dynamic",
       "ceiling": 0.05,
-      "floor": 0.025
+      "floor": 0.025,
+      "rate": null
     },
     "withdrawal_order": {
       "type": "tax_aware",

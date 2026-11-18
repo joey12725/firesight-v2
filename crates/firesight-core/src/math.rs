@@ -39,6 +39,12 @@ pub fn exp_m1(x: f64) -> f64 {
     libm::expm1(x)
 }
 
+/// Complementary error function `1 - erf(x)`.
+#[inline]
+pub fn erfc(x: f64) -> f64 {
+    libm::erfc(x)
+}
+
 /// `x^y` for real `y`.
 #[inline]
 pub fn pow(x: f64, y: f64) -> f64 {

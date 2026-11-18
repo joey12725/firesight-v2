@@ -91,8 +91,10 @@ const CENT: f64 = 0.01;
 /// IRS Single Life Table (26 CFR 1.401(a)(9)-9(b), effective 2022) at ages 20, 25,
 /// ..., 70; life expectancy at ages in between is interpolated linearly (the table is
 /// nearly straight over five years). Used for the 72(t) amortisation method, where
-/// the single-life table gives the largest allowed payment. Not yet in `data/`.
-const SINGLE_LIFE_EXPECTANCY: [f64; 11] = [
+/// the single-life table gives the largest allowed payment. Quoted from memory:
+/// recorded in `data/actuarial/params.json` under `unverified_from_memory` (a test
+/// keeps the two equal) until someone checks it against the regulation.
+pub const SINGLE_LIFE_EXPECTANCY: [f64; 11] = [
     65.0, 60.2, 55.3, 50.5, 45.7, 41.0, 36.2, 31.6, 27.1, 22.9, 18.8,
 ];
 /// Age of the first entry of [`SINGLE_LIFE_EXPECTANCY`].
@@ -378,11 +380,17 @@ impl SpendingPlanner {
                     w + other.min(planned)
                 }
             }
-            SpendingRule::VanguardDynamic { ceiling, floor } => {
+            SpendingRule::VanguardDynamic {
+                ceiling,
+                floor,
+                rate,
+            } => {
                 if first {
                     planned
                 } else {
-                    let rate = if iwr > 0.0 {
+                    let rate = if let Some(r) = rate.filter(|r| r.is_finite() && *r > 0.0) {
+                        r
+                    } else if iwr > 0.0 {
                         iwr
                     } else {
                         p.vanguard_default_rate
@@ -398,11 +406,17 @@ impl SpendingPlanner {
                     .min(p.vpw_max_rate);
                 rate * portfolio + other
             }
-            SpendingRule::FloorCeiling { floor, ceiling } => {
+            SpendingRule::FloorCeiling {
+                floor,
+                ceiling,
+                rate,
+            } => {
                 if first {
                     planned
                 } else {
-                    let rate = if iwr > 0.0 {
+                    let rate = if let Some(r) = rate.filter(|r| r.is_finite() && *r > 0.0) {
+                        r
+                    } else if iwr > 0.0 {
                         iwr
                     } else {
                         p.floor_ceiling_default_rate

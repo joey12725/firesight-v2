@@ -11,9 +11,9 @@
 //! | `data/history/monthly.csv` | typed: [`History`] |
 //! | `data/actuarial/ssa-life-table.csv` | typed: [`LifeTable`] |
 //! | `data/actuarial/ssa-mortality-improvement.csv` | typed: [`MortalityImprovement`] |
-//! | `data/tax/us-federal-2026.json` | embedded and parsed to JSON; typed view is `tax::TaxLaw::from_data` (TODO, tax owner) |
+//! | `data/tax/us-federal-2026.json` | embedded and parsed to JSON; typed views: `tax::TaxLaw::from_data`, `benefits::SocialSecurityModel::new`, `health::HealthModel::new` |
 //! | `data/tax/us-states-2026.json` | embedded and parsed to JSON; same |
-//! | `data/actuarial/params.json` | embedded and parsed to JSON; each owner (career, health, housing, ...) adds a typed section here |
+//! | `data/actuarial/params.json` | embedded and parsed to JSON; each module reads its own section (`career::CareerParams`, `housing::HousingParams`, `decumulation::RuleParams`, `health`, `economy`, `sim::Plan::compile` for children and expense shocks). The section `unverified_from_memory` lists constants nobody has checked against a source yet |
 //! | `data/history/calibration.json` | not embedded: it is a test fixture for economy calibration tests |
 //! | `data/col/cities.csv` | not embedded (334 KB): the web UI resolves a city pair to cost-of-living factors and writes them into the `relocate` event |
 //!

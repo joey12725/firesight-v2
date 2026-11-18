@@ -209,6 +209,12 @@ pub enum Metric {
     DeliveredSpendingRatio,
     /// Median lifetime tax.
     MedianLifetimeTax,
+    /// Share of paths that reach financial independence (0..1).
+    FiRate,
+    /// Share of paths that run out of money (0..1).
+    DepletionRate,
+    /// Share of retired paths with at least one year below 90% of planned spending.
+    PathsBelow90,
 }
 
 impl Metric {
@@ -222,6 +228,9 @@ impl Metric {
             Metric::P10TerminalNetWorth => summary.headline.p10_terminal_net_worth,
             Metric::DeliveredSpendingRatio => summary.headline.delivered_spending_ratio.value,
             Metric::MedianLifetimeTax => summary.headline.median_lifetime_tax,
+            Metric::FiRate => summary.headline.fi_rate.value,
+            Metric::DepletionRate => summary.headline.depletion_rate.value,
+            Metric::PathsBelow90 => summary.spending.paths_below_90.value,
         }
     }
 }

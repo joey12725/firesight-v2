@@ -71,6 +71,13 @@ pub const HSA_PENALTY_FREE_AGE: f64 = 65.0;
 /// (`retirement_accounts.*.catch_up_age_50_plus`).
 pub const CATCH_UP_AGE: f64 = 50.0;
 
+/// Ages (reached during the year) at which the larger "super" 401(k) catch-up
+/// applies instead of the age-50 one
+/// (`retirement_accounts.employer_plans_401k_403b_457b_tsp.super_catch_up_ages_60_to_63`).
+pub const SUPER_CATCH_UP_FROM: f64 = 60.0;
+/// Last age of the super catch-up.
+pub const SUPER_CATCH_UP_TO: f64 = 63.0;
+
 /// Age from which the HSA catch-up contribution is allowed
 /// (`retirement_accounts.hsa.catch_up_age_55_plus`).
 pub const HSA_CATCH_UP_AGE: f64 = 55.0;
@@ -226,6 +233,11 @@ pub struct Accounts {
     pub person: [PersonAccounts; MAX_PEOPLE],
     /// Contributions so far this year, for the annual limits.
     pub ytd: ContributionYtd,
+    /// When true, [`Accounts::buy_mix`] returns the target mix itself instead of
+    /// steering new money toward whatever is underweight. Set it when the portfolio
+    /// is rebalanced on a schedule anyway: the steering then changes almost nothing
+    /// and costs a pass over every holding for each contribution.
+    pub plain_mix: bool,
 }
 
 /// Blended interest terms of the pooled cash bucket, fixed at compile time from the
@@ -246,6 +258,17 @@ impl CashTerms {
     pub fn annual_rate(&self, tbill_annual: f64) -> f64 {
         self.tracking_share * (tbill_annual + self.spread).max(0.0)
             + (1.0 - self.tracking_share) * self.fixed_rate
+    }
+
+    /// The monthly rate from the month's Treasury-bill return, without any
+    /// transcendental function: the tracking share earns the bill return plus a
+    /// twelfth of the spread (never below zero) and the rest a twelfth of the fixed
+    /// rate. Within a basis point a year of [`CashTerms::monthly_rate`] at ordinary
+    /// rates; use it in the monthly loop.
+    #[inline]
+    pub fn monthly_rate_from_bill_return(&self, bill_return: f64) -> f64 {
+        self.tracking_share * (bill_return + self.spread / MONTHS_PER_YEAR).max(0.0)
+            + (1.0 - self.tracking_share) * self.fixed_rate / MONTHS_PER_YEAR
     }
 
     /// The compounding monthly rate to pass to [`Accounts::apply_returns`].
@@ -819,6 +842,11 @@ impl Accounts {
     /// `target`: asset classes that would be underweight after the purchase, in
     /// proportion to their shortfall. Pass the result to [`Accounts::contribute`].
     pub fn buy_mix(&self, amount: f64, target: &Weights) -> Weights {
+        if self.plain_mix {
+            // The caller's target is already normalised (it comes from
+            // `glide_target`); `contribute` normalises again in any case.
+            return *target;
+        }
         let totals = self.asset_totals();
         let after = sum(&totals) + amount.max(0.0);
         let mut out = [0.0; N_ASSETS];
@@ -1412,17 +1440,30 @@ impl Accounts {
         if person >= MAX_PEOPLE || !gross_pay.is_finite() || gross_pay <= 0.0 {
             return out;
         }
-        let catch_up = if age >= CATCH_UP_AGE {
+        // SECURE 2.0: a larger catch-up replaces the age-50 one in the years a
+        // person turns 60 to 63.
+        let catch_up = if (SUPER_CATCH_UP_FROM..=SUPER_CATCH_UP_TO).contains(&age)
+            && limits.k401_catch_up_60_63 > 0.0
+        {
+            limits.k401_catch_up_60_63
+        } else if age >= CATCH_UP_AGE {
             limits.k401_catch_up
         } else {
             0.0
         };
         let room = (limits.k401_employee + catch_up - self.ytd.k401_employee[person]).max(0.0);
+        // Pay above the 401(a)(17) limit earns no deferral percentage and no match:
+        // spread over the year, a twelfth of the limit per month.
+        let eligible_pay = if limits.compensation_limit > 0.0 {
+            gross_pay.min(limits.compensation_limit / MONTHS_PER_YEAR)
+        } else {
+            gross_pay
+        };
         let desired = if plan.employee_max {
             let months_left = f64::from(13 - month.clamp(1, 12));
             room / months_left
         } else {
-            plan.employee_fraction * gross_pay
+            plan.employee_fraction * eligible_pay
         };
         let additions_room =
             (limits.k401_total + catch_up - self.ytd.k401_additions[person]).max(0.0);
@@ -1432,7 +1473,7 @@ impl Accounts {
             .min(additions_room)
             .max(0.0);
         let additions_room = additions_room - employee;
-        let matched = employee.min(plan.match_up_to.max(0.0) * gross_pay);
+        let matched = employee.min(plan.match_up_to.max(0.0) * eligible_pay);
         out.employer = (plan.match_rate.max(0.0) * matched).min(additions_room);
         out.employee_roth = employee * plan.roth_fraction.clamp(0.0, 1.0);
         out.employee_pretax = employee - out.employee_roth;

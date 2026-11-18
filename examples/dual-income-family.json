@@ -10,7 +10,7 @@
         "name": "Priya",
         "birth": "1989-09",
         "sex": "female",
-        "health": "average",
+        "health": "good",
         "joins": null,
         "social_security": {
           "claim_age": 67.0,
@@ -25,7 +25,7 @@
         "name": "Daniel",
         "birth": "1990-04",
         "sex": "male",
-        "health": "average",
+        "health": "good",
         "joins": null,
         "social_security": {
           "claim_age": 67.0,

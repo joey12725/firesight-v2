@@ -89,6 +89,65 @@ impl Stream {
     }
 }
 
+/// Inverse of the standard normal CDF for `p` in `(0, 1)` by Acklam's rational
+/// approximation (relative error below 1.2e-9). Deterministic: only `ln`, `sqrt` and
+/// arithmetic, so one uniform gives one normal on every platform.
+pub fn inverse_normal_cdf(p: f64) -> f64 {
+    const A: [f64; 6] = [
+        -3.969_683_028_665_376e1,
+        2.209_460_984_245_205e2,
+        -2.759_285_104_469_687e2,
+        1.383_577_518_672_69e2,
+        -3.066_479_806_614_716e1,
+        2.506_628_277_459_239,
+    ];
+    const B: [f64; 5] = [
+        -5.447_609_879_822_406e1,
+        1.615_858_368_580_409e2,
+        -1.556_989_798_598_866e2,
+        6.680_131_188_771_972e1,
+        -1.328_068_155_288_572e1,
+    ];
+    const C: [f64; 6] = [
+        -7.784_894_002_430_293e-3,
+        -3.223_964_580_411_365e-1,
+        -2.400_758_277_161_838,
+        -2.549_732_539_343_734,
+        4.374_664_141_464_968,
+        2.938_163_982_698_783,
+    ];
+    const D: [f64; 4] = [
+        7.784_695_709_041_462e-3,
+        3.224_671_290_700_398e-1,
+        2.445_134_137_142_996,
+        3.754_408_661_907_416,
+    ];
+    const P_LOW: f64 = 0.024_25;
+    let tail = |q: f64| {
+        (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
+    };
+    if p < P_LOW {
+        tail((-2.0 * math::ln(p)).sqrt())
+    } else if p <= 1.0 - P_LOW {
+        let q = p - 0.5;
+        let r = q * q;
+        (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q
+            / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1.0)
+    } else {
+        -tail((-2.0 * math::ln(1.0 - p)).sqrt())
+    }
+}
+
+/// A standard normal variate from 64 random bits ([`Rng::next_u64`]), by the inverse
+/// CDF. Lets a caller draw a fixed number of words every step and turn only the ones
+/// it ends up using into normals: the stream position stays independent of the
+/// state, and the unused conversions cost nothing.
+#[inline]
+pub fn normal_from_bits(bits: u64) -> f64 {
+    inverse_normal_cdf(((bits >> 11) as f64 + 0.5) * F64_UNIT)
+}
+
 /// xoshiro256++ with the distributions the model needs.
 #[derive(Clone, Debug)]
 pub struct Rng {
@@ -216,6 +275,21 @@ impl Rng {
                 return u * k;
             }
         }
+    }
+
+    /// One uniform strictly inside `(0, 1)` from exactly one 64-bit draw.
+    #[inline]
+    pub fn uniform_open(&mut self) -> f64 {
+        ((self.next_u64() >> 11) as f64 + 0.5) * F64_UNIT
+    }
+
+    /// Standard normal variate from exactly one 64-bit draw, by the inverse normal
+    /// CDF ([`inverse_normal_cdf`]). Use it where the number of draws from a stream
+    /// must not depend on the values drawn: [`Rng::normal`] rejects a variable number
+    /// of pairs and caches a spare. It does not touch the spare of `normal`.
+    #[inline]
+    pub fn normal_one_draw(&mut self) -> f64 {
+        normal_from_bits(self.next_u64())
     }
 
     /// Normal variate with the given mean and standard deviation.

@@ -1,0 +1,171 @@
+{
+  "notes": "Simulated lives; today's dollars; ages are the first person's. success = retired by the plan's latest age and never ran out of liquid assets while alive. lo/hi = 95% sampling interval (model uncertainty is larger). Age quantiles cover all lives: null = fewer than that share ever got there. by_age covers lives still alive at that age.",
+  "paths": 1000,
+  "start_year": 2026,
+  "end_year": 2090,
+  "start_age": 37.2,
+  "success": {
+    "p": 0.813,
+    "lo": 0.788,
+    "hi": 0.836
+  },
+  "fi": {
+    "p": 0.98,
+    "lo": 0.969,
+    "hi": 0.987
+  },
+  "depletion": {
+    "p": 0.187,
+    "lo": 0.164,
+    "hi": 0.212
+  },
+  "fi_age": {
+    "p10": 48.4,
+    "p50": 51.7,
+    "p90": 59.5
+  },
+  "retirement_age": {
+    "p10": 50,
+    "p50": 51.8,
+    "p90": 59.5
+  },
+  "terminal_net_worth": {
+    "p10": 887000,
+    "p50": 2464000,
+    "p90": 6055000
+  },
+  "lifetime_tax_p50": 914000,
+  "fi_by_age": {
+    "ages": [
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "p": [
+      0.0,
+      0.402,
+      0.938,
+      0.98,
+      0.98,
+      0.98,
+      0.98
+    ]
+  },
+  "depletion_by_age": {
+    "ages": [
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "p": [
+      0.0,
+      0.003,
+      0.01,
+      0.013,
+      0.026,
+      0.073,
+      0.187
+    ]
+  },
+  "by_age": {
+    "ages": [
+      37,
+      49,
+      62,
+      75,
+      88,
+      101
+    ],
+    "alive": [
+      1.0,
+      1.0,
+      0.995,
+      0.975,
+      0.787,
+      0.187
+    ],
+    "net_worth_p10": [
+      413000,
+      1212000,
+      1551000,
+      1533000,
+      1273000,
+      882000
+    ],
+    "net_worth_p50": [
+      442000,
+      2003000,
+      2475000,
+      2758000,
+      2848000,
+      2318000
+    ],
+    "net_worth_p90": [
+      465000,
+      2923000,
+      3956000,
+      4891000,
+      6100000,
+      6180000
+    ],
+    "spending_p10": [
+      116000,
+      117000,
+      71000,
+      75000,
+      71000,
+      52000
+    ],
+    "spending_p50": [
+      117000,
+      125000,
+      94000,
+      120000,
+      172000,
+      167000
+    ],
+    "spending_p90": [
+      120000,
+      136000,
+      136000,
+      219000,
+      337000,
+      408000
+    ]
+  },
+  "spending_delivery": {
+    "delivered_ratio": 1.275,
+    "paths_below_90": 0.704,
+    "paths_below_75": 0.257,
+    "years_below_90": 0.256,
+    "worst_cut_p90": 0.752
+  },
+  "failure_causes": [
+    {
+      "cause": "health",
+      "share": 0.412
+    },
+    {
+      "cause": "longevity",
+      "share": 0.278
+    },
+    {
+      "cause": "market_sequence",
+      "share": 0.123
+    }
+  ],
+  "trace_paths": {
+    "p10": 473,
+    "median": 908,
+    "p90": 682,
+    "failing": 917
+  }
+}

@@ -519,8 +519,8 @@ fn layoff_sets_benefit_spell_and_scar() {
         let (mut career, mut equity) = rngs(5);
         let mut peek = career.clone();
         let _ = peek.uniform();
-        let z_spell = peek.normal();
-        let z_scar = peek.normal();
+        let z_spell = peek.normal_one_draw();
+        let z_scar = peek.normal_one_draw();
         let pay = m.step(&mut s, &climate(1, 52.0), &mut career, &mut equity);
         assert!(pay.laid_off);
         let spell = (2.2 * math::exp(z_spell)).clamp(0.25, 36.0);

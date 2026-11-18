@@ -6,11 +6,11 @@
 //! `#[wasm_bindgen]` items below only convert errors into thrown JS `Error`s whose
 //! `message` is the error text (a JSON document where noted).
 //!
-//! Status: `validate`, `applyPatch`, `migrateV1`, `levers`, `schema`,
-//! `defaultProfile`, `exampleProfiles`, `mergeChunks` and the `Engine` constructor
-//! work. `Engine.runChunk`, `Engine.trace`, `summarize` and `taxDetail` throw
-//! "not implemented" until the corresponding core modules land; they are marked
-//! `TODO(core)` below and each is a one-line change.
+//! A profile without a `start` month starts in the current month of the JS clock.
+//!
+//! Everything in `docs/architecture.md` section 6 is wired, plus a stateful
+//! [`Merger`] (so a run of many chunks is not re-encoded on every merge),
+//! `compare`, `digest` and `planPreview`.
 
 use firesight_core::model::YearMonth;
 use wasm_bindgen::prelude::*;
@@ -74,6 +74,74 @@ impl Engine {
     pub fn trace(&mut self, path: u32) -> Result<String, JsError> {
         self.inner.trace(u64::from(path)).map_err(throw)
     }
+}
+
+/// Collects the chunks of one run. Holding the accumulator on the wasm side avoids
+/// re-encoding the running total on every merge (`mergeChunks` copies the whole
+/// accumulator, 10 MB at 100,000 paths, each time).
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct Merger {
+    inner: api::Merger,
+}
+
+#[wasm_bindgen]
+impl Merger {
+    /// An empty merger.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Merger {
+        Merger::default()
+    }
+
+    /// Merges one serialised chunk (the bytes `Engine.runChunk` returned). Chunks
+    /// may arrive in any order; adding a path twice throws.
+    pub fn add(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner.add(bytes).map_err(throw)
+    }
+
+    /// Number of paths merged so far.
+    pub fn paths(&self) -> f64 {
+        self.inner.paths() as f64
+    }
+
+    /// The `Summary` JSON of what has been merged so far.
+    pub fn summarize(&self, profile_json: &str) -> Result<String, JsError> {
+        self.inner.summarize(profile_json, today()).map_err(throw)
+    }
+
+    /// The `SummaryDigest` JSON (about 2 KB) of what has been merged so far.
+    pub fn digest(&self, profile_json: &str) -> Result<String, JsError> {
+        self.inner.digest(profile_json, today()).map_err(throw)
+    }
+
+    /// The merged accumulator, serialised (to store, or to pass to `compare`).
+    pub fn bytes(&self) -> Result<Vec<u8>, JsError> {
+        self.inner.bytes().map_err(throw)
+    }
+}
+
+/// The paired `Comparison` JSON of two runs made with the same seed and path
+/// indices: B minus A, where `a` is the baseline. `baseline_profile_json` is the
+/// baseline's profile (it identifies the run; both runs must have the same horizon).
+#[wasm_bindgen]
+pub fn compare(a: &[u8], b: &[u8], baseline_profile_json: &str) -> Result<String, JsError> {
+    api::compare(a, b, baseline_profile_json, today()).map_err(throw)
+}
+
+/// The `SummaryDigest` JSON of a serialised accumulator: the small form of the
+/// summary for an LLM tool result.
+#[wasm_bindgen]
+pub fn digest(acc: &[u8], profile_json: &str) -> Result<String, JsError> {
+    api::digest(acc, profile_json, today()).map_err(throw)
+}
+
+/// The `PlanPreview` JSON: what the plan implies before any simulation (spending
+/// now and in retirement, the funded requirement today, savings rate, horizon, life
+/// expectancies). Cheap enough to call on every edit. Throws the validation report
+/// when the profile cannot be compiled.
+#[wasm_bindgen(js_name = planPreview)]
+pub fn plan_preview(profile_json: &str) -> Result<String, JsError> {
+    api::plan_preview(profile_json, today()).map_err(throw)
 }
 
 /// Merges two serialised accumulators. The result does not depend on the order of
@@ -140,7 +208,7 @@ pub fn example_profiles() -> String {
 /// dollars of `year`; the result is a `TaxDetail` JSON.
 #[wasm_bindgen(js_name = taxDetail)]
 pub fn tax_detail(profile_json: &str, year: i32, inputs_json: &str) -> Result<String, JsError> {
-    api::tax_detail(profile_json, year, inputs_json).map_err(throw)
+    api::tax_detail(profile_json, year, inputs_json, today()).map_err(throw)
 }
 
 /// The API as plain Rust, independent of wasm-bindgen.
@@ -148,14 +216,12 @@ pub mod api {
     use firesight_core::data::Data;
     use firesight_core::model::{Profile, YearMonth};
     use firesight_core::patch::{self, PatchOp};
-    use firesight_core::sim::Plan;
-    use firesight_core::stats::Accumulator;
+    use firesight_core::sim::{self, Plan, Workspace};
+    use firesight_core::stats::{self, Accumulator};
+    use firesight_core::tax::{self, StateCode, TaxInputs, TaxLaw};
     use firesight_core::validate::{self, Issue, Report};
     use firesight_core::{legacy, scenario};
     use serde_json::{json, Value};
-
-    const NOT_IMPLEMENTED: &str =
-        "not implemented: the simulation core is still a stub in this build";
 
     fn to_json<T: serde::Serialize>(value: &T) -> String {
         serde_json::to_string(value).expect("serialisation cannot fail")
@@ -176,9 +242,16 @@ pub mod api {
         }
     }
 
-    /// A compiled profile.
+    fn compile(profile_json: &str, today: YearMonth) -> Result<Plan, String> {
+        let profile =
+            parse_profile(profile_json, today).map_err(|e| to_json(&schema_error_report(e)))?;
+        Plan::compile(&profile, Data::embedded()).map_err(|report| to_json(&report))
+    }
+
+    /// A compiled profile and the worker's reusable buffers.
     pub struct Engine {
         plan: Plan,
+        workspace: Workspace,
         warnings: Vec<Issue>,
     }
 
@@ -190,7 +263,12 @@ pub mod api {
             let warnings = validate::validate(&profile).warnings;
             let plan =
                 Plan::compile(&profile, Data::embedded()).map_err(|report| to_json(&report))?;
-            Ok(Engine { plan, warnings })
+            let workspace = Workspace::new(&plan);
+            Ok(Engine {
+                plan,
+                workspace,
+                warnings,
+            })
         }
 
         /// See the wasm export.
@@ -204,18 +282,119 @@ pub mod api {
         }
 
         /// See the wasm export.
-        pub fn run_chunk(&mut self, _first_path: u64, _count: u64) -> Result<Vec<u8>, String> {
-            // TODO(core): let mut acc = self.plan.new_accumulator();
-            // sim::run_range(&self.plan, self.plan.seed(), first..first + count, &mut acc);
-            // Ok(acc.to_bytes())
-            Err(NOT_IMPLEMENTED.into())
+        pub fn run_chunk(&mut self, first_path: u64, count: u64) -> Result<Vec<u8>, String> {
+            let mut acc = self.plan.new_accumulator();
+            let seed = self.plan.seed();
+            for i in first_path..first_path.saturating_add(count) {
+                sim::run_path(&self.plan, seed, i, &mut self.workspace, &mut acc);
+            }
+            Ok(acc.to_bytes())
         }
 
         /// See the wasm export.
-        pub fn trace(&mut self, _path: u64) -> Result<String, String> {
-            // TODO(core): to_json(&sim::trace_path(&self.plan, self.plan.seed(), path))
-            Err(NOT_IMPLEMENTED.into())
+        pub fn trace(&mut self, path: u64) -> Result<String, String> {
+            let seed = self.plan.seed();
+            Ok(to_json(&sim::trace_path_in(
+                &self.plan,
+                seed,
+                path,
+                &mut self.workspace,
+            )))
         }
+    }
+
+    /// See the wasm export.
+    #[derive(Default)]
+    pub struct Merger {
+        acc: Option<Accumulator>,
+    }
+
+    impl Merger {
+        /// See the wasm export.
+        pub fn add(&mut self, bytes: &[u8]) -> Result<(), String> {
+            let chunk = Accumulator::from_bytes(bytes).map_err(|e| e.to_string())?;
+            match &mut self.acc {
+                Some(acc) => acc.merge(&chunk).map_err(|e| e.to_string()),
+                None => {
+                    self.acc = Some(chunk);
+                    Ok(())
+                }
+            }
+        }
+
+        /// See the wasm export.
+        pub fn paths(&self) -> u64 {
+            self.acc.as_ref().map_or(0, |a| a.paths)
+        }
+
+        fn acc(&self) -> Result<&Accumulator, String> {
+            self.acc
+                .as_ref()
+                .ok_or_else(|| "no chunk has been added yet".to_string())
+        }
+
+        /// See the wasm export.
+        pub fn summarize(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+            Ok(to_json(&summary_of(self.acc()?, profile_json, today)?))
+        }
+
+        /// See the wasm export.
+        pub fn digest(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+            Ok(to_json(
+                &summary_of(self.acc()?, profile_json, today)?.digest(),
+            ))
+        }
+
+        /// See the wasm export.
+        pub fn bytes(&self) -> Result<Vec<u8>, String> {
+            Ok(self.acc()?.to_bytes())
+        }
+    }
+
+    fn summary_of(
+        acc: &Accumulator,
+        profile_json: &str,
+        today: YearMonth,
+    ) -> Result<stats::Summary, String> {
+        let profile = parse_profile(profile_json, today)?;
+        let start = profile.start.unwrap_or(today);
+        let people = &profile.household.people;
+        let first = people
+            .first()
+            .ok_or_else(|| "the profile has no people".to_string())?;
+        Ok(stats::Summary::from_accumulator(
+            acc,
+            &stats::SummaryContext {
+                start,
+                first_birth: first.birth,
+                second_birth: people.get(1).map(|p| p.birth),
+            },
+        ))
+    }
+
+    /// See the wasm export.
+    pub fn compare(
+        a: &[u8],
+        b: &[u8],
+        baseline_profile_json: &str,
+        today: YearMonth,
+    ) -> Result<String, String> {
+        // The profile is parsed so that a bad one is reported here, not later.
+        parse_profile(baseline_profile_json, today)?;
+        let a = Accumulator::from_bytes(a).map_err(|e| e.to_string())?;
+        let b = Accumulator::from_bytes(b).map_err(|e| e.to_string())?;
+        Ok(to_json(&stats::compare(&a, &b)))
+    }
+
+    /// See the wasm export.
+    pub fn digest(acc: &[u8], profile_json: &str, today: YearMonth) -> Result<String, String> {
+        let acc = Accumulator::from_bytes(acc).map_err(|e| e.to_string())?;
+        Ok(to_json(&summary_of(&acc, profile_json, today)?.digest()))
+    }
+
+    /// See the wasm export.
+    pub fn plan_preview(profile_json: &str, today: YearMonth) -> Result<String, String> {
+        Ok(to_json(&compile(profile_json, today)?.preview()))
     }
 
     /// See the wasm export.
@@ -228,10 +407,8 @@ pub mod api {
 
     /// See the wasm export.
     pub fn summarize(acc: &[u8], profile_json: &str, today: YearMonth) -> Result<String, String> {
-        let _acc = Accumulator::from_bytes(acc).map_err(|e| e.to_string())?;
-        let _profile = parse_profile(profile_json, today)?;
-        // TODO(core): to_json(&Summary::from_accumulator(&acc, &SummaryContext { .. }))
-        Err(NOT_IMPLEMENTED.into())
+        let acc = Accumulator::from_bytes(acc).map_err(|e| e.to_string())?;
+        Ok(to_json(&summary_of(&acc, profile_json, today)?))
     }
 
     /// See the wasm export.
@@ -295,15 +472,44 @@ pub mod api {
         to_json(&list)
     }
 
-    /// See the wasm export.
+    /// See the wasm export. The law is indexed to `year` at 2.5% inflation a year
+    /// from its base year (the published figures for the year after the base year),
+    /// for the profile's state of residence and tax model.
     pub fn tax_detail(
-        _profile_json: &str,
-        _year: i32,
-        _inputs_json: &str,
+        profile_json: &str,
+        year: i32,
+        inputs_json: &str,
+        today: YearMonth,
     ) -> Result<String, String> {
-        // TODO(core): TaxLaw::from_data + for_year + tax::explain. TaxInputs needs a
-        // Deserialize derive when this is wired.
-        Err(NOT_IMPLEMENTED.into())
+        let profile = parse_profile(profile_json, today)?;
+        let mut inputs: TaxInputs = serde_json::from_str(inputs_json)
+            .map_err(|e| format!("inputs must be a TaxInputs object: {e}"))?;
+        let law = TaxLaw::from_data(Data::embedded(), &profile.assumptions.taxes)
+            .map_err(|e| e.to_string())?;
+        let location = &profile.household.location;
+        let state = if location.is_us() {
+            location
+                .state
+                .as_deref()
+                .and_then(StateCode::parse)
+                .unwrap_or(StateCode::NONE)
+        } else {
+            StateCode::NONE
+        };
+        let index = if year <= law.base_year {
+            tax::Indexation::base(year)
+        } else {
+            let published = law.published_next_year;
+            let k = firesight_core::math::powi(1.025, year - law.base_year - 1);
+            law.index_from_cpi(year, published.cpi_factor * k)
+                .with_fpl_factor(published.fpl_factor * k)
+        };
+        let mut params = law.for_year(index, state);
+        if !location.is_us() {
+            params = params.with_foreign_rate(Some(location.foreign_tax_rate.unwrap_or(0.0)));
+        }
+        inputs.state = params.state.code;
+        Ok(to_json(&tax::explain(&params, &inputs)))
     }
 }
 
@@ -385,7 +591,57 @@ mod tests {
         let mut engine = api::Engine::new(&example, TODAY).unwrap();
         assert_eq!(engine.horizon_years(), 65);
         assert_eq!(engine.warnings_json(), "[]");
-        assert!(engine.run_chunk(0, 10).is_err());
+        let a = engine.run_chunk(0, 40).unwrap();
+        let b = engine.run_chunk(40, 40).unwrap();
+        let whole = engine.run_chunk(0, 80).unwrap();
+        assert_eq!(api::merge_chunks(&b, &a).unwrap(), whole);
+        let mut merger = api::Merger::default();
+        assert!(merger.bytes().is_err());
+        merger.add(&b).unwrap();
+        merger.add(&a).unwrap();
+        assert_eq!(merger.paths(), 80);
+        assert_eq!(merger.bytes().unwrap(), whole);
+        assert!(merger.add(&a).is_err(), "a path cannot be added twice");
+        let summary = parse(&merger.summarize(&example, TODAY).unwrap());
+        assert_eq!(summary["paths"], 80);
+        assert_eq!(
+            summary,
+            parse(&api::summarize(&whole, &example, TODAY).unwrap())
+        );
+        let digest = parse(&merger.digest(&example, TODAY).unwrap());
+        assert_eq!(digest["paths"], 80);
+        assert_eq!(
+            digest,
+            parse(&api::digest(&whole, &example, TODAY).unwrap())
+        );
+        let trace = parse(&engine.trace(3).unwrap());
+        assert_eq!(trace["path_index"], 3);
+        assert!(trace["months"].as_u64().unwrap() > 12);
+
+        // A scenario on the same seed and paths, compared pair by pair.
+        let patch =
+            r#"[{"op": "set", "path": "/retirement/trigger/withdrawal_rate", "value": 0.03}]"#;
+        let changed =
+            parse(&api::apply_patch(&example, patch, TODAY).unwrap())["profile"].to_string();
+        let other = api::Engine::new(&changed, TODAY)
+            .unwrap()
+            .run_chunk(0, 80)
+            .unwrap();
+        let cmp = parse(&api::compare(&whole, &other, &example, TODAY).unwrap());
+        assert_eq!(cmp["paths"], 80);
+        assert_eq!(cmp["outcomes"][0]["outcome"], "success");
+
+        let preview = parse(&api::plan_preview(&example, TODAY).unwrap());
+        assert_eq!(preview["horizon_years"], 65);
+        assert!(preview["funded_requirement"].as_f64().unwrap() > 500_000.0);
+        assert_eq!(preview["life_expectancy"].as_array().unwrap().len(), 2);
+        assert!(api::plan_preview("{}", TODAY).is_err());
+
+        let inputs = r#"{"filing_status": "married_joint", "adults": 2, "ages": [40, 38], "wages": [150000, 90000]}"#;
+        let detail = parse(&api::tax_detail(&example, 2026, inputs, TODAY).unwrap());
+        assert!(detail["result"]["total"].as_f64().unwrap() > 30_000.0);
+        assert!(detail["lines"].as_array().unwrap().len() > 8);
+        assert!(api::tax_detail(&example, 2026, "\"nope\"", TODAY).is_err());
         let err = api::Engine::new("{}", TODAY).err().unwrap();
         assert_eq!(parse(&err)["errors"][0]["code"], "people_count");
     }
