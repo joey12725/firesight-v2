@@ -72,6 +72,40 @@ Two things are deliberately not copied from the sampled row:
   consistent with each other.
 * **The long-run level of international stocks and gold** (2.5).
 
+#### Bond returns from the yield path (`market.bond_pricing: from_yield`, opt-in)
+
+With the default `sampled`, a month's bond return is the resampled row's, while the
+yield level follows today's rate (above): the two need not agree. With
+`from_yield` each month's bond return is priced from the path's own 10-year yield,
+exactly as `data/history` builds the `bond10` column from Treasury yields and as
+the regime model prices its bond: a month of interest at the yield the month began
+with, minus the modified duration of a 10-year semi-annual par bond times the
+yield change, plus half its convexity times the change squared. The yield's monthly
+changes are still the sampled rows' own, so bonds keep history's co-movement with
+stocks and inflation; only the carry now comes from the path's level (today's 5.29%
+in the first month). No random numbers are drawn and every other series of the path
+is unchanged bit for bit.
+
+Measured (1,500 paths of 120 months, the record as it was): the correlation across
+paths between a decade's bond return and what its own yield implies (average
+carry less duration times the yield change) is 0.34 with sampled returns and 0.99
+priced from the yield; monthly bond volatility is within 10% of the sampled one.
+Over 60 years bonds return 2.1% a year after inflation (geometric, 800 paths)
+against 1.5% sampled and 1.56% in the record: the yield starts above the record's
+mean and the record's own bond returns include the decades of financial repression
+in which yields sat far below inflation, which a level-based price does not
+reproduce. On the dual-income example (4,000 paired paths) success moves from
+91.5% to 92.0% (+0.5, 95% interval 0.0 to +1.0) and the median terminal net worth
+by 9%; a 30-year retiree in 40/60 at a 4% withdrawal goes from 92.7% to 96.9%
+(2,000 paths) and ends 17% richer at the median.
+
+Not modelled: the yield level still does not respond to the path's sampled
+inflation (it moves by history's yield changes, not by the inflation of the row),
+so a sampled 1970s block raises yields as 1970s yields rose but a long run of
+sampled high inflation does not lift the level beyond that; only the block
+bootstrap is affected (the regime model already prices from its yield, the replay
+uses the record, the lognormal model has a constant yield).
+
 ### 2.2 Regime switching
 
 A two-state hidden Markov model (calm and turbulent) fitted to the same data drives

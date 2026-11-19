@@ -187,7 +187,8 @@ Assumptions {
                               | Historical,       // every start month in history, in order: path i = cohort i
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,
-                        stress: Vec<Stress> },
+                        stress: Vec<Stress>,
+                        bond_pricing: Sampled (default) | FromYield },   // bootstrap: bond returns priced from the path's yield
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },

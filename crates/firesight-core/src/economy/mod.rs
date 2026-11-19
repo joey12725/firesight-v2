@@ -80,7 +80,10 @@
 //!
 //! See [`EconomyModel::apply_stress`].
 
+mod bonds;
 mod fit;
+#[cfg(test)]
+mod realism_tests;
 mod regime;
 mod sampler;
 mod stress;
@@ -94,8 +97,8 @@ use serde_json::Value;
 use crate::data::{Data, History};
 use crate::math;
 use crate::model::{
-    AssetClass, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock, YearMonth,
-    N_ASSETS,
+    AssetClass, BondPricing, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock,
+    YearMonth, N_ASSETS,
 };
 use crate::rng::Rng;
 
@@ -506,6 +509,12 @@ pub struct EconomyModel {
     crypto_shock: Arc<ShockTable>,
     /// Sensitivity of each asset class to an equity move imposed by a stress overlay.
     stress_beta: [f64; N_ASSETS],
+    /// Duration and convexity tables, for overlays that move yields and for
+    /// `bond_pricing: from_yield`.
+    bonds: Arc<bonds::BondPricer>,
+    /// Block bootstrap with `bond_pricing: from_yield`: bond returns are repriced
+    /// from the path's yield after generation.
+    bonds_from_yield: bool,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -917,6 +926,14 @@ impl HistBase {
     }
 }
 
+/// The bond duration and convexity tables, built once per process.
+fn bond_pricer() -> Arc<bonds::BondPricer> {
+    static TABLES: OnceLock<Arc<bonds::BondPricer>> = OnceLock::new();
+    TABLES
+        .get_or_init(|| Arc::new(bonds::BondPricer::new()))
+        .clone()
+}
+
 /// The regime calibration of the embedded history, computed once per process.
 fn regime_params(data: &Data) -> Arc<RegimeParams> {
     static EMBEDDED: OnceLock<Arc<RegimeParams>> = OnceLock::new();
@@ -1095,6 +1112,9 @@ impl EconomyModel {
             stock_shock: Arc::new(ShockTable::constant(1.0)),
             crypto_shock,
             stress_beta: [0.0; N_ASSETS],
+            bonds: bond_pricer(),
+            bonds_from_yield: matches!(market.kind, MarketKind::Bootstrap { .. })
+                && market.bond_pricing == BondPricing::FromYield,
         };
         model.with_asset_params(&SingleStock::default(), &CustomAsset::default())
     }
@@ -1281,6 +1301,12 @@ impl EconomyModel {
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }
             }
+        }
+        if self.bonds_from_yield {
+            // Block bootstrap only. The path starts at today's yield, so month 0
+            // earns its carry and no price change.
+            let y_before = self.base.rate_now.0 + self.adjust.inflation_annual;
+            self.bonds.reprice(out, 0, months, y_before);
         }
     }
 

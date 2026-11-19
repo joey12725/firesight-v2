@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod market_realism;
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -1630,6 +1632,7 @@ impl Checker<'_> {
                 }
             }
         }
+        market_realism::check(&a.market, &mut self.r);
         if let TaxKind::Flat { rate } = a.taxes.kind {
             self.r.range(
                 "/assumptions/taxes/kind/rate",

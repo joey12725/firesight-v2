@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{BondPricing, When};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -54,6 +54,12 @@ pub struct MarketModel {
     pub inflation_adjustment: f64,
     /// Stress scenarios forced onto every path, on top of the random draws.
     pub stress: Vec<Stress>,
+    /// Block bootstrap only: where bond returns come from. `sampled` (the default)
+    /// takes each month's bond return from the resampled history row; `from_yield`
+    /// prices the bond from the path's own 10-year yield (interest plus the price
+    /// change of a 10-year bond when the yield moves), so a path's bond returns and
+    /// its yield level agree.
+    pub bond_pricing: BondPricing,
 }
 
 /// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
@@ -68,6 +74,7 @@ impl Default for MarketModel {
             equity_premium_adjustment: DEFAULT_EQUITY_PREMIUM_ADJUSTMENT,
             inflation_adjustment: 0.0,
             stress: Vec::new(),
+            bond_pricing: BondPricing::default(),
         }
     }
 }
