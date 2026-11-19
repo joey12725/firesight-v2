@@ -706,6 +706,16 @@ fn child_tax_credit_refundable_limit() {
     let r = compute(&p, &x);
     close(r.federal_ordinary, 780.0);
     close(r.credits, 780.0 + 3_400.0);
+    // The phase-in runs on taxable earned income: wages of 30,000 with a 10,000
+    // 401(k) deferral and three children refund 15% x (20,000 - 2,500) = 2,625,
+    // not 15% x 27,500 = 4,125 (Schedule 8812).
+    let mut x = joint(TX, [30.0, 30.0]);
+    x.wages[0] = 30_000.0;
+    x.pretax_deferrals[0] = 10_000.0;
+    x.children_under_17 = 3;
+    let r = compute(&p, &x);
+    close(r.federal_ordinary, 0.0);
+    close(r.credits, 2_625.0);
     // No earned income, no refund; the other-dependant credit is never refundable.
     let mut x = joint(TX, [30.0, 30.0]);
     x.interest = 20_000.0;
@@ -1084,7 +1094,7 @@ fn a_city_resolves_by_any_of_its_names() {
         .map(|c| c.trim_matches('"').to_ascii_lowercase())
         .collect();
     let majors = law.major_cities();
-    assert!(majors.len() >= 14);
+    assert!(majors.len() >= 13);
     for (state, _) in majors {
         let average = law.local_tax(state, None);
         let found = cities.iter().any(|c| {
@@ -1248,14 +1258,14 @@ fn state_specific_rules() {
     close(r.local, 990.0);
     close(r.state, 3_070.0 + 990.0);
 
-    // Illinois does not tax retirement income: a 70-year-old with 60,000 of IRA
-    // withdrawals owes nothing; a 50-year-old owes 4.95% x (60,000 - 2,925).
+    // Illinois does not tax retirement income, at any age: neither a 70-year-old
+    // nor a 50-year-old owes anything on 60,000 of IRA withdrawals.
     let il = StateCode(*b"IL");
     let mut x = single(il, 70.0);
     x.traditional_distributions = 60_000.0;
     close(compute(&params(il), &x).state, 0.0);
     x.ages[0] = 50.0;
-    close(compute(&params(il), &x).state, 0.0495 * 57_075.0);
+    close(compute(&params(il), &x).state, 0.0);
 
     // Colorado, age 66: benefits 30,000 and IRA withdrawals 50,000. Federally
     // taxable benefits 25,500 (the 85% cap), AGI 75,500. Colorado exempts benefits

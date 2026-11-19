@@ -1959,6 +1959,11 @@ impl Checker<'_> {
                 self.r.warn("fixed_longevity_low", "/assumptions/longevity/age", "A fixed lifespan under 85 is below the life expectancy of a healthy retiree; the plan may run out of money in the years it ignores.");
             }
         }
+        if matches!(p.assumptions.market.kind, MarketKind::Historical)
+            && p.assumptions.market.equity_premium_adjustment != 0.0
+        {
+            self.r.warn("adjusted_history", "/assumptions/market/equity_premium_adjustment", "The historical replay is being run with stock returns shifted from the record. Set the adjustment to 0 to replay history as it happened.");
+        }
         if p.assumptions.market.equity_premium_adjustment > 0.02 {
             self.r.warn("returns_optimistic", "/assumptions/market/equity_premium_adjustment", "Adding more than two points a year to historical stock returns is very optimistic.");
         }

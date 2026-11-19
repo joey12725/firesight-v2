@@ -97,6 +97,11 @@ pub fn quiet(people: Vec<Person>, die_at: f64) -> Profile {
             ..RetirementPlan::default()
         },
         assumptions: Assumptions {
+            // The record as it was: these tests check the engine against history.
+            market: MarketModel {
+                equity_premium_adjustment: 0.0,
+                ..MarketModel::default()
+            },
             taxes: TaxModel {
                 kind: TaxKind::None,
                 ..TaxModel::default()
@@ -104,7 +109,6 @@ pub fn quiet(people: Vec<Person>, die_at: f64) -> Profile {
             longevity: Longevity::FixedAge { age: die_at },
             career_risk: false,
             health_risk: false,
-            ..Assumptions::default()
         },
         ..Profile::default()
     }

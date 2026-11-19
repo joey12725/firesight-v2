@@ -1182,7 +1182,7 @@ impl TaxLaw {
         };
         if let Some(city) = city {
             let city = normalise_place(city);
-            if !city.is_empty() && base.major_city_names.iter().any(|n| *n == city) {
+            if !city.is_empty() && base.major_city_names.contains(&city) {
                 return LocalTax {
                     rate: base.major_city_rate,
                     earned_only: base.year.local_earned_only,

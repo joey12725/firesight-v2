@@ -449,7 +449,8 @@
   ],
   "debt_policy": {
     "strategy": "minimum",
-    "extra_monthly": 0.0
+    "extra_monthly": 0.0,
+    "refinance_mortgages": true
   },
   "events": [
     {
@@ -556,7 +557,8 @@
       "mind_aca": true
     },
     "early_access": "auto",
-    "bequest_target": 0.0
+    "bequest_target": 0.0,
+    "home_equity": "last_resort"
   },
   "assumptions": {
     "market": {
@@ -565,7 +567,7 @@
         "mean_block_months": 60,
         "from_year": null
       },
-      "equity_premium_adjustment": 0.0,
+      "equity_premium_adjustment": -0.015,
       "inflation_adjustment": 0.0,
       "stress": []
     },

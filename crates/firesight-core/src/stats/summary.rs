@@ -144,6 +144,12 @@ pub struct Headline {
     /// Share of all paths on which a home was sold to fund retirement after
     /// savings ran out.
     pub home_sale_rate: Estimate,
+    /// Mean over retired paths of the share of the plan delivered in a typical
+    /// retired year: each retired year's `min(delivered / planned, 1)`, averaged
+    /// over the path's retired years. Never above 1. Unlike
+    /// `delivered_spending_ratio` (a ratio of dollar sums), every year weighs the
+    /// same whatever its budget.
+    pub plan_delivered_share: Estimate,
     /// Share of retired path-years in the `retired_cutting` or `depleted` status.
     #[serde(with = "nan")]
     #[schemars(with = "Option<f64>")]
@@ -204,6 +210,17 @@ pub struct SpendingByYear {
     #[serde(with = "nan_vec")]
     #[schemars(with = "Vec<Option<f64>>")]
     pub below_75: Vec<f64>,
+    /// Share of living households whose year ended `depleted` (essentials cut or
+    /// an overdraft growing in some month of it).
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub depleted: Vec<f64>,
+    /// Among those depleted households, the mean depth of the shortfall: planned
+    /// less delivered spending for the year, today's dollars, annualised. Null in
+    /// a year with no depleted household.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub depleted_shortfall: Vec<f64>,
 }
 
 /// Quantiles of one quantity for each year of the plan, among living paths.
@@ -498,6 +515,51 @@ pub struct Summary {
     pub picks: Vec<PathPick>,
     /// Annual series of the first sample paths.
     pub samples: Vec<SamplePath>,
+    /// Annual net worth, investable assets and spending of the picked paths (one
+    /// entry per distinct `picks[].path_index`, in the order of `picks`), in the
+    /// shape of `samples`. Filled by `Plan::summarize`, which simulates those
+    /// paths again; empty when the summary is built from an accumulator alone.
+    #[serde(default)]
+    pub pick_paths: Vec<SamplePath>,
+    /// When the milestones of the plan fall.
+    #[serde(default)]
+    pub plan_moments: PlanMoments,
+}
+
+/// When the milestones of the plan fall, at the median over the paths on which
+/// each happens (not censored: read each with its share).
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct PlanMoments {
+    /// Per person: median own age at which Social Security is first paid; null
+    /// when the person never receives a benefit on any path.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub social_security_claim_age: Vec<f64>,
+    /// Per person: share of paths on which the person receives a benefit.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub social_security_claim_share: Vec<f64>,
+    /// Per person: median own age at which the person stops working.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub person_retirement_age: Vec<f64>,
+    /// Per person: share of paths on which the person stops working.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub person_retirement_share: Vec<f64>,
+    /// Median age of the first person when the household's last mortgage is paid
+    /// off; null if no path pays one off.
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub mortgage_payoff_age: f64,
+    /// The same as a calendar year.
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub mortgage_payoff_year: f64,
+    /// Share of paths on which a mortgage is paid off (and none is owed at the end).
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub mortgage_payoff_share: f64,
 }
 
 /// Row access to the scalar table.
@@ -605,6 +667,8 @@ impl Summary {
             failure: failure(&table, &sorted),
             picks: picks(&table),
             samples: acc.samples.clone(),
+            pick_paths: Vec::new(),
+            plan_moments: plan_moments(&sorted, &axis, ctx, n),
             axis,
         }
     }
@@ -619,6 +683,37 @@ impl Summary {
             .filter(|(v, _)| v.is_finite())
             .collect();
         pick_at(&mut pairs, q).map(|(_, p)| p)
+    }
+}
+
+fn plan_moments(sorted: &[Vec<f32>], axis: &Axis, ctx: &SummaryContext, n: u64) -> PlanMoments {
+    let people = if ctx.second_birth.is_some() { 2 } else { 1 };
+    let median = |s: PathScalar| round_dp(quantile_sorted(&sorted[s.index()], 0.5), 2);
+    let happened = |s: PathScalar| share(sorted[s.index()].len() as u64, n);
+    let per_person = |scalars: [PathScalar; 2], f: &dyn Fn(PathScalar) -> f64| -> Vec<f64> {
+        scalars[..people].iter().map(|s| f(*s)).collect()
+    };
+    let claim = [
+        PathScalar::SocialSecurityClaimAge0,
+        PathScalar::SocialSecurityClaimAge1,
+    ];
+    let stop = [
+        PathScalar::PersonRetirementAge0,
+        PathScalar::PersonRetirementAge1,
+    ];
+    let payoff = median(PathScalar::MortgagePayoffAge);
+    PlanMoments {
+        social_security_claim_age: per_person(claim, &median),
+        social_security_claim_share: per_person(claim, &happened),
+        person_retirement_age: per_person(stop, &median),
+        person_retirement_share: per_person(stop, &happened),
+        mortgage_payoff_age: payoff,
+        mortgage_payoff_year: (f64::from(axis.start.year())
+            + f64::from(axis.start.month() - 1) / 12.0
+            + payoff
+            - axis.start_age)
+            .floor(),
+        mortgage_payoff_share: happened(PathScalar::MortgagePayoffAge),
     }
 }
 
@@ -692,6 +787,12 @@ fn headline(acc: &Accumulator, table: &Table, sorted: &[Vec<f32>]) -> Headline {
         .rounded(4),
         initial_withdrawal_rate: Spread::of(col(PathScalar::InitialWithdrawalRate), 4),
         home_sale_rate: Estimate::proportion(finite(PathScalar::HomeSaleAge), n).rounded(5),
+        plan_delivered_share: Estimate::mean(
+            col(PathScalar::PlanDeliveredShare)
+                .iter()
+                .map(|v| f64::from(*v)),
+        )
+        .rounded(4),
         years_cutting_share: share(cutting, retired_years),
         median_lifetime_tax: lifetime_tax.p50,
         lifetime_tax,
@@ -736,6 +837,8 @@ fn spending(acc: &Accumulator, table: &Table, axis: &Axis) -> SpendingDelivery {
             .collect()
     };
     let retired_in = |y: usize| u64::from(acc.cuts[y * 3]);
+    let depleted_in =
+        |y: usize| u64::from(acc.status[y * Status::COUNT + Status::Depleted.index()]);
     SpendingDelivery {
         retired_paths,
         paths_below_90: paths_with(PathScalar::YearsBelow90),
@@ -752,6 +855,15 @@ fn spending(acc: &Accumulator, table: &Table, axis: &Axis) -> SpendingDelivery {
             retired: per_year(0, &|y| axis.alive[y]),
             below_90: per_year(1, &retired_in),
             below_75: per_year(2, &retired_in),
+            depleted: (0..acc.years as usize)
+                .map(|y| share(depleted_in(y), axis.alive[y]))
+                .collect(),
+            depleted_shortfall: (0..acc.years as usize)
+                .map(|y| match depleted_in(y) {
+                    0 => f64::NAN,
+                    k => (acc.shortfall[y] as f64 / k as f64).round(),
+                })
+                .collect(),
         },
     }
 }

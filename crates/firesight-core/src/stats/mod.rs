@@ -36,7 +36,7 @@ mod num;
 mod summary;
 mod trace;
 
-pub use accumulator::{Accumulator, AccumulatorError, SamplePath, ScalarChunk};
+pub use accumulator::{Accumulator, AccumulatorError, SamplePath, SampleRecorder, ScalarChunk};
 pub use compare::{compare, Comparison, MetricDelta, PairedOutcome, PairedScalar};
 pub use hist::{hist_bin, hist_bin_edges, hist_bin_value, HIST_BINS, HIST_MAX, HIST_SUB_BINS};
 pub use num::{Estimate, Spread};
@@ -104,6 +104,11 @@ keyed_enum! {
         GrossIncome => "gross_income",
         /// Total tax paid in the year: the sum of the tax series; annualised.
         TotalTax => "total_tax",
+        /// Planned spending in the year (`YearSeries::SpendPlanned`: what spending
+        /// would have been with no spending-rule adjustment and no shortfall, in
+        /// the same scope as `spending`); annualised. Appended after the original
+        /// five.
+        SpendPlanned => "spend_planned",
     }
 }
 
@@ -113,7 +118,10 @@ impl HistSeries {
     pub const fn is_flow(self) -> bool {
         matches!(
             self,
-            HistSeries::Spending | HistSeries::GrossIncome | HistSeries::TotalTax
+            HistSeries::Spending
+                | HistSeries::GrossIncome
+                | HistSeries::TotalTax
+                | HistSeries::SpendPlanned
         )
     }
 }
@@ -537,6 +545,25 @@ keyed_enum! {
         /// because savings had run out (`retirement.home_equity: last_resort`); NaN
         /// if that never happened.
         HomeSaleAge => "home_sale_age",
+        /// Derived: the mean over retired years of `min(delivered / planned, 1)`:
+        /// the share of the plan delivered in a typical retired year, every year
+        /// weighing the same whatever its budget. NaN if never retired.
+        PlanDeliveredShare => "plan_delivered_share",
+        /// Supplied: the first person's own age when their Social Security benefit
+        /// is first paid; NaN if it never is.
+        SocialSecurityClaimAge0 => "social_security_claim_age_0",
+        /// Supplied: the second person's own age when their benefit is first paid.
+        SocialSecurityClaimAge1 => "social_security_claim_age_1",
+        /// Supplied: the first person's own age when they stop working (the
+        /// household's retirement date); NaN if they never do.
+        PersonRetirementAge0 => "person_retirement_age_0",
+        /// Supplied: the second person's own age when they stop working (the
+        /// retirement date plus `partner_offset_years`); NaN if single or never.
+        PersonRetirementAge1 => "person_retirement_age_1",
+        /// Supplied: first person's age in the month the household's last mortgage
+        /// is paid off (by its schedule or by a sale) and none is taken out
+        /// afterwards; NaN if it never had a mortgage or still has one at the end.
+        MortgagePayoffAge => "mortgage_payoff_age",
     }
 }
 
@@ -547,6 +574,7 @@ impl PathScalar {
         (self.index() >= PathScalar::YearsSimulated.index()
             && self.index() <= PathScalar::YearsDepleted.index())
             || self.index() == PathScalar::ExtraSpendingRatio.index()
+            || self.index() == PathScalar::PlanDeliveredShare.index()
     }
 
     /// The unit of the value.
@@ -558,6 +586,11 @@ impl PathScalar {
             | PathScalar::DepletionAge
             | PathScalar::DeathAge0
             | PathScalar::HomeSaleAge
+            | PathScalar::SocialSecurityClaimAge0
+            | PathScalar::SocialSecurityClaimAge1
+            | PathScalar::PersonRetirementAge0
+            | PathScalar::PersonRetirementAge1
+            | PathScalar::MortgagePayoffAge
             | PathScalar::DeathAge1 => ScalarUnit::Age,
             PathScalar::InvestableAtRetirement
             | PathScalar::LongTermCareCost
@@ -573,6 +606,7 @@ impl PathScalar {
             | PathScalar::FundedRatio
             | PathScalar::DeliveredSpendingRatio
             | PathScalar::ExtraSpendingRatio
+            | PathScalar::PlanDeliveredShare
             | PathScalar::WorstSpendingRatio => ScalarUnit::Ratio,
             PathScalar::MonthsUnemployed => ScalarUnit::Months,
             PathScalar::FailureCause => ScalarUnit::Index,
@@ -743,6 +777,7 @@ impl YearRecord {
             self.spending(),
             self.gross_income(),
             self.total_tax(),
+            self.get(YearSeries::SpendPlanned),
         ]
     }
 
@@ -927,7 +962,7 @@ mod tests {
         );
         assert_eq!(Status::COUNT, 6);
         assert_eq!(YearSeries::COUNT, 43);
-        assert_eq!(PathScalar::COUNT, 30);
+        assert_eq!(PathScalar::COUNT, 36);
         assert_eq!(YearSeries::from_key("mortgage"), Some(YearSeries::Mortgage));
         assert_eq!(PathScalar::from_index(0), Some(PathScalar::FiAge));
         assert_eq!(PathScalar::from_key("nope"), None);
@@ -951,7 +986,7 @@ mod tests {
         assert!(!YearSeries::SpendPlanned.is_stock());
         assert_eq!(
             PathScalar::ALL.iter().filter(|s| s.is_derived()).count(),
-            12
+            14
         );
         assert!(!PathScalar::Success.is_derived());
         assert!(PathScalar::YearsSimulated.is_derived());
@@ -991,7 +1026,7 @@ mod tests {
         assert_eq!(r.cash_flow_residual(), 0.0);
         assert_eq!(
             r.hist_values(),
-            [430_000.0, 295_000.0, 60_000.0, 120_000.0, 30_000.0]
+            [430_000.0, 295_000.0, 60_000.0, 120_000.0, 30_000.0, 60_000.0]
         );
         // A home purchase funded from taxable balances.
         r.set(YearSeries::WithdrawTaxable, 80_000.0);

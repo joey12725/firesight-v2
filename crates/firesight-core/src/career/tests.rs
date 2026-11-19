@@ -727,8 +727,14 @@ fn salary_events_and_job_lifecycle() {
         assert_eq!(pay, JobMonth::default());
     }
     assert_eq!(s.employment, Employment::NotStarted);
-    m.begin(&mut s, 30.0);
+    // It starts two years in, at 32: the first pay is the salary entered, not the
+    // salary grown from the plan's start, and shocks drawn before it began are gone.
+    s.persistent_shock = 0.3;
+    m.begin(&mut s, 32.0);
     assert_eq!(s.employment, Employment::Employed);
+    assert_eq!(s.real_salary, m.salary);
+    assert_eq!(s.persistent_shock, 0.0);
+    close_rel(s.anchor * s.curve, m.salary, 1e-12);
 
     // Set salary: exact now, shocks wiped, then follows the curve from here.
     s.persistent_shock = -0.4;
@@ -739,11 +745,7 @@ fn salary_events_and_job_lifecycle() {
     no_layoff.hazard = [[0.0; 6]; 2];
     let pay = no_layoff.step(&mut s, &climate(24, 30.0), &mut career, &mut equity);
     // Month 24 is a January: shocks are redrawn, so compare through the anchor.
-    close_rel(
-        s.anchor * s.curve,
-        150_000.0 * math::pow(1.03, 1.0 / 12.0),
-        1e-12,
-    );
+    close_rel(s.anchor * s.curve, 150_000.0, 1e-12);
     close_rel(pay.wages, s.real_salary / 12.0, 1e-12);
     close_rel(
         m.projected_real_salary(&s, 42.0),

@@ -40,6 +40,11 @@ const DRAWDOWN_THRESHOLD: f64 = 0.90;
 /// Amounts below half a cent are rounding, not money.
 const DUST: f64 = 0.005;
 
+/// The October re-plan of a household on a marketplace plan is made only when the
+/// year's income so far, annualised, is above this share of the premium-credit
+/// cliff (the January plan aims 8% below the cliff).
+const OCTOBER_REPLAN_SHARE: f64 = 0.95;
+
 impl State {
     /// Simulates month `t`.
     pub(crate) fn month<R: Recorder>(
@@ -113,7 +118,12 @@ impl State {
         // On a marketplace plan the year is re-planned in October on what has
         // actually been earned and realised, so that the last quarter's money comes
         // from sources that keep income under the premium-credit cliff.
-        if month == 10 && self.has_plan && self.pinputs.on_aca && self.guards_aca_credit(plan) {
+        if month == 10
+            && self.has_plan
+            && self.pinputs.on_aca
+            && self.guards_aca_credit(plan)
+            && self.aca_cliff_in_reach(t)
+        {
             replan = true;
         }
         // 2. Events due this month (before planning, so the plan sees them).
@@ -354,6 +364,7 @@ impl State {
                     self.wage_like += paid;
                     if !self.ss_claimed[i] {
                         self.ss_claimed[i] = true;
+                        self.ss_first_paid[i] = ti;
                         self.req_dirty = true;
                         self.event(
                             now,
@@ -646,6 +657,36 @@ impl State {
         next
     }
 
+    /// True when the income of the tax year so far, kept up at the same pace, would
+    /// end the year within [`OCTOBER_REPLAN_SHARE`] of the premium-credit cliff or
+    /// beyond it: the case in which the October re-plan can change anything. (A year
+    /// comfortably under the cliff keeps January's plan.)
+    fn aca_cliff_in_reach(&self, t: usize) -> bool {
+        let elapsed = t.min(9);
+        if elapsed == 0 {
+            return true;
+        }
+        let y = &self.ty;
+        let mut so_far = y.interest
+            + y.ordinary_dividends
+            + y.qualified_dividends
+            + y.short_term_gains
+            + y.long_term_gains
+            + y.traditional_distributions
+            + y.roth_conversions
+            + y.pensions
+            + y.rental_net.max(0.0)
+            + y.other_ordinary;
+        for p in 0..MAX_PEOPLE {
+            so_far += y.wages[p] + y.self_employment[p] + y.social_security[p];
+        }
+        let people = f64::from(self.pinputs.base_tax_inputs.aca_household_size.max(1));
+        let f = &self.params.federal;
+        let cliff = crate::decumulation::ACA_CLIFF_FPL_MULTIPLE
+            * (f.fpl_base + f.fpl_per_person * (people - 1.0));
+        so_far * 12.0 / elapsed as f64 > OCTOBER_REPLAN_SHARE * cliff
+    }
+
     /// Years since self-employment income `k` began (since the plan's start for
     /// one already running): the clock its real growth runs on, so that an income
     /// that starts later starts at the amount entered.
@@ -670,8 +711,11 @@ impl State {
     }
 
     /// Person `p` stops working: their jobs that end at retirement end now.
-    fn retire_person(&mut self, plan: &Plan, p: usize, _t: usize) {
+    fn retire_person(&mut self, plan: &Plan, p: usize, t: usize) {
         self.person_retired[p] = true;
+        if self.stopped_work[p] == i32::MAX {
+            self.stopped_work[p] = t as i32;
+        }
         for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
             if jp.owner == p && jp.ends_at_retirement && !rt.ended {
                 jp.model.end(&mut rt.st);
@@ -1253,6 +1297,11 @@ impl State {
                 self.ever_depleted = true;
                 self.depletion_month = t as i32;
                 self.ltc_at_depletion = self.ltc_real;
+                self.unemployed_at_depletion = self
+                    .jobs
+                    .iter()
+                    .map(|rt| rt.st.months_unemployed_total)
+                    .sum();
             }
             if !self.depleted_now {
                 self.event(now, TraceEventKind::Depleted, None, || {

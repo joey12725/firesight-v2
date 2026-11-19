@@ -251,9 +251,10 @@ fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
         // that wages could not absorb.
         business += (profit - (deferral - wages).max(0.0)).max(0.0);
     }
-    w.qbi = business; // provisional: turned into the deduction in `deductions`
-                      // Earned income for the refundable child credit is taxable earned income:
-                      // after pre-tax deferrals and payroll HSA money (Schedule 8812).
+    // Provisional: turned into the deduction in `deductions`.
+    w.qbi = business;
+    // Earned income for the refundable child credit is taxable earned income: after
+    // pre-tax deferrals and payroll HSA money (Schedule 8812).
     w.earned_income = (w.wages + w.self_employment - w.deferrals - w.half_se).max(0.0);
 
     // Capital gains: net short against long; a net loss offsets ordinary income up

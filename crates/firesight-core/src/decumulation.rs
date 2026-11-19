@@ -441,8 +441,20 @@ impl SpendingPlanner {
                         if inputs.years_remaining > p.guardrail_sunset_years {
                             spend *= 1.0 - adjust;
                         }
-                    } else if rate < iwr * (1.0 - lower) {
-                        spend *= 1.0 + adjust;
+                    } else {
+                        // Restoring a cut is judged on the household's own rate.
+                        // Spending *above* the plan is judged on the lower of that
+                        // and the plan's safe rate: a household that began above
+                        // its own safe rate has not become prosperous because the
+                        // rate fell a little.
+                        let reference = if previous >= 1.0 - 1e-9 && floor > 0.0 {
+                            iwr.min(floor)
+                        } else {
+                            iwr
+                        };
+                        if rate < reference * (1.0 - lower) {
+                            spend *= 1.0 + adjust;
+                        }
                     }
                     spend
                 }

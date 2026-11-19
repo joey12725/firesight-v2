@@ -370,6 +370,20 @@ fn log_profile(coef: &[f64; 3], age: f64) -> f64 {
     coef[0] * a + coef[1] * a * a / 10.0 + coef[2] * a * a * a / 100.0
 }
 
+/// Real wage level by age on a job's growth setting, in arbitrary units: the curve
+/// [`JobModel`] follows going forward, for rebuilding the earnings of the years
+/// before the plan starts on the same curve (so the last rebuilt year and the first
+/// simulated one join without a kink, and a flat raise or `extra` is honoured).
+pub fn wage_curve_level(growth: &WageGrowth, age: f64, params: &CareerParams) -> f64 {
+    match *growth {
+        WageGrowth::Flat { real_raise } => math::exp(math::ln_1p(real_raise.max(-0.99)) * age),
+        WageGrowth::Lifecycle { profile, extra } => math::exp(
+            log_profile(&params.curve_coefficients(profile), age)
+                + math::ln_1p(extra.max(-0.99)) * age,
+        ),
+    }
+}
+
 fn hazard_age_band(age: f64) -> usize {
     if age < 25.0 {
         0
@@ -926,6 +940,12 @@ impl JobModel {
             }
             state.curve = curve;
             state.real_salary = self.salary;
+            // Wage shocks drawn while the job did not exist are not its history.
+            state.persistent_shock = 0.0;
+            state.persistent_variance = 0.0;
+            state.transitory_shock = 0.0;
+            state.shock_factor = 1.0;
+            state.steps = 0;
         }
     }
 

@@ -464,6 +464,10 @@ struct HistBase {
     /// and their means over the rows used.
     rate_now: (f64, f64),
     rate_mean: (f64, f64),
+    /// The constants every month's gross international-equity and gold return was
+    /// multiplied by to set their long-run level (1 in the historical replay).
+    #[cfg_attr(not(test), allow(dead_code))]
+    short_scale: (f64, f64),
 }
 
 /// The crypto assumptions read from params.json.
@@ -758,7 +762,10 @@ fn monthly_hazard(annual: f64) -> f64 {
 }
 
 impl HistBase {
-    fn new(h: &History, first_row: usize, actuarial: &Value) -> HistBase {
+    /// `rescale`: set the long-run level of international equities and gold by
+    /// assumption (the resampling models). The historical replay passes false and
+    /// keeps the record as it was.
+    fn new(h: &History, first_row: usize, actuarial: &Value, rescale: bool) -> HistBase {
         assert!(!h.is_empty(), "economy: the market history is empty");
         let n = h.len();
         let home = regime::forward_fill(&h.home);
@@ -830,7 +837,8 @@ impl HistBase {
         // the US one plus the stated spread (international) or inflation plus the
         // stated real return (gold).
         let long_run = long_run_from_json(actuarial);
-        {
+        let mut short_scale = (1.0, 1.0);
+        if rescale {
             let count = rows.len().max(1) as f64;
             let (mut us, mut intl, mut gold, mut cpi) = (0.0, 0.0, 0.0, 0.0);
             for (r, (isd, gsd)) in rows.iter().zip(intl_sd.iter().zip(&gold_sd)) {
@@ -850,6 +858,7 @@ impl HistBase {
                 *isd *= k_intl;
                 *gsd *= k_gold;
             }
+            short_scale = (k_intl, k_gold);
         }
         let rate_now = rows
             .last()
@@ -896,6 +905,7 @@ impl HistBase {
             stock_presets: stock_presets_from_json(actuarial),
             rate_now,
             rate_mean,
+            short_scale,
         }
     }
 
@@ -1001,7 +1011,12 @@ impl EconomyModel {
             }
             _ => 0,
         };
-        let base = Arc::new(HistBase::new(h, first_row, &data.actuarial));
+        let base = Arc::new(HistBase::new(
+            h,
+            first_row,
+            &data.actuarial,
+            !matches!(market.kind, MarketKind::Historical),
+        ));
         let kind = match market.kind {
             MarketKind::Bootstrap {
                 mean_block_months, ..

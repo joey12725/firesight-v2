@@ -240,7 +240,7 @@ impl State {
                 self.extra_rent *= factors[Category::Rent.index()];
                 self.tax_state = *state;
                 self.in_us = *in_us;
-                self.local = *local;
+                self.local = **local;
                 self.foreign_rate = if *in_us {
                     None
                 } else {

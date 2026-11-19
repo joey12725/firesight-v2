@@ -335,13 +335,18 @@ pub mod api {
 
         /// See the wasm export.
         pub fn summarize(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
-            Ok(to_json(&summary_of(self.acc()?, profile_json, today)?))
+            Ok(to_json(&summary_of(
+                self.acc()?,
+                profile_json,
+                today,
+                true,
+            )?))
         }
 
         /// See the wasm export.
         pub fn digest(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
             Ok(to_json(
-                &summary_of(self.acc()?, profile_json, today)?.digest(),
+                &summary_of(self.acc()?, profile_json, today, false)?.digest(),
             ))
         }
 
@@ -355,6 +360,7 @@ pub mod api {
         acc: &Accumulator,
         profile_json: &str,
         today: YearMonth,
+        with_pick_paths: bool,
     ) -> Result<stats::Summary, String> {
         let profile = parse_profile(profile_json, today)?;
         let start = profile.start.unwrap_or(today);
@@ -362,14 +368,25 @@ pub mod api {
         let first = people
             .first()
             .ok_or_else(|| "the profile has no people".to_string())?;
-        Ok(stats::Summary::from_accumulator(
+        let mut summary = stats::Summary::from_accumulator(
             acc,
             &stats::SummaryContext {
                 start,
                 first_birth: first.birth,
                 second_birth: people.get(1).map(|p| p.birth),
             },
-        ))
+        );
+        if with_pick_paths {
+            // The annual series of the picked lives: those few paths simulated
+            // again. A profile that does not compile, or is not the one the
+            // accumulator was run with, simply yields none.
+            let mut profile = profile;
+            profile.start = Some(start);
+            if let Ok(plan) = Plan::compile(&profile, Data::embedded()) {
+                summary.pick_paths = plan.summarize(acc).pick_paths;
+            }
+        }
+        Ok(summary)
     }
 
     /// See the wasm export.
@@ -389,7 +406,9 @@ pub mod api {
     /// See the wasm export.
     pub fn digest(acc: &[u8], profile_json: &str, today: YearMonth) -> Result<String, String> {
         let acc = Accumulator::from_bytes(acc).map_err(|e| e.to_string())?;
-        Ok(to_json(&summary_of(&acc, profile_json, today)?.digest()))
+        Ok(to_json(
+            &summary_of(&acc, profile_json, today, false)?.digest(),
+        ))
     }
 
     /// See the wasm export.
@@ -408,7 +427,7 @@ pub mod api {
     /// See the wasm export.
     pub fn summarize(acc: &[u8], profile_json: &str, today: YearMonth) -> Result<String, String> {
         let acc = Accumulator::from_bytes(acc).map_err(|e| e.to_string())?;
-        Ok(to_json(&summary_of(&acc, profile_json, today)?))
+        Ok(to_json(&summary_of(&acc, profile_json, today, true)?))
     }
 
     /// See the wasm export.

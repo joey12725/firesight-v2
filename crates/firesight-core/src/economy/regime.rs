@@ -599,7 +599,10 @@ impl RegimeParams {
         s.expected_inflation = self.inflation_mean
             + self.inflation.phi * (m - self.inflation_mean)
             + self.inflation.gain * (cpi - m);
-        s.home_gap += core.home - cpi - self.home_real_mean;
+        // The gap is measured against expected inflation, as the calibration of the
+        // pull assumes: measured against realised inflation it would tie nominal home
+        // prices to every inflation surprise.
+        s.home_gap += core.home - m - self.home_real_mean;
         s.home_momentum = self.home.phi * s.home_momentum + self.home.gain * e[HOME];
         s.spread = self.spread_mean
             + self.spread_phi * (s.spread - self.spread_mean)
@@ -659,6 +662,29 @@ impl LognormalParams {
         // assumptions instead (index 0 US equities, 1 international, 5 gold, 6 CPI).
         mu[1] = mu[0] + math::ln_1p(long_run.intl_spread) / 12.0;
         mu[5] = mu[6] + math::ln_1p(long_run.gold_real) / 12.0;
+        // Bills are floored at zero in `step` (a bill cannot pay less than nothing,
+        // and independent normal draws around a 0.27% monthly mean go negative one
+        // month in seven). The floor alone would raise the average bill return:
+        // lower the centre so that the floored draw keeps the sample mean,
+        // E max(0, N(m, s)) = m Phi(m / s) + s phi(m / s).
+        if sd[3] > 0.0 && mu[3] > 0.0 {
+            let (target, s) = (mu[3], sd[3]);
+            let floored = |m: f64| {
+                let x = m / s;
+                m * 0.5 * math::erfc(-x / std::f64::consts::SQRT_2)
+                    + s * math::exp(-0.5 * x * x) / (2.0 * std::f64::consts::PI).sqrt()
+            };
+            let (mut lo, mut hi) = (target - 4.0 * s, target);
+            for _ in 0..60 {
+                let mid = 0.5 * (lo + hi);
+                if floored(mid) < target {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            mu[3] = 0.5 * (lo + hi);
+        }
         let l = fit::correlation_cholesky(&c);
         let mut chol = [[0.0; LN_DIM]; LN_DIM];
         for i in 0..LN_DIM {

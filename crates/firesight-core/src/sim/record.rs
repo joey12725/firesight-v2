@@ -32,8 +32,11 @@
 //! 1. `health`: long-term care paid before the money ran out came to at least a
 //!    quarter of the savings held at retirement (or, without a retirement, at least
 //!    two years of the budget);
-//! 2. `job_loss`: at least 18 months of involuntary unemployment, or at least 12 and
-//!    the money ran out before retirement;
+//! 2. the money ran out before retirement: `job_loss` if at least 6 months of
+//!    involuntary unemployment came before that, otherwise `overspending` (the
+//!    household spent more than it earned); never a market or longevity cause;
+//!    otherwise `job_loss` if at least 18 months of unemployment came before the
+//!    money ran out;
 //! 3. `inflation`: inflation over the path averaged 4.5% a year or more;
 //! 4. `market_sequence`: the real portfolio return over the first ten retirement
 //!    years was more than two points a year below the plan's expected real return;
@@ -173,6 +176,17 @@ impl State {
     ) {
         let now = plan.start + t as i32;
         self.led[YearSeries::SpendPlanned.index()] = self.planned;
+        // The month the last mortgage is paid off (cleared if another is taken out).
+        if self
+            .props
+            .iter()
+            .any(|p| p.owned && p.mortgage_balance() > 0.0)
+        {
+            self.had_mortgage = true;
+            self.mortgage_payoff_month = i32::MAX;
+        } else if self.had_mortgage && self.mortgage_payoff_month == i32::MAX {
+            self.mortgage_payoff_month = t as i32;
+        }
         if self.check {
             self.check_end(t);
         }
@@ -285,6 +299,44 @@ impl State {
         if self.retired && self.initial_wr.is_finite() {
             end.set(PathScalar::InitialWithdrawalRate, self.initial_wr);
         }
+        if self.mortgage_payoff_month != i32::MAX {
+            end.set(
+                PathScalar::MortgagePayoffAge,
+                age_at(self.mortgage_payoff_month),
+            );
+        }
+        let own_age = |i: usize, m: i32| (f64::from(plan.people[i].age0) + f64::from(m)) / 12.0;
+        for (i, (claim, stop)) in [
+            (
+                PathScalar::SocialSecurityClaimAge0,
+                PathScalar::PersonRetirementAge0,
+            ),
+            (
+                PathScalar::SocialSecurityClaimAge1,
+                PathScalar::PersonRetirementAge1,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if i >= self.n {
+                break;
+            }
+            if self.ss_first_paid[i] != i32::MAX {
+                // A benefit already in payment when the plan starts was claimed
+                // at the age the profile gives, not today.
+                let age = own_age(i, self.ss_first_paid[i]);
+                let age = if self.ss_first_paid[i] == 0 {
+                    age.min(plan.people[i].claim_age.max(62.0))
+                } else {
+                    age
+                };
+                end.set(claim, age);
+            }
+            if self.stopped_work[i] != i32::MAX {
+                end.set(stop, own_age(i, self.stopped_work[i]));
+            }
+        }
         for (i, scalar) in [PathScalar::DeathAge0, PathScalar::DeathAge1]
             .into_iter()
             .enumerate()
@@ -347,7 +399,23 @@ impl State {
         }
         let depleted_working =
             self.ever_depleted && (!self.retired || self.depletion_month < self.retire_month);
-        if unemployed >= 18.0 || (unemployed >= 12.0 && depleted_working) {
+        // Unemployment that came before the money ran out is what can have caused it.
+        let unemployed = if self.ever_depleted {
+            self.unemployed_at_depletion
+        } else {
+            unemployed
+        };
+        if depleted_working {
+            // Running out while still working is not a market or a longevity
+            // story: either pay stopped for a long time or the household spent
+            // more than it earned.
+            return if unemployed >= 6.0 {
+                FailureCause::JobLoss
+            } else {
+                FailureCause::Overspending
+            };
+        }
+        if unemployed >= 18.0 {
             return FailureCause::JobLoss;
         }
         if inflation >= 0.045 {

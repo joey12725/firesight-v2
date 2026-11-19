@@ -1296,6 +1296,24 @@ fn running_sepp_schedule_is_always_taken_unpenalised() {
     assert_close(p.sepp[0], 25_000.0);
     assert_close(p.from_taxable, 35_000.0);
     assert_eq!(p.penalized, 0.0);
+    // A schedule is fixed once it runs: what its owner needs beyond it is an early
+    // withdrawal, not a second penalty-free tranche. Age 52 with 500k traditional
+    // only, a 20,000 schedule and a need of 60,000: 40,000 is penalised (the
+    // engine used to grant a fresh amortisation payment each year and penalise
+    // 10,478).
+    let only_traditional = holdings(0.0, 0.0, 500_000.0, 0.0);
+    let mut more = need(60_000.0, 52.0);
+    more.sepp_available = [20_000.0, 0.0];
+    let q = plan(
+        &WithdrawalOrder::Conventional,
+        EarlyAccess::Auto,
+        &only_traditional,
+        &more,
+        &no_tax(),
+    );
+    assert_close(q.sepp[0], 20_000.0);
+    assert_close(q.from_traditional[0], 60_000.0);
+    assert_close(q.penalized, 40_000.0);
     // Even when nothing is needed.
     i.net_need = 0.0;
     let p = plan(

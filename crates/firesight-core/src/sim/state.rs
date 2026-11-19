@@ -251,9 +251,19 @@ pub(crate) struct State {
     pub depletion_month: i32,
     /// Month property was first sold because savings had run out.
     pub home_sale_month: i32,
+    /// Month each person's Social Security benefit was first paid.
+    pub ss_first_paid: [i32; MAX_PEOPLE],
+    /// Month each person stopped working.
+    pub stopped_work: [i32; MAX_PEOPLE],
+    /// True once the household has owed a mortgage.
+    pub had_mortgage: bool,
+    /// Month the last mortgage was paid off (`i32::MAX` while one is owed).
+    pub mortgage_payoff_month: i32,
     pub ltc_real: f64,
     /// Long-term care cost so far when the money first ran out.
     pub ltc_at_depletion: f64,
+    /// Months of unemployment so far when the money first ran out.
+    pub unemployed_at_depletion: f64,
     // The month and year being recorded.
     pub led: [f64; N_SERIES],
     pub planned: f64,
@@ -431,8 +441,13 @@ impl State {
             ever_depleted: false,
             depletion_month: i32::MAX,
             home_sale_month: i32::MAX,
+            ss_first_paid: [i32::MAX; MAX_PEOPLE],
+            stopped_work: [i32::MAX; MAX_PEOPLE],
+            had_mortgage: false,
+            mortgage_payoff_month: i32::MAX,
             ltc_real: 0.0,
             ltc_at_depletion: 0.0,
+            unemployed_at_depletion: 0.0,
             led: [0.0; N_SERIES],
             planned: 0.0,
             cash_start: 0.0,
@@ -741,8 +756,13 @@ impl State {
         self.ever_depleted = false;
         self.depletion_month = i32::MAX;
         self.home_sale_month = i32::MAX;
+        self.ss_first_paid = [i32::MAX; MAX_PEOPLE];
+        self.stopped_work = [i32::MAX; MAX_PEOPLE];
+        self.had_mortgage = false;
+        self.mortgage_payoff_month = i32::MAX;
         self.ltc_real = 0.0;
         self.ltc_at_depletion = 0.0;
+        self.unemployed_at_depletion = 0.0;
         self.led = [0.0; N_SERIES];
         self.planned = 0.0;
         self.cash_start = self.acc.cash;

@@ -347,7 +347,9 @@ impl Migration<'_> {
         {
             let nominal = pct(inc, "growth_percentage").unwrap_or(0.0);
             let real = ((nominal - self.inflation) * 1e4).round() / 1e4;
-            real.clamp(-0.1, 0.15)
+            let real = real.clamp(-0.1, 0.15);
+            self.note(format!("{name}: v1 grew this income {:.1}% a year in nominal dollars. It is imported as a flat raise of {:.1}% a year above inflation (v1's {:.1}% inflation assumption taken off), for as long as the income lasts.", nominal * 100.0, real * 100.0, self.inflation * 100.0));
+            real
         } else {
             self.note(format!("{name}: v1 held this income flat in nominal dollars (falling behind inflation every year). It now keeps pace with inflation."));
             0.0
@@ -721,6 +723,7 @@ impl Migration<'_> {
                 name.clone()
             };
             let id = self.id(&name, "item");
+            let display_note = display.clone();
             items.push(BudgetItem {
                 id,
                 name: display,
@@ -729,8 +732,19 @@ impl Migration<'_> {
                 frequency,
                 essential: category.default_essential(),
                 in_retirement,
+                // v1 budget lines kept pace with inflation and no more (its one
+                // growth setting becomes lifestyle creep below): the category
+                // defaults of v2 (rent +0.5%, healthcare +1.5%, childcare +1% a
+                // year above inflation) are not applied to imported lines.
+                real_growth: Some(0.0),
                 ..BudgetItem::default()
             });
+            if category == Category::Childcare {
+                self.note(format!("{display_note}: imported as a childcare line that keeps pace with inflation and never ends. Give it an end date (for example when the children start school or turn 18)."));
+            }
+        }
+        if !items.is_empty() {
+            self.note("Budget lines keep pace with inflation exactly, as in v1 (real_growth 0). v2's defaults for new lines grow rent, healthcare and childcare a little faster than inflation; set real_growth to null on a line to use them.");
         }
         if has_health {
             self.profile.spending.healthcare.mode = HealthcareMode::InBudget;
@@ -954,7 +968,8 @@ impl Migration<'_> {
                     ..BuyHome::default()
                 };
                 event(self, "Buy a home", "buy_home", EventKind::BuyHome(buy));
-                self.note(format!("Home purchase in {at}: the price of {price:.0} is read as today's dollars and will be scaled by simulated home-price growth; the mortgage rate is fixed at the v1 value of {:.2}% (set it to null to use the simulated market rate). Closing costs of 3% and homeowner's insurance are now included, which v1 left out.", rate * 100.0));
+                self.note(format!("Home purchase in {at}: the price of {price:.0} is read as today's dollars and will be scaled by simulated home-price growth; the mortgage starts at the v1 rate of {:.2}% (set it to null to use the simulated market rate) and, as v1 had no refinancing, automatic refinancing is switched off for this plan (debt_policy.refinance_mortgages). Closing costs of 3% and homeowner's insurance are now included, which v1 left out.", rate * 100.0));
+                self.profile.debt_policy.refinance_mortgages = false;
             }
             if flag(ms, "change_location") {
                 let country_name = text(ms, "country").unwrap_or_else(|| "United States".into());
@@ -1287,6 +1302,16 @@ mod tests {
             notes.len() >= 8,
             "{name}: expected the assumptions to be listed"
         );
+        // Imported budget lines keep pace with inflation, as the notes say: none
+        // picks up a category's faster default growth.
+        assert!(profile
+            .spending
+            .items
+            .iter()
+            .all(|item| item.effective_real_growth() == 0.0));
+        assert!(notes
+            .iter()
+            .any(|n| n.contains("keep pace with inflation exactly")));
         (profile, notes)
     }
 

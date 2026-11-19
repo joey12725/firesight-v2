@@ -119,6 +119,9 @@ impl EconomyModel {
         }
         let us = AssetClass::UsStocks.index();
         let depth = drawdown.clamp(0.0, MAX_DRAWDOWN);
+        if depth <= 0.0 {
+            return;
+        }
         let crash_end = at.saturating_add(CRASH_MONTHS).min(out.months);
         let monthly = math::pow(1.0 - depth, 1.0 / CRASH_MONTHS as f64);
         let mut stressed = 1.0;
@@ -135,8 +138,8 @@ impl EconomyModel {
             return;
         }
         let mut sampled = 1.0;
-        for t in crash_end..recovery_end {
-            sampled *= 1.0 + out.returns[us][t];
+        for r in &out.returns[us][crash_end..recovery_end] {
+            sampled *= 1.0 + r;
         }
         // A path that ends inside the recovery gets the same monthly scaling as if
         // the window were complete only when the whole window is there; a truncated

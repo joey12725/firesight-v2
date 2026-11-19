@@ -131,6 +131,9 @@ pub struct Comparison {
     pub outcomes: Vec<PairedOutcome>,
     /// Per-path differences of each scalar.
     pub scalars: Vec<PairedScalar>,
+    /// The quantile levels of every `scalars[].quantiles` array.
+    #[serde(default)]
+    pub quantile_levels: Vec<f64>,
     /// Headline metrics side by side.
     pub headline: Vec<MetricDelta>,
 }
@@ -374,6 +377,7 @@ pub fn compare(a: &Accumulator, b: &Accumulator) -> Comparison {
         unpaired_b,
         outcomes,
         scalars,
+        quantile_levels: QUANTILE_LEVELS.to_vec(),
         headline,
     }
 }

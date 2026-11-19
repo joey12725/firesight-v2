@@ -65,6 +65,7 @@ investable_at_retirement)` so every caller applies the same thresholds.
 | `spending` | sum of the eight `spend_*` groups (not `spend_planned`); annualised |
 | `gross_income` | sum of the six `income_*` series; annualised |
 | `total_tax` | sum of the four `tax_*` series; annualised |
+| `spend_planned` | the `spend_planned` series (planned spending, same scope as `spending`); annualised. Sixth entry, appended |
 
 ### `YearSeries` (43; summed per year, recorded monthly in a trace)
 
@@ -94,7 +95,7 @@ income + withdrawals + property_sale + save_employer
     = taxes + spending + saving + property_purchase
 ```
 
-### `PathScalar` (27; one `f32` per path, `null`/NaN = did not happen)
+### `PathScalar` (36; one `f32` per path, `null`/NaN = did not happen)
 
 Supplied by the simulation in `PathEnd`:
 
@@ -115,6 +116,11 @@ Supplied by the simulation in `PathEnd`:
 | `funded_ratio` | ratio | Wealth counted by the funded test divided by its requirement, on the retirement date; null if never retired or the requirement is zero |
 | `failure_cause` | index | `FailureCause` index; null if the path succeeded |
 | `success` | flag | 1 if never depleted, the bequest target (if any) is met at the end, and the household retired, or died before the plan's latest retirement age (`max_age`; the trigger age; 70 for `fixed_number`) |
+| `initial_withdrawal_rate` | rate | The first retired year's draw on the portfolio (budget less after-tax income) over investable assets on the retirement date: the rate the household actually starts on. Index 28 |
+| `home_sale_age` | age | First person's age when property was first sold because savings had run out (`retirement.home_equity: last_resort`). Index 29 |
+| `social_security_claim_age_0`, `_1` | age | Each person's **own** age when their benefit is first paid (the profile's claim age if it was already in payment at the start). Indices 31, 32 |
+| `person_retirement_age_0`, `_1` | age | Each person's **own** age when they stop working (person 1: the retirement date plus `partner_offset_years`). Indices 33, 34 |
+| `mortgage_payoff_age` | age | First person's age in the month the household's last mortgage is paid off (by schedule or sale) with none taken out afterwards; null if it never had one or still owes at the end. Index 35 |
 
 Derived by the recorder from the year records (anything the simulation puts there is
 overwritten):
@@ -127,8 +133,10 @@ overwritten):
 | `min_investable` | dollars | Lowest year-end investable balance while retired |
 | `lifetime_tax` | dollars | Sum of `total_tax` |
 | `lifetime_spending` | dollars | Sum of `spending` |
-| `delivered_spending_ratio` | ratio | Retired-year spending / retired-year `spend_planned` |
-| `worst_spending_ratio` | ratio | Lowest single retired year of the same ratio |
+| `delivered_spending_ratio` | ratio | Share of planned retirement spending delivered: sum over retired years of `min(spending, spend_planned)` / sum of `spend_planned`. **Never above 1** (changed: it used to be the plain ratio of sums and could read 128%) |
+| `extra_spending_ratio` | ratio | Retirement spending above the plan: sum of `max(spending - spend_planned, 0)` / sum of `spend_planned`. Index 27 |
+| `plan_delivered_share` | ratio | Mean over retired years of `min(spending / spend_planned, 1)`: every year weighs the same. Index 30 |
+| `worst_spending_ratio` | ratio | Lowest single retired year of spending / `spend_planned` (not capped) |
 | `years_retired` | years | Records with `retired = true` |
 | `years_below_90` | years | Retired years delivering under 90% of plan |
 | `years_below_75` | years | Retired years delivering under 75% of plan |
@@ -142,8 +150,10 @@ overwritten):
 
 1. `health`: long-term care paid before the money ran out was at least a quarter of
    the savings held at retirement (two years of the budget if never retired);
-2. `job_loss`: at least 18 months of involuntary unemployment, or at least 12 and the
-   money ran out before retirement;
+2. the money ran out **before retirement**: `job_loss` if at least 6 months of
+   involuntary unemployment came before that, otherwise `overspending` (never a
+   market or longevity cause); otherwise `job_loss` if at least 18 months of
+   unemployment came before the money ran out;
 3. `inflation`: inflation over the path averaged 4.5% a year or more;
 4. `market_sequence`: the real portfolio return over the first ten retirement years
    was more than two points a year below the plan's expected real return;
@@ -186,7 +196,7 @@ year the record covers (1..=12); `retired` is true once the retirement date has
 passed; `status` from `Status::classify`. The histogram quantities are computed from
 `values`, so there is nothing else to fill.
 
-`PathEnd { scalars: [f32; 27] }`: defaults to all NaN; set the fifteen supplied
+`PathEnd { scalars: [f32; 36] }`: defaults to all NaN; set the supplied
 scalars with `set(scalar, value)` and `set_outcome(None | Some(cause))`.
 
 `MonthRecord { month, price_level, status, retired, values: [f64; 43],
@@ -215,17 +225,19 @@ Summary {
   axis:       { start: "YYYY-MM", start_age, first_year_months, years[], ages[], alive[] },
   headline:   Headline,
   spending:   SpendingDelivery,
-  quantiles:  [ { series, levels[9], values[level][year] } ]         // one per HistSeries
+  quantiles:  [ { series, levels[9], values[level][year] } ]         // one per HistSeries (6)
   density:    [ { series, edges[], starts[year], counts[year][], zeros[year] } ]
   status:     { statuses[6], shares[status][year] },
   survival:   { household[year], people[person][year] },
   composition:[ { series, kind, values[year] } ]                     // all 43 YearSeries
   fi, retirement, depletion: AgeCurve,
-  distributions: [ ScalarDistribution ]                              // all 27 PathScalars
+  distributions: [ ScalarDistribution ]                              // all 36 PathScalars
   scatter:    { paths[], columns: [ { scalar, values[] } ] },
   failure:    FailureAttribution,
   picks:      [ { label, scalar, path_index, value } ],
   samples:    [ { path_index, net_worth[], investable[], spending[] } ],
+  pick_paths: [ { path_index, net_worth[], investable[], spending[] } ],   // added
+  plan_moments: PlanMoments,                                               // added
 }
 ```
 
@@ -240,7 +252,11 @@ Summary {
 | `years_depleted` | Spread | Duration of shortfall among paths that deplete |
 | `median_terminal_net_worth`, `p10_terminal_net_worth`, `terminal_net_worth` | number, number, Spread | The bequest |
 | `investable_at_retirement` | Spread | Among paths that retire |
-| `delivered_spending_ratio` | Estimate | Mean over retired paths |
+| `delivered_spending_ratio` | Estimate | Mean over retired paths of the capped ratio of sums (never above 1) |
+| `plan_delivered_share` | Estimate | Mean over retired paths of the per-year capped share (`plan_delivered_share` scalar). Added |
+| `extra_spending_ratio` | Estimate | Mean over retired paths of spending above plan as a fraction of plan. Added |
+| `initial_withdrawal_rate` | Spread | First-year draw / investable at retirement, among paths that retire. Added |
+| `home_sale_rate` | Estimate | Share of all paths on which a home was sold as a last resort. These paths are **not** counted as depleted. Added |
 | `years_cutting_share` | number | Retired path-years in `retired_cutting` or `depleted` |
 | `median_lifetime_tax`, `lifetime_tax`, `lifetime_spending` | number, Spread, Spread | |
 | `funded_ratio` | Spread or null | Present only if the simulation records it |
@@ -251,8 +267,12 @@ paths with at least one such year); `years_below_90`, `years_below_75` (Estimate
 share of retired path-years); `years_cut` (Spread: years below 90% among paths with a
 cut); `worst_cut_levels` = `[0.5, 0.75, 0.9, 0.95, 0.99]` and `worst_cut[]` (the
 single-year cut, as a fraction of plan, that this share of retired paths never
-exceed); `by_year { retired[], below_90[], below_75[] }` (share of the living that are
-retired; share of the retired below each line).
+exceed); `by_year { retired[], below_90[], below_75[], depleted[], depleted_shortfall[] }`
+(share of the living that are retired; share of the retired below each line;
+`depleted[y]`: share of **living** households whose year ended `depleted`;
+`depleted_shortfall[y]`: among those, the mean of planned less delivered spending
+for the year in whole today's dollars, annualised, `null` when nobody is depleted
+that year. The last two are added).
 
 **`quantiles`**: levels are `[0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99]`.
 `values[i][y]` is quantile `levels[i]` in year `y`, `null` when nobody is alive.
@@ -305,6 +325,23 @@ scalar, q)` finds the path at any quantile of any scalar.
 **`samples`**: the first 96 paths' annual net worth, investable assets and spending
 (whole dollars; shorter than the horizon when the household dies sooner).
 
+**`pick_paths`** (added): the same three annual series for each distinct
+`picks[].path_index`, in the order of `picks` (so the named unlucky, middling and
+lucky lives can be drawn without tracing them). Filled by `Plan::summarize` /
+`Plan::summarize_seeded(acc, seed)` and the wasm `summarize`, which simulate those
+few paths again with the run's seed; a path that does not reproduce the
+accumulator's record (wrong seed) is left out, and `Summary::from_accumulator` alone
+leaves the list empty.
+
+**`plan_moments`** (added): `{ social_security_claim_age[person],
+social_security_claim_share[person], person_retirement_age[person],
+person_retirement_share[person], mortgage_payoff_age, mortgage_payoff_year,
+mortgage_payoff_share }`. Ages are medians over the paths on which the thing
+happens (each person's own age for the first four; the first person's for the
+mortgage), the `*_share` fields are the share of all paths on which it happens,
+`mortgage_payoff_year` is the same median as a calendar year. `null` where it never
+happens.
+
 ## `SummaryDigest` (`Summary::digest()`, about 1.7 KB)
 
 ```
@@ -315,8 +352,8 @@ scalar, q)` finds the path at any quantile of any scalar.
   fi_by_age: {ages[], p[]}, depletion_by_age: {ages[], p[]},
   by_age: { ages[6], alive[], net_worth_p10[], net_worth_p50[], net_worth_p90[],
             spending_p10[], spending_p50[], spending_p90[] },
-  spending_delivery: { delivered_ratio, paths_below_90, paths_below_75,
-                       years_below_90, worst_cut_p90 },
+  spending_delivery: { delivered_ratio, extra_ratio, paths_below_90, paths_below_75,
+                       years_below_90, worst_cut_p90 },   // extra_ratio added
   failure_causes: [ {cause, share} ]   // top 3, share of failed paths
   trace_paths: { p10, median, p90, failing } }
 ```
@@ -337,6 +374,7 @@ Both runs must use the same seed; paths are matched by index and the rest ignore
   scalars:  [ { scalar, unit, both, a_only, b_only, neither,
                 mean_a, mean_b, mean_delta: Estimate,
                 quantiles[9], dots[100], b_higher, a_higher, equal, within_noise } ],
+  quantile_levels: [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99],   // added: the levels of scalars[].quantiles
   headline: [ { metric, a, b, delta } ] }
 ```
 
@@ -359,7 +397,7 @@ when the 95% interval contains zero. `headline` metrics: `success_rate`, `fi_rat
   annual:  { years[], months[], status[], columns: [ { key, unit, values[year] } ] },
   tax_returns: [ { year, price_level, result: {..TaxResult}, lines: [ {key, label, amount, note} ] } ],
   events:  [ { month: "YYYY-MM", kind, label, amount } ],
-  scalars: [ { scalar, value } ] }            // all 27, same as the aggregate row
+  scalars: [ { scalar, value } ] }            // all 36, same as the aggregate row
 ```
 
 Monthly column keys: `net_worth`, `investable`, every `YearSeries` key that is not
@@ -395,7 +433,15 @@ year; divide by that return's `price_level` for today's dollars.
 * **Depletion status** of a year is `depleted` if any month of it cut essential
   spending or grew the overdraft.
 * **Trace events** also include `life_event` entries for refinancing, postponed or
-  abandoned purchases, and income, spending and contribution changes.
+  abandoned purchases, and income, spending and contribution changes. A last-resort
+  property sale is a `sold_home` event labelled "Sold <name> because savings ran out".
+* **Traced tax returns** have two more optional lines: `adjustments` (deductible IRA
+  and HSA contributions made outside payroll, negative) and `passive_loss_released`;
+  `other_income` no longer nets them. `local_income_tax` notes name the base used
+  (state adjusted income, wages and business profit, or the city's schedule).
+* **Home equity**: with `retirement.home_equity: last_resort` (the default) property
+  is sold before essentials are cut; the household is then not `depleted`. The year
+  is recorded with the sale in `property_sale`.
 
 ## `PlanPreview` (`Plan::preview()`, wasm `planPreview(profileJson)`)
 
@@ -417,8 +463,8 @@ As in `docs/architecture.md` section 6. Beyond the original list: `Engine.warnin
 bytes() }`, `compare(aBytes, bBytes, baselineProfileJson)` (the `Comparison` JSON, B
 minus A), `digest(accBytes, profileJson)`, `planPreview(profileJson)` and
 `exampleProfiles()`. Every function returning a document returns a JSON string.
-`Accumulator::VERSION` is 3 (the scalar table gained `coast_fi_age`); bytes from an
-older build do not decode.
+`Accumulator::VERSION` is 5 (nine more scalars, a sixth histogram series and the
+per-year shortfall sums); bytes from an older build do not decode.
 
 ## Sizes and timings
 
@@ -429,8 +475,44 @@ Measured natively on one Apple M-series core, 60-year horizon, synthetic lives.
 | `record_year` | about 21 ns |
 | 500-path chunk, serialised | 111 KB (161 KB for the first chunk, which carries the 96 sample paths); 52 KB of it is the scalar table |
 | 500-path chunk: encode / decode / merge | 0.8 ms / 0.4 ms / 0.2 ms |
-| 100,000-path accumulator, serialised | 10.6 MB: histograms 0.16 MB, scalars 10.4 MB (27 x 4 bytes x paths) |
+| 100,000-path accumulator, serialised | about 14.6 MB: histograms 0.2 MB, scalars 14.4 MB (36 x 4 bytes x paths) |
 | `Summary::from_accumulator`, 100,000 paths | about 51 ms |
 | `Summary` JSON, 100,000 paths | 530 KB |
 | `SummaryDigest` JSON | about 1.7 KB |
 | `PathTrace` JSON, 60 years, 30 active series | about 180 KB |
+
+## Additions made by the engine audit (for consumers with a strict shape check)
+
+Every change to the JSON documents, in one place. Nothing was removed or renamed.
+
+`Summary`
+* `headline.plan_delivered_share` (Estimate), `headline.extra_spending_ratio`
+  (Estimate), `headline.initial_withdrawal_rate` (Spread), `headline.home_sale_rate`
+  (Estimate).
+* `headline.delivered_spending_ratio`: same field, now capped at 1 per year (see the
+  scalar's definition).
+* `spending.by_year.depleted[]`, `spending.by_year.depleted_shortfall[]` (numbers or
+  null, one per year).
+* `quantiles[]` and `density[]`: a sixth entry each, `series: "spend_planned"`.
+* `distributions[]`, `failure.contrasts[]`: nine more entries (36 scalars), appended
+  in this order: `extra_spending_ratio`, `initial_withdrawal_rate`, `home_sale_age`,
+  `plan_delivered_share`, `social_security_claim_age_0`,
+  `social_security_claim_age_1`, `person_retirement_age_0`,
+  `person_retirement_age_1`, `mortgage_payoff_age`.
+* `pick_paths[]`: `{ path_index, net_worth[], investable[], spending[] }`.
+* `plan_moments`: `{ social_security_claim_age[], social_security_claim_share[],
+  person_retirement_age[], person_retirement_share[], mortgage_payoff_age,
+  mortgage_payoff_year, mortgage_payoff_share }`.
+
+`SummaryDigest`: `spending_delivery.extra_ratio`.
+
+`Comparison`: `quantile_levels[9]`; `scalars[]` has the nine new scalars too.
+
+`PathTrace`: `scalars[]` has 36 entries; tax-return `lines[]` may contain the keys
+`adjustments` and `passive_loss_released`.
+
+Profile schema (inputs): `retirement.home_equity` (`"never"` | `"last_resort"`,
+default `last_resort`); `debt_policy.refinance_mortgages` (boolean, default true);
+`assumptions.market.equity_premium_adjustment` now defaults to `-0.015`. New
+validation warnings: `short_history` (a bootstrap `from_year` leaving under 50 years)
+and `adjusted_history` (the historical replay with a non-zero equity adjustment).

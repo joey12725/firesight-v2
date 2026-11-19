@@ -222,6 +222,11 @@ impl TraceRecorder {
 
         let mut annual_columns = Vec::new();
         for h in HistSeries::ALL {
+            // A histogrammed quantity that is itself a series (planned spending)
+            // comes with the series below.
+            if YearSeries::from_key(h.key()).is_some() {
+                continue;
+            }
             annual_columns.extend(dollar_column(h.key(), &self.annual_hist[h.index()], true));
         }
         for s in YearSeries::ALL {

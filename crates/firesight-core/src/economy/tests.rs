@@ -40,10 +40,10 @@ const K: usize = NAMES.len();
 /// `(price level after 30 years, sum of all asset returns)` for seed 2026, path 3,
 /// for the bootstrap, regime, lognormal and historical models.
 const GOLDEN: [(f64, f64); 4] = [
-    (1.575_000_426_538_396, 31.524_137_084_904_96),
-    (1.161_311_638_006_061, 18.246_746_017_602_373),
-    (2.192_109_053_393_755_5, 26.632_248_546_832_997),
-    (1.565_714_359_980_529_2, 30.287_682_589_830_21),
+    (1.575_000_426_538_396, 23.881_440_751_523_27),
+    (1.161_311_638_006_061, 10.406_777_749_511_308),
+    (2.192_109_053_393_755_5, 18.149_064_365_350_938),
+    (1.565_714_359_980_529_2, 23.239_197_292_043_3),
 ];
 
 fn fixture() -> &'static Value {
@@ -64,9 +64,12 @@ fn fx(pointer: &str) -> f64 {
         .unwrap_or_else(|| panic!("calibration.json has no number at {pointer}"))
 }
 
+/// The record as it was: the tests compare the models with the history, so the
+/// default equity adjustment is switched off.
 fn market(kind: MarketKind) -> MarketModel {
     MarketModel {
         kind,
+        equity_premium_adjustment: 0.0,
         ..MarketModel::default()
     }
 }
@@ -610,24 +613,44 @@ fn bootstrap_samples_whole_rows_in_geometric_blocks_with_circular_wrap() {
             .map(|t| find_row(h, &out, t).expect("every month is a historical row"))
             .collect();
         first_rows.push(rows[0]);
+        // Rate levels are carried, not sampled: every path starts from the last
+        // row of the history, whatever row its returns start from.
+        assert_eq!(out.long_yield[0], h.long_yield[n - 1]);
+        assert_eq!(out.mortgage_rate[0], h.mortgage30[n - 1]);
+        let (k_intl, k_gold) = m.base.short_scale;
         for t in 0..720 {
             let i = rows[t];
             // Everything in the month comes from that one row.
             assert_eq!(out.returns_at(t)[AssetClass::Cash.index()], h.tbill[i]);
-            assert_eq!(out.long_yield[t], h.long_yield[i]);
-            assert_eq!(out.mortgage_rate[t], h.mortgage30[i]);
             assert_eq!(out.recession[t], h.recession[i]);
             if h.home[i].is_finite() {
                 assert_eq!(out.home_national[t], h.home[i]);
             }
+            // International equities and gold: the row's return, at the assumed
+            // long-run level (one constant factor on every month).
             if h.equity_intl[i].is_finite() {
                 assert_eq!(
                     out.returns_at(t)[AssetClass::IntlStocks.index()],
-                    h.equity_intl[i]
+                    (1.0 + h.equity_intl[i]) * k_intl - 1.0
                 );
             }
             if h.gold[i].is_finite() {
-                assert_eq!(out.returns_at(t)[AssetClass::Gold.index()], h.gold[i]);
+                assert_eq!(
+                    out.returns_at(t)[AssetClass::Gold.index()],
+                    (1.0 + h.gold[i]) * k_gold - 1.0
+                );
+            }
+            if t > 0 && i > 0 {
+                // The long yield moves by the sampled month's own change plus a
+                // weak pull to its mean: never by a jump between unrelated rows.
+                let own = h.long_yield[i] - h.long_yield[i - 1];
+                let step = out.long_yield[t] - out.long_yield[t - 1];
+                assert!(
+                    (step - own).abs() < 0.0012 || out.long_yield[t] <= super::MIN_LONG_YIELD,
+                    "month {t}: yield moved {step}, the row moved {own}"
+                );
+                let spread = out.mortgage_rate[t] - out.long_yield[t];
+                assert!(spread > 0.0049 && spread < 0.0401, "{spread}");
             }
             if t > 0 {
                 steps += 1;
@@ -684,11 +707,15 @@ fn bootstrap_respects_from_year_and_clamps_silly_values() {
             let i = find_row(h, &out, t).unwrap();
             assert!(i >= first_1990, "month {t} came from row {i}");
             // From 1990 nothing is synthesised.
+            let (k_intl, k_gold) = m.base.short_scale;
             assert_eq!(
                 out.returns_at(t)[AssetClass::IntlStocks.index()],
-                h.equity_intl[i]
+                (1.0 + h.equity_intl[i]) * k_intl - 1.0
             );
-            assert_eq!(out.returns_at(t)[AssetClass::Gold.index()], h.gold[i]);
+            assert_eq!(
+                out.returns_at(t)[AssetClass::Gold.index()],
+                (1.0 + h.gold[i]) * k_gold - 1.0
+            );
         }
     }
     // Before the data: everything. After it: the last ten years.
@@ -1059,11 +1086,13 @@ fn regime_model_matches_calibration_within_tolerance() {
         history_stat("equity_intl", "vol_ann"),
         0.15,
     );
+    // Gold follows the long-run assumption (1% real, geometric), not its 1968+
+    // sample mean: inflation + 1% + half its variance.
     c.close(
         "mean_ann gold",
         s.mean_ann(GOLD),
-        history_stat("gold", "mean_arith_ann"),
-        0.02,
+        s.mean_ann(CPI) + 0.01 + 0.5 * s.vol_ann(GOLD) * s.vol_ann(GOLD),
+        0.01,
     );
     c.close_rel(
         "vol_ann gold",
@@ -1215,16 +1244,46 @@ fn lognormal_model_matches_full_sample_moments_and_has_no_memory() {
         (GOLD, "gold"),
     ] {
         let vol = history_stat(name, "vol_ann");
+        // International equities and gold follow the long-run assumptions, not
+        // their short samples: US equities less 1 point and inflation plus 1 point
+        // (geometric), i.e. arithmetic means shifted by half the variances.
+        let half_var = |v: f64| 0.5 * v * v;
+        let expected = match i {
+            INTL => {
+                history_stat("equity_us", "mean_arith_ann")
+                    - half_var(history_stat("equity_us", "vol_ann"))
+                    - 0.01
+                    + half_var(vol)
+            }
+            GOLD => {
+                history_stat("cpi", "mean_arith_ann") - half_var(history_stat("cpi", "vol_ann"))
+                    + 0.01
+                    + half_var(vol)
+            }
+            _ => history_stat(name, "mean_arith_ann"),
+        };
         c.close(
             &format!("mean_ann {name}"),
             s.mean_ann(i),
-            history_stat(name, "mean_arith_ann"),
-            4.0 * vol / (s.n / 12.0).sqrt() + 4e-4,
+            expected,
+            4.0 * vol / (s.n / 12.0).sqrt() + if matches!(i, INTL | GOLD) { 3e-3 } else { 4e-4 },
         );
         // (The model matches the sd of log returns; for skewed gold the sd of simple
-        // returns then differs by a few percent.)
-        c.close_rel(&format!("vol_ann {name}"), s.vol_ann(i), vol, 0.05);
+        // returns then differs by a few percent. Bills are floored at zero, which
+        // takes about a tenth off their volatility.)
+        c.close_rel(
+            &format!("vol_ann {name}"),
+            s.vol_ann(i),
+            vol,
+            if i == BILL { 0.2 } else { 0.05 },
+        );
     }
+    // No month has a negative bill return.
+    let mut out = EconomyPath::new();
+    generate(&m, SEED, 0, 720, &mut out);
+    assert!(out.returns[AssetClass::Cash.index()]
+        .iter()
+        .all(|r| *r >= 0.0));
     for (i, j, a, b) in [
         (EQ, INTL, "equity_us", "equity_intl"),
         (EQ, BOND, "equity_us", "bond10"),
@@ -1428,20 +1487,21 @@ fn crypto_matches_its_stated_assumptions() {
     // 26% of 30-year paths see a collapse: 1 - 0.99^30 = 0.26.
     let survived = growth_30y.len() as f64 / paths as f64;
     assert!((survived - 0.74).abs() < 0.04, "{survived}");
-    // Among survivors the median real growth is the assumed zero (within 3 points a
-    // year: the standard error of a 30-year mean at 70% volatility is 12.8 points
-    // per path, 0.4 across 1,100 paths).
+    // The preset fixes the expected (arithmetic) real return at zero, collapses
+    // included. At 70% volatility that means the typical surviving path loses about
+    // a fifth of its real value a year (half the variance, 0.245, a little less
+    // with the capped tails).
     growth_30y.sort_by(f64::total_cmp);
     let median = percentile(&growth_30y, 0.5);
-    assert!(median.abs() < 0.03, "median real log growth {median}");
-    // The average monthly return is positive all the same (volatility), near the
-    // +24% a year params.json quotes: the honest statement of the assumption.
-    let s = Stats::collect(&m, 300, 360);
     assert!(
-        s.mean_ann(CRYPTO) > 0.15 && s.mean_ann(CRYPTO) < 0.35,
-        "{}",
-        s.mean_ann(CRYPTO)
+        median > -0.32 && median < -0.15,
+        "median real log growth {median}"
     );
+    // The average nominal monthly return, annualised, is inflation (3%) plus the
+    // expected real return of zero: not the +25% a year a zero *median* implied.
+    let s = Stats::collect(&m, 600, 360);
+    let real_mean = s.mean_ann(CRYPTO) - s.mean_ann(CPI);
+    assert!(real_mean.abs() < 0.04, "{real_mean}");
     assert!(worst_month > -0.97 && worst_month < -0.5, "{worst_month}");
 }
 
@@ -2069,16 +2129,17 @@ fn crash_overlay_hand_computed() {
         assert_eq!(p.recession[t], 1);
     }
     assert!((cumulative(us, 12..18) - 0.5).abs() < 1e-12);
-    // Recovery: the unstressed path gained 1.01^6 = 1.0615202 over the crash, so 12
-    // months of drift (1.0615202 / 0.5)^(1/12) = 1.06475 on top of the +1%.
-    let drift = math::pow(math::powi(1.01, 6) / 0.5, 1.0 / 12.0);
-    assert!((drift - 1.064_75).abs() < 1e-5, "{drift}");
+    // Recovery: twelve months whose sampled returns (+1% each) are scaled by one
+    // constant so that together they just undo the fall: 2^(1/12) - 1 = 5.9463% a
+    // month, and the index is back at its pre-crash level, not on the unstressed
+    // trend.
     for t in 18..30 {
-        assert!((us[t] - (1.01 * drift - 1.0)).abs() < 1e-12);
+        assert!((us[t] - (math::pow(2.0, 1.0 / 12.0) - 1.0)).abs() < 1e-12);
         assert_eq!(p.recession[t], 0);
     }
-    // Back on the unstressed trend exactly, and untouched outside the window.
-    assert!((cumulative(us, 12..30) - math::powi(1.01, 18)).abs() < 1e-12);
+    assert!((cumulative(us, 12..30) - 1.0).abs() < 1e-12);
+    // The loss against the unstressed path is permanent: untouched outside the
+    // window, so the stressed index stays 1.01^18 behind.
     for t in (0..12).chain(30..60) {
         assert_eq!(p.returns_at(t), before.returns_at(t));
         assert_eq!(p.recession[t], 0);
@@ -2140,13 +2201,16 @@ fn crash_overlay_on_simulated_paths_and_edge_cases() {
         let end = at + stress::CRASH_MONTHS;
         assert!((cumulative(us, at..end) - 0.6).abs() < 1e-12, "{name}");
         assert!(us[at..end].iter().all(|r| *r < 0.0));
-        // The recovery rejoins the unstressed equity path.
+        // At the end of the recovery the index is back at its pre-crash level, and
+        // the shape of the sampled path is kept: every recovery month's gross
+        // return is the sampled one times the same constant.
         let rejoin = end + recovery;
-        let (stressed, unstressed) = (
-            cumulative(us, at..rejoin),
-            cumulative(&before.returns[0], at..rejoin),
-        );
-        assert!((stressed / unstressed - 1.0).abs() < 1e-10, "{name}");
+        assert!((cumulative(us, at..rejoin) - 1.0).abs() < 1e-10, "{name}");
+        let k = (1.0 + us[end]) / (1.0 + before.returns[0][end]);
+        for t in end..rejoin {
+            let ratio = (1.0 + us[t]) / (1.0 + before.returns[0][t]);
+            assert!((ratio / k - 1.0).abs() < 1e-9, "{name} month {t}");
+        }
         // Nothing before the start or after the recovery is touched.
         for t in (0..at).chain(rejoin..480) {
             assert_eq!(p.returns_at(t), before.returns_at(t), "{name} month {t}");
@@ -2224,9 +2288,11 @@ fn crash_overlay_on_simulated_paths_and_edge_cases() {
         &mut p,
     );
     assert!((cumulative(&p.returns[0], 0..6) - 0.01).abs() < 1e-12);
-    assert!((cumulative(&p.returns[0], 0..7) - math::powi(1.01, 7)).abs() < 1e-9);
+    assert!((cumulative(&p.returns[0], 0..7) - 1.0).abs() < 1e-9);
     assert_all_finite(&p, "deep crash");
+    // No fall, no stress.
     let mut p = flat_path(24);
+    let before = p.clone();
     m.apply_stress(
         &ResolvedStress::Crash {
             at_month: 0,
@@ -2235,8 +2301,19 @@ fn crash_overlay_on_simulated_paths_and_edge_cases() {
         },
         &mut p,
     );
-    assert!((cumulative(&p.returns[0], 0..6) - 1.0).abs() < 1e-12);
-    assert!((cumulative(&p.returns[0], 0..12) - math::powi(1.01, 12)).abs() < 1e-12);
+    assert!(same_bits(&p, &before));
+    // A collapsed token or company stays collapsed through a recovery.
+    let mut p = flat_path(36);
+    p.returns[AssetClass::Crypto.index()][20] = -1.0;
+    m.apply_stress(
+        &ResolvedStress::Crash {
+            at_month: 12,
+            drawdown: 0.4,
+            recovery_months: 12,
+        },
+        &mut p,
+    );
+    assert_eq!(p.returns[AssetClass::Crypto.index()][20], -1.0);
 }
 
 #[test]
@@ -2647,4 +2724,132 @@ fn report_speed() {
             t0.elapsed().as_nanos() as f64 / f64::from(reps)
         );
     }
+}
+
+// ---------------------------------------------------------------------------------
+// Audit regressions.
+// ---------------------------------------------------------------------------------
+
+/// Annualised geometric real return of series `i` and of US equities, pooled.
+fn real_geometric(m: &EconomyModel, paths: u64, i: usize) -> f64 {
+    let mut out = EconomyPath::new();
+    let (mut log, mut n) = (0.0, 0.0);
+    for path in 0..paths {
+        generate(m, SEED, path, 720, &mut out);
+        for t in 0..720 {
+            log += math::ln_1p(series_at(&out, t)[i]) - math::ln_1p(out.inflation[t]);
+            n += 1.0;
+        }
+    }
+    math::exp(log / n * 12.0) - 1.0
+}
+
+/// Gold and international equities have short histories whose own means used to
+/// be set against full-sample inflation: gold returned 3.4%, 4.3% or 5.3% real
+/// depending on the model, and international equities beat the US in one of them.
+/// The long-run level is now one stated assumption in every resampling model.
+#[test]
+fn gold_and_international_follow_one_long_run_assumption_in_every_model() {
+    for (name, kind, tol) in [
+        ("bootstrap", bootstrap(60), 0.006),
+        ("regime", MarketKind::Regime, 0.012),
+        ("lognormal", MarketKind::Lognormal, 0.006),
+    ] {
+        let m = model(kind);
+        let gold = real_geometric(&m, 600, GOLD);
+        let spread = real_geometric(&m, 600, INTL) - real_geometric(&m, 600, EQ);
+        assert!((gold - 0.01).abs() < tol, "{name}: gold real {gold}");
+        assert!((spread + 0.01).abs() < tol, "{name}: intl less US {spread}");
+    }
+}
+
+/// The bootstrap used to copy rate *levels* from the sampled row: every path began
+/// at a random historical mortgage rate (5% of them above 12.8%) and half of all
+/// households with a mortgage at today's rate could refinance a point lower two
+/// months in. Levels now start from the last observation and move by the sampled
+/// months' own changes.
+#[test]
+fn bootstrap_rates_start_from_today_and_move_like_history() {
+    let h = &Data::embedded().history;
+    let n = h.len();
+    let today = h.mortgage30[n - 1];
+    let m = model(bootstrap(60));
+    let mut out = EconomyPath::new();
+    let paths = 2000;
+    let (mut cheaper_soon, mut big_moves, mut months) = (0usize, 0usize, 0usize);
+    let mut after_30y = Vec::new();
+    for path in 0..paths {
+        generate(&m, SEED, path, 720, &mut out);
+        assert_eq!(out.mortgage_rate[0], today);
+        // The first January of a plan that starts in November is month 2.
+        cheaper_soon += usize::from(out.mortgage_rate[2] <= today - 0.01);
+        for t in 1..720 {
+            months += 1;
+            big_moves +=
+                usize::from((out.mortgage_rate[t] - out.mortgage_rate[t - 1]).abs() > 0.01);
+            assert!(out.long_yield[t] >= super::MIN_LONG_YIELD && out.long_yield[t] < 0.30);
+        }
+        after_30y.push(out.mortgage_rate[360]);
+    }
+    assert!(
+        (cheaper_soon as f64) < 0.02 * paths as f64,
+        "{cheaper_soon} of {paths} paths a point lower in two months"
+    );
+    // History: 0.42% of months moved the mortgage rate by more than a point.
+    let share = big_moves as f64 / months as f64;
+    assert!(share < 0.008, "one-month moves above a point: {share}");
+    // Thirty years out the level is uncertain but bounded: a spread like history's.
+    after_30y.sort_by(f64::total_cmp);
+    let (p5, p50, p95) = (
+        percentile(&after_30y, 0.05),
+        percentile(&after_30y, 0.5),
+        percentile(&after_30y, 0.95),
+    );
+    println!(
+        "bootstrap mortgage rate: a point lower by the first January on {cheaper_soon} of {paths} paths; \
+         one-month moves above a point {share:.4}; after 30 years p5 {p5:.4} p50 {p50:.4} p95 {p95:.4}"
+    );
+    assert!(p5 > 0.02 && p5 < 0.055, "{p5}");
+    assert!(p50 > 0.05 && p50 < 0.09, "{p50}");
+    assert!(p95 > 0.09 && p95 < 0.20, "{p95}");
+}
+
+/// The regime model's home prices had momentum but nothing pulling the real level
+/// back: a 5% chance of losing 40% of real value in a decade, which a century of
+/// data never shows (history p5 -10%), and every path began with a real decline.
+#[test]
+fn regime_home_prices_have_the_dispersion_of_the_record() {
+    let m = model(MarketKind::Regime);
+    let mut out = EconomyPath::new();
+    let mut ten = Vec::new();
+    let mut first_year = 0.0;
+    let paths = 3000;
+    for path in 0..paths {
+        generate(&m, SEED, path, 360, &mut out);
+        let real = |range: std::ops::Range<usize>| -> f64 {
+            range
+                .map(|t| (1.0 + out.home_national[t]) / (1.0 + out.inflation[t]))
+                .product()
+        };
+        ten.push(real(0..120) - 1.0);
+        ten.push(real(240..360) - 1.0);
+        first_year += real(0..12) - 1.0;
+    }
+    ten.sort_by(f64::total_cmp);
+    let (p5, p50, p95) = (
+        percentile(&ten, 0.05),
+        percentile(&ten, 0.5),
+        percentile(&ten, 0.95),
+    );
+    // History (rolling ten-year real changes): -10% / +6% / +56%.
+    println!("regime ten-year real home-price change: p5 {p5:.3} p50 {p50:.3} p95 {p95:.3}");
+    assert!(p5 > -0.25, "p5 {p5}");
+    assert!(p50 > -0.03 && p50 < 0.2, "p50 {p50}");
+    assert!(p95 < 0.75, "p95 {p95}");
+    let first_year = first_year / paths as f64;
+    println!("regime mean real home-price growth in year 1: {first_year:.4}");
+    assert!(
+        first_year > -0.012,
+        "mean real growth in year 1: {first_year}"
+    );
 }

@@ -151,7 +151,8 @@ RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_frac
 
 Debt { id, name, kind: Student|Auto|CreditCard|Personal|Other, balance, rate,
        payment: Option<f64>, remaining_months: Option<u32> }
-DebtPolicy { strategy: Minimum | Avalanche | Snowball, extra_monthly: f64 }
+DebtPolicy { strategy: Minimum | Avalanche | Snowball, extra_monthly: f64,
+             refinance_mortgages: bool (true) }  // each January, if the market rate is 1+ point lower and 4 years of saving exceed the costs
 
 LifeEvent { id, name, when: When, probability: f64 (1.0), timing_uncertainty_years: f64 (0), kind }
 EventKind =
@@ -179,14 +180,16 @@ RetirementPlan {
                   | TaxAware{ fill_to_bracket: f64, roth_conversions: bool, mind_aca: bool },
   early_access: Auto | PayPenalty,               // Auto: taxable, Roth basis, seasoned conversions, 72(t)
   bequest_target: f64,
+  home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal
                               | Historical,       // every start month in history, in order: path i = cohort i
-                        equity_premium_adjustment: f64 (annual, default 0),
+                        equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,
                         stress: Vec<Stress> },
-  Stress = CrashAtRetirement{ drawdown, recovery_years } | LostDecade{ start: When }
+  Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
+         | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
                     social_security_haircut: Option<{ from_year, factor }> },
@@ -384,3 +387,5 @@ counts.
 * Golden tests: the demo profiles' `Summary` at a fixed seed.
 * Economy calibration tests: simulated moments within tolerance of
   `data/history/calibration.json`.
+
+See `docs/methodology.md` for how each relationship is modelled and what was measured.

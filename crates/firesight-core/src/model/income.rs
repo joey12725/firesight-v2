@@ -52,7 +52,8 @@ impl Default for IncomeKind {
 #[serde(default, deny_unknown_fields)]
 pub struct Job {
     /// Gross base pay per year in today's dollars, before tax and before 401(k)
-    /// deferrals. Excludes bonus, commission and equity.
+    /// deferrals. Excludes bonus, commission and equity. For a job that starts in
+    /// the future this is the pay it starts on; growth runs from its start.
     pub salary: f64,
     /// How base pay is expected to grow over the career, on top of inflation.
     pub growth: WageGrowth,
@@ -104,8 +105,11 @@ pub enum WageGrowth {
         /// 0.01 is a typical long-run figure.
         real_raise: f64,
     },
-    /// An age-dependent curve: fast growth early in a career, flattening in the 40s
-    /// and slightly declining after the mid-50s, as seen in earnings data.
+    /// An age-dependent curve fitted to earnings data: fast growth early in a
+    /// career, a peak in the mid-40s, then a decline in real pay of about 1% a
+    /// year to 65 (15% in all on the typical profile, 22% on the steep one). The
+    /// late decline in the data partly reflects shorter hours before retirement;
+    /// use `Flat` for someone over 45 who expects pay to keep up with inflation.
     Lifecycle {
         /// Shape of the curve.
         #[serde(default)]
@@ -133,10 +137,12 @@ pub enum LifecycleProfile {
     /// Little age-related growth: pay roughly tracks inflation (many hourly and
     /// public-sector jobs).
     Flat,
-    /// The median curve for workers with some college education.
+    /// The median curve for workers with some college education: real pay rises
+    /// about 66% from 25 to its peak at 45 and is 15% below the peak at 65.
     #[default]
     Typical,
-    /// Steep early growth typical of professional and technical careers.
+    /// Steep early growth typical of professional and technical careers: about
+    /// double from 25 to 45, then 22% below the peak at 65.
     Steep,
 }
 
@@ -370,7 +376,8 @@ impl Default for EquityCompany {
 #[serde(default, deny_unknown_fields)]
 pub struct SelfEmployment {
     /// Net profit per year in today's dollars, after business expenses and before
-    /// income and self-employment tax.
+    /// income and self-employment tax. For work that starts in the future this is
+    /// the profit of its first year; growth runs from its start.
     pub net_annual: f64,
     /// Year-to-year variation in profit as a standard deviation relative to the
     /// expected amount (0.25 = 25%).

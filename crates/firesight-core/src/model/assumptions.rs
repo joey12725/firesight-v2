@@ -36,19 +36,40 @@ impl Default for Assumptions {
 }
 
 /// The market scenario generator.
-#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct MarketModel {
     /// The method used to generate returns and inflation.
     pub kind: MarketKind,
-    /// Added to the expected annual return of stocks, as a decimal. Use a negative
-    /// value (for example -0.01) to plan for lower returns than history.
+    /// Added to the annual return of stocks, as a decimal. The market history is
+    /// that of the United States from 1926, the best-performing large market of
+    /// the century (7.2% a year after inflation; the world outside the US returned
+    /// about 4.5%, and estimates based on today's valuations are 3 to 5%). The
+    /// default of -0.015 plans for stocks returning one and a half points a year
+    /// less than that record. Set 0 to use the record as it was, or a more negative
+    /// value to be more cautious.
     pub equity_premium_adjustment: f64,
     /// Added to annual inflation, as a decimal. Use a positive value to plan for
     /// higher inflation than history.
     pub inflation_adjustment: f64,
     /// Stress scenarios forced onto every path, on top of the random draws.
     pub stress: Vec<Stress>,
+}
+
+/// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
+/// US record (0) and the long-run international and valuation-based views (-0.02
+/// to -0.03).
+pub const DEFAULT_EQUITY_PREMIUM_ADJUSTMENT: f64 = -0.015;
+
+impl Default for MarketModel {
+    fn default() -> Self {
+        Self {
+            kind: MarketKind::default(),
+            equity_premium_adjustment: DEFAULT_EQUITY_PREMIUM_ADJUSTMENT,
+            inflation_adjustment: 0.0,
+            stress: Vec::new(),
+        }
+    }
 }
 
 /// Method for generating market paths.
@@ -73,7 +94,9 @@ pub enum MarketKind {
     /// crashes clustering and no mean reversion.
     Lognormal,
     /// Replay history exactly: path 1 starts in the first month of the record, path 2
-    /// in the next, and so on. Answers "would this plan have survived 1966?".
+    /// in the next, and so on. Answers "would this plan have survived 1966?". Set
+    /// `equity_premium_adjustment` to 0 with this model, or the replay is history
+    /// less that adjustment.
     Historical,
 }
 
@@ -100,7 +123,9 @@ pub enum Stress {
         /// Peak-to-trough fall in stocks as a positive decimal (0.4 = a 40% fall).
         #[serde(default = "d_drawdown")]
         drawdown: f64,
-        /// Years for stocks to climb back to the pre-crash level.
+        /// Years for stocks to climb back to the pre-crash level (in nominal terms).
+        /// What they would have earned over the crash and the recovery is lost for
+        /// good.
         #[serde(default = "d_recovery")]
         recovery_years: f64,
     },

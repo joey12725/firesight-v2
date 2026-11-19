@@ -59,6 +59,33 @@ pub struct SamplePath {
     pub spending: Vec<i64>,
 }
 
+/// A recorder that keeps the annual net worth, investable assets and spending of
+/// one path and nothing else: what [`Accumulator`] keeps for its sample paths, for
+/// any path that is simulated again.
+#[derive(Clone, Debug, Default)]
+pub struct SampleRecorder {
+    /// The path recorded so far.
+    pub sample: SamplePath,
+}
+
+impl Recorder for SampleRecorder {
+    fn begin_path(&mut self, path_index: u64) {
+        self.sample = SamplePath {
+            path_index,
+            ..SamplePath::default()
+        };
+    }
+
+    fn record_year(&mut self, _year_index: usize, record: &YearRecord) {
+        let s = &mut self.sample;
+        s.net_worth.push(record.net_worth().round() as i64);
+        s.investable.push(record.investable().round() as i64);
+        s.spending.push(record.spending().round() as i64);
+    }
+
+    fn end_path(&mut self, _end: &PathEnd) {}
+}
+
 /// Running per-path state from which the derived [`PathScalar`]s are computed. Shared
 /// by the aggregate and the trace recorder so both report identical scalars.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,6 +99,8 @@ pub(crate) struct PathTally {
     delivered: f64,
     extra: f64,
     planned: f64,
+    share_sum: f64,
+    share_years: u32,
     worst_ratio: f64,
     years_retired: u32,
     years_below_90: u32,
@@ -91,6 +120,8 @@ impl Default for PathTally {
             delivered: 0.0,
             extra: 0.0,
             planned: 0.0,
+            share_sum: 0.0,
+            share_years: 0,
             worst_ratio: f64::INFINITY,
             years_retired: 0,
             years_below_90: 0,
@@ -137,6 +168,8 @@ impl PathTally {
                 self.extra += (spending - planned).max(0.0);
                 self.planned += planned;
                 let ratio = spending / planned;
+                self.share_sum += ratio.min(1.0);
+                self.share_years += 1;
                 self.worst_ratio = self.worst_ratio.min(ratio);
                 if ratio < MILD_CUT_RATIO {
                     flags.below_90 = true;
@@ -181,6 +214,13 @@ impl PathTally {
             nan_unless(self.planned > 0.0, self.extra / self.planned),
         );
         set(
+            PathScalar::PlanDeliveredShare,
+            nan_unless(
+                self.share_years > 0,
+                self.share_sum / f64::from(self.share_years.max(1)),
+            ),
+        );
+        set(
             PathScalar::WorstSpendingRatio,
             nan_unless(self.worst_ratio.is_finite(), self.worst_ratio),
         );
@@ -223,6 +263,11 @@ pub struct Accumulator {
     /// Sums in whole today's dollars, `[series][year]` flattened. Integer so that
     /// merging is exact in any order.
     pub sums: Vec<i64>,
+    /// Spending shortfall of depleted household-years, `[year]`: the sum over
+    /// households whose year ended `depleted` of planned less delivered spending
+    /// (not below zero, annualised), in whole today's dollars. Divide by that
+    /// year's `depleted` status count for the mean depth of the shortfall.
+    pub shortfall: Vec<i64>,
     /// Per-path scalars, as chunks sorted by `first_path`, never overlapping and
     /// never adjacent (adjacent chunks are joined).
     pub scalars: Vec<ScalarChunk>,
@@ -275,6 +320,7 @@ struct WireRef<'a> {
     months: &'a [u64],
     cuts: &'a [u32],
     sums: &'a [i64],
+    shortfall: &'a [i64],
     scalars: &'a [ScalarChunk],
     samples: &'a [SamplePath],
 }
@@ -289,6 +335,7 @@ struct WireOwned {
     months: Vec<u64>,
     cuts: Vec<u32>,
     sums: Vec<i64>,
+    shortfall: Vec<i64>,
     scalars: Vec<ScalarChunk>,
     samples: Vec<SamplePath>,
 }
@@ -296,7 +343,7 @@ struct WireOwned {
 impl Accumulator {
     /// Layout version written by this build. Bump whenever a field, the histogram
     /// grid or one of the series / scalar enums changes.
-    pub const VERSION: u32 = 4;
+    pub const VERSION: u32 = 5;
 
     /// An empty accumulator for a horizon of `years` calendar years.
     pub fn new(years: u32) -> Accumulator {
@@ -310,6 +357,7 @@ impl Accumulator {
             months: vec![0; y],
             cuts: vec![0; y * CUT_COUNTS],
             sums: vec![0; YearSeries::COUNT * y],
+            shortfall: vec![0; y],
             scalars: Vec::new(),
             samples: Vec::new(),
             current: Current::default(),
@@ -371,6 +419,9 @@ impl Accumulator {
         for (a, b) in self.sums.iter_mut().zip(&other.sums) {
             *a += b;
         }
+        for (a, b) in self.shortfall.iter_mut().zip(&other.shortfall) {
+            *a += b;
+        }
         self.paths += other.paths;
         self.samples.extend(other.samples.iter().cloned());
         self.samples.sort_by_key(|s| s.path_index);
@@ -392,6 +443,7 @@ impl Accumulator {
             months: &self.months,
             cuts: &self.cuts,
             sums: &self.sums,
+            shortfall: &self.shortfall,
             scalars: &self.scalars,
             samples: &self.samples,
         })
@@ -420,6 +472,7 @@ impl Accumulator {
             || wire.months.len() != y
             || wire.cuts.len() != y * CUT_COUNTS
             || wire.sums.len() != y * YearSeries::COUNT
+            || wire.shortfall.len() != y
         {
             return Err(bad("array sizes do not match the horizon"));
         }
@@ -460,6 +513,7 @@ impl Accumulator {
             months: wire.months,
             cuts: wire.cuts,
             sums: wire.sums,
+            shortfall: wire.shortfall,
             scalars: wire.scalars,
             samples: wire.samples,
             current: Current::default(),
@@ -596,6 +650,13 @@ impl Recorder for Accumulator {
         for (s, v) in record.values.iter().enumerate() {
             // `as` saturates and maps NaN to 0, identically on every platform.
             self.sums[s * years + year_index] += v.round() as i64;
+        }
+        if record.status == Status::Depleted {
+            let short = (record.get(YearSeries::SpendPlanned)
+                - values[HistSeries::Spending.index()])
+            .max(0.0)
+                * annualise;
+            self.shortfall[year_index] += short.round() as i64;
         }
         let flags = self.current.tally.record(record, &values);
         let cuts = &mut self.cuts[year_index * CUT_COUNTS..(year_index + 1) * CUT_COUNTS];

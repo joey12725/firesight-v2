@@ -16,10 +16,10 @@ use crate::housing::{amortized_payment, PropertyModel};
 use crate::math;
 use crate::model::{
     Category, ChildCosts, Cola, College, CostOfLivingChange, DebtKind, EmployerPlan, EventKind,
-    IncomeChangeKind, IncomeKind, LifecycleProfile, Profile, PropertyUse, Rebalance,
-    RetirementChange, RetirementTrigger, Sex, ShockLevel, SocialSecurityBasis, SpendingChangeKind,
-    SpendingTarget, Stress, TaxKind, WageGrowth, WealthBasis, When, WhenContext, WhenFunded,
-    WithdrawalOrder, YearMonth,
+    IncomeChangeKind, IncomeKind, Profile, PropertyUse, Rebalance, RetirementChange,
+    RetirementTrigger, Sex, ShockLevel, SocialSecurityBasis, SpendingChangeKind, SpendingTarget,
+    Stress, TaxKind, WageGrowth, WealthBasis, When, WhenContext, WhenFunded, WithdrawalOrder,
+    YearMonth,
 };
 use crate::stats::{Accumulator, Summary, SummaryContext};
 use crate::tax::{LocalTax, StateCode, TaxLaw};
@@ -78,6 +78,11 @@ pub const DEFAULT_LATEST_RETIREMENT_AGE: f64 = 70.0;
 /// Months a home purchase the household cannot yet afford is retried before the
 /// event is dropped.
 pub const PURCHASE_RETRY_MONTHS: u32 = 60;
+
+/// Share of pre-tax income a household is taken to spend when its child-cost tier
+/// has to be inferred from its budget (no earned income at the start). A judgement:
+/// consumer units in the USDA study spend about four fifths of pre-tax income.
+pub const CHILD_TIER_SPENDING_SHARE: f64 = 0.8;
 
 /// Selling costs when property is sold as a last resort
 /// (`retirement.home_equity: last_resort`): the default of a planned sale.
@@ -301,7 +306,7 @@ pub(crate) enum EvKind {
         state: StateCode,
         in_us: bool,
         foreign_rate: Option<f64>,
-        local: LocalTax,
+        local: Box<LocalTax>,
         moving_cost: f64,
         factors: [f64; Category::COUNT],
     },
@@ -582,7 +587,8 @@ impl Plan {
         let mut streams = Vec::new();
         let mut income_refs: Vec<(String, IncomeRef)> = Vec::new();
         let mut earnings = [0.0f64; MAX_PEOPLE];
-        let mut lifecycle = [LifecycleProfile::Typical; MAX_PEOPLE];
+        let mut growth = [WageGrowth::default(); MAX_PEOPLE];
+        let mut growth_pay = [0.0f64; MAX_PEOPLE];
         let mut survival: Vec<Vec<f64>> = Vec::new();
         let mut mortality = Vec::new();
         for person in &profile.household.people {
@@ -614,10 +620,11 @@ impl Plan {
                         earnings[owner] += job.salary
                             * (1.0 + job.bonus.map_or(0.0, |b| b.target_fraction))
                             + job.commission.map_or(0.0, |c| c.expected_annual);
-                        lifecycle[owner] = match job.growth {
-                            WageGrowth::Flat { .. } => LifecycleProfile::Flat,
-                            WageGrowth::Lifecycle { profile, .. } => profile,
-                        };
+                        // The past is rebuilt on the curve of the main job.
+                        if job.salary >= growth_pay[owner] {
+                            growth_pay[owner] = job.salary;
+                            growth[owner] = job.growth;
+                        }
                     }
                     income_refs.push((income.id.clone(), IncomeRef::Job(jobs.len())));
                     jobs.push(JobPlan {
@@ -720,12 +727,14 @@ impl Plan {
             let basis = BenefitBasis::from(&person.social_security.basis);
             let record0 = match person.social_security.basis {
                 SocialSecurityBasis::FromEarnings { career_start_age } => {
-                    EarningsRecord::backfill_profile(
+                    // On the curve the career model follows from here on, so that
+                    // the last rebuilt year and the first simulated one are one curve.
+                    EarningsRecord::backfill_with(
                         earnings[i],
                         f64::from(age0) / 12.0,
                         career_start_age,
-                        lifecycle[i],
                         &ss,
+                        |age| crate::career::wage_curve_level(&growth[i], age, &career_params),
                     )
                 }
                 _ => EarningsRecord::default(),
@@ -786,9 +795,20 @@ impl Plan {
             "middle_income_59200_to_107400",
             "high_income_over_107400",
         ];
-        let tier = if income_rate0 < 59_200.0 * usda_factor {
+        // The USDA tiers are by pre-tax income. A household with little or no pay
+        // at the start (retired, between jobs) is placed by what it spends instead:
+        // its budget grossed up by `CHILD_TIER_SPENDING_SHARE`.
+        let budget0: f64 = profile
+            .spending
+            .items
+            .iter()
+            .filter(|item| item.start.is_none())
+            .map(|item| item.amount * item.frequency.per_year())
+            .sum();
+        let tier_income = income_rate0.max(budget0 / CHILD_TIER_SPENDING_SHARE);
+        let tier = if tier_income < 59_200.0 * usda_factor {
             0
-        } else if income_rate0 < 107_400.0 * usda_factor {
+        } else if tier_income < 107_400.0 * usda_factor {
             1
         } else {
             2
@@ -934,7 +954,7 @@ impl Plan {
                         state,
                         in_us,
                         foreign_rate: if in_us { None } else { r.foreign_tax_rate },
-                        local: law.local_tax(state, r.city.as_deref()),
+                        local: Box::new(law.local_tax(state, r.city.as_deref())),
                         moving_cost: r.moving_cost.max(0.0),
                         factors,
                     }
@@ -1285,8 +1305,40 @@ impl Plan {
     }
 
     /// The summary of an accumulator filled from this plan.
+    ///
+    /// The accumulator is taken to have been run with the profile's own seed
+    /// ([`Plan::seed`]); use [`Plan::summarize_seeded`] for another.
     pub fn summarize(&self, acc: &Accumulator) -> Summary {
-        Summary::from_accumulator(acc, &self.summary_context())
+        self.summarize_seeded(acc, self.seed())
+    }
+
+    /// [`Plan::summarize`] for an accumulator run with `seed`. The picked paths
+    /// (`Summary::picks`) are simulated again to give their annual series
+    /// (`Summary::pick_paths`); a path that does not reproduce the accumulator's
+    /// record (the seed is not the one the run used) is left out.
+    pub fn summarize_seeded(&self, acc: &Accumulator, seed: u64) -> Summary {
+        let mut summary = Summary::from_accumulator(acc, &self.summary_context());
+        let mut workspace = super::Workspace::new(self);
+        let mut recorder = crate::stats::SampleRecorder::default();
+        for pick in &summary.picks {
+            let index = pick.path_index;
+            if summary.pick_paths.iter().any(|p| p.path_index == index) {
+                continue;
+            }
+            super::run_path(self, seed, index, &mut workspace, &mut recorder);
+            let terminal = acc
+                .path_scalars(index)
+                .map(|row| f64::from(row[crate::stats::PathScalar::TerminalNetWorth.index()]));
+            let last = recorder.sample.net_worth.last().copied();
+            let same = match (terminal, last) {
+                (Some(t), Some(l)) => (t - l as f64).abs() <= 1.0 + 1e-6 * t.abs(),
+                _ => false,
+            };
+            if same {
+                summary.pick_paths.push(recorder.sample.clone());
+            }
+        }
+        summary
     }
 
     /// Number of start months the `historical` market model can replay (0 for the

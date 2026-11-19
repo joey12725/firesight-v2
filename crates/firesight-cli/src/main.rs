@@ -521,7 +521,7 @@ fn bench(profile: &Profile, paths: u32) -> Result<(), String> {
     );
     let started = Instant::now();
     let bytes = acc.to_bytes();
-    let summary = plan.summarize(&acc);
+    let summary = plan.summarize_seeded(&acc, seed);
     println!(
         "summary                {:.1} ms; accumulator {} KB",
         started.elapsed().as_secs_f64() * 1e3,
@@ -608,7 +608,7 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             let started = Instant::now();
             let acc = simulate(&plan, seed, paths, &pool);
             let elapsed = started.elapsed().as_secs_f64();
-            let summary = plan.summarize(&acc);
+            let summary = plan.summarize_seeded(&acc, seed);
             let text = serde_json::to_string(&summary).map_err(|e| e.to_string())?;
             if let Some(path) = summary_out {
                 std::fs::write(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;

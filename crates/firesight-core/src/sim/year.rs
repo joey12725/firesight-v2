@@ -54,6 +54,11 @@ const REFINANCE_COST_FIXED: f64 = 2_000.0;
 /// The interest saved over this many years must exceed the closing costs.
 const REFINANCE_PAYBACK_YEARS: f64 = 4.0;
 
+/// The year is planned a second time when the premium credit the first plan earns
+/// differs from the one it assumed by more than this share of a month's spending
+/// (what is left is settled with the return, like any estimate).
+const ACA_ADVANCE_TOLERANCE: f64 = 0.03;
+
 /// Highest share of wage-like income withheld for income tax.
 const MAX_WITHHOLDING_RATE: f64 = 0.6;
 
@@ -889,7 +894,10 @@ impl State {
             let credit = tax::compute(&self.params, &est_inputs).aca_premium_credit / annualise;
             self.aca_advance_m = (credit - self.aca_advance_ytd).max(0.0) / m_left;
             let expected = self.aca_advance_m.min(rate.aca_premium);
-            if pass > 0 || !self.has_plan || (expected - advance).abs() <= 0.01 * spend_month {
+            if pass > 0
+                || !self.has_plan
+                || (expected - advance).abs() <= ACA_ADVANCE_TOLERANCE * spend_month
+            {
                 break;
             }
             advance = expected;

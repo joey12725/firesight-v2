@@ -449,8 +449,10 @@ fn normalized(mix: &Weights) -> Weights {
         }
     }
     if total > 0.0 && total.is_finite() {
+        // One division, not one per asset class: this runs on every contribution.
+        let scale = 1.0 / total;
         for o in &mut out {
-            *o /= total;
+            *o *= scale;
         }
     } else {
         out = [0.0; N_ASSETS];
@@ -767,6 +769,8 @@ impl Accounts {
             keep[i] = growth - fee[i];
         }
 
+        let mut fees = [0.0; N_ASSETS];
+        let mut change = [0.0; N_ASSETS];
         for i in 0..N_ASSETS {
             let v = self.taxable.value[i];
             let new = v * keep[i];
@@ -778,8 +782,8 @@ impl Accounts {
             }
             self.taxable.basis[i] += dist;
             self.taxable.value[i] = new;
-            inc.fees += v * fee[i];
-            inc.net_change += new - v;
+            fees[i] = v * fee[i];
+            change[i] = new - v;
         }
         for p in &mut self.person {
             for h in [&mut p.traditional, &mut p.roth.value, &mut p.hsa] {
@@ -787,10 +791,17 @@ impl Accounts {
                     let v = h[i];
                     let new = v * keep[i];
                     h[i] = new;
-                    inc.fees += v * fee[i];
-                    inc.net_change += new - v;
+                    fees[i] += v * fee[i];
+                    change[i] += new - v;
                 }
             }
+        }
+        // Summed per asset class and then across classes: one short chain of adds
+        // per class instead of a single chain through every holding, which the
+        // processor cannot run in parallel.
+        for i in 0..N_ASSETS {
+            inc.fees += fees[i];
+            inc.net_change += change[i];
         }
         inc
     }
