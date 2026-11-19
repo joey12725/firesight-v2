@@ -173,6 +173,13 @@ pub struct TaxModel {
     /// Plan for a cut in Social Security benefits when the trust fund runs short.
     /// Leave empty to assume benefits are paid in full.
     pub social_security_haircut: Option<SocialSecurityHaircut>,
+    /// Index the thresholds that current law ties to the chained CPI (income tax
+    /// brackets, the standard deduction, capital-gain thresholds, QBI thresholds and
+    /// the child credit amounts) at about a quarter of a point a year less than the
+    /// CPI-U that drives everything else. Off by default, which indexes them with the
+    /// CPI-U. Brackets creep up on real income by about 2.5% per decade when on.
+    /// Contribution limits, IRMAA tiers and state schedules stay on the CPI-U.
+    pub chained_cpi: bool,
 }
 
 impl Default for TaxModel {
@@ -181,6 +188,7 @@ impl Default for TaxModel {
             kind: TaxKind::UsCurrentLaw,
             index_brackets: true,
             social_security_haircut: None,
+            chained_cpi: false,
         }
     }
 }

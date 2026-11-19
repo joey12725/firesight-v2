@@ -14,6 +14,13 @@ use super::{
 use crate::data::{Data, DataError};
 use crate::model::TaxModel;
 
+/// How much more slowly the chained CPI-U rises than the CPI-U, per year, as a
+/// fraction. CBO, "Using the Chained CPI to Index Social Security, Other Federal
+/// Programs, and the Tax Code for Inflation" (testimony, April 2013): about 0.25
+/// percentage points a year lower on average (CBO's 2010 brief gave 0.3; any single
+/// year ranges from +0.1 to -0.5). Applied only with `assumptions.taxes.chained_cpi`.
+pub const CHAINED_CPI_WEDGE: f64 = 0.0025;
+
 const FEDERAL_FILE: &str = "data/tax/us-federal-2026.json";
 const STATES_FILE: &str = "data/tax/us-states-2026.json";
 
@@ -965,6 +972,7 @@ impl TaxLaw {
             base_year,
             kind: model.kind,
             index_brackets: model.index_brackets,
+            chained_cpi: model.chained_cpi,
             published_next_year: parse_published_next_year(&root, base_year)?,
             rmd: parse_rmd(&data.tax_federal)?,
             federal,
@@ -1049,9 +1057,13 @@ impl TaxLaw {
             }
         }
 
-        f.child_tax_credit = index_rounded(b.child_tax_credit, cpi, CHILD_CREDIT_INCREMENT);
-        f.child_credit_refundable_max =
-            index_rounded(b.child_credit_refundable_max, cpi, CHILD_CREDIT_INCREMENT);
+        let chained = self.chained_factor(index, cpi);
+        f.child_tax_credit = index_rounded(b.child_tax_credit, chained, CHILD_CREDIT_INCREMENT);
+        f.child_credit_refundable_max = index_rounded(
+            b.child_credit_refundable_max,
+            chained,
+            CHILD_CREDIT_INCREMENT,
+        );
         f.oasdi_wage_base = index_rounded(b.oasdi_wage_base, wage, WAGE_BASE_INCREMENT);
 
         f.limits.k401_employee = index_rounded(b.limits.k401_employee, cpi, K401_INCREMENT);
@@ -1127,12 +1139,26 @@ impl TaxLaw {
         }
     }
 
+    /// The factor for thresholds indexed to the chained CPI: `cpi` itself unless
+    /// `chained_cpi` is on, otherwise `cpi` less [`CHAINED_CPI_WEDGE`] a year for
+    /// every year after `base_year + 1` (the figures published for `base_year + 1`
+    /// are already on the chained index).
+    fn chained_factor(&self, index: Indexation, cpi: f64) -> f64 {
+        if !self.chained_cpi {
+            return cpi;
+        }
+        let years = (index.year - self.base_year - 1).max(0);
+        cpi * crate::math::powi(1.0 - CHAINED_CPI_WEDGE, years)
+    }
+
     /// The federal tables of filing status `s`, from the base-year law.
     fn index_federal_status(&self, index: Indexation, cpi: f64, f: &mut FederalYear, s: usize) {
         let b = &self.federal.year;
-        let bracket = |x: f64| index_rounded(x, cpi, BRACKET_INCREMENT);
-        f.ordinary[s] = b.ordinary[s].indexed_rounded(cpi, BRACKET_INCREMENT);
-        f.capital_gains[s] = b.capital_gains[s].indexed_rounded(cpi, BRACKET_INCREMENT);
+        // Items the statute indexes to the chained CPI (IRC 1(f)(3)).
+        let chained = self.chained_factor(index, cpi);
+        let bracket = |x: f64| index_rounded(x, chained, BRACKET_INCREMENT);
+        f.ordinary[s] = b.ordinary[s].indexed_rounded(chained, BRACKET_INCREMENT);
+        f.capital_gains[s] = b.capital_gains[s].indexed_rounded(chained, BRACKET_INCREMENT);
         f.standard_deduction[s] = bracket(b.standard_deduction[s]);
         f.additional_deduction_65[s] = bracket(b.additional_deduction_65[s]);
         f.qbi_threshold[s] = bracket(b.qbi_threshold[s]);

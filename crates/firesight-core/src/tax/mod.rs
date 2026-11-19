@@ -37,6 +37,8 @@ mod calc;
 mod explain;
 mod law;
 #[cfg(test)]
+mod realism_tests;
+#[cfg(test)]
 mod tests;
 
 pub use calc::{
@@ -44,6 +46,7 @@ pub use calc::{
     room_to_bracket_top,
 };
 pub use explain::explain;
+pub use law::CHAINED_CPI_WEDGE;
 
 /// Federal filing status. A surviving spouse files jointly for the year of death and
 /// single afterwards (head of household while a child under 17 is at home).
@@ -753,6 +756,10 @@ pub struct TaxLaw {
     /// From `assumptions.taxes.index_brackets`; when false `for_year` ignores the
     /// CPI and wage factors (statutory schedules by calendar year still apply).
     pub index_brackets: bool,
+    /// From `assumptions.taxes.chained_cpi`: the thresholds the statute indexes to
+    /// the chained CPI-U grow `CHAINED_CPI_WEDGE` a year more slowly than
+    /// `index.cpi_factor` from the year after the base year.
+    pub chained_cpi: bool,
     /// The factors implied by the officially published figures for `base_year + 1`
     /// (brackets, wage base, poverty guideline, Part B premium). The simulation starts
     /// late in the base year, so the first simulated January can use these instead of

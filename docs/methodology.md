@@ -308,6 +308,28 @@ State and local rules corrected by the audit:
 Other tax modes: a flat rate, or none. A household abroad pays its flat foreign
 rate instead of US federal, state and payroll tax (a simplification).
 
+### Chained-CPI indexing (`assumptions.taxes.chained_cpi`, off by default)
+
+Since 2018 the income tax brackets, the standard deduction (and the additional
+amount at 65), the capital-gain thresholds, the QBI thresholds and the child credit
+amounts are indexed to the chained CPI-U (IRC 1(f)(3)), which rises more slowly than
+the CPI-U that drives the engine's prices: CBO puts the gap at about 0.25 percentage
+points a year on average (CBO, "Using the Chained CPI to Index Social Security, Other
+Federal Programs, and the Tax Code for Inflation", testimony, 2013; the range in any
+single year is +0.1 to -0.5). With the option on, those thresholds are multiplied by
+`0.9975^(year - 2027)` on top of the simulated CPI-U factor; the figures published
+for 2027 are already on the chained index, so 2026 and 2027 do not change. Contribution
+limits, the IRMAA tiers, the poverty line and the wage base keep their own indexes
+(CPI-U, Medicare premiums, average wages), and state schedules stay on the CPI-U
+(states differ and the data does not say which follow the federal index). The Roth
+and IRA income phase-outs are left on the CPI-U as well, a judgement: whether their
+cross-reference reaches the chained index was not checked.
+Measured on 3,000 paths of the dual-income example (same seed, option on against
+off): median lifetime tax $963k to $1,001k (+3.9%), success rate 91.8% to 91.3%,
+median terminal net worth $1.726m to $1.721m. Not modelled: the CPI-U path is the
+simulated one, so the wedge is a fixed rate rather than something that varies with
+the inflation regime (the historical wedge is larger when inflation is high).
+
 ## 6. Income and careers
 
 A job pays its entered salary (today's dollars) and follows either a flat real

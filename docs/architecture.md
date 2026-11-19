@@ -192,7 +192,8 @@ Assumptions {
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
-                    social_security_haircut: Option<{ from_year, factor }> },
+                    social_security_haircut: Option<{ from_year, factor }>,
+                    chained_cpi: bool (false) },   // bracket-type thresholds grow 0.25 points a year slower than CPI-U
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
 }
