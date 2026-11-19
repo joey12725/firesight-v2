@@ -12,7 +12,10 @@ fn job(salary: f64, growth: WageGrowth, level: RiskLevel) -> Job {
     Job {
         salary,
         growth,
-        risk: CareerRisk { level },
+        risk: CareerRisk {
+            level,
+            ..CareerRisk::default()
+        },
         ..Job::default()
     }
 }

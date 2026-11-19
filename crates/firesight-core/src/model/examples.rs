@@ -98,6 +98,7 @@ fn early_career_saver(start: YearMonth) -> Profile {
             },
             risk: CareerRisk {
                 level: RiskLevel::Typical,
+                ..CareerRisk::default()
             },
             bonus: Some(Bonus {
                 target_fraction: 0.06,
@@ -344,6 +345,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             },
             risk: CareerRisk {
                 level: RiskLevel::Low,
+                ..CareerRisk::default()
             },
             plan: Some(EmployerPlan {
                 employee_fraction: 0.08,

@@ -94,7 +94,8 @@ Income { id, name, owner: usize (person index), kind, start: Option<When>, end: 
 When   = Date{at: YearMonth} | Age{person, age} | Retirement{offset_years} | Start
 IncomeKind =
   Job { salary, growth: Flat{real_raise} | Lifecycle{profile: Flat|Typical|Steep, extra},
-        risk: CareerRisk { level: None|Low|Typical|High }   // wage shocks + layoff hazard
+        risk: CareerRisk { level: None|Low|Typical|High,   // wage shocks + layoff hazard
+                           job_mobility: Off|Typical|High },  // opt-in voluntary job changes with pay jumps (6.1)
         bonus: Option<Bonus{ target_fraction, volatility }>,
         commission: Option<Commission{ expected_annual, volatility }>,
         equity: Vec<EquityGrant>,

@@ -64,6 +64,9 @@ impl State {
         if self.check {
             self.check_begin();
         }
+        if plan.rz.any {
+            self.rz_month_start(plan);
+        }
 
         // 1. Calendar: deaths, a partner joining, retirement dates, the annual plan.
         let mut replan = t == 0 || month == 1;
@@ -163,12 +166,15 @@ impl State {
                     .skip(month == 1, &mut self.rng_career[p], &mut self.rng_equity);
                 continue;
             }
-            let jm = jp.model.step(
+            let mut jm = jp.model.step(
                 &mut self.jobs[j].st,
                 &climate,
                 &mut self.rng_career[p],
                 &mut self.rng_equity,
             );
+            if plan.rz.any {
+                self.rz_after_job_step(plan, j, t, &climate, &mut jm);
+            }
             if !self.present[p] {
                 continue;
             }

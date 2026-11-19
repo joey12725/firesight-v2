@@ -130,6 +130,8 @@ pub(crate) struct State {
     // Balance sheet.
     pub acc: Accounts,
     pub jobs: Vec<JobRt>,
+    /// Opt-in career-realism state (`career_realism`).
+    pub rz: crate::career_realism::RealismState,
     pub selfemp: Vec<SeRt>,
     pub streams: Vec<StreamRt>,
     pub props: Vec<PropertyState>,
@@ -324,6 +326,7 @@ impl State {
             death_year: i32::MIN,
             acc: Accounts::default(),
             jobs: vec![JobRt::default(); plan.jobs.len()],
+            rz: crate::career_realism::RealismState::new(&plan.rz),
             selfemp: vec![
                 SeRt {
                     st: SelfEmploymentState::default(),
@@ -536,6 +539,9 @@ impl State {
             econ,
         );
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
+        if plan.rz.any {
+            self.rz.begin(&plan.rz, seed, path);
+        }
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));

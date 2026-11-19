@@ -153,6 +153,31 @@ pub struct CareerRisk {
     /// How volatile pay is and how likely a layoff is. "typical" matches economy-wide
     /// averages (a few percent chance of job loss per year, higher in recessions).
     pub level: RiskLevel,
+    /// Voluntary job changes with pay jumps. Off by default: pay then follows the
+    /// lifecycle curve, which already contains the average gain from job changes.
+    /// When on, the person moves between employers at an age-dependent rate and each
+    /// move brings a random pay jump; pay for staying put is lowered by the matching
+    /// amount so that the average career still follows the curve (movers gain more
+    /// than stayers, but nobody is counted twice). Unvested equity is forfeited on a
+    /// move. Needs `risk.level` other than none and `assumptions.career_risk` on.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub job_mobility: JobMobility,
+}
+
+/// How often a person changes employers voluntarily and what it pays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JobMobility {
+    /// No voluntary job changes are simulated (the default).
+    #[default]
+    Off,
+    /// Economy-wide average: about 30% of workers under 25 change employers in a
+    /// year, 20% at 25 to 34, 12% at 35 to 44, 8% at 45 to 54, 5% at 55 to 64. Moves
+    /// are rarer in recessions and pay less.
+    Typical,
+    /// A job-hopping field (technology, sales, consulting): 1.6 times the typical
+    /// rate of moves.
+    High,
 }
 
 /// A coarse risk dial.

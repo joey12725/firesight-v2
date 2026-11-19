@@ -547,6 +547,7 @@ impl Checker<'_> {
     }
 
     fn job(&mut self, k: &str, job: &Job) {
+        crate::career_realism::validate::job(&mut self.r, k, job, self.p.assumptions.career_risk);
         self.r.money(&format!("{k}/salary"), "Salary", job.salary);
         match job.growth {
             WageGrowth::Flat { real_raise } => {

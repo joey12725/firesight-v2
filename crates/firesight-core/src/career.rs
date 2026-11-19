@@ -966,7 +966,7 @@ impl JobModel {
             math::exp(s.persistent_shock - 0.5 * s.persistent_variance + s.transitory_shock);
     }
 
-    fn forfeit_unvested(&self, s: &mut JobState) {
+    pub(crate) fn forfeit_unvested(&self, s: &mut JobState) {
         for g in 0..self.n_grants {
             s.unvested[g] = 0.0;
             s.vest_months_left[g] = 0;

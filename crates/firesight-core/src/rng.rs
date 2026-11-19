@@ -69,6 +69,10 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Variates of the career-realism extensions (`career_realism`): `kind` picks the
+    /// subsystem (0 job, 1 person, 2 self-employment income) and `index` the job,
+    /// person or income within it. Ids 0x1400_0000 and up are reserved for these.
+    CareerExt(u8, usize),
 }
 
 impl Stream {
@@ -85,6 +89,7 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::CareerExt(kind, i) => 0x1400_0000 + (kind as u64) * 0x1_0000 + i as u64,
         }
     }
 }

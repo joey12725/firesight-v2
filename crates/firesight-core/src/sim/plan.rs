@@ -411,6 +411,8 @@ pub struct Plan {
     pub(crate) birthday_months: u32,
     pub(crate) jobs: Vec<JobPlan>,
     pub(crate) selfemp: Vec<SePlan>,
+    /// Opt-in career-realism settings (`career_realism`).
+    pub(crate) rz: crate::career_realism::RealismPlan,
     pub(crate) streams: Vec<StreamPlan>,
     pub(crate) items: Vec<ItemPlan>,
     pub(crate) props: Vec<PropPlan>,
@@ -1254,6 +1256,7 @@ impl Plan {
             children,
             jobs,
             selfemp,
+            rz: crate::career_realism::RealismPlan::compile(profile, data),
             streams,
             items,
             props,

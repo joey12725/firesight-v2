@@ -340,6 +340,48 @@ Past earnings, needed for Social Security, are rebuilt backwards from today's pa
 along the same curve the job follows going forward, capped at each year's wage
 base.
 
+### 6.1 Voluntary job changes (opt-in: `risk.job_mobility`)
+
+Off by default. With `typical` or `high` (and the job's risk level not `none`, and
+`assumptions.career_risk` on), an employed person changes employer in a month with a
+probability that falls with age: 30% a year under 25, 20% at 25 to 34, 12% at 35 to
+44, 8% at 45 to 54, 5% at 55 to 64 (`high` is 1.6 times the yearly rate; moves are
+40% rarer in recession months). A move multiplies base pay by `exp(J)`, `J` normal
+with mean 8% under 35, 5% at 35 to 54, 2% from 55 (4 points less in a recession) and
+standard deviation 0.12, and forfeits unvested equity (a sign-on grant at the new
+employer is not modelled; the jump is meant to cover it). Employer match vesting is
+not modelled by the engine, so there is nothing to reset there.
+
+*No double counting.* The lifecycle curve is fitted to earnings panels in which people
+change jobs, so its average growth already includes the average gain from moves.
+Every month an employed person does not move, pay is therefore multiplied by
+`1 / (1 + h (E[e^J] - 1))`, which makes the expected growth of pay equal to the curve
+exactly. Movers gain more than stayers, stayers fall behind the curve, and the mean
+career is the curve; what changes is the spread between careers. The persistent wage
+shock of the existing model is calibrated to the same data and carries some of the
+same dispersion, so the two overlap in variance (not in the mean).
+
+*Sources.* The yearly move probabilities are a judgement shaped by Fallick and
+Fleischman (Federal Reserve Board FEDS 2004-34: 2.6% of employed people change
+employers each month, falling with age and in recessions), FRBSF Economic Letter
+2016-30 (SIPP: 1.7 to 1.9% a month at 40 to 44) and the BLS NLSY79 job counts; the
+jump size is a judgement shaped by Topel and Ward (1992) and the Atlanta Fed Wage
+Growth Tracker (switchers out-earn stayers in expansions, not in recessions). The
+constants are listed in `params.json` under `unverified_from_memory.career_realism`.
+
+*Measured* (dual-income-family example, 4,000 paths, seed 1, both jobs on `typical`):
+success rate 91.5% either way; median terminal net worth $1.73m off, $1.76m on; 10th
+percentile $104k off, $122k on (the Monte Carlo noise on the 10th percentile is of
+that order); median retirement age 53.4 off, 53.5 on; share of paths with a retired
+year below 90% of planned spending 44.2% off, 42.7% on. The headline barely moves
+because the mean is preserved; the unit tests show the spread of pay at 45 to 50
+rising by more than 10%, and workers with five or more moves ending 15 points ahead
+of workers with two or fewer.
+
+*Not modelled:* a link between moves and layoffs, moves into self-employment,
+relocation, employer-specific benefits (plans, health cover) differing across
+employers, moves by people on a career break or in an unemployment spell.
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own

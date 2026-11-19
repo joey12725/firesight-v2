@@ -2414,6 +2414,20 @@
       "home_price_beta": 1.0,
       "idiosyncratic_volatility": 0.14
     },
+    "career_realism": {
+      "note": "JUDGEMENT constants of the opt-in career-realism features (src/career_realism). Each is shaped by the evidence named beside it but is not an estimate from that data. A test keeps the code constants equal to this section.",
+      "job_mobility": {
+        "annual_move_probability_by_age_band": [0.30, 0.20, 0.12, 0.08, 0.05, 0.03],
+        "age_bands": ["<25", "25-34", "35-44", "45-54", "55-64", "65+"],
+        "high_level_multiplier": 1.6,
+        "max_annual_probability": 0.6,
+        "recession_rate_multiplier": 0.6,
+        "mean_log_jump_by_age_band": [0.08, 0.08, 0.05, 0.05, 0.02, 0.02],
+        "recession_jump_penalty": 0.04,
+        "jump_sd": 0.12,
+        "evidence": "Fallick and Fleischman (Federal Reserve Board FEDS 2004-34): 2.6% of employed people change employers each month, falling with age and in recessions. FRBSF Economic Letter 2016-30 (SIPP): 1.7-1.9% a month at ages 40-44. BLS NLSY79 job counts (from memory: about 12 jobs from 18 to 52). Topel and Ward (QJE 1992): job changes are about a third of early-career wage growth. Atlanta Fed Wage Growth Tracker: switchers out-earn stayers by one to three points in expansions (8.4% vs 5.6% in August 2022) and the premium turns negative in and after recessions."
+      }
+    },
     "irs_single_life_table": {
       "note": "Life expectancy at ages 20, 25, ..., 70 from the IRS Single Life Table, 26 CFR 1.401(a)(9)-9(b) (effective 2022), used for the 72(t) amortisation payment (decumulation::SINGLE_LIFE_EXPECTANCY). Check against the regulation.",
       "first_age": 20,
