@@ -164,6 +164,10 @@ pub(crate) struct State {
     pub anchor_price: f64,
     pub prev_cpi_factor: f64,
     pub params: TaxYearParams,
+    /// Filing statuses (bit `FilingStatus::index()`) whose tables in `params` have
+    /// been indexed for the year, and the state `params` was built for.
+    pub law_ready: u8,
+    pub law_state: StateCode,
     pub fica_on: bool,
     // The tax year in progress.
     pub ty: TaxInputs,
@@ -366,6 +370,8 @@ impl State {
             anchor_price: 1.0,
             prev_cpi_factor: 1.0,
             params: TaxYearParams::default(),
+            law_ready: 0,
+            law_state: StateCode::NONE,
             fica_on: false,
             ty: TaxInputs::default(),
             paid: [0.0; 4],
@@ -861,7 +867,7 @@ impl State {
     }
 
     /// Logs an event for the trace (detail mode only; the label is built lazily).
-    #[inline]
+    #[inline(always)]
     pub(crate) fn event(
         &mut self,
         now: YearMonth,
@@ -870,13 +876,27 @@ impl State {
         label: impl FnOnce() -> String,
     ) {
         if self.detail {
-            self.trace_events.push(TraceEvent {
-                month: now,
-                kind,
-                label: label(),
-                amount,
-            });
+            self.push_event(now, kind, amount, label);
         }
+    }
+
+    /// The body of [`State::event`], kept out of line: the simulation loop has
+    /// dozens of event sites and only a trace ever reaches one.
+    #[cold]
+    #[inline(never)]
+    fn push_event(
+        &mut self,
+        now: YearMonth,
+        kind: TraceEventKind,
+        amount: Option<f64>,
+        label: impl FnOnce() -> String,
+    ) {
+        self.trace_events.push(TraceEvent {
+            month: now,
+            kind,
+            label: label(),
+            amount,
+        });
     }
 
     /// Non-mortgage debt outstanding.

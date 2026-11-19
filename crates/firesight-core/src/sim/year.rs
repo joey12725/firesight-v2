@@ -213,14 +213,12 @@ impl State {
     pub(crate) fn init_first_year(&mut self, plan: &Plan) {
         let year = plan.start.year();
         self.index = self.indexation(plan, year, 1.0);
-        plan.law
-            .for_year_into(self.index, self.tax_state, &mut self.params);
-        self.params.foreign_tax_rate = self.foreign_rate;
+        let (status, _, _, _) = self.household_for_tax(plan, year);
+        self.build_law(plan, status, true);
         if self.params.state.code == self.tax_state && self.tax_state != tax::StateCode::NONE {
             self.local.apply(&mut self.params.state);
         }
         self.fica_on = self.params.kind == TaxKind::UsCurrentLaw && self.foreign_rate.is_none();
-        let (status, _, _, _) = self.household_for_tax(plan, year);
         self.filing = status;
         for i in 0..MAX_PEOPLE {
             self.age_ye[i] = if i < self.n && self.present[i] {
@@ -228,6 +226,42 @@ impl State {
             } else {
                 0.0
             };
+        }
+    }
+
+    /// Builds the law of the year `self.index` stands for, for the household's
+    /// state, with the per-status tables indexed for `status` only (the status the
+    /// household files under; [`State::ensure_law`] adds another when one is
+    /// needed).
+    ///
+    /// `first` is true for the first law of a path. Later ones for the same state
+    /// only rewrite what depends on the year.
+    fn build_law(&mut self, plan: &Plan, status: FilingStatus, first: bool) {
+        let refresh = !first && self.law_state == self.tax_state;
+        plan.law.for_year_statuses_into(
+            self.index,
+            self.tax_state,
+            &mut self.params,
+            1 << status.index(),
+            refresh,
+        );
+        self.params.foreign_tax_rate = self.foreign_rate;
+        self.law_ready = 1 << status.index();
+        self.law_state = self.tax_state;
+    }
+
+    /// Makes sure the per-status tables of `self.params` are indexed for `status`.
+    /// Every use of the parameters with a filing status goes through here first.
+    fn ensure_law(&mut self, plan: &Plan, status: FilingStatus) {
+        let bit = 1 << status.index();
+        if self.law_ready & bit == 0 {
+            plan.law.index_status_into(
+                self.index,
+                self.law_state,
+                &mut self.params,
+                status.index(),
+            );
+            self.law_ready |= bit;
         }
     }
 
@@ -326,6 +360,7 @@ impl State {
     /// `last` marks the final month of the path.
     pub(crate) fn close_tax_year(&mut self, plan: &Plan, year: i32, last: bool) {
         let (status, adults, young, other) = self.household_for_tax(plan, year);
+        self.ensure_law(plan, status);
         let mut x = self.ty;
         x.filing_status = status;
         x.adults = adults;
@@ -500,6 +535,7 @@ impl State {
             self.price_jan = price;
             self.index = self.indexation(plan, year, price);
         }
+        let (status, adults, young, other) = self.household_for_tax(plan, year);
         // The law is re-indexed each January and rebuilt when the residence changes.
         if new_year
             || first
@@ -508,15 +544,14 @@ impl State {
             || (self.tax_state == tax::StateCode::NONE
                 && self.params.state.code != tax::StateCode::NONE)
         {
-            plan.law
-                .for_year_into(self.index, self.tax_state, &mut self.params);
-            self.params.foreign_tax_rate = self.foreign_rate;
+            self.build_law(plan, status, false);
+        } else {
+            self.ensure_law(plan, status);
         }
         if self.params.state.code == self.tax_state && self.tax_state != tax::StateCode::NONE {
             self.local.apply(&mut self.params.state);
         }
         self.fica_on = self.params.kind == TaxKind::UsCurrentLaw && self.foreign_rate.is_none();
-        let (status, adults, young, other) = self.household_for_tax(plan, year);
         self.filing = status;
         let mut ages_now = [0.0; MAX_PEOPLE];
         for i in 0..MAX_PEOPLE {

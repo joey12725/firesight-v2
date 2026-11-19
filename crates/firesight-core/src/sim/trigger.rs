@@ -107,12 +107,30 @@ pub(crate) struct Requirement {
 /// Most future incomes the bridge calculation follows individually.
 const MAX_BRIDGE_INCOMES: usize = 8;
 
-/// Present value of one real dollar a year for `years` at real rate `rho`.
-fn annuity(years: f64, rho: f64) -> f64 {
+/// `(1 + rho)^-years` with `rho` the plan's bridge discount rate: from the plan's
+/// table when `years` is a whole number of months within it (it always is in the
+/// simulation), computed otherwise. The table holds the same `pow` results.
+#[inline]
+fn bridge_power(plan: &Plan, years: f64) -> f64 {
+    let months = years * 12.0 + 0.5;
+    if months >= 0.0 && months < plan.bridge_pow.len() as f64 {
+        let m = months as usize;
+        if m as f64 / 12.0 == years {
+            return plan.bridge_pow[m];
+        }
+    }
+    crate::math::pow(1.0 + plan.bridge_discount, -years)
+}
+
+/// Present value of one real dollar a year for `years` at the plan's bridge
+/// discount rate.
+#[inline]
+fn annuity(plan: &Plan, years: f64) -> f64 {
+    let rho = plan.bridge_discount;
     if rho.abs() < 1e-9 {
         years
     } else {
-        (1.0 - crate::math::pow(1.0 + rho, -years)) / rho
+        (1.0 - bridge_power(plan, years)) / rho
     }
 }
 
@@ -224,17 +242,22 @@ impl State {
             for c in &plan.children {
                 let age = (ti - c.birth).max(0);
                 let mut m = age;
-                while m < 22 * 12 {
+                // Whole years from the next birthday on, the part-year first.
+                if m < 22 * 12 && m % 12 != 0 {
                     let years = (m / 12) as usize;
                     let annual = if years < 18 {
                         c.core[years] + c.care[years]
                     } else {
                         c.college
                     };
-                    // Whole years from the next birthday on, the part-year first.
-                    let months = (12 - m % 12).min(22 * 12 - m);
+                    let months = 12 - m % 12;
                     lumps += annual * f64::from(months) / 12.0;
                     m += months;
+                }
+                if m < 22 * 12 {
+                    for lump in &c.lump_year[(m / 12) as usize..] {
+                        lumps += lump;
+                    }
                 }
             }
         }
@@ -369,16 +392,15 @@ impl State {
 
         // The bridge: the need until each income starts, then what is left of it.
         future[..n_future].sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
-        let rho = plan.bridge_discount;
         let mut bridge = lumps;
         let mut level = annual;
         let mut from = 0.0;
         for &(wait, income) in &future[..n_future] {
-            bridge += level * (annuity(wait, rho) - annuity(from, rho));
+            bridge += level * (annuity(plan, wait) - annuity(plan, from));
             level = (level - income.max(0.0)).max(0.0);
             from = wait;
         }
-        bridge += level / rate * crate::math::pow(1.0 + rho, -from);
+        bridge += level / rate * bridge_power(plan, from);
         let total = if rule.count_future_income {
             (gross - pv).max(bridge.min(gross))
         } else {

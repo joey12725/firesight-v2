@@ -7,7 +7,7 @@
 //! firesight sweep <profile> --x-path <patch path> --x-values a,b,c [--y-path .. --y-values ..]
 //! firesight trace <profile> (--path I | --quantile Q [--by SCALAR]) [--json]
 //! firesight preview <profile>
-//! firesight bench [profile] [--paths N]
+//! firesight bench [profile] [--paths N] [--repeat R] [--check BASELINE] [--write-baseline FILE]
 //! firesight schema | validate <profile> | migrate <v1> | examples <dir>
 //! ```
 //!
@@ -29,6 +29,8 @@ use firesight_core::sim::{self, Plan, Workspace};
 use firesight_core::stats::{compare, Accumulator, PathScalar, PathTrace, Summary};
 use firesight_core::validate::{validate, Issue};
 use rayon::prelude::*;
+
+mod bench;
 
 /// Paths per work item. Small enough to balance threads, large enough that the
 /// per-chunk accumulator is a small part of the work.
@@ -198,13 +200,27 @@ enum Command {
         /// Profile JSON file.
         file: PathBuf,
     },
-    /// Measure paths per second, single- and multi-threaded.
+    /// Measure paths per second, single- and multi-threaded. The last line printed
+    /// is a one-line JSON summary.
     Bench {
         /// Profile JSON file (default: the built-in dual-income demo).
         file: Option<PathBuf>,
-        /// Number of paths to time.
+        /// Number of paths to time (a quarter of it on one thread).
         #[arg(long, default_value_t = 20_000)]
         paths: u32,
+        /// Timed repetitions of each measurement; the fastest counts.
+        #[arg(long, default_value_t = 3)]
+        repeat: u32,
+        /// Compare with this baseline file; exit 1 on a regression beyond its
+        /// tolerance.
+        #[arg(long)]
+        check: Option<PathBuf>,
+        /// Record this run in a baseline file (created or updated).
+        #[arg(long)]
+        write_baseline: Option<PathBuf>,
+        /// Description of the machine stored with `--write-baseline`.
+        #[arg(long, default_value = "unspecified")]
+        machine: String,
     },
 }
 
@@ -475,24 +491,51 @@ fn print_trace(trace: &PathTrace) {
     }
 }
 
-fn bench(profile: &Profile, paths: u32) -> Result<(), String> {
+/// Times the simulation of `profile` and prints the report (see `bench.rs`).
+fn run_bench(
+    profile: &Profile,
+    name: &str,
+    paths: u32,
+    repeat: u32,
+) -> Result<bench::Measurement, String> {
     let plan = compile(profile)?;
     let paths = u64::from(paths.max(100));
+    let repeat = repeat.max(1);
     let seed = plan.seed();
     // Warm up caches and the lazily built tables.
     let mut warm = plan.new_accumulator();
     sim::run_range(&plan, seed, 0..50, &mut warm);
 
     let single = (paths / 4).max(100);
-    let started = Instant::now();
-    let mut acc = plan.new_accumulator();
-    sim::run_range(&plan, seed, 0..single, &mut acc);
-    let elapsed = started.elapsed().as_secs_f64();
-    let months: f64 = acc
-        .scalar_column(PathScalar::YearsSimulated)
-        .iter()
-        .map(|y| f64::from(*y) * 12.0)
-        .sum();
+    // Timed on a thread of its own. The main thread's stack starts wherever the
+    // command line and environment end, and that offset alone moves the result by
+    // several percent; a spawned thread's stack does not depend on them. (The
+    // simulation commands run on pool threads for the same reason.)
+    let (elapsed, months, calibration) = std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let mut elapsed = f64::INFINITY;
+                let mut months = 0.0;
+                for _ in 0..repeat {
+                    let started = Instant::now();
+                    let mut acc = plan.new_accumulator();
+                    sim::run_range(&plan, seed, 0..single, &mut acc);
+                    elapsed = elapsed.min(started.elapsed().as_secs_f64());
+                    months = acc
+                        .scalar_column(PathScalar::YearsSimulated)
+                        .iter()
+                        .map(|y| f64::from(*y) * 12.0)
+                        .sum();
+                }
+                // The calibration kernel runs right after the timed runs, with the
+                // core in the state they left it in (a core that has just woken up
+                // runs faster for a moment, which would flatter the kernel and not
+                // the simulation).
+                (elapsed, months, bench::calibrate())
+            })
+            .join()
+    })
+    .map_err(|_| "the benchmark thread panicked".to_string())?;
     println!(
         "horizon                {} years ({} months); mean path about {:.0} months",
         plan.horizon_years(),
@@ -500,19 +543,26 @@ fn bench(profile: &Profile, paths: u32) -> Result<(), String> {
         months / single as f64
     );
     println!(
-        "1 thread               {:>9.0} paths/s  {:>6.1} M month-steps/s  ({} paths in {:.2} s, {:.0} us/path)",
+        "1 thread               {:>9.0} paths/s  {:>6.1} M month-steps/s  ({} paths in {:.2} s, {:.0} us/path; best of {repeat})",
         single as f64 / elapsed,
         months / elapsed / 1e6,
         single,
         elapsed,
         elapsed / single as f64 * 1e6
     );
+    let paths_per_sec_1t = single as f64 / elapsed;
+    let month_steps_per_sec_1t = months / elapsed;
+
     let all = pool(None)?;
-    let started = Instant::now();
-    let acc = simulate(&plan, seed, paths, &all);
-    let elapsed = started.elapsed().as_secs_f64();
+    let mut elapsed = f64::INFINITY;
+    let mut acc = plan.new_accumulator();
+    for _ in 0..repeat {
+        let started = Instant::now();
+        acc = simulate(&plan, seed, paths, &all);
+        elapsed = elapsed.min(started.elapsed().as_secs_f64());
+    }
     println!(
-        "{} threads{}{:>9.0} paths/s  ({} paths in {:.2} s)",
+        "{} threads{}{:>9.0} paths/s  ({} paths in {:.2} s; best of {repeat})",
         all.current_num_threads(),
         " ".repeat(13usize.saturating_sub(all.current_num_threads().to_string().len())),
         paths as f64 / elapsed,
@@ -531,7 +581,17 @@ fn bench(profile: &Profile, paths: u32) -> Result<(), String> {
         "success rate           {}",
         pct(summary.headline.success_rate.value)
     );
-    Ok(())
+    Ok(bench::Measurement {
+        profile: name.to_string(),
+        paths,
+        repeat,
+        mean_months: months / single as f64,
+        paths_per_sec_1t,
+        month_steps_per_sec_1t,
+        threads: all.current_num_threads(),
+        paths_per_sec_mt: paths as f64 / elapsed,
+        calibration,
+    })
 }
 
 fn run(cli: Cli) -> Result<ExitCode, String> {
@@ -812,13 +872,64 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             );
             Ok(ExitCode::SUCCESS)
         }
-        Command::Bench { file, paths } => {
-            let profile = match file {
-                Some(f) => load(&f)?,
+        Command::Bench {
+            file,
+            paths,
+            repeat,
+            check,
+            write_baseline,
+            machine,
+        } => {
+            let profile = match &file {
+                Some(f) => load(f)?,
                 None => Profile::example(),
             };
-            bench(&profile, paths)?;
-            Ok(ExitCode::SUCCESS)
+            let name = bench::profile_name(file.as_deref());
+            let measured = run_bench(&profile, &name, paths, repeat)?;
+            if let Some(path) = &write_baseline {
+                let existing = match std::fs::read_to_string(path) {
+                    Ok(text) => serde_json::from_str(&text)
+                        .map_err(|e| format!("{}: {e}", path.display()))?,
+                    Err(_) => serde_json::Value::Null,
+                };
+                let updated = bench::update_baseline(existing, &measured, &machine);
+                let text = serde_json::to_string_pretty(&updated).map_err(|e| e.to_string())?;
+                std::fs::write(path, text + "\n")
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                println!("baseline               {} updated", path.display());
+            }
+            let mut code = ExitCode::SUCCESS;
+            if let Some(path) = &check {
+                let baseline = serde_json::from_str(&read(path)?)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                match bench::check(&measured, &baseline)? {
+                    bench::Verdict::Ok { baseline, change } => println!(
+                        "regression check       ok: score {:.3} against baseline {baseline:.3} ({:+.1}%)",
+                        measured.score(),
+                        change * 100.0
+                    ),
+                    bench::Verdict::Regressed {
+                        baseline,
+                        change,
+                        tolerance,
+                    } => {
+                        println!(
+                            "regression check       FAILED: score {:.3} against baseline {baseline:.3} ({:+.1}%, more than {:.0}% slower)",
+                            measured.score(),
+                            change * 100.0,
+                            tolerance * 100.0
+                        );
+                        code = ExitCode::from(1);
+                    }
+                    bench::Verdict::Unknown => println!(
+                        "regression check       skipped: {} has no entry for {name}",
+                        path.display()
+                    ),
+                }
+            }
+            // Last, so that `| tail -1` is the machine-readable summary.
+            println!("{}", measured.to_json());
+            Ok(code)
         }
     }
 }

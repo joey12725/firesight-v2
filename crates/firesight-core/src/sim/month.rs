@@ -810,6 +810,7 @@ impl State {
         self.present[1] = true;
         let theirs = &plan.joiner_accounts;
         let kinds = theirs.by_kind();
+        self.acc.holdings_changed();
         self.acc.cash += theirs.cash * price;
         for a in 0..N_ASSETS {
             self.acc.taxable.value[a] += theirs.taxable.value[a] * price;
@@ -869,9 +870,13 @@ impl State {
             self.eq12 = growth - 1.0;
         }
         self.eq_index *= 1.0 + eq_return;
-        if self.eq_index > self.eq_peak {
-            self.eq_peak = self.eq_index;
-        }
+        // A select, not a branch: whether a month sets a new high is close to a
+        // coin toss, which a branch predictor cannot learn.
+        self.eq_peak = if self.eq_index > self.eq_peak {
+            self.eq_index
+        } else {
+            self.eq_peak
+        };
     }
 
     /// True while US stocks are in a correction.
@@ -884,14 +889,18 @@ impl State {
         let real = (1.0 + r) / (1.0 + inflation);
         self.year_port *= 1.0 + r;
         self.port_index *= real;
-        if self.port_index > self.port_peak {
-            self.port_peak = self.port_index;
-        } else if self.port_peak > 0.0 {
-            let dd = 1.0 - self.port_index / self.port_peak;
-            if dd > self.worst_dd {
-                self.worst_dd = dd;
-            }
-        }
+        // Written as selects rather than branches. The index is the end of the
+        // month's longest chain of arithmetic (every holding's return, their sum,
+        // two divisions), and whether it sets a new high is close to a coin toss:
+        // as a branch it is mispredicted often and each miss waits for the whole
+        // chain. The values stored are the same.
+        let index = self.port_index;
+        let peak = self.port_peak;
+        let new_high = index > peak;
+        let dd = 1.0 - index / peak;
+        let deeper = !new_high && peak > 0.0 && dd > self.worst_dd;
+        self.port_peak = if new_high { index } else { peak };
+        self.worst_dd = if deeper { dd } else { self.worst_dd };
         if self.retired && self.ret_months < 120 {
             self.ret_index *= real;
             self.ret_months += 1;
@@ -1070,7 +1079,11 @@ impl State {
                 continue;
             }
             if item.growth != 0.0 {
-                amount *= math::powi(1.0 + item.growth, years);
+                amount *= if (years as usize) < plan.growth_years {
+                    plan.item_growth[i * plan.growth_years + years as usize]
+                } else {
+                    math::powi(1.0 + item.growth, years)
+                };
             }
             if item.owner.is_none() {
                 amount *= survivor_factor;
@@ -1086,7 +1099,13 @@ impl State {
         }
         if self.extra_rent > 0.0 {
             ess += self.extra_rent
-                * math::powi(1.0 + Category::Rent.default_real_growth(), years)
+                * plan
+                    .rent_growth
+                    .get(years as usize)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        math::powi(1.0 + Category::Rent.default_real_growth(), years)
+                    })
                 * survivor_factor;
         }
         // Shocks add variance, not level: their expected cost comes out of the
@@ -1110,7 +1129,11 @@ impl State {
         let anniversary = ((t / 12 + 1) * 12) as i32;
         self.next_item_change = next.min(anniversary);
         self.budget_dirty = false;
-        self.service_growth = math::powi(1.0 + CHILD_SERVICE_REAL_GROWTH, (t / 12) as i32);
+        self.service_growth = plan
+            .service_growth
+            .get(t / 12)
+            .copied()
+            .unwrap_or_else(|| math::powi(1.0 + CHILD_SERVICE_REAL_GROWTH, (t / 12) as i32));
     }
 
     /// Required debt payments and the extra payment.
@@ -1337,12 +1360,13 @@ impl State {
             self.led[YearSeries::SaveTaxable.index()] += flows.taxable;
         }
         // The cash bucket's own line: its change this month before interest.
+        // (Selects: the sign depends on the whole month's cash flow.)
         let delta = self.acc.cash - self.cash_start;
-        if delta >= 0.0 {
-            self.led[YearSeries::SaveCash.index()] = delta;
-        } else {
-            self.led[YearSeries::WithdrawCash.index()] = -delta;
-        }
+        let up = delta >= 0.0;
+        let saved = self.led[YearSeries::SaveCash.index()];
+        let withdrawn = self.led[YearSeries::WithdrawCash.index()];
+        self.led[YearSeries::SaveCash.index()] = if up { delta } else { saved };
+        self.led[YearSeries::WithdrawCash.index()] = if up { withdrawn } else { -delta };
     }
 
     /// Cash held back for tax already assessed and due next April.

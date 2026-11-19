@@ -1,0 +1,27 @@
+# Build settings shared by every target (native CLI, tests, wasm).
+#
+# Inlining budget. The simulation's hot path is a few large functions (one month,
+# the January plan, a tax return) that call many small ones. LLVM's default budget
+# leaves calls in them that a profile-guided build inlines; a larger budget recovers
+# most of that without a profile: about 7% fewer instructions per simulated life
+# natively and about 10% more lives per second in wasm, for a wasm file about 25%
+# larger after compression (roughly 0.86 MB instead of 0.68 MB with brotli).
+#
+# wasm SIMD. With `simd128` LLVM vectorises the loops over asset classes two
+# doubles at a time (3 to 6% more lives per second). These are the same IEEE
+# operations in the same order, so results stay identical to the scalar and native
+# builds; `tests` and the golden digests do not change. It needs a browser with
+# WebAssembly SIMD: Chrome 91, Firefox 89, Safari 16.4 (all from 2021 to 2023).
+# Remove the flag to support older browsers.
+#
+# None of this changes results: inlining and vectorisation never reorder
+# floating-point arithmetic.
+#
+# Cargo uses the first of: the RUSTFLAGS environment variable, the matching
+# [target] entry, [build]. So the wasm entry repeats the inlining flag, and setting
+# RUSTFLAGS replaces all of these (tools/pgo-build.sh repeats them for that reason).
+[build]
+rustflags = ["-Cllvm-args=-inline-threshold=1000"]
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-Cllvm-args=-inline-threshold=1000", "-Ctarget-feature=+simd128"]

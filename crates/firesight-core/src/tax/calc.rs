@@ -95,6 +95,7 @@ pub(super) enum Mode {
     None,
 }
 
+#[inline(always)]
 pub(super) fn mode(p: &TaxYearParams) -> Mode {
     match (p.kind, p.foreign_tax_rate) {
         (TaxKind::None, _) => Mode::None,
@@ -200,6 +201,7 @@ pub(super) struct Work {
 }
 
 /// Payroll taxes (step 1).
+#[inline(always)]
 fn payroll(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     let s = x.filing_status.index();
@@ -235,6 +237,7 @@ fn payroll(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 
 /// Income before Social Security (step 2). `limit_rental` applies the passive-loss
 /// rule; the flat modes take rental income as it comes.
+#[inline(always)]
 fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
     let f = &p.federal;
     let mut business = 0.0;
@@ -316,6 +319,7 @@ fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
 /// thresholds, and 50% of provisional income over the base threshold. Tier 2 is 85%
 /// of provisional income over the upper threshold. The taxable amount is their sum,
 /// capped at 85% of benefits.
+#[inline(always)]
 fn social_security(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     let s = x.filing_status.index();
@@ -334,6 +338,7 @@ fn social_security(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 }
 
 /// The part of federally taxable Social Security the state taxes.
+#[inline(always)]
 fn state_taxable_ss(st: &StateYear, x: &TaxInputs, w: &Work) -> f64 {
     if st.social_security_taxed <= 0.0 || w.taxable_ss <= 0.0 {
         return 0.0;
@@ -375,6 +380,7 @@ fn state_taxable_ss(st: &StateYear, x: &TaxInputs, w: &Work) -> f64 {
 }
 
 /// State and local income tax (step 4).
+#[inline(always)]
 fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
     let st = &p.state;
     let s = x.filing_status.index();
@@ -471,6 +477,7 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
 }
 
 /// Deductions and taxable income (step 5).
+#[inline(always)]
 fn deductions(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     let s = x.filing_status.index();
@@ -532,6 +539,7 @@ fn deductions(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 }
 
 /// Tax, credits and penalties (steps 6 and 7).
+#[inline(always)]
 fn federal_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     let s = x.filing_status.index();
@@ -577,16 +585,19 @@ fn federal_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 }
 
 /// Poverty line for the marketplace household.
+#[inline(always)]
 fn poverty_line(p: &TaxYearParams, x: &TaxInputs) -> f64 {
     p.federal.fpl_base
         + p.federal.fpl_per_person * f64::from(x.aca_household_size.saturating_sub(1))
 }
 
+#[inline(always)]
 fn on_marketplace(x: &TaxInputs) -> bool {
     x.aca_household_size > 0 && x.aca_months > 0
 }
 
 /// ACA premium credit and IRMAA (step 8).
+#[inline(always)]
 fn health(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     if on_marketplace(x) {
@@ -615,6 +626,7 @@ fn health(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 }
 
 /// The whole working of one return.
+#[inline(always)]
 pub(super) fn work(p: &TaxYearParams, x: &TaxInputs) -> Work {
     let mut w = Work {
         mode: mode(p),
@@ -655,6 +667,7 @@ pub(super) fn work(p: &TaxYearParams, x: &TaxInputs) -> Work {
     w
 }
 
+#[inline(always)]
 pub(super) fn result(w: &Work) -> TaxResult {
     let mut r = TaxResult {
         total: w.total,
@@ -697,6 +710,7 @@ pub(super) fn result(w: &Work) -> TaxResult {
 ///
 /// All amounts are nominal dollars of the tax year. `params` must come from
 /// [`TaxLaw::for_year`](super::TaxLaw::for_year) for the household's state.
+#[inline]
 pub fn compute(params: &TaxYearParams, inputs: &TaxInputs) -> TaxResult {
     debug_assert!(
         params.state.code == inputs.state || params.state.code == super::StateCode::NONE,
@@ -708,6 +722,7 @@ pub fn compute(params: &TaxYearParams, inputs: &TaxInputs) -> TaxResult {
 /// IRMAA tier (0 = no surcharge) for a MAGI and filing status. The caller applies the
 /// two-year lookback: pass the MAGI of two years ago with the parameters of the
 /// premium year.
+#[inline]
 pub fn irmaa_tier(params: &TaxYearParams, status: FilingStatus, magi: f64) -> usize {
     let table = &params.federal.irmaa[status.index()];
     let mut tier = 0;

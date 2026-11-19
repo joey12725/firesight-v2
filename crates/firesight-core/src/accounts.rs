@@ -243,6 +243,15 @@ pub struct Accounts {
     /// it alone and arranges everything else around the target. It is sold only
     /// when the taxable bucket is drawn on for cash.
     pub keep_single_stock: bool,
+    /// Asset classes known to be held in no bucket: bit `i` set means every
+    /// holding (and the taxable basis) of asset class `i` is exactly zero. Most
+    /// households hold three or four of the nine classes, and sums and monthly
+    /// returns skip the rest (adding a zero never changes a sum, so the results
+    /// are the same to the bit). The mask is conservative: 0 means nothing is
+    /// known. [`Accounts::apply_returns`] sets bits from what it sees; every
+    /// method that can put money into a class clears them. Code that writes
+    /// holdings directly must call [`Accounts::holdings_changed`].
+    pub(crate) idle: u16,
 }
 
 /// Blended interest terms of the pooled cash bucket, fixed at compile time from the
@@ -437,6 +446,76 @@ fn sum(h: &Holdings) -> f64 {
     t
 }
 
+/// Bit mask with one bit per asset class.
+const ALL_ASSETS: u16 = (1 << N_ASSETS) - 1;
+
+/// The number of leading asset classes that may be held: every class from the
+/// returned index on is idle.
+#[inline]
+fn live_prefix(idle: u16) -> usize {
+    (u16::BITS - (!idle & ALL_ASSETS).leading_zeros()) as usize
+}
+
+/// `n` rounded up to a prefix length [`with_prefix`] has code for.
+#[inline]
+fn supported_prefix(n: usize) -> usize {
+    match n {
+        0..=3 => 3,
+        4..=7 => n,
+        _ => N_ASSETS,
+    }
+}
+
+/// Runs `$body` with the const `N` bound to `$n` rounded up to a supported prefix
+/// length, so that loops over `..N` compile to straight-line code.
+macro_rules! with_prefix {
+    ($n:expr, $f:ident ( $($arg:expr),* )) => {
+        match $n {
+            0..=3 => $f::<3>($($arg),*),
+            4 => $f::<4>($($arg),*),
+            5 => $f::<5>($($arg),*),
+            6 => $f::<6>($($arg),*),
+            7 => $f::<7>($($arg),*),
+            _ => $f::<N_ASSETS>($($arg),*),
+        }
+    };
+}
+
+/// Sum of the first `N` holdings, in index order.
+#[inline(always)]
+fn sum_n<const N: usize>(h: &Holdings) -> f64 {
+    let mut t = 0.0;
+    for v in &h[..N] {
+        t += *v;
+    }
+    t
+}
+
+/// [`sum`] of holdings whose asset classes in `idle` are known to be zero: the
+/// same additions in the same order without the trailing zeros, so the same
+/// result.
+#[inline]
+fn sum_live(h: &Holdings, idle: u16) -> f64 {
+    if idle == 0 {
+        return sum(h);
+    }
+    debug_assert!(
+        (0..N_ASSETS).all(|i| idle & (1 << i) == 0 || h[i] == 0.0),
+        "an idle asset class is held: {h:?} (idle mask {idle:#b})"
+    );
+    with_prefix!(live_prefix(idle), sum_n(h))
+}
+
+/// The asset classes a normalised mix buys, as a bit mask.
+#[inline]
+fn bought(mix: &Weights) -> u16 {
+    let mut bits = 0;
+    for (i, w) in mix.iter().enumerate() {
+        bits |= u16::from(*w != 0.0) << i;
+    }
+    bits
+}
+
 /// `mix` scaled to sum to 1; an unusable mix (zero, negative or non-finite total)
 /// puts everything in the cash sleeve.
 fn normalized(mix: &Weights) -> Weights {
@@ -461,11 +540,45 @@ fn normalized(mix: &Weights) -> Weights {
     out
 }
 
+thread_local! {
+    /// The last mix [`normalized_memo`] was asked for and its normalised form.
+    static NORMALIZED_MEMO: std::cell::Cell<Option<(Weights, Weights, u16)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// [`normalized`] with a one-entry memo, for callers that pass the same mix (the
+/// household target) contribution after contribution. The memo is keyed on the bit
+/// patterns of the input, so the result is exactly what `normalized` returns.
+/// Also returns the asset classes the mix buys ([`bought`]).
+fn normalized_memo(mix: &Weights) -> (Weights, u16) {
+    NORMALIZED_MEMO.with(|memo| {
+        if let Some((key, value, bits)) = memo.get() {
+            let mut same = true;
+            for (a, b) in key.iter().zip(mix) {
+                same &= a.to_bits() == b.to_bits();
+            }
+            if same {
+                return (value, bits);
+            }
+        }
+        let value = normalized(mix);
+        let bits = bought(&value);
+        memo.set(Some((*mix, value, bits)));
+        (value, bits)
+    })
+}
+
 /// Splits a sale of `amount` (at most the bucket's value) across asset classes.
 /// With `household = Some((totals, target))` it sells what is overweight household-wide
-/// first, in proportion to the excess, then the rest pro rata.
-fn sell_split(h: &Holdings, amount: f64, household: Option<(&Holdings, &Weights)>) -> Holdings {
-    let total = sum(h);
+/// first, in proportion to the excess, then the rest pro rata. `total` is the
+/// bucket's value, `sum(h)`, which every caller has already computed.
+fn sell_split(
+    h: &Holdings,
+    total: f64,
+    amount: f64,
+    household: Option<(&Holdings, &Weights)>,
+) -> Holdings {
+    debug_assert!(total.to_bits() == sum(h).to_bits() || total.is_nan());
     let mut out = [0.0; N_ASSETS];
     if total <= 0.0 || amount <= 0.0 {
         return out;
@@ -475,6 +588,9 @@ fn sell_split(h: &Holdings, amount: f64, household: Option<(&Holdings, &Weights)
     }
     let mut rest = amount;
     let mut left = *h;
+    // What is left after the overweight classes: the whole bucket when nothing
+    // was taken from them.
+    let mut left_total = total;
     if let Some((totals, target)) = household {
         let after = sum(totals) - amount;
         let mut excess = [0.0; N_ASSETS];
@@ -490,9 +606,9 @@ fn sell_split(h: &Holdings, amount: f64, household: Option<(&Holdings, &Weights)
                 left[i] -= out[i];
                 rest -= out[i];
             }
+            left_total = sum(&left);
         }
     }
-    let left_total = sum(&left);
     if rest > 0.0 && left_total > 0.0 {
         let scale = (rest / left_total).min(1.0);
         for i in 0..N_ASSETS {
@@ -530,6 +646,63 @@ fn retarget(h: &mut Holdings, new: &Holdings) -> f64 {
         h[i] = new[i];
     }
     sold
+}
+
+/// The per-holding part of [`Accounts::apply_returns`] for the first `N` asset
+/// classes (the rest are idle): applies growth and fees, distributes the taxable
+/// bucket's income, adds fees and the change in value to `inc`, and records which
+/// classes are still held.
+#[inline(always)]
+fn grow<const N: usize>(
+    acc: &mut Accounts,
+    keep: &[f64; N_ASSETS],
+    fee: &[f64; N_ASSETS],
+    yields: &[f64; N_ASSETS],
+    inc: &mut InvestmentIncome,
+) {
+    let mut fees = [0.0; N_ASSETS];
+    let mut change = [0.0; N_ASSETS];
+    let mut held = [false; N_ASSETS];
+    for i in 0..N {
+        let v = acc.taxable.value[i];
+        let new = v * keep[i];
+        let dist = (v * yields[i] / MONTHS_PER_YEAR).clamp(0.0, new.max(0.0));
+        match DISTRIBUTION_KIND[i] {
+            Distribution::Interest => inc.interest += dist,
+            Distribution::Ordinary => inc.ordinary_dividends += dist,
+            Distribution::Qualified => inc.qualified_dividends += dist,
+        }
+        acc.taxable.basis[i] += dist;
+        acc.taxable.value[i] = new;
+        fees[i] = v * fee[i];
+        change[i] = new - v;
+        held[i] = new != 0.0 || acc.taxable.basis[i] != 0.0;
+    }
+    for p in &mut acc.person {
+        for h in [&mut p.traditional, &mut p.roth.value, &mut p.hsa] {
+            for i in 0..N {
+                let v = h[i];
+                let new = v * keep[i];
+                h[i] = new;
+                fees[i] += v * fee[i];
+                change[i] += new - v;
+                held[i] |= new != 0.0;
+            }
+        }
+    }
+    let mut idle = ALL_ASSETS;
+    for (i, held) in held.iter().enumerate().take(N) {
+        idle &= !(u16::from(*held) << i);
+    }
+    acc.idle = idle;
+    // Summed per asset class and then across classes: one short chain of adds
+    // per class instead of a single chain through every holding, which the
+    // processor cannot run in parallel. (The classes not processed would each add
+    // a zero, which changes nothing.)
+    for i in 0..N {
+        inc.fees += fees[i];
+        inc.net_change += change[i];
+    }
 }
 
 impl TaxableBucket {
@@ -692,22 +865,40 @@ impl Accounts {
     pub fn total(&self, bucket: Bucket) -> f64 {
         match bucket {
             Bucket::Cash => self.cash,
-            _ => self.holdings(bucket).map_or(0.0, sum),
+            _ => self
+                .holdings(bucket)
+                .map_or(0.0, |h| sum_live(h, self.idle)),
         }
     }
 
     /// Market value by account kind, indexed by `AccountKind::index()`, summed over
     /// people.
     pub fn by_kind(&self) -> [f64; AccountKind::COUNT] {
-        let mut out = [0.0; AccountKind::COUNT];
-        out[AccountKind::Cash.index()] = self.cash;
-        out[AccountKind::Taxable.index()] = sum(&self.taxable.value);
-        for p in &self.person {
-            out[AccountKind::Traditional.index()] += sum(&p.traditional);
-            out[AccountKind::Roth.index()] += sum(&p.roth.value);
-            out[AccountKind::Hsa.index()] += sum(&p.hsa);
+        #[inline(always)]
+        fn kinds<const N: usize>(a: &Accounts) -> [f64; AccountKind::COUNT] {
+            let mut out = [0.0; AccountKind::COUNT];
+            out[AccountKind::Cash.index()] = a.cash;
+            out[AccountKind::Taxable.index()] = sum_n::<N>(&a.taxable.value);
+            for p in &a.person {
+                out[AccountKind::Traditional.index()] += sum_n::<N>(&p.traditional);
+                out[AccountKind::Roth.index()] += sum_n::<N>(&p.roth.value);
+                out[AccountKind::Hsa.index()] += sum_n::<N>(&p.hsa);
+            }
+            out
         }
-        out
+        if self.idle == 0 {
+            return kinds::<N_ASSETS>(self);
+        }
+        debug_assert!(
+            (0..N_ASSETS).all(|i| self.idle & (1 << i) == 0
+                || (self.taxable.value[i] == 0.0
+                    && self.person.iter().all(|p| p.traditional[i] == 0.0
+                        && p.roth.value[i] == 0.0
+                        && p.hsa[i] == 0.0))),
+            "an idle asset class is held (idle mask {:#b})",
+            self.idle
+        );
+        with_prefix!(live_prefix(self.idle), kinds(self))
     }
 
     /// Everything spendable: cash, taxable, traditional, Roth and HSA.
@@ -730,7 +921,13 @@ impl Accounts {
 
     /// Unrealised gain in the taxable bucket (negative for a net loss).
     pub fn unrealized_gain(&self) -> f64 {
-        sum(&self.taxable.value) - sum(&self.taxable.basis)
+        sum_live(&self.taxable.value, self.idle) - sum_live(&self.taxable.basis, self.idle)
+    }
+
+    /// Tells the accounts that holdings were written directly (not through one of
+    /// the methods here), so nothing is known about which asset classes are held.
+    pub fn holdings_changed(&mut self) {
+        self.idle = 0;
     }
 
     /// Roth money the owner can withdraw today without tax or penalty at any age:
@@ -769,40 +966,18 @@ impl Accounts {
             keep[i] = growth - fee[i];
         }
 
-        let mut fees = [0.0; N_ASSETS];
-        let mut change = [0.0; N_ASSETS];
-        for i in 0..N_ASSETS {
-            let v = self.taxable.value[i];
-            let new = v * keep[i];
-            let dist = (v * yields[i] / MONTHS_PER_YEAR).clamp(0.0, new.max(0.0));
-            match DISTRIBUTION_KIND[i] {
-                Distribution::Interest => inc.interest += dist,
-                Distribution::Ordinary => inc.ordinary_dividends += dist,
-                Distribution::Qualified => inc.qualified_dividends += dist,
-            }
-            self.taxable.basis[i] += dist;
-            self.taxable.value[i] = new;
-            fees[i] = v * fee[i];
-            change[i] = new - v;
+        // Asset classes held nowhere are skipped: their holdings stay zero and add
+        // nothing to any total. (Not when the return or yield of a class that would
+        // be skipped is not finite: zero times infinity is not zero.)
+        let mut prefix = supported_prefix(live_prefix(self.idle));
+        let mut finite = true;
+        for i in prefix..N_ASSETS {
+            finite &= keep[i].is_finite() & fee[i].is_finite() & yields[i].is_finite();
         }
-        for p in &mut self.person {
-            for h in [&mut p.traditional, &mut p.roth.value, &mut p.hsa] {
-                for i in 0..N_ASSETS {
-                    let v = h[i];
-                    let new = v * keep[i];
-                    h[i] = new;
-                    fees[i] += v * fee[i];
-                    change[i] += new - v;
-                }
-            }
+        if !finite {
+            prefix = N_ASSETS;
         }
-        // Summed per asset class and then across classes: one short chain of adds
-        // per class instead of a single chain through every holding, which the
-        // processor cannot run in parallel.
-        for i in 0..N_ASSETS {
-            inc.fees += fees[i];
-            inc.net_change += change[i];
-        }
+        with_prefix!(prefix, grow(self, &keep, &fee, yields, &mut inc));
         inc
     }
 
@@ -819,7 +994,15 @@ impl Accounts {
             self.cash += amount;
             return;
         }
-        let mix = normalized(mix);
+        // With a plain mix every purchase is made at the household target: the
+        // same weights month after month.
+        let (mix, bits) = if self.plain_mix {
+            normalized_memo(mix)
+        } else {
+            let mix = normalized(mix);
+            (mix, bought(&mix))
+        };
+        self.idle &= !bits;
         match bucket {
             Bucket::Cash => {}
             Bucket::Taxable => {
@@ -909,7 +1092,7 @@ impl Accounts {
         let Some(h) = self.holdings(bucket) else {
             return Withdrawal::default();
         };
-        let total = sum(h);
+        let total = sum_live(h, self.idle);
         if total <= 0.0 {
             return Withdrawal::default();
         }
@@ -919,9 +1102,9 @@ impl Accounts {
             *h
         } else if let Some(target) = &ctx.prefer_overweight {
             let totals = self.asset_totals();
-            sell_split(h, a, Some((&totals, target)))
+            sell_split(h, total, a, Some((&totals, target)))
         } else {
-            sell_split(h, a, None)
+            sell_split(h, total, a, None)
         };
         let mut w = Withdrawal {
             amount: a,
@@ -982,7 +1165,7 @@ impl Accounts {
         }
         let everything = amount >= total;
         let a = amount.min(total);
-        let moves = sell_split(&p.traditional, a, None);
+        let moves = sell_split(&p.traditional, total, a, None);
         sell_from(&mut p.traditional, &moves, everything);
         for (v, m) in p.roth.value.iter_mut().zip(&moves) {
             *v += *m;
@@ -1046,6 +1229,7 @@ impl Accounts {
     ///   and HSA take what remains (the highest-growth assets). So the target is met
     ///   by trading in tax-advantaged buckets first and taxable sales are minimal.
     pub fn rebalance_to(&mut self, target: &Weights, location: AssetLocation) -> Realized {
+        self.idle = 0;
         let kept = self.set_aside_kept_stock();
         let r = self.rebalance_rest(target, location);
         self.restore_kept_stock(kept);
@@ -1077,6 +1261,7 @@ impl Accounts {
     /// household target less what the taxable bucket already holds (as far as their
     /// size allows). Returns the dollars sold.
     pub fn rebalance_sheltered(&mut self, target: &Weights) -> f64 {
+        self.idle = 0;
         let w = normalized(target);
         let kept = self.set_aside_kept_stock();
         let mut sheltered = 0.0;
@@ -1292,6 +1477,7 @@ impl Accounts {
         if deceased >= MAX_PEOPLE {
             return;
         }
+        self.idle = 0;
         self.taxable.basis = self.taxable.value;
         let Some(s) = survivor else {
             return;
