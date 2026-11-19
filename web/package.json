@@ -17,7 +17,8 @@
     "smoke": "node e2e/smoke.mjs",
     "journeys": "node e2e/journeys.mjs",
     "perf": "node e2e/perf.mjs",
-    "docs-shots": "node e2e/docs-shots.mjs && python3 scripts/optimise-images.py"
+    "docs-shots": "node e2e/docs-shots.mjs && python3 scripts/optimise-images.py",
+    "docs-gifs": "node e2e/docs-gifs.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",
