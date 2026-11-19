@@ -136,6 +136,7 @@ impl State {
             replan = true;
         }
         let price = econ.price_level[t];
+        self.fam.price = price;
         if replan {
             self.annual_plan(plan, econ, t, new_year);
         }
@@ -1057,8 +1058,8 @@ impl State {
             let n = f64::from(self.child_count(k));
             if years < 18 {
                 total += (c.core[years] * family + c.care[years] * self.service_growth) * n;
-            } else if years < 22 {
-                total += c.college * self.service_growth * n;
+            } else if years < 18 + self.college_years(k) {
+                total += c.college * self.college_factor(plan, k, t) * n;
             }
         }
         total / 12.0

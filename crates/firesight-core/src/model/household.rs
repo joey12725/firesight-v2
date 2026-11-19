@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Arrival, YearMonth};
+use super::{Arrival, CollegeCost, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -182,6 +182,11 @@ pub struct Child {
     /// may be twins). Default certain.
     #[serde(default)]
     pub arrival: Arrival,
+    /// Whether the college cost is the plan's fixed figure or uncertain (random tuition
+    /// growth, income-dependent aid, whether the child attends, how many years).
+    /// Default fixed.
+    #[serde(default)]
+    pub college_cost: CollegeCost,
 }
 
 fn one() -> f64 {
@@ -199,6 +204,7 @@ impl Default for Child {
             college: College::default(),
             college_share: 1.0,
             arrival: Arrival::Certain,
+            college_cost: CollegeCost::Fixed,
         }
     }
 }

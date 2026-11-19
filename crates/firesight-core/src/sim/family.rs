@@ -10,7 +10,7 @@ use crate::data::Data;
 use crate::health::children::{ACA_CHILD_RATING_AGE, ACA_MAX_CHILDREN_CHARGED};
 use crate::health::CoveragePhase;
 use crate::math;
-use crate::model::{Arrival, ChildCosts, HealthcareMode, Profile, YearMonth};
+use crate::model::{Arrival, ChildCosts, College, CollegeCost, HealthcareMode, Profile, YearMonth};
 use crate::rng::{Rng, Stream};
 
 use super::plan::{ChildPlan, Plan};
@@ -19,6 +19,59 @@ use crate::stats::TraceEventKind;
 
 /// Month index standing for "never": a child who does not arrive.
 pub(crate) const NEVER: i32 = i32::MAX / 2;
+
+/// Years of the tuition path drawn per path (the index is flat after this).
+pub(crate) const TUITION_YEARS: usize = 60;
+
+/// Persistence of the yearly deviation of real tuition growth from its mean (AR(1)
+/// coefficient). A judgement: price growth ran fast for three decades and slowly for
+/// one, which needs a persistent component; 0.8 gives deviations a half-life of about
+/// three years.
+pub(crate) const TUITION_AR1: f64 = 0.8;
+
+/// Share of students who take 4, 5 and 6 years among those who attend: cumulative
+/// 0.55, 0.83, 1. A judgement anchored to NCES: 64% of first-time bachelor's students
+/// finish at their first institution within six years, fewer in four.
+pub(crate) const DURATION_CDF: [f64; 2] = [0.55, 0.83];
+
+/// Points `(household income in today's dollars, mean aid discount on the published
+/// price)` of the aid schedule, interpolated linearly and flat outside. The first two
+/// are read from Brookings' NPSAS 2019-20 net prices (about $18,000 under $50,000 of
+/// income and $29,000 at $125,000 against a published cost near $45,000); the last
+/// (little aid above $250,000, mostly merit aid) is a judgement.
+pub(crate) const AID_SCHEDULE: [(f64, f64); 3] =
+    [(50_000.0, 0.60), (125_000.0, 0.36), (250_000.0, 0.10)];
+
+/// Standard deviation of the discount around the schedule for a child (a judgement).
+pub(crate) const AID_SD: f64 = 0.10;
+
+/// Largest discount: aid does not cover more than 90% of the published price.
+pub(crate) const AID_MAX: f64 = 0.9;
+
+/// Mean aid discount at a household income (today's dollars a year).
+pub(crate) fn aid_mean_discount(income: f64) -> f64 {
+    let pts = &AID_SCHEDULE;
+    if income <= pts[0].0 {
+        return pts[0].1;
+    }
+    for w in pts.windows(2) {
+        if income < w[1].0 {
+            let f = (income - w[0].0) / (w[1].0 - w[0].0);
+            return w[0].1 + f * (w[1].1 - w[0].1);
+        }
+    }
+    pts[pts.len() - 1].1
+}
+
+/// Compiled stochastic college cost of one child.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CollegePlan {
+    pub attend: f64,
+    /// `ln(1 + mean real growth)`.
+    pub log_growth: f64,
+    pub sd: f64,
+    pub aid_scale: f64,
+}
 
 /// Compiled uncertain arrival of one planned child.
 #[derive(Clone, Copy, Debug)]
@@ -38,6 +91,10 @@ pub(crate) struct FamilyPlan {
     pub cover_until_age: f64,
     /// Per child: uncertain arrival, for planned children only.
     pub arrival: Vec<Option<ArrivalPlan>>,
+    /// Per child: stochastic college cost, for children with a college plan.
+    pub college: Vec<Option<CollegePlan>>,
+    /// Some child has stochastic college costs.
+    pub any_college: bool,
     /// Something needs the monthly family calendar (births to announce, leave to
     /// start, support spells).
     pub dynamic: bool,
@@ -54,6 +111,19 @@ pub(crate) struct FamilyState {
     pub twin: Vec<bool>,
     /// Bit `k` set when some realised birth falls in a month with `t % 12 == k`.
     pub birthday_extra: u32,
+    /// Years each child spends in college on this path (4 unless stochastic).
+    pub college_years: Vec<u8>,
+    /// Standardised aid shock of each child.
+    pub aid_z: Vec<f64>,
+    /// Tuition index relative to CPI by year since the start, per child
+    /// (`TUITION_YEARS + 1` entries each).
+    pub tuition: Vec<f64>,
+    /// Standard normals of the shared tuition path.
+    z_path: Vec<f64>,
+    /// Price level of the current month (set by the month loop).
+    pub price: f64,
+    /// Household income (MAGI) of the last two tax years in today's dollars.
+    pub income_real: [f64; 2],
 }
 
 impl FamilyState {
@@ -62,6 +132,11 @@ impl FamilyState {
         FamilyState {
             birth: vec![0; n],
             twin: vec![false; n],
+            college_years: vec![4; n],
+            aid_z: vec![0.0; n],
+            tuition: vec![1.0; n * (TUITION_YEARS + 1)],
+            z_path: vec![0.0; TUITION_YEARS],
+            price: 1.0,
             ..Self::default()
         }
     }
@@ -73,9 +148,18 @@ impl FamilyState {
         self.kids_on_plan = false;
         self.birthday_extra = 0;
         let mut until = until;
+        self.price = 1.0;
+        self.income_real = [0.0; 2];
+        if plan.family.any_college {
+            let mut rng = Rng::stream(seed, path, Stream::CollegePrices);
+            for z in self.z_path.iter_mut() {
+                *z = rng.normal_one_draw();
+            }
+        }
         for (k, c) in plan.children.iter().enumerate() {
             self.birth[k] = c.birth;
             self.twin[k] = false;
+            self.college_years[k] = 4;
             if let Some(a) = plan.family.arrival[k] {
                 // Always three draws, whatever the values.
                 let mut rng = Rng::stream(seed, path, Stream::ChildArrival(k));
@@ -88,8 +172,51 @@ impl FamilyState {
                     until = until.max(birth + 22 * 12);
                 }
             }
+            if let Some(cp) = plan.family.college[k] {
+                let mut rng = Rng::stream(seed, path, Stream::ChildCollege(k));
+                let (u_attend, u_dur, z_aid) =
+                    (rng.uniform(), rng.uniform(), rng.normal_one_draw());
+                self.college_years[k] = realise_duration(cp.attend, u_attend, u_dur);
+                self.aid_z[k] = z_aid;
+                let idx = &mut self.tuition[k * (TUITION_YEARS + 1)..(k + 1) * (TUITION_YEARS + 1)];
+                build_tuition_index(idx, &cp, &self.z_path);
+                let b = self.birth[k];
+                if b < NEVER {
+                    until = until.max(b + (18 + i32::from(self.college_years[k])) * 12);
+                }
+            }
         }
         until
+    }
+}
+
+/// The tuition index relative to CPI by year since the start: `idx[0] = 1` and
+/// `idx[y + 1] = idx[y] * exp(ln(1 + mean growth) + x_y)` where `x` is a stationary
+/// AR(1) with coefficient [`TUITION_AR1`] and standard deviation `sd`, driven by the
+/// standard normals `z`.
+pub(crate) fn build_tuition_index(idx: &mut [f64], cp: &CollegePlan, z: &[f64]) {
+    idx[0] = 1.0;
+    let innovation = cp.sd * (1.0 - TUITION_AR1 * TUITION_AR1).sqrt();
+    let mut x = cp.sd * z[0];
+    for y in 0..TUITION_YEARS {
+        if y > 0 {
+            x = TUITION_AR1 * x + innovation * z[y];
+        }
+        idx[y + 1] = idx[y] * math::exp(cp.log_growth + x);
+    }
+}
+
+/// Years in college from two uniforms: 0 if the child does not attend (`u_attend` at
+/// or above `attend`), else 4, 5 or 6 by [`DURATION_CDF`].
+pub(crate) fn realise_duration(attend: f64, u_attend: f64, u_dur: f64) -> u8 {
+    if u_attend >= attend {
+        0
+    } else if u_dur < DURATION_CDF[0] {
+        4
+    } else if u_dur < DURATION_CDF[1] {
+        5
+    } else {
+        6
     }
 }
 
@@ -136,11 +263,33 @@ pub(crate) fn compile(profile: &Profile, start: YearMonth) -> FamilyPlan {
         })
         .collect();
     let any_arrival = arrival.iter().any(Option::is_some);
+    let college: Vec<Option<CollegePlan>> = profile
+        .household
+        .children
+        .iter()
+        .map(|c| match c.college_cost {
+            CollegeCost::Stochastic {
+                attend_probability,
+                real_tuition_growth,
+                tuition_volatility,
+                aid_scale,
+            } if c.college != College::None => Some(CollegePlan {
+                attend: attend_probability.clamp(0.0, 1.0),
+                log_growth: math::ln_1p(real_tuition_growth.max(-0.5)),
+                sd: tuition_volatility.max(0.0),
+                aid_scale: aid_scale.max(0.0),
+            }),
+            _ => None,
+        })
+        .collect();
+    let any_college = college.iter().any(Option::is_some);
     FamilyPlan {
         cover_children: hc.cover_children && hc.mode == HealthcareMode::Modeled,
         cover_until_age: hc.children_coverage_end_age,
-        dynamic: any_arrival,
+        dynamic: any_arrival || any_college,
         arrival,
+        college,
+        any_college,
     }
 }
 
@@ -321,6 +470,48 @@ impl State {
         1 + u32::from(self.fam.twin[k])
     }
 
+    /// Years child `k` spends in college on this path.
+    #[inline]
+    pub(crate) fn college_years(&self, k: usize) -> usize {
+        usize::from(self.fam.college_years[k])
+    }
+
+    /// Household income for aid, today's dollars a year: the income of two tax years
+    /// ago once known (the FAFSA's prior-prior year), else the latest, else the
+    /// starting income.
+    fn aid_income(&self, plan: &Plan) -> f64 {
+        match self.magi_known {
+            2.. => self.fam.income_real[0],
+            1 => self.fam.income_real[1],
+            _ => plan.income_rate0,
+        }
+    }
+
+    /// Records the household income of the tax year just closed (nominal MAGI).
+    pub(crate) fn note_aid_income(&mut self, magi_nominal: f64) {
+        self.fam.income_real = [self.fam.income_real[1], magi_nominal / self.fam.price];
+    }
+
+    /// The price of a year of college relative to the plan's today's-dollar cost, in
+    /// month `t`: the fixed growth of childcare and college prices by default, or the
+    /// path's tuition index after the aid discount for stochastic children.
+    pub(crate) fn college_factor(&self, plan: &Plan, k: usize, t: usize) -> f64 {
+        match plan.family.college[k] {
+            None => self.service_growth,
+            Some(c) => {
+                let year = (t / 12).min(TUITION_YEARS);
+                self.fam.tuition[k * (TUITION_YEARS + 1) + year]
+                    * (1.0 - self.aid_discount(plan, k, &c))
+            }
+        }
+    }
+
+    /// The aid discount child `k` receives now.
+    fn aid_discount(&self, plan: &Plan, k: usize, c: &CollegePlan) -> f64 {
+        let mean = aid_mean_discount(self.aid_income(plan));
+        (c.aid_scale * (mean + AID_SD * self.fam.aid_z[k])).clamp(0.0, AID_MAX)
+    }
+
     /// The monthly family calendar: announces realised births in the trace.
     pub(crate) fn family_calendar(&mut self, plan: &Plan, t: usize, now: YearMonth) {
         if !self.detail {
@@ -328,12 +519,26 @@ impl State {
         }
         let ti = t as i32;
         for k in 0..plan.children.len() {
-            if plan.family.arrival[k].is_none() {
-                continue;
-            }
             let birth = self.fam.birth[k];
             let name = &plan.profile.household.children[k].name;
-            if birth == ti {
+            if let Some(c) = plan.family.college[k] {
+                if birth < NEVER && birth + 18 * 12 == ti {
+                    let years = self.college_years(k);
+                    let discount = self.aid_discount(plan, k, &c);
+                    self.event(now, TraceEventKind::Child, None, || {
+                        if years == 0 {
+                            format!("{name} does not attend college")
+                        } else {
+                            format!(
+                                "{name} starts college: {years} years, aid {:.0}% off the published price",
+                                discount * 100.0
+                            )
+                        }
+                    });
+                }
+            }
+            let arrives = plan.family.arrival[k].is_some();
+            if arrives && birth == ti {
                 let twins = self.fam.twin[k];
                 let late = birth - plan.children[k].birth;
                 self.event(now, TraceEventKind::Child, None, || {
@@ -348,7 +553,7 @@ impl State {
                         }
                     )
                 });
-            } else if birth >= NEVER && plan.children[k].birth == ti {
+            } else if arrives && birth >= NEVER && plan.children[k].birth == ti {
                 self.event(now, TraceEventKind::Child, None, || {
                     format!("Planned child {name} does not arrive")
                 });
@@ -401,5 +606,75 @@ mod tests {
             .sum();
         let mean = total / f64::from(n);
         assert!((mean - 4.0).abs() < 0.1, "{mean}");
+    }
+
+    #[test]
+    fn aid_schedule_is_interpolated() {
+        assert_eq!(aid_mean_discount(20_000.0), 0.60);
+        assert_eq!(aid_mean_discount(50_000.0), 0.60);
+        // Halfway between (50k, 0.60) and (125k, 0.36).
+        assert!((aid_mean_discount(87_500.0) - 0.48).abs() < 1e-12);
+        assert!((aid_mean_discount(125_000.0) - 0.36).abs() < 1e-12);
+        // Halfway between (125k, 0.36) and (250k, 0.10).
+        assert!((aid_mean_discount(187_500.0) - 0.23).abs() < 1e-12);
+        assert_eq!(aid_mean_discount(250_000.0), 0.10);
+        assert_eq!(aid_mean_discount(900_000.0), 0.10);
+    }
+
+    #[test]
+    fn duration_follows_the_cdf() {
+        assert_eq!(realise_duration(0.95, 0.95, 0.0), 0, "does not attend");
+        assert_eq!(realise_duration(0.95, 0.94, 0.54), 4);
+        assert_eq!(realise_duration(0.95, 0.94, 0.55), 5);
+        assert_eq!(realise_duration(0.95, 0.0, 0.82), 5);
+        assert_eq!(realise_duration(0.95, 0.0, 0.83), 6);
+        assert_eq!(realise_duration(0.0, 0.0, 0.0), 0);
+    }
+
+    #[test]
+    fn tuition_index_without_volatility_is_the_fixed_growth_path() {
+        let cp = CollegePlan {
+            attend: 1.0,
+            log_growth: math::ln_1p(0.02),
+            sd: 0.0,
+            aid_scale: 1.0,
+        };
+        let mut idx = vec![0.0; TUITION_YEARS + 1];
+        build_tuition_index(&mut idx, &cp, &vec![1.7; TUITION_YEARS]);
+        assert_eq!(idx[0], 1.0);
+        // 1.02^10 = 1.21899...
+        assert!((idx[10] - 1.02f64.powi(10)).abs() < 1e-12, "{}", idx[10]);
+    }
+
+    #[test]
+    fn tuition_index_is_persistent_and_has_the_stated_deviation() {
+        let cp = CollegePlan {
+            attend: 1.0,
+            log_growth: 0.0,
+            sd: 0.012,
+            aid_scale: 1.0,
+        };
+        // Pseudo-normals from the crate's own generator.
+        let mut rng = Rng::from_seed(77);
+        let (n, mut sum_sq, mut cov, mut var) = (4000, 0.0, 0.0, 0.0);
+        let mut idx = vec![0.0; TUITION_YEARS + 1];
+        for _ in 0..n {
+            let z: Vec<f64> = (0..TUITION_YEARS).map(|_| rng.normal_one_draw()).collect();
+            build_tuition_index(&mut idx, &cp, &z);
+            // Yearly log growth deviations are idx ratios.
+            let g: Vec<f64> = (0..TUITION_YEARS)
+                .map(|y| math::ln(idx[y + 1] / idx[y]))
+                .collect();
+            for y in 10..TUITION_YEARS - 1 {
+                sum_sq += g[y] * g[y];
+                cov += g[y] * g[y + 1];
+                var += g[y] * g[y];
+            }
+        }
+        let count = f64::from(n) * (TUITION_YEARS as f64 - 11.0);
+        let sd = (sum_sq / count).sqrt();
+        let rho = cov / var;
+        assert!((sd - 0.012).abs() < 0.0006, "sd {sd}");
+        assert!((rho - TUITION_AR1).abs() < 0.03, "autocorrelation {rho}");
     }
 }

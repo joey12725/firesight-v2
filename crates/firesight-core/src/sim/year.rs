@@ -155,7 +155,9 @@ impl State {
             let n = self.child_count(k);
             if (0..17).contains(&age) {
                 young += n;
-            } else if (17..19).contains(&age) || ((19..23).contains(&age) && c.college > 0.0) {
+            } else if (17..19).contains(&age)
+                || ((19..19 + self.college_years(k) as i32).contains(&age) && c.college > 0.0)
+            {
                 other += n;
             }
         }
@@ -421,6 +423,9 @@ impl State {
         self.rental_carry = r.rental_loss_suspended * back;
         self.magi_hist = [self.magi_hist[1], r.magi_irmaa];
         self.magi_known = (self.magi_known + 1).min(2);
+        if plan.family.any_college {
+            self.note_aid_income(r.magi_irmaa);
+        }
         self.prev_interest = self.ty.interest * annualise;
         self.prev_ordinary_div = self.ty.ordinary_dividends * annualise;
         self.prev_qualified_div = self.ty.qualified_dividends * annualise;

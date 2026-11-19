@@ -353,3 +353,152 @@ fn uncertain_births_conserve_money_and_are_finite() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// F08: college cost uncertainty
+// ---------------------------------------------------------------------------
+
+/// One child aged 10 with a public in-state plan, paid in full by the parents.
+fn college_household(cost: CollegeCost, college: College) -> Profile {
+    let mut p = family();
+    p.household.children = vec![Child {
+        id: "kid".into(),
+        birth: START - 10 * 12,
+        college,
+        college_cost: cost,
+        ..Child::default()
+    }];
+    p
+}
+
+fn stochastic(attend: f64, growth: f64, vol: f64, aid: f64) -> CollegeCost {
+    CollegeCost::Stochastic {
+        attend_probability: attend,
+        real_tuition_growth: growth,
+        tuition_volatility: vol,
+        aid_scale: aid,
+    }
+}
+
+fn child_spending(p: &Profile, paths: u64) -> f64 {
+    trace_total(&compile(p), 31, paths, "spend_children")
+}
+
+#[test]
+fn college_cost_defaults_to_fixed() {
+    let p = college_household(CollegeCost::Fixed, College::PublicInState);
+    let json = serde_json::to_value(&p).unwrap();
+    assert_eq!(
+        json["household"]["children"][0]["college_cost"]["type"],
+        "fixed"
+    );
+    // An empty stochastic object takes the documented defaults.
+    let c: CollegeCost = serde_json::from_str(r#"{"type": "stochastic"}"#).unwrap();
+    assert_eq!(c, stochastic(0.95, 0.01, 0.012, 1.0));
+}
+
+#[test]
+fn stochastic_duration_raises_cost_by_the_mean_extra_years() {
+    // No aid, certain attendance, no price volatility: only the 4, 5 or 6 years
+    // differ. Mean years are 0.55 * 4 + 0.28 * 5 + 0.17 * 6 = 4.62, so the college
+    // bill is 4.62 / 4 = 1.155 times the fixed one.
+    let paths = 300;
+    let none = child_spending(&college_household(CollegeCost::Fixed, College::None), paths);
+    let fixed = child_spending(
+        &college_household(CollegeCost::Fixed, College::PublicInState),
+        paths,
+    );
+    let stoch = child_spending(
+        &college_household(stochastic(1.0, 0.01, 0.0, 0.0), College::PublicInState),
+        paths,
+    );
+    let ratio = (stoch - none) / (fixed - none);
+    assert!(fixed > none + 50_000.0, "college must cost something");
+    assert!(
+        ratio > 1.10 && ratio < 1.21,
+        "ratio {ratio} (expected 1.155)"
+    );
+}
+
+#[test]
+fn not_attending_removes_the_college_bill_and_aid_lowers_it() {
+    let paths = 300;
+    let none = child_spending(&college_household(CollegeCost::Fixed, College::None), paths);
+    let never = child_spending(
+        &college_household(stochastic(0.0, 0.01, 0.012, 1.0), College::PublicInState),
+        paths,
+    );
+    assert!((never - none).abs() < 1.0, "{never} vs {none}");
+    let no_aid = child_spending(
+        &college_household(stochastic(1.0, 0.01, 0.0, 0.0), College::PublicInState),
+        paths,
+    ) - none;
+    let aid = child_spending(
+        &college_household(stochastic(1.0, 0.01, 0.0, 1.0), College::PublicInState),
+        paths,
+    ) - none;
+    // Household income is about $210,000: the schedule gives a mean discount of
+    // 0.36 - (210 - 125) / 125 * 0.26 = 0.18, so the bill falls by about 18%
+    // (income falls on retirement, which comes after college here).
+    let cut = 1.0 - aid / no_aid;
+    assert!(
+        cut > 0.10 && cut < 0.30,
+        "aid cut the bill by {cut} (expected 0.18)"
+    );
+}
+
+#[test]
+fn tuition_volatility_widens_the_spread_of_costs() {
+    let sd = |vol: f64| {
+        let plan = compile(&college_household(
+            stochastic(1.0, 0.01, vol, 0.0),
+            College::PublicInState,
+        ));
+        let acc = run(&plan, 41, 0..600);
+        let v: Vec<f64> = acc
+            .scalar_column(firesight_core::stats::PathScalar::LifetimeSpending)
+            .iter()
+            .map(|x| f64::from(*x))
+            .collect();
+        let m = v.iter().sum::<f64>() / v.len() as f64;
+        (v.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / v.len() as f64).sqrt()
+    };
+    let (calm, wild) = (sd(0.0), sd(0.03));
+    // Same durations and the same markets in both; only the price path differs.
+    assert!(wild > calm * 1.01, "spread {wild} vs {calm}");
+}
+
+#[test]
+fn stochastic_college_conserves_money_and_shows_events() {
+    let mut p = college_household(stochastic(0.9, 0.02, 0.02, 1.0), College::Private);
+    p.household.children.push(Child {
+        id: "sib".into(),
+        birth: START - 6 * 12,
+        college: College::PublicOutOfState,
+        college_cost: stochastic(0.9, 0.01, 0.015, 0.5),
+        ..Child::default()
+    });
+    for kind in MARKETS {
+        let plan = compile(&with_market(p.clone(), kind));
+        let acc = run_checked(&plan, 2, 0..100);
+        for s in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+            assert!(s.is_finite());
+        }
+    }
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    ws.set_check(true);
+    let mut seen = 0;
+    for i in 0..10 {
+        let t = sim::trace_path_in(&plan, 2, i, &mut ws);
+        seen += t
+            .events
+            .iter()
+            .filter(|e| e.label.contains("college"))
+            .count();
+    }
+    assert!(
+        seen >= 10,
+        "{seen} college events in 10 paths of two children"
+    );
+}

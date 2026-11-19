@@ -72,6 +72,12 @@ pub enum Stream {
     /// Whether, when and how many: the arrival of one planned child (index into
     /// `household.children`). Three draws per uncertain child per path.
     ChildArrival(usize),
+    /// The path of college prices relative to CPI, shared by all children (61 draws
+    /// when any child has stochastic college costs).
+    CollegePrices,
+    /// Whether a child attends, for how many years and how much aid: three draws per
+    /// child with stochastic college costs (index into `household.children`).
+    ChildCollege(usize),
 }
 
 impl Stream {
@@ -89,6 +95,8 @@ impl Stream {
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
             Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
+            Stream::CollegePrices => 1200,
+            Stream::ChildCollege(i) => 0x1280_0000 + i as u64,
         }
     }
 }

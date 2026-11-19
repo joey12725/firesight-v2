@@ -33,6 +33,57 @@ impl Checker<'_> {
         for (i, child) in p.household.children.iter().enumerate() {
             let path = format!("/household/children/{}", seg(&child.id, i));
             self.arrival(&path, child);
+            self.college_cost(&path, child);
+        }
+    }
+
+    fn college_cost(&mut self, path: &str, child: &Child) {
+        let CollegeCost::Stochastic {
+            attend_probability,
+            real_tuition_growth,
+            tuition_volatility,
+            aid_scale,
+        } = child.college_cost
+        else {
+            return;
+        };
+        let at = format!("{path}/college_cost");
+        self.r.range(
+            &format!("{at}/attend_probability"),
+            "Attendance probability",
+            attend_probability,
+            0.0,
+            1.0,
+        );
+        self.r.range(
+            &format!("{at}/real_tuition_growth"),
+            "Real tuition growth",
+            real_tuition_growth,
+            -0.1,
+            0.2,
+        );
+        self.r.range(
+            &format!("{at}/tuition_volatility"),
+            "Tuition growth volatility",
+            tuition_volatility,
+            0.0,
+            0.1,
+        );
+        self.r
+            .range(&format!("{at}/aid_scale"), "Aid scale", aid_scale, 0.0, 2.0);
+        if child.college == College::None {
+            self.r.warn(
+                "college_cost_no_plan",
+                &at,
+                "Stochastic college costs are set but the child has no college plan, so nothing is charged. Choose a college type first.",
+            );
+        }
+        if real_tuition_growth > 0.05 {
+            self.r.warn(
+                "tuition_growth_high",
+                &format!("{at}/real_tuition_growth"),
+                "Real tuition growth above 5% a year above inflation is far above the long-run record of about 2% (and about 0 over the last decade).",
+            );
         }
     }
 

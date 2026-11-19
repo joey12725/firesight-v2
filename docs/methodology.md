@@ -401,6 +401,45 @@ of the parents' ages and health, and a late arrival does not change leave or car
 plans; no adoption, fertility-treatment costs or pregnancy medical costs; higher-order
 multiples.
 
+### College cost uncertainty (opt-in)
+
+`college_cost: {"type": "stochastic", "attend_probability", "real_tuition_growth",
+"tuition_volatility", "aid_scale"}` on a child with a college plan (default `fixed`:
+four years growing at CPI plus one point). The parents' annual bill for each year enrolled
+is `college cost x college_share x tuition index x (1 - aid discount)`.
+
+* **Tuition index.** The log of real growth above CPI is its mean (default 1%, the
+  engine's fixed default, between +3% a year from the 1980s to the mid-2010s and a
+  real fall of 0.7% a year at public four-year colleges and a rise of 0.2% at private
+  nonprofits over 2015-16 to 2025-26: College Board, Ma, Pender and Hu, Trends in
+  College Pricing and Student Aid 2025) plus a stationary AR(1) deviation with
+  coefficient 0.8 and standard deviation 1.2 points. Both persistence and spread are
+  judgements chosen so that decade averages range over the recent and the long-run
+  record. One path of 60 standard normals (stream `CollegePrices`, scalar 1200) is
+  shared by all children, so siblings face the same prices.
+* **Aid.** A discount on the published price that falls with household income, linearly
+  between 60% at $50,000 or less, 36% at $125,000 and 10% at $250,000 or more (the first
+  two points from the NPSAS 2019-20 net prices reported by Brookings: about $18,000 below
+  $50,000 and $29,000 at $125,000 against a published cost near $45,000; the third a
+  judgement), plus a per-child normal shock with standard deviation 10 points, clamped to
+  0..90%. Income is the household's MAGI two tax years earlier (the FAFSA's
+  prior-prior year), in today's dollars; `aid_scale` multiplies the whole discount.
+* **Duration and attendance.** The child attends with probability 0.95 (judgement) and
+  takes 4, 5 or 6 years with probability 0.55, 0.28 and 0.17 among attendees (a judgement
+  anchored to NCES: 64% of first-time bachelor's students finish within six years).
+  Draws come from the child's `ChildCollege` stream (three per path). Dependants, the
+  last month of child costs and the trace follow the realised years.
+
+Measured on `dual-income-family` with both children stochastic at the defaults (3,000
+paired paths, seed 7): success 92.2% to 93.2%, median terminal net worth up $107,000.
+The direction comes from aid: this household retires early, so its income two years
+before college is low and the schedule gives it a large discount.
+
+Not modelled: aid does not depend on assets (the FAFSA and CSS Profile count them, so the
+aid of an early retiree with a large portfolio is overstated), merit aid is only in the
+average, loans and 529 plans are not modelled, and tuition shocks are independent of
+inflation and markets.
+
 ### Healthcare
 
 With `modeled` healthcare each adult is, month by month, on an employer plan, COBRA

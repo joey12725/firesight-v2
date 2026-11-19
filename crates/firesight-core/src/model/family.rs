@@ -55,3 +55,64 @@ fn default_delay() -> f64 {
 fn default_twins() -> f64 {
     DEFAULT_TWINS_PROBABILITY
 }
+
+/// Default chance that a child with a college plan attends at all (a judgement; the
+/// plan itself says the family expects college).
+pub const DEFAULT_ATTEND_PROBABILITY: f64 = 0.95;
+/// Default mean real growth of college prices above CPI, a year: the engine's
+/// deterministic default (`children.college.inflation_over_cpi.default_pct` in
+/// `params.json`, 1.0), between +3% a year from the 1980s to the mid-2010s and about
+/// 0 over the last decade (College Board, Trends in College Pricing 2025).
+pub const DEFAULT_REAL_TUITION_GROWTH: f64 = 0.01;
+/// Default standard deviation of the persistent part of real tuition growth, a year
+/// (a judgement chosen so decade averages range over about plus or minus 1.2 points,
+/// which spans the recent decade and the long-run record).
+pub const DEFAULT_TUITION_VOLATILITY: f64 = 0.012;
+
+/// How the cost of a child's college is modelled.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CollegeCost {
+    /// The cost is the plan's cost for four years, growing at CPI plus one point
+    /// (the default).
+    #[default]
+    Fixed,
+    /// The cost of the college plan is uncertain: real tuition growth above CPI is
+    /// random and persistent (it comes in runs of fast and slow years), the aid the
+    /// family receives is a random discount on the published price that shrinks as
+    /// household income (its income two years earlier) rises, the child may not attend,
+    /// and the child takes 4, 5 or 6 years. Needs a `college` plan. The cost the
+    /// parents pay is the published price times the tuition index times one minus the
+    /// aid discount, times `college_share`, for each year enrolled.
+    Stochastic {
+        /// Chance the child attends college at all, between 0 and 1. Default 0.95.
+        #[serde(default = "default_attend")]
+        attend_probability: f64,
+        /// Average yearly growth of the price above CPI, as a fraction. Default 0.01.
+        #[serde(default = "default_growth")]
+        real_tuition_growth: f64,
+        /// Standard deviation of the persistent yearly deviation of that growth,
+        /// as a fraction. Default 0.012.
+        #[serde(default = "default_volatility")]
+        tuition_volatility: f64,
+        /// Scale on the aid discount: 1 uses the schedule fitted to net prices
+        /// from NPSAS 2019-20 (as reported by Brookings) (about 60% off the published price below $50,000 of
+        /// household income, 36% at $125,000, 10% from $250,000), 0 means no aid, and
+        /// 0.5 half of the schedule. Default 1.
+        #[serde(default = "one")]
+        aid_scale: f64,
+    },
+}
+
+fn default_attend() -> f64 {
+    DEFAULT_ATTEND_PROBABILITY
+}
+fn default_growth() -> f64 {
+    DEFAULT_REAL_TUITION_GROWTH
+}
+fn default_volatility() -> f64 {
+    DEFAULT_TUITION_VOLATILITY
+}
+fn one() -> f64 {
+    1.0
+}
