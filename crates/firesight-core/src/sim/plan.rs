@@ -138,7 +138,7 @@ impl Sched {
         when.map_or(Sched::At(i32::MIN), |w| Sched::from_when(w, ctx))
     }
 
-    fn end(when: Option<&When>, ctx: &WhenContext) -> Sched {
+    pub(crate) fn end(when: Option<&When>, ctx: &WhenContext) -> Sched {
         when.map_or(Sched::Never, |w| Sched::from_when(w, ctx))
     }
 }
@@ -456,6 +456,9 @@ pub struct Plan {
     /// Expected real return of the target mix after fees, for planning tests.
     pub(crate) expected_real_return: f64,
     pub(crate) shocks: ShockPlan,
+    /// Opt-in spending realism (vehicles, seasonality, price wedges, detailed shocks,
+    /// unemployment cut); see `spendx.rs`.
+    pub(crate) sx: super::spendx::SpendXPlan,
     pub(crate) state0: StateCode,
     pub(crate) in_us0: bool,
     pub(crate) foreign_rate0: Option<f64>,
@@ -1064,6 +1067,9 @@ impl Plan {
             });
         }
 
+        let (sx, sx_mean_fraction) =
+            super::spendx::SpendXPlan::compile(profile, data, &ctx, &mut debts, budget0);
+
         let stresses = profile
             .assumptions
             .market
@@ -1170,6 +1176,7 @@ impl Plan {
             ShockLevel::Off => 0.0,
             ShockLevel::Typical => num(shock_model, &["lambda_per_year", "default"]),
             ShockLevel::High => 2.0 * num(shock_model, &["lambda_per_year", "default"]),
+            ShockLevel::Detailed => 0.0,
         };
         let median = num(shock_model, &["median_fraction_of_annual_spending"]);
         let sigma = num(shock_model, &["sigma"]);
@@ -1178,7 +1185,8 @@ impl Plan {
             monthly_probability,
             log_median: math::ln(median),
             sigma,
-            mean_fraction: 12.0 * monthly_probability * median * math::exp(0.5 * sigma * sigma),
+            mean_fraction: 12.0 * monthly_probability * median * math::exp(0.5 * sigma * sigma)
+                + sx_mean_fraction,
         };
 
         let exclusion = &data.tax_federal["capital_gains_and_property"]["home_sale_exclusion"];
@@ -1283,6 +1291,7 @@ impl Plan {
             target0,
             expected_real_return,
             shocks,
+            sx,
             state0,
             in_us0,
             foreign_rate0,

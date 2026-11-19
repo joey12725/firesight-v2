@@ -26,6 +26,7 @@ mod profile;
 mod property;
 mod retirement;
 mod spending;
+mod spending_ext;
 mod time;
 
 pub use accounts::*;
@@ -40,4 +41,5 @@ pub use profile::*;
 pub use property::*;
 pub use retirement::*;
 pub use spending::*;
+pub use spending_ext::*;
 pub use time::*;

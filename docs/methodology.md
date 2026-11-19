@@ -362,6 +362,40 @@ actually incurred (housing, health net of the premium credit, care, children, de
 service, one-off costs). It has exactly the scope of actual spending, so delivered
 and planned can be compared year by year.
 
+### Vehicle replacement cycles
+
+Opt-in through `spending.vehicles`. Without it, car costs are whatever the user put in
+a budget line: smooth. Each listed vehicle instead has a price in today's dollars, a
+replacement cycle, an age, a trade-in share and optional financing. The first
+replacement falls `replace_every_years - age_years` from now (at once if the vehicle is
+already older), later ones one cycle after the last, each shifted by a random jitter
+(normal, standard deviation six months, clipped at two standard deviations: a
+judgement, `REPLACEMENT_JITTER_SD_MONTHS`) so that paths do not all replace in the same
+month. The jitter does not accumulate: the schedule is fixed, each date is shifted
+alone. A replacement costs `price x (1 - trade_in)` in today's dollars, raised with
+the price level; vehicle prices are assumed to track CPI. Paid in cash it is one-off
+spending in that month. Financed, the down payment is one-off spending and the rest
+becomes a debt slot (the same mechanism as a financed `expense` event, an auto loan
+repaid by the ordinary debt payments, with interest). The jitter draws come from one
+stream per vehicle, one word per replacement, so a scenario that changes anything
+else sees the same replacement dates.
+
+What the user must do: take the purchase and depreciation of these vehicles out of the
+Transport budget lines (keep fuel, insurance, maintenance). The validator warns when
+the average annual cost of the listed vehicles is more than half of the Transport lines.
+
+Measured (shipped `dual-income-family`, 1,000 paired paths, two cars: $38,000 every ten
+years, 4 years old; $32,000 every nine years, 6 years old, financed 90% at 7% over 60
+months; 25% trade-in; the existing transport line left as it is, so this is extra
+cost): success 90.8% to 86.8%, median terminal net worth $1.69 million to $1.43 million,
+median lifetime spending +$135,000 (today's dollars).
+
+Not modelled: depreciation and resale value beyond the trade-in share, vehicle prices
+moving differently from CPI, repair costs rising with vehicle age (the detailed
+shocks scale car repairs with the vehicles' cost but not their age), buying a car out
+of a loan balance still owed on the old one (a second loan simply adds to the first
+and the payment is recomputed), leasing.
+
 ### Children
 
 USDA expenditure estimates by age band and income tier (2015 dollars brought to

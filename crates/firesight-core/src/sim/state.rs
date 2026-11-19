@@ -103,6 +103,8 @@ pub(crate) struct State {
     pub rng_health: [Rng; MAX_PEOPLE],
     pub rng_shocks: Rng,
     pub rng_housing: Vec<Rng>,
+    /// Vehicles, price wedges, detailed shocks and the unemployment cut (`spendx.rs`).
+    pub sx: super::spendx::SpendXState,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -304,6 +306,7 @@ impl State {
             rng_health: [rng.clone(), rng.clone()],
             rng_shocks: rng.clone(),
             rng_housing: vec![rng.clone(); plan.props.len()],
+            sx: super::spendx::SpendXState::new(plan),
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -537,6 +540,7 @@ impl State {
         );
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
+        self.sx.begin(plan, seed, path);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }

@@ -30,7 +30,7 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks}`. Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -115,10 +115,19 @@ EquityGrant { id, kind: Rsu | Option{ strike_fraction },     // strike as fracti
 Spending { items: Vec<BudgetItem>,
            lifestyle_creep: f64,                   // share of REAL income growth that becomes spending (0..1). Not a perpetual rate.
            retirement_smile: bool,                 // Blanchett real decline through the 70s, healthcare rises separately
-           shocks: Off|Typical|High,               // irregular expenses, compound Poisson
+           shocks: Off|Typical|High|Detailed,      // irregular expenses, compound Poisson
+                                                   // (Detailed: four typed shocks, heavy tails, clustering)
            healthcare: Healthcare { mode: Modeled|InBudget, early_retirement: Aca|Cobra|Custom{annual},
                                     long_term_care: bool, quality: Bronze|Silver|Gold },
-           survivor_factor: f64 (0.7) }
+           survivor_factor: f64 (0.7),
+           // Spending realism, all opt-in (defaults leave results bit-identical):
+           vehicles: Vec<Vehicle>,                 // lumpy replacement purchases, empty by default
+           seasonality: Off|Typical,               // monthly weights by category, annual total unchanged
+           category_inflation: Off|Stochastic,     // persistent AR(1) price wedge per category vs CPI
+           unemployment_cut: f64 (0) }             // share of discretionary spending cut during a spell
+Vehicle { id, name, price (today's $), replace_every_years (10), age_years (0),
+          trade_in_fraction (0.2), financing: Option<{down_fraction, rate, term_months}>,
+          owner: Option<usize>, end: Option<When> }
 BudgetItem { id, name, category: Category, amount, frequency: Monthly|Annual|Weekly|Biweekly|Quarterly,
              essential: bool, real_growth: Option<f64> (default by category),
              start: Option<When>, end: Option<When>,

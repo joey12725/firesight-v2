@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{CategoryInflation, Seasonality, Vehicle, When};
 
 /// The household budget and the rules that shape spending over time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -21,13 +21,37 @@ pub struct Spending {
     /// separately and rises.
     pub retirement_smile: bool,
     /// Irregular unplanned expenses (car repairs, a new roof, helping family) drawn at
-    /// random. "typical" averages roughly 3% of annual spending.
+    /// random. "typical" averages roughly 3% of annual spending. "detailed" draws
+    /// separate shock types (home repair scaling with the value of the home you own,
+    /// car repair scaling with transport spending and vehicles, medical-adjacent costs,
+    /// family emergencies) with heavy-tailed sizes, and a bad year makes another
+    /// shock more likely. Its expected total is netted out of the budget like the others.
     pub shocks: ShockLevel,
     /// How health insurance and medical costs are handled.
     pub healthcare: Healthcare,
     /// After one partner dies, household spending is multiplied by this factor.
     /// 0.7 means a survivor spends 70% of what the couple did.
     pub survivor_factor: f64,
+    /// Vehicles replaced on a cycle. Each adds a lumpy purchase every
+    /// `replace_every_years` (with a small random jitter) instead of a smooth cost.
+    /// Leave the purchase and depreciation of these vehicles out of the Transport
+    /// budget lines (keep fuel, insurance and maintenance) or they are counted twice.
+    pub vehicles: Vec<Vehicle>,
+    /// Spread each budget line's annual amount unevenly over the months (holiday
+    /// December, summer travel, winter heating). "off" (the default) spends it evenly.
+    /// The annual total does not change.
+    pub seasonality: Seasonality,
+    /// Give food, utilities, transport, rent, healthcare and education lines their own
+    /// persistent price drift against CPI. "off" (the default) grows every line with CPI.
+    pub category_inflation: CategoryInflation,
+    /// Fraction of discretionary (non-essential) spending cut while an earner is in an
+    /// unemployment spell, from 0 to 1. The cut phases in over three months and is
+    /// restored on re-employment. 0 (the default) changes nothing. Ganong and Noel
+    /// (2019, American Economic Review), using bank-account data, find household
+    /// spending falls about 6% when unemployment begins and about 12% by the end of
+    /// benefits; if discretionary lines are about half of the budget that is a cut of
+    /// roughly 0.1 to 0.25 of them, so 0.15 is a reasonable choice.
+    pub unemployment_cut: f64,
 }
 
 impl Default for Spending {
@@ -39,6 +63,10 @@ impl Default for Spending {
             shocks: ShockLevel::Typical,
             healthcare: Healthcare::default(),
             survivor_factor: 0.7,
+            vehicles: Vec::new(),
+            seasonality: Seasonality::Off,
+            category_inflation: CategoryInflation::Off,
+            unemployment_cut: 0.0,
         }
     }
 }
@@ -54,6 +82,9 @@ pub enum ShockLevel {
     Typical,
     /// Larger and more frequent surprises, averaging around 6% of annual spending.
     High,
+    /// Four kinds of surprise sized from what the household owns and spends, with
+    /// heavy tails and clustering (see `spending.shocks`).
+    Detailed,
 }
 
 /// Health insurance and medical costs.

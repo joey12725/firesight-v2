@@ -69,6 +69,12 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Replacement-date jitter of one vehicle (`spending.vehicles`, index in the list).
+    Vehicle(usize),
+    /// Yearly innovations of the category price wedges (`spending.category_inflation`).
+    CategoryPrices,
+    /// Detailed irregular expenses (`spending.shocks = "detailed"`).
+    DetailedShocks,
 }
 
 impl Stream {
@@ -85,6 +91,9 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::Vehicle(i) => 0x1100_0000 + i as u64,
+            Stream::CategoryPrices => 1100,
+            Stream::DetailedShocks => 1101,
         }
     }
 }

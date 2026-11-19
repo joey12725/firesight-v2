@@ -1437,6 +1437,64 @@
     ],
     "confidence": "medium-low (frequency is sourced; severity distribution as a share of spending is a judgement)"
   },
+  "spending_realism": {
+    "summary": "Opt-in spending realism (spending.vehicles, seasonality, category_inflation, shocks = detailed, unemployment_cut). Everything here is read only when the matching switch is on.",
+    "category_inflation": {
+      "model": "Annual AR(1) on the log of a category's price level relative to CPI: x_k = phi x_(k-1) + sigma_eps z_k, x_0 = 0. The price multiplier is exp(x_k - Var(x_k)/2) with Var(x_k) = sigma_eps^2 (1 - phi^(2k)) / (1 - phi^2), so its expectation is exactly 1 in every year and it is exactly 1 today. The category's long-run real growth (Category::default_real_growth, or real_growth on the line) stays separate: the wedge is the deviation from the trend.",
+      "source": "Bureau of Labor Statistics CPI-U sub-indexes relative to CPI-U all items (CPIAUCNS), retrieved from FRED (Federal Reserve Bank of St. Louis) on 2026-11-18; fitted by tools/calibrate_category_inflation.py on annual averages 1980-2024 (the last year with all twelve months in every series), least squares on the linearly detrended log ratio.",
+      "confidence": "medium for the data and the fit; low for out-of-sample persistence (45 annual observations, and the detrended medical and education ratios are unit roots in this sample, so phi is capped at 0.95, a judgement, to keep the wedge stationary).",
+      "group_of_category": {
+        "groceries": "food",
+        "dining": "food",
+        "utilities": "utilities",
+        "transport": "transport",
+        "rent": "shelter",
+        "healthcare": "medical",
+        "education": "education",
+        "childcare": "education"
+      },
+      "groups": {
+        "food": {"series": "CPIUFDNS", "label": "CPI-U Food, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0008, "phi_estimated": 0.79, "phi": 0.79, "sigma_eps": 0.0102},
+        "utilities": {"series": "CUUR0000SAH2", "label": "CPI-U Fuels and utilities, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0022, "phi_estimated": 0.923, "phi": 0.923, "sigma_eps": 0.0305},
+        "transport": {"series": "CPITRNSL", "label": "CPI-U Transportation, SA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": -0.0034, "phi_estimated": 0.675, "phi": 0.675, "sigma_eps": 0.0313},
+        "shelter": {"series": "CUUR0000SAH1", "label": "CPI-U Shelter, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0048, "phi_estimated": 0.812, "phi": 0.812, "sigma_eps": 0.0124},
+        "medical": {"series": "CPIMEDNS", "label": "CPI-U Medical care, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0166, "phi_estimated": 0.995, "phi": 0.95, "sigma_eps": 0.0205},
+        "education": {"series": "CUUR0000SEEB", "label": "CPI-U Tuition, other school fees and childcare, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0285, "phi_estimated": 1.027, "phi": 0.95, "sigma_eps": 0.0244}
+      },
+      "left_out": [
+        "correlation between groups (each wedge is independent)",
+        "a household's own consumption basket within a group (the wedge is the national sub-index)",
+        "the modelled healthcare module, children's costs and owned-home costs, which have their own price paths"
+      ]
+    },
+    "seasonality": {
+      "model": "Monthly weights per category, rescaled in code to average exactly 1, so a line's annual total is unchanged. January first.",
+      "confidence": "judgement. The shapes follow well-known qualitative patterns (EIA: residential natural gas use peaks in winter and electricity has winter and summer peaks; industry estimates that about 30% of annual charitable giving falls in December, not confirmed against a primary source; summer travel; term-time tuition) but no monthly consumer-expenditure table was fetched, because the BLS Consumer Expenditure Survey publishes annual means, not monthly ones. The numbers are not fitted to data.",
+      "weights": {
+        "utilities": [1.25, 1.15, 1.0, 0.85, 0.8, 0.9, 1.05, 1.1, 0.9, 0.8, 0.9, 1.15],
+        "groceries": [0.97, 0.93, 1.0, 0.99, 1.0, 0.98, 1.0, 1.0, 0.98, 0.99, 1.03, 1.13],
+        "dining": [0.92, 0.93, 1.0, 1.0, 1.04, 1.04, 1.05, 1.04, 0.98, 1.0, 0.98, 1.02],
+        "transport": [0.93, 0.9, 1.0, 1.0, 1.04, 1.07, 1.08, 1.07, 1.0, 0.98, 0.95, 0.98],
+        "education": [1.5, 0.3, 0.3, 0.3, 0.3, 0.4, 0.6, 2.5, 1.6, 0.3, 0.3, 0.3],
+        "travel": [0.7, 0.7, 0.9, 0.9, 1.0, 1.4, 1.6, 1.4, 0.9, 0.9, 0.9, 1.5],
+        "entertainment": [0.9, 0.9, 0.95, 0.95, 1.0, 1.05, 1.1, 1.05, 0.95, 1.0, 1.0, 1.2],
+        "personal": [0.9, 0.85, 0.95, 1.0, 1.0, 0.95, 0.95, 1.15, 1.0, 1.0, 1.1, 1.2],
+        "giving": [0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 3.6]
+      },
+      "flat_categories": "rent, healthcare, insurance, childcare and other are spent evenly."
+    },
+    "detailed_shocks": {
+      "model": "Four independent compound-Poisson shock types. Each month, type k fires with probability 1 - exp(-lambda_k (1 - n) (1 + e) / 12) and costs base_k * LogNormal(ln median_k, sigma_k) with the normal draw capped at +-3.5 sd. base_home = market value of owned primary homes; base_car = Transport budget lines plus the replacement price of vehicles spread over their cycle; base_medical and base_family = annual spending. e is a shared excitement that decays by half every 12 months and rises with every shock, so one shock raises the chance of another (Hawkes clustering); lambda is scaled by (1 - n) so the long-run frequency stays lambda. The expected annual cost at the start is netted out of the budget like the typical level.",
+      "confidence": "frequency and median of medical: medium-low (JP Morgan Chase Institute 2017, figures already quoted under expense_shocks.evidence); car repair median: medium-low (same source, $953 against about $12,000 of transport spending); home repair and family emergency: judgement, no source fetched (home repair is anchored on the common rule of thumb that maintenance runs about 1% of home value a year, half of it routine and already in a budget); clustering: judgement.",
+      "types": {
+        "home_repair": {"lambda_per_year": 0.4, "median_fraction_of_home_value": 0.005, "sigma": 1.1, "confidence": "judgement"},
+        "car_repair": {"lambda_per_year": 0.4, "median_fraction_of_transport_spending": 0.08, "sigma": 0.9, "confidence": "medium-low: median anchored on JPMCI 2017 $953"},
+        "medical_adjacent": {"lambda_per_year": 0.16, "median_fraction_of_annual_spending": 0.02, "sigma": 1.0, "confidence": "medium-low: JPMCI 2017, 16% of families a year, median $1,143 about 2% of annual spending"},
+        "family_emergency": {"lambda_per_year": 0.12, "median_fraction_of_annual_spending": 0.03, "sigma": 1.2, "confidence": "judgement"}
+      },
+      "high_multiplier": "not used: Detailed has no High variant."
+    }
+  },
   "children": {
     "summary": "Deterministic per-child annual cost by age band and household income tier (USDA), re-inflated with simulated CPI, plus explicit childcare for ages 0-4 and an explicit college goal. No randomness by default.",
     "usda_2015": {
