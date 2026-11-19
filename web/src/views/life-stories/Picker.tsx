@@ -25,7 +25,7 @@ export function Picker({ choices, path, paths, onPick }: PickerProps) {
   };
   return (
     <div>
-      <ul className="scroll-thin -mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 @3xl:grid @3xl:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] @3xl:overflow-visible" aria-label="Representative lives">
+      <ul className="scroll-thin -mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2 @3xl:grid @3xl:grid-cols-4 @6xl:grid-cols-7 @3xl:overflow-visible" aria-label="Representative lives">
         {choices.map((c) => {
           const active = c.pathIndex === path;
           return (

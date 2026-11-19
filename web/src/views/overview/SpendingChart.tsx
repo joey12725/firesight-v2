@@ -17,7 +17,6 @@ import {
   TipTitle,
   ValueAxis,
   clipPlot,
-  compositionSeries,
   drawBand,
   drawLine,
   linearScale,
@@ -40,9 +39,14 @@ function model(summary: Summary) {
     p50: quantileSeries(summary, 'spending', 0.5),
     p75: quantileSeries(summary, 'spending', 0.75),
     p95: quantileSeries(summary, 'spending', 0.95),
-    planned: compositionSeries(summary, 'spend_planned'),
+    // The plan line is the median life's planned spending (the engine's own quantile), comparable with the median delivered.
+    planned: quantileSeries(summary, 'spend_planned', 0.5),
+    plannedLo: quantileSeries(summary, 'spend_planned', 0.25),
+    plannedHi: quantileSeries(summary, 'spend_planned', 0.75),
     below90: summary.spending.by_year.below_90,
     below75: summary.spending.by_year.below_75,
+    depleted: summary.spending.by_year.depleted,
+    shortfall: summary.spending.by_year.depleted_shortfall,
   };
 }
 
@@ -54,7 +58,7 @@ export function spendingTable(summary: Summary): TableData {
     columns: [
       { key: 'age', label: 'Age' },
       { key: 'year', label: 'Year', format: String },
-      { key: 'planned', label: 'Planned (average)', format: moneyCompact },
+      { key: 'planned', label: 'Planned (median life)', format: moneyCompact },
       { key: 'p5', label: '5th percentile', format: moneyCompact },
       { key: 'p25', label: '25th', format: moneyCompact },
       { key: 'p50', label: 'Median', format: moneyCompact },
@@ -62,6 +66,8 @@ export function spendingTable(summary: Summary): TableData {
       { key: 'p95', label: '95th', format: moneyCompact },
       { key: 'below90', label: 'Retired lives under 90% of plan', format: pct },
       { key: 'below75', label: 'Under 75% of plan', format: pct },
+      { key: 'depleted', label: 'Living households short of essentials', format: pct },
+      { key: 'shortfall', label: 'Their average shortfall against plan, a year', format: moneyCompact },
     ],
     rows: summary.axis.ages.map((age, y) => ({
       age: Math.floor(age),
@@ -74,6 +80,8 @@ export function spendingTable(summary: Summary): TableData {
       p95: m.p95[y] ?? null,
       below90: m.below90[y] ?? null,
       below75: m.below75[y] ?? null,
+      depleted: m.depleted[y] ?? null,
+      shortfall: m.shortfall[y] ?? null,
     })),
   };
 }
@@ -84,7 +92,7 @@ export function SpendingLegend() {
     <div data-chart-legend>
       <Legend
         items={[
-          { key: 'planned', label: 'Planned', color: theme.ink.primary, swatch: 'dash' },
+          { key: 'planned', label: 'Planned (median life)', color: theme.ink.primary, swatch: 'dash' },
           { key: 'median', label: 'Median delivered', color: theme.baseline.median, swatch: 'line' },
           { key: 'mid', label: 'Middle 50 of 100 lives', color: theme.baseline.bands[2] },
           { key: 'outer', label: 'Middle 90', color: theme.baseline.bands[0] },
@@ -208,6 +216,8 @@ export function SpendingChart({ summary, height }: { summary: Summary; height?: 
                 const i = index[k] as number;
                 const v = (row: (number | null)[]) => (row[i] === null || row[i] === undefined ? 'n/a' : moneyCompact(row[i] as number));
                 const cut = target.below90[i];
+                const short = target.depleted[i];
+                const depth = target.shortfall[i];
                 return (
                   <>
                     <TipTitle detail={String(time.years[i])}>Age {Math.floor(time.ages[i] as number)}</TipTitle>
@@ -218,6 +228,11 @@ export function SpendingChart({ summary, height }: { summary: Summary; height?: 
                     <TipRow color={withAlpha(theme.baseline.median, 0.55)} label="25th percentile" value={v(target.p25)} />
                     <TipRow color={withAlpha(theme.baseline.median, 0.55)} label="5th percentile" value={v(target.p5)} />
                     {cut !== null && cut !== undefined && <TipNote>{ofHundred(cut).text} retired lives are spending under 90% of plan.</TipNote>}
+                    {short !== null && short !== undefined && short >= 0.0005 && (
+                      <TipNote>
+                        {ofHundred(short).text} living households are short of essentials{depth !== null && depth !== undefined ? `, by ${moneyCompact(depth)} a year against plan on average` : ''}.
+                      </TipNote>
+                    )}
                   </>
                 );
               }}

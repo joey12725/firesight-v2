@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { exampleProfiles } from '@/engine';
 import { openHousehold, useHouseholds } from '@/state/households';
-import { useSettings } from '@/state/settings-store';
 import { useUi } from '@/state/ui-store';
 import { Button, Icon, type IconName } from '@/ui';
-import { openBlank, openExample } from '@/shell/actions';
+import { METHODOLOGY_URL, openBlank, openExample } from '@/shell/actions';
+import { askAssistant } from '@/assistant';
 
 function Way({ icon, title, children, action }: { icon: IconName; title: string; children: React.ReactNode; action: React.ReactNode }) {
   return (
@@ -25,11 +25,13 @@ export function Landing() {
   const [describe, setDescribe] = useState('');
 
   const handOff = () => {
-    // The assistant needs a plan to draft into: start from the engine's blank profile.
-    useUi.getState().setAssistantDraft(describe.trim());
+    // The assistant needs a plan to draft into: start from the engine's blank profile, then send the
+    // description as the first message of that household's conversation. When no model is connected the
+    // message still shows in the panel, with how to connect, and can be sent again from there.
+    const text = describe.trim();
+    if (!text) return;
     openBlank();
-    useSettings.getState().set({ assistantOpen: true });
-    if (!window.matchMedia('(min-width: 1280px)').matches) useUi.getState().openSheet('assistant');
+    askAssistant(text, { source: 'landing', request: 'Draft a first plan for this household from the description, asking only for what is essential and missing.' });
   };
 
   return (
@@ -65,10 +67,16 @@ export function Landing() {
           <h2 id="demo-title" className="eyebrow">
             Explore a demo household
           </h2>
-          <ul className="mt-2 grid gap-x-8 border-t border-line-strong md:grid-cols-3">
+          <p className="mt-1 text-sm text-ink-2">Three made-up households with real detail. Open one to see every view on a finished plan, then change anything: it re-runs as you type.</p>
+          <ul className="mt-3 grid gap-3 md:grid-cols-3">
             {examples.map((ex) => (
-              <li key={ex.slug} className="border-b border-line md:border-b-0">
-                <button type="button" data-testid={`demo-${ex.slug}`} onClick={() => openExample(ex.slug)} className="group flex h-full w-full flex-col py-4 text-left">
+              <li key={ex.slug}>
+                <button
+                  type="button"
+                  data-testid={`demo-${ex.slug}`}
+                  onClick={() => openExample(ex.slug)}
+                  className="group flex h-full w-full flex-col rounded-md border border-line bg-surface-1 px-4 py-3.5 text-left transition-colors duration-[var(--duration-fast)] hover:border-line-strong hover:bg-surface-2"
+                >
                   <span className="flex items-center justify-between text-base font-medium tracking-tight">
                     {ex.title}
                     <Icon name="arrowRight" size={14} className="text-ink-3 transition-transform duration-[var(--duration-base)] group-hover:translate-x-0.5 group-hover:text-accent" />
@@ -134,9 +142,12 @@ export function Landing() {
           </div>
         </section>
 
-        <p className="mt-16 flex items-center gap-1.5 border-t border-line pt-4 text-xs text-ink-3">
+        <p className="mt-16 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line pt-4 text-xs text-ink-3">
           <Icon name="lock" size={12} />
-          No account. Your plan is stored in this browser and is never uploaded.
+          <span>No account. Your plan is stored in this browser and is never uploaded.</span>
+          <a href={METHODOLOGY_URL} target="_blank" rel="noreferrer" className="ml-auto rounded-xs font-medium text-ink-2 hover:text-accent-ink hover:underline">
+            About the model
+          </a>
         </p>
       </div>
     </main>

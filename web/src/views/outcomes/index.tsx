@@ -8,12 +8,12 @@ import { ChartCard, ChartSyncProvider, TimeRangeControl, summaryTime } from '@/u
 import type { ViewProps } from '../types';
 import { Cohorts, CohortLegend, cohortTable, useCohortTraces } from './Cohorts';
 import { cohortYears, contrasts, isHistorical, luckSplit, scatterLives } from './data';
-import { AgesChart, ShortYearsChart, TaxChart, WealthChart, WorstCutChart, agesCoincide, agesTable, scalarTable } from './Distributions';
+import { AgesChart, HomeSaleChart, ShortYearsChart, TaxChart, WealthChart, WithdrawalRateChart, WorstCutChart, agesCoincide, agesTable, scalarTable } from './Distributions';
 import { ContrastLegend, FailedVsHeld, contrastTable } from './FailedVsHeld';
 import { LastingCurves, LastingLegend, lastingTable } from './LastingCurves';
 import { ScatterLegend, SequenceScatter, scatterTable, type ScatterMode } from './SequenceScatter';
 import { SectionHead, Sharpness, ViewSkeleton } from './shared';
-import { agesTakeaway, cohortTakeaway, contrastTakeaway, cutTakeaway, lastingTakeaway, luckTakeaway, rangeSentence, shortYearsTakeaway, taxTakeaway, wealthTakeaway } from './text';
+import { agesTakeaway, cohortTakeaway, contrastTakeaway, cutTakeaway, homeSaleTakeaway, lastingTakeaway, luckTakeaway, rangeSentence, shortYearsTakeaway, taxTakeaway, wealthTakeaway, withdrawalTakeaway } from './text';
 import { ModelGlossary, TriangulationIntro, TriangulationStrip, triangulationSentence, triangulationTable, useTriangulation } from './Triangulation';
 
 export default function OutcomesView({ profile, summary, run, pool }: ViewProps) {
@@ -34,7 +34,7 @@ export default function OutcomesView({ profile, summary, run, pool }: ViewProps)
   const same = agesCoincide(summary);
   const who = profile.household.people[0]?.name;
   const dotsOf = summary.paths < 100 ? `the ${summary.paths} simulated` : '100 equally likely';
-  const context = () => ({ paths: summary.paths, success_rate: summary.headline.success_rate, depletion_rate: summary.headline.depletion_rate });
+  const context = () => ({ paths: summary.paths, success_rate: summary.headline.success_rate, home_sale_rate: summary.headline.home_sale_rate, depletion_rate: summary.headline.depletion_rate });
   const failed = summary.failure.failed;
   const marketKind = profile.assumptions.market.kind.type;
 
@@ -130,6 +130,37 @@ export default function OutcomesView({ profile, summary, run, pool }: ViewProps)
             quiet
           >
             <TaxChart summary={summary} />
+          </ChartCard>
+        </div>
+
+        <div className="mt-12 grid grid-cols-1 items-start gap-x-10 gap-y-12 @3xl:grid-cols-2">
+          <ChartCard
+            title="Withdrawal rate in the first retired year"
+            takeaway={withdrawalTakeaway(summary)}
+            caption="What each life actually draws from savings in its first retired year (the budget less after-tax income), over its savings on the day it retires. It differs from the plan’s trigger rate because income, tax and the market on the day all differ by life."
+            table={() => scalarTable(summary, 'initial_withdrawal_rate', 'First retired year’s draw over savings at retirement: percentiles over retired lives', (v) => `${(v * 100).toFixed(1)}%`)}
+            filename="initial-withdrawal-rate"
+            explain={{ context: () => ({ ...context(), initial_withdrawal_rate: summary.headline.initial_withdrawal_rate, investable_at_retirement: summary.headline.investable_at_retirement }) }}
+            dimmed={dimmed}
+            quiet
+          >
+            <WithdrawalRateChart summary={summary} />
+          </ChartCard>
+          <ChartCard
+            title="Home sold as a last resort"
+            takeaway={homeSaleTakeaway(summary)}
+            caption={
+              profile.retirement.home_equity === 'never'
+                ? 'This plan never sells a home to fund spending (Retirement, home equity), so a life whose savings run out is short of essentials instead.'
+                : 'When savings run out, the plan sells property before cutting essentials (Retirement, home equity: last resort). The simulation counts that as the plan holding, so read this beside the success figure.'
+            }
+            table={() => scalarTable(summary, 'home_sale_age', 'Age at which a home is sold because savings ran out: percentiles over the lives in which it happens', (v) => v.toFixed(0))}
+            filename="home-sold-as-last-resort"
+            explain={{ context: () => ({ ...context(), home_sale_rate: summary.headline.home_sale_rate, home_equity: profile.retirement.home_equity }) }}
+            dimmed={dimmed}
+            quiet
+          >
+            <HomeSaleChart summary={summary} />
           </ChartCard>
         </div>
 

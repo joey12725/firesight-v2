@@ -5,6 +5,8 @@
 import { useMemo, useState } from 'react';
 import { askAssistant } from '@/assistant';
 import type { Summary } from '@/engine/output-types';
+import { scrollResultsTo } from '@/shell/scroll';
+import { useProfileStore } from '@/state/profile-store';
 import { navigateToLife, useSelectedLife, type LifePick } from '@/state/route';
 import { Button, EmptyState, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, type TimeRangePreset } from '@/ui/charts';
@@ -102,7 +104,7 @@ function Story({ life, summary, selected, onSelect, why, dimmed }: { life: Life;
                     onClick={(e) => {
                       e.preventDefault();
                       onSelect(s.year as number);
-                      document.getElementById('year-ledger')?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+                      scrollResultsTo(document.getElementById('year-ledger'));
                     }}
                   >
                     {s.text}
@@ -195,7 +197,10 @@ export default function LifeStoriesView({ profile, summary, run, pool }: ViewPro
   const choices = useMemo(() => (summary ? lifeChoices(summary) : []), [summary]);
   const fallback = choices.find((c) => c.key === 'median') ?? choices[0];
   const path = route?.pathIndex ?? fallback?.pathIndex ?? null;
-  const state = useTrace(pool, profile, run.seed, summary ? path : null);
+  // The lives of this run are path indices 0 .. paths - 1: anything else is not one of them and is not replayed.
+  const planned = useProfileStore((s) => s.run.paths);
+  const outside = path !== null && path >= Math.max(planned, summary?.paths ?? 0);
+  const state = useTrace(pool, profile, run.seed, summary && !outside ? path : null);
   const life = useMemo(() => (state.trace ? buildLife(state.trace, profile) : null), [state.trace, profile]);
   const [chosen, setChosen] = useState<{ path: number; year: number } | null>(null);
 
@@ -217,14 +222,27 @@ export default function LifeStoriesView({ profile, summary, run, pool }: ViewPro
         <p className="eyebrow">What does one of these lives actually look like?</p>
         {run.stale ? <Tag>Updating…</Tag> : state.loading && life ? <Tag>Replaying life #{path}…</Tag> : null}
         {summary.paths < 100 && !run.stale && <Tag tone="warn" icon="alertTriangle">{`Only ${summary.paths} lives simulated: “typical” and “unlucky” are rough`}</Tag>}
-        {path >= summary.paths && <Tag tone="warn">{`Life #${path} is outside the ${count(summary.paths)} lives in this run`}</Tag>}
       </div>
       <div className="mt-3">
         <Picker choices={choices} path={path} paths={Math.max(summary.paths, 1)} onPick={(p, w) => navigateToLife(p, w)} />
       </div>
 
       <div className="mt-8 border-t border-line pt-6">
-        {state.error && !state.loading ? (
+        {outside ? (
+          <EmptyState
+            icon="alertCircle"
+            title={`There is no life #${count(path)} in this run`}
+            action={
+              fallback && (
+                <Button size="sm" onClick={() => navigateToLife(fallback.pathIndex, 'median')}>
+                  Open the middling life
+                </Button>
+              )
+            }
+          >
+            This run simulates {count(Math.max(planned, summary.paths))} lives, numbered 0 to {count(Math.max(planned, summary.paths) - 1)}. Pick one above, or raise the number of lives in the top bar.
+          </EmptyState>
+        ) : state.error && !state.loading ? (
           <EmptyState icon="alertTriangle" tone="bad" title={`Life #${path} could not be replayed`} action={<Button size="sm" icon="rotate" onClick={state.retry}>Try again</Button>}>
             {state.error}
           </EmptyState>

@@ -64,6 +64,14 @@ export interface RunOptions {
   priority?: number;
   /** When false, only the final summary is computed (sweeps do not need the others). */
   progressive?: boolean;
+  /**
+   * Asked before each progressive summary: return false while nothing would show it (the
+   * tab is hidden, the view that draws this run is not open) and the merge + summarise is
+   * skipped. The final summary is always computed.
+   */
+  wanted?: () => boolean;
+  /** Called as chunks arrive, with the paths merged so far: progress without the cost of a summary. */
+  onArrived?: (done: number, total: number) => void;
 }
 
 export interface RunResult {
@@ -82,6 +90,8 @@ export interface ManyJob {
   id: string;
   profile: Profile;
   paths: number;
+  /** As `RunOptions.wanted`, for this job alone. */
+  wanted?: () => boolean;
 }
 
 export interface ManyOptions {
@@ -91,6 +101,7 @@ export interface ManyOptions {
   signal?: AbortSignal;
   priority?: number;
   progressive?: boolean;
+  onArrived?: (id: string, done: number, total: number) => void;
 }
 
 export interface CompareResult {
@@ -151,7 +162,9 @@ interface Job {
   total: number;
   priority: number;
   progressive: boolean;
+  wanted?: () => boolean;
   onProgress?: (progress: RunProgress) => void;
+  onArrived?: (done: number, total: number) => void;
   /** Paths handed to workers. */
   dispatched: number;
   /** Paths handed to the aggregator. */
@@ -200,6 +213,8 @@ export class EnginePool {
   private maxChunk = DEFAULT_MAX_CHUNK;
   private msPerPath: number | null = null;
   private disposed = false;
+  /** Diagnostics: time workers spent simulating and the paths that took, since the pool started. */
+  readonly stats = { workerMs: 0, paths: 0, chunks: 0 };
 
   constructor(options: PoolOptions) {
     this.options = options;
@@ -224,7 +239,9 @@ export class EnginePool {
         total,
         priority: options.priority ?? 0,
         progressive: options.progressive ?? true,
+        wanted: options.wanted,
         onProgress: options.onProgress,
+        onArrived: options.onArrived,
         dispatched: 0,
         arrived: 0,
         requested: 0,
@@ -273,7 +290,9 @@ export class EnginePool {
               signal: inner.signal,
               priority: options.priority,
               progressive: options.progressive,
+              wanted: job.wanted,
               onProgress: options.onProgress && ((p) => options.onProgress?.(job.id, p)),
+              onArrived: options.onArrived && ((done, total) => options.onArrived?.(job.id, done, total)),
             },
           ),
         ),
@@ -419,6 +438,7 @@ export class EnginePool {
         this.observe(message.ms, message.count);
         task.job.arrived += message.count;
         this.options.aggregator.add(task.job.id, message.bytes);
+        task.job.onArrived?.(task.job.arrived, task.job.total);
         this.scheduleSummary(task.job);
       } else if (message.type === 'error') {
         this.fail(task.job, new EngineError(message.kind, message.message));
@@ -441,6 +461,9 @@ export class EnginePool {
   /** Adapts the chunk ceiling to the measured speed of this profile on this machine. */
   private observe(ms: number, count: number) {
     if (!(ms > 0) || count <= 0) return;
+    this.stats.workerMs += ms;
+    this.stats.paths += count;
+    this.stats.chunks += 1;
     const sample = ms / count;
     this.msPerPath = this.msPerPath === null ? sample : this.msPerPath * 0.8 + sample * 0.2;
     this.maxChunk = Math.round(
@@ -453,9 +476,9 @@ export class EnginePool {
   private scheduleSummary(job: Job) {
     if (job.summarizing || !job.active || job.arrived === job.requested) return;
     const complete = job.arrived >= job.total;
-    if (!complete && !job.progressive) return;
-    // Never spend more than about a quarter of the time summarising.
-    const interval = Math.max(this.options.summaryIntervalMs ?? 200, job.lastSummaryCost * 3);
+    if (!complete && (!job.progressive || (job.wanted && !job.wanted()))) return;
+    // Never spend more than about a fifth of the time summarising.
+    const interval = Math.max(this.options.summaryIntervalMs ?? 200, job.lastSummaryCost * 4);
     const due = job.lastSummaryAt + interval;
     const now = this.now();
     if (complete || job.summaries === 0 || now >= due) {

@@ -16,6 +16,9 @@ const histSeries = oneOf(T.HIST_SERIES);
 const scalar = oneOf(T.PATH_SCALARS);
 const unit = oneOf(T.SCALAR_UNITS);
 
+const nullableEstimate = obj({ value: n, std_error: n, lo: n, hi: n });
+const samplePath = obj({ path_index: num, net_worth: nums, investable: nums, spending: nums });
+
 const ageCurve = obj({ ages: nums, counts: nums, cumulative: nums, lo: nums, hi: nums, never: num, dots: arr(n, 100) });
 
 export const summaryShape = obj({
@@ -37,7 +40,11 @@ export const summaryShape = obj({
     p10_terminal_net_worth: n,
     terminal_net_worth: spread,
     investable_at_retirement: spread,
-    delivered_spending_ratio: obj({ value: n, std_error: n, lo: n, hi: n }),
+    delivered_spending_ratio: nullableEstimate,
+    plan_delivered_share: nullableEstimate,
+    extra_spending_ratio: nullableEstimate,
+    initial_withdrawal_rate: spread,
+    home_sale_rate: estimate,
     years_cutting_share: n,
     median_lifetime_tax: n,
     lifetime_tax: spread,
@@ -53,10 +60,10 @@ export const summaryShape = obj({
     years_cut: spread,
     worst_cut_levels: nums,
     worst_cut: nnums,
-    by_year: obj({ retired: nnums, below_90: nnums, below_75: nnums }),
+    by_year: obj({ retired: nnums, below_90: nnums, below_75: nnums, depleted: nnums, depleted_shortfall: nnums }),
   }),
-  quantiles: arr(obj({ series: histSeries, levels: arr(num, 9), values: arr(nnums, 9) }), 5),
-  density: arr(obj({ series: histSeries, edges: nums, starts: nums, counts: arr(nums), zeros: nums }), 5),
+  quantiles: arr(obj({ series: histSeries, levels: arr(num, 9), values: arr(nnums, 9) }), 6),
+  density: arr(obj({ series: histSeries, edges: nums, starts: nums, counts: arr(nums), zeros: nums }), 6),
   status: obj({ statuses: arr(status, 6), shares: arr(nums, 6) }),
   survival: obj({ household: nums, people: arr(nums) }),
   composition: arr(obj({ series: oneOf(T.YEAR_SERIES), kind: oneOf(T.YEAR_SERIES_KINDS), values: nnums }), 43),
@@ -65,7 +72,7 @@ export const summaryShape = obj({
   depletion: ageCurve,
   distributions: arr(
     obj({ scalar, unit, count: num, missing: num, mean: n, std_dev: n, min: n, max: n, quantiles: arr(n, 9), dots: arr(n), edges: nums, counts: nums }),
-    27,
+    36,
   ),
   scatter: obj({ paths: nums, columns: arr(obj({ scalar, values: nnums })) }),
   failure: obj({
@@ -79,10 +86,18 @@ export const summaryShape = obj({
     ),
   }),
   picks: arr(obj({ label: str, scalar, path_index: num, value: n })),
-  samples: arr(obj({ path_index: num, net_worth: nums, investable: nums, spending: nums })),
+  samples: arr(samplePath),
+  pick_paths: arr(samplePath),
+  plan_moments: obj({
+    social_security_claim_age: nnums,
+    social_security_claim_share: nnums,
+    person_retirement_age: nnums,
+    person_retirement_share: nnums,
+    mortgage_payoff_age: n,
+    mortgage_payoff_year: n,
+    mortgage_payoff_share: n,
+  }),
 });
-
-const nullableEstimate = obj({ value: n, std_error: n, lo: n, hi: n });
 
 export const comparisonShape = obj({
   paths: num,
@@ -122,6 +137,7 @@ export const comparisonShape = obj({
       within_noise: bool,
     }),
   ),
+  quantile_levels: arr(num, 9),
   headline: arr(obj({ metric: oneOf(T.COMPARISON_METRICS), a: n, b: n, delta: n })),
 });
 
@@ -140,7 +156,7 @@ export const pathTraceShape = obj({
     obj({ year: num, price_level: num, result: record(anything), lines: arr(obj({ key: str, label: str, amount: num, note: nullable(str) })) }),
   ),
   events: arr(obj({ month: str, kind: oneOf(T.TRACE_EVENT_KINDS), label: str, amount: n })),
-  scalars: arr(obj({ scalar, value: n }), 27),
+  scalars: arr(obj({ scalar, value: n }), 36),
 });
 
 const digestRate = obj({ p: num, lo: num, hi: num });
@@ -171,7 +187,7 @@ export const digestShape = obj({
     spending_p50: nnums,
     spending_p90: nnums,
   }),
-  spending_delivery: obj({ delivered_ratio: n, paths_below_90: n, paths_below_75: n, years_below_90: n, worst_cut_p90: n }),
+  spending_delivery: obj({ delivered_ratio: n, extra_ratio: n, paths_below_90: n, paths_below_75: n, years_below_90: n, worst_cut_p90: n }),
   failure_causes: arr(obj({ cause: oneOf(T.FAILURE_CAUSES), share: num })),
   trace_paths: obj({ p10: n, median: n, p90: n, failing: n }),
 });

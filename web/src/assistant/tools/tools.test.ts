@@ -269,7 +269,19 @@ describe('run_simulation and try_scenario', () => {
     const run = record(r.json.run_id);
     // Core's digest of the run's accumulator, plus the id, the seed and the pairing note.
     const core = digest(run.acc, engineInput(run.profile, 7).json);
-    expect(r.json).toEqual({ run_id: run.id, seed: 7, ...core, common_random_numbers: true });
+    // ...and the three headline figures the digest lacks: the home sale that success counts as holding, the capped share of plan delivered, and the starting withdrawal rate.
+    const h = run.summary.headline;
+    const r3 = (v: number) => Math.round(v * 1000) / 1000;
+    expect(r.json).toEqual({
+      run_id: run.id,
+      seed: 7,
+      ...core,
+      home_sale: { p: r3(h.home_sale_rate.value), lo: r3(h.home_sale_rate.lo), hi: r3(h.home_sale_rate.hi) },
+      plan_delivered: h.plan_delivered_share.value === null ? null : r3(h.plan_delivered_share.value),
+      initial_withdrawal_rate_p50: h.initial_withdrawal_rate.p50 === null ? null : Math.round(h.initial_withdrawal_rate.p50 * 10000) / 10000,
+      common_random_numbers: true,
+    });
+    expect((r.json.plan_delivered as number | null) ?? 0).toBeLessThanOrEqual(1);
     expect(r.json).toMatchObject({ paths: 2000, seed: 7 });
     const success = r.json.success as { p: number; lo: number; hi: number };
     expect(success.p).toBeCloseTo(run.summary.headline.success_rate.value, 3);
@@ -280,7 +292,7 @@ describe('run_simulation and try_scenario', () => {
     expect(r.json.notes).toMatch(/today's dollars/);
     for (const cause of r.json.failure_causes as { cause: string; share: number }[]) expect(cause.share).toBeGreaterThan(0);
     expect((r.json.trace_paths as { median: number }).median).toBe(run.summary.picks.find((p) => p.label === 'median')!.path_index);
-    expect(r.reply.content.length).toBeLessThan(2_500);
+    expect(r.reply.content.length).toBeLessThan(2_700);
     expect(r.view).toMatchObject({ title: 'Simulated 2,000 lives of the current plan', meta: { paths: 2000, seed: 7 } });
     // The same inputs are not simulated twice.
     await call('run_simulation', {});
@@ -440,14 +452,30 @@ describe('rank_levers, solve and sweep', () => {
     expect(r.view.meta).toMatchObject({ paths: 200, seed: 7, paired: true });
   }, SLOW);
 
+  it('means the same all-in spending as the plan view', async () => {
+    retireAtFixedAge();
+    const plan = await call('get_plan', {});
+    const allIn = (plan.json.preview as { annual_spending: number }).annual_spending;
+    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.9, paths: 200 });
+    expect(r.json.current_value).toBe(allIn);
+    expect(r.json.variable).toMatch(/all-in/);
+    expect(String(r.json.variable_note)).toMatch(/same figure as preview\.annual_spending/);
+    // A value below the costs the variable cannot change is refused with the reason, not simulated.
+    const low = await call('sweep', { x: { variable: 'annual_spending', values: [1] }, metric: 'success_rate', paths: 200 });
+    const budget = state().profile!.spending.items.length;
+    expect(budget).toBeGreaterThan(0);
+    expect(low.reply.isError).toBe(true);
+  }, SLOW);
+
   it('reports the direction the metric really moves, and brackets the target either way', async () => {
     // Retiring when funded: a bigger budget raises the funded number, so the household works longer.
-    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.9, paths: 200 });
+    // (With the audited engine the rate rises from about 0.79 to 0.86 over the search range, so the target sits inside it.)
+    const r = await call('solve', { variable: 'annual_spending', target_metric: 'success_rate', target_value: 0.82, paths: 200 });
     expect(r.json.status).toBe('converged');
     expect(r.json.metric_direction).toBe('rises as the quantity grows');
     const bracket = r.json.bracket as { below: { value: number; metric: number }; above: { value: number; metric: number } };
-    expect(bracket.below.metric).toBeLessThanOrEqual(0.9);
-    expect(bracket.above.metric).toBeGreaterThanOrEqual(0.9);
+    expect(bracket.below.metric).toBeLessThanOrEqual(0.82);
+    expect(bracket.above.metric).toBeGreaterThanOrEqual(0.82);
   }, SLOW);
 
   it('reports out of range with the closest end instead of inventing an answer', async () => {

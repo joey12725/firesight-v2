@@ -61,7 +61,7 @@ export function RatesLegend() {
   );
 }
 
-export function RatesChart({ model, moments = [] }: { model: CashFlowModel; moments?: StackMoment[] }) {
+export function RatesChart({ model, moments = [], initial = null }: { model: CashFlowModel; moments?: StackMoment[]; initial?: { rate: number; age: number } | null }) {
   const sync = useChartSync();
   const range = useTimeRange(model.time, sync);
   const { time } = model;
@@ -71,6 +71,7 @@ export function RatesChart({ model, moments = [] }: { model: CashFlowModel; mome
   const index = Array.from({ length: Math.max(0, last - first + 1) }, (_, k) => first + k);
   let top = 0.05;
   for (const i of index) top = Math.max(top, model.savingRate[i] ?? 0, model.withdrawalRate[i] ?? 0);
+  if (initial) top = Math.max(top, initial.rate);
 
   return (
     <ChartFrame height={(w) => Math.round(Math.min(340, Math.max(260, w * 0.5)))} margin={{ top: moments.length ? rulesHeight(moments.length) + 14 : 22, right: 64, bottom: 36, left: 52 }} aria-label="Saving rate and withdrawal rate by age">
@@ -127,6 +128,22 @@ export function RatesChart({ model, moments = [] }: { model: CashFlowModel; mome
                 <text x={Math.min(plot.right - 4, (xs[s.k] as number) + 6)} y={y(s.v) - 6} fontSize={11} fontWeight={600} fill={theme.ink.primary} stroke={theme.surface} strokeWidth={3} paintOrder="stroke">
                   Saved
                 </text>
+              )}
+              {initial && initial.age >= range.domain[0] && initial.age <= range.domain[1] && (
+                <g fontSize={11}>
+                  <circle cx={x(initial.age)} cy={y(initial.rate)} r={4.5} fill={theme.surface} stroke={colors.withdrawal} strokeWidth={2} />
+                  <text
+                    x={x(initial.age) > plot.right - 150 ? x(initial.age) - 9 : x(initial.age) + 9}
+                    y={y(initial.rate) + (y(initial.rate) < plot.y + 26 ? 16 : -8)}
+                    textAnchor={x(initial.age) > plot.right - 150 ? 'end' : 'start'}
+                    fill={theme.ink.primary}
+                    stroke={theme.surface}
+                    strokeWidth={3}
+                    paintOrder="stroke"
+                  >
+                    Middle life’s first year: {pct(initial.rate)}
+                  </text>
+                </g>
               )}
               <EndLabels labels={labels} />
             </SvgLayer>

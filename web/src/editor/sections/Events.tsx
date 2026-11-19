@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Category, EventKind, LifeEvent, Profile, When } from '@/engine/types';
 import { set } from '@/state/patches';
 import { at, join, uniqueId } from '@/state/pointer';
-import { Button, Disclosure, Field, Popover, Select, Switch, TextInput, moneyCompact, percent } from '@/ui';
-import { CitySearch } from '../CitySearch';
+import { Button, Disclosure, Field, Popover, Select, Switch, moneyCompact, percent } from '@/ui';
+import { CitySearch, CountrySelect } from '../CitySearch';
 import { findCity, loadCities, relocationFactors, type City } from '../cities';
 import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SliderField, ToggleField } from '../fields';
 import { useEdit, useHelp, useIssues, usePeople, useProfile, useValue } from '../hooks';
@@ -237,7 +237,7 @@ function EventFields({ path, kind }: { path: string; kind: EventKind }) {
                 value={kind.city}
                 onPick={(city, text) => {
                   const ops = [set(`${k}/city`, text || null)];
-                  if (city?.countryCode) {
+                  if (city?.countryCode && city.countryCode !== kind.country) {
                     ops.push(set(`${k}/country`, city.countryCode));
                     if (city.countryCode !== 'US') ops.push(set(`${k}/state`, null));
                   }
@@ -248,7 +248,13 @@ function EventFields({ path, kind }: { path: string; kind: EventKind }) {
           </Field>
           <Row>
             <Field label="Country">
-              {({ id }) => <TextInput id={id} maxLength={2} value={kind.country} onChange={(v) => edit(set(`${k}/country`, v.toUpperCase()), { coalesce: `${k}/country` })} />}
+              {({ id }) => (
+                <CountrySelect
+                  id={id}
+                  value={kind.country}
+                  onChange={(country) => edit(country === 'US' ? [set(`${k}/country`, country)] : [set(`${k}/country`, country), set(`${k}/state`, null)], { label: 'Change destination country' })}
+                />
+              )}
             </Field>
             {kind.country === 'US' ? (
               <ChoiceField path={`${k}/state`} label="State" options={US_STATES} read={(v) => (v as string | null) ?? ''} />

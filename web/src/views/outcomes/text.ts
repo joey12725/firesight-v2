@@ -18,7 +18,7 @@ export function rangeSentence(summary: Summary): Segment[] {
   const w = summary.headline.terminal_net_worth;
   const out: Segment[] = [];
   if (w.p10 !== null && w.p50 !== null && w.p90 !== null) {
-    out.push({ text: 'The middle life ends with ' }, { text: moneyCompact(w.p50), strong: true }, { text: '. One in ten ends below ' }, { text: moneyCompact(w.p10), strong: true }, { text: ' and one in ten above ' }, { text: moneyCompact(w.p90), strong: true }, { text: '.' });
+    out.push({ text: 'The middle life ends with ' }, { text: moneyCompact(w.p50), strong: true }, ...(w.p10 <= 0 ? [{ text: '. One in ten ends with ' }, { text: 'nothing', strong: true }] : [{ text: '. One in ten ends below ' }, { text: moneyCompact(w.p10), strong: true }]), { text: ' and one in ten above ' }, { text: moneyCompact(w.p90), strong: true }, { text: '.' });
   }
   const failed = summary.failure.failed / Math.max(1, summary.paths);
   if (summary.failure.failed === 0) {
@@ -50,7 +50,7 @@ export function wealthTakeaway(summary: Summary): string {
   const w = summary.headline.terminal_net_worth;
   if (w.p10 === null || w.p50 === null || w.p90 === null) return 'Net worth at the end of each simulated life.';
   const ratio = w.p10 > 0 ? w.p90 / w.p10 : null;
-  return `Half of lives end with more than ${moneyCompact(w.p50)}. One in ten ends with less than ${moneyCompact(w.p10)} and one in ten with more than ${moneyCompact(w.p90)}${ratio !== null && ratio >= 3 ? `, ${Math.round(ratio)} times as much` : ''}.`;
+  return `Half of lives end with more than ${moneyCompact(w.p50)}. One in ten ends with ${w.p10 <= 0 ? 'nothing' : `less than ${moneyCompact(w.p10)}`} and one in ten with more than ${moneyCompact(w.p90)}${ratio !== null && ratio >= 3 ? `, ${Math.round(ratio)} times as much` : ''}.`;
 }
 
 /** Share of the dots at or above `threshold` of plan in their worst year. */
@@ -93,7 +93,25 @@ export function lastingTakeaway(summary: Summary): string {
   const lead = `At ${a}, someone is still alive in ${ofHundred(m.alive[at] ?? 0).text} lives, and the money has lasted in ${ofHundred(m.lasted[at] ?? 1).text}.`;
   if (peak < 0.0005) return `${lead} No life is both alive and short of essentials at any age.`;
   const among = m.shortAmongLiving[peakAt];
-  return `${lead} Being alive and short of essentials is most common around ${Math.floor(ages[peakAt] as number)}: ${ofHundred(peak).text} lives${among !== null && among !== undefined && among - peak >= 0.01 ? `, or ${ofHundred(among).text} of those still living` : ''}.`;
+  const depth = m.shortfall[peakAt];
+  const deep = depth !== null && depth !== undefined && depth > 0 ? ` Those lives spend ${moneyCompact(depth)} a year less than planned, on average.` : '';
+  return `${lead} Being alive and short of essentials is most common around ${Math.floor(ages[peakAt] as number)}: ${ofHundred(peak).text} lives${among !== null && among !== undefined && among - peak >= 0.01 ? `, or ${ofHundred(among).text} of those still living` : ''}.${deep}`;
+}
+
+export function withdrawalTakeaway(summary: Summary): string {
+  const w = summary.headline.initial_withdrawal_rate;
+  if (w.p50 === null || w.count === 0) return 'No simulated life retires, so there is no first-year withdrawal rate.';
+  const spread = w.p10 !== null && w.p90 !== null ? `; one in ten starts below ${pct(w.p10, 1)} and one in ten above ${pct(w.p90, 1)}` : '';
+  return `The middle retired life draws ${pct(w.p50, 1)} of its savings in the first year${spread}.`;
+}
+
+export function homeSaleTakeaway(summary: Summary): string {
+  const rate = summary.headline.home_sale_rate.value;
+  if (!(rate > 0)) return 'No simulated life has to sell a home to keep going.';
+  const d = distribution(summary, 'home_sale_age');
+  const [p10, p50, p90] = [d?.quantiles[2] ?? null, d?.quantiles[4] ?? null, d?.quantiles[6] ?? null];
+  const when = p50 !== null ? `, typically around age ${Math.round(p50)}${p10 !== null && p90 !== null && Math.round(p90) > Math.round(p10) ? ` (${Math.round(p10)} to ${Math.round(p90)} in 8 of 10 such lives)` : ''}` : '';
+  return `In ${livesOf(rate, summary.paths)} lives savings run out and a home is sold to keep paying for essentials${when}. Those lives count as the plan holding.`;
 }
 
 export function luckTakeaway(split: LuckSplit | null, lives: number): string {

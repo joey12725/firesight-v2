@@ -207,3 +207,18 @@
   border: 1.5px solid var(--accent);
   background: var(--surface-2);
 }
+
+/*
+ * The results head (headline figures and tabs). Pinned when there is room for it; on a
+ * phone or a short window it would take half the screen, so it becomes part of the page
+ * (`display: contents`) and only the tabs, which are sticky themselves, stay in view.
+ */
+.results-head {
+  position: sticky;
+  top: 0;
+}
+@media (max-width: 767.98px), (max-height: 719.98px) {
+  .results-head {
+    display: contents;
+  }
+}

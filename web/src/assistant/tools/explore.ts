@@ -24,6 +24,15 @@ async function simulate(ctx: ToolContext, call: ToolCallInfo, jobs: { label: str
 }
 
 /** Applies ops to a copy; null (with the reason) when the result is not a runnable plan. */
+/** Core's plan preview, or null when the plan cannot be compiled: it gives `annual_spending` its all-in meaning. */
+function previewOf(ctx: ToolContext, profile: Profile) {
+  try {
+    return ctx.engine.planPreview(profile);
+  } catch {
+    return null;
+  }
+}
+
 function tryVariant(ctx: ToolContext, profile: Profile, ops: PatchOp[]): { profile: Profile } | { skipped: string } {
   try {
     const r = ctx.engine.applyPatch(profile, ops);
@@ -188,7 +197,7 @@ export const solve: ToolSpec<SolveInput> = {
   pending: () => 'Searching for the value that meets the target',
   async run(input, ctx, call) {
     const profile = requireRunnable(ctx);
-    const variable = resolveVariable(profile, input);
+    const variable = resolveVariable(profile, input, previewOf(ctx, profile));
     let lo = input.lo ?? variable.bounds[0];
     let hi = input.hi ?? variable.bounds[1];
     if (!(lo < hi)) throw new ToolError(`lo (${lo}) must be below hi (${hi}).`);
@@ -213,7 +222,7 @@ export const solve: ToolSpec<SolveInput> = {
     const target = input.target_value;
     let fLo = await evaluate(lo);
     let fHi = await evaluate(hi);
-    const base = { variable: variable.label, unit: variable.unit, current_value: variable.current, target_metric: input.target_metric, target_value: target, paths, seed, paired: true };
+    const base = { variable: variable.label, ...(variable.note ? { variable_note: variable.note } : {}), unit: variable.unit, current_value: variable.current, target_metric: input.target_metric, target_value: target, paths, seed, paired: true };
     const view = (title: string) => ({ title, meta: { paths, seed, paired: true, runs: evaluations.length } });
     if ((fLo - target) * (fHi - target) > 0) {
       const closest = Math.abs(fLo - target) <= Math.abs(fHi - target) ? { value: lo, metric: fLo } : { value: hi, metric: fHi };
@@ -315,8 +324,9 @@ export const sweep: ToolSpec<{ x: AxisInput; y?: AxisInput; metric: Metric; path
   pending: () => 'Simulating a grid of options',
   async run(input, ctx, call) {
     const profile = requireRunnable(ctx);
-    const x = resolveVariable(profile, input.x);
-    const y = input.y ? resolveVariable(profile, input.y) : null;
+    const preview = previewOf(ctx, profile);
+    const x = resolveVariable(profile, input.x, preview);
+    const y = input.y ? resolveVariable(profile, input.y, preview) : null;
     const xs = axisValues(x, input.x);
     const ys = y && input.y ? axisValues(y, input.y) : [null];
     const paths = clampPaths(input.paths, SWEEP_PATHS);

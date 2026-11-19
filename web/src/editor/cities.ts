@@ -24,6 +24,21 @@ export interface City {
 
 let loading: Promise<City[]> | null = null;
 
+let countryList: { value: string; label: string }[] | null = null;
+
+/** Every country by its English name, the United States first: the options of a country field. */
+export function countryOptions(): { value: string; label: string }[] {
+  if (countryList) return countryList;
+  const names = new Intl.DisplayNames(['en'], { type: 'region' });
+  const codes = new Set(countryCodes().values());
+  const rest = [...codes]
+    .filter((code) => code !== 'US')
+    .map((code) => ({ value: code, label: names.of(code) ?? code }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  countryList = [{ value: 'US', label: 'United States' }, ...rest];
+  return countryList;
+}
+
 function countryCodes(): Map<string, string> {
   const names = new Intl.DisplayNames(['en'], { type: 'region' });
   const map = new Map<string, string>();

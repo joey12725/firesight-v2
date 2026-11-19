@@ -660,7 +660,7 @@ export function lifeChoices(summary: Summary): LifeChoice[] {
   add('p10', 'p10', pick('p10')?.path_index, 'An unlucky life', 'Ranked 10th of 100 by wealth at the end');
   add('median', 'median', pick('median')?.path_index, 'A middling life', 'Ranked 50th of 100 by wealth at the end');
   add('p90', 'p90', pick('p90')?.path_index, 'A lucky life', 'Ranked 90th of 100 by wealth at the end');
-  add('median_fi', 'median_fi', pick('median_fi')?.path_index, 'A typical path to independence', 'Work becomes optional at the median age, among lives where it does');
+  add('median_fi', 'median_fi', pick('median_fi')?.path_index, 'A typical path to optional work', 'Work becomes optional at the median age, among lives where it does');
   if (summary.failure.depleted > 0 || summary.failure.failed > 0) add('failing', 'failing', pick('failing')?.path_index, 'A life that ran short', 'The typical age of running short, among lives that do');
 
   let earliest = -1;
@@ -672,7 +672,7 @@ export function lifeChoices(summary: Summary): LifeChoice[] {
   });
   const sample = summary.scatter.paths.length;
   const among = `among ${sample.toLocaleString('en-US')} lives`;
-  if (earliest >= 0) add('earliest', 'scatter', summary.scatter.paths[earliest], 'The earliest to stop needing work', `The lowest age at which work became optional, ${among}`);
-  if (latest >= 0 && latest !== earliest) add('latest', 'scatter', summary.scatter.paths[latest], 'The latest to stop needing work', `The highest age at which work became optional, ${among}`);
+  if (earliest >= 0) add('earliest', 'scatter', summary.scatter.paths[earliest], 'Work optional earliest', `The lowest age at which work became optional, ${among}`);
+  if (latest >= 0 && latest !== earliest) add('latest', 'scatter', summary.scatter.paths[latest], 'Work optional latest', `The highest age at which work became optional, ${among}`);
   return out;
 }

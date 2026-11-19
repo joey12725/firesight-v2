@@ -69,6 +69,8 @@ export async function openHousehold(id: string): Promise<boolean> {
 
 export async function deleteHousehold(id: string) {
   await deleteHouseholdRecord(id).catch(() => undefined);
+  // Its assistant conversation goes with it (kept in the same browser, keyed by household).
+  void import('@/assistant/conversation').then((m) => m.deleteConversation(id)).catch(() => undefined);
   if (useProfileStore.getState().meta?.id === id) {
     useProfileStore.getState().close();
     useSettings.getState().set({ lastHouseholdId: null });

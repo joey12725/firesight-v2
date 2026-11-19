@@ -4,7 +4,7 @@ import { ASSISTANT_MODELS, useSettings, type AssistantModel, type ThemeChoice } 
 import { shareUrl } from '@/state/share';
 import { toast, useUi } from '@/state/ui-store';
 import { Button, Dialog, Field, Icon, SegmentedControl, Select, TextInput, count, cx } from '@/ui';
-import { importPlanFile, importPlanText } from './actions';
+import { METHODOLOGY_URL, importPlanFile, importPlanText } from './actions';
 
 export function SettingsDialog() {
   const open = useUi((s) => s.dialog === 'settings');
@@ -55,6 +55,13 @@ export function SettingsDialog() {
             <Icon name="lock" size={12} /> Your plan stays in this browser
           </p>
           <p className="mt-1">Simulation runs on your device. Plans are saved in this browser's storage and leave it only when you export a file or copy a share link.</p>
+          <p className="mt-3">
+            <a href={METHODOLOGY_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent-ink hover:underline">
+              About the model
+              <Icon name="arrowRight" size={12} />
+            </a>{' '}
+            <span>How lives are simulated, what was checked against what, and what is left out.</span>
+          </p>
         </div>
       </div>
     </Dialog>

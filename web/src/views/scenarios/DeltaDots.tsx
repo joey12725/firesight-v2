@@ -8,7 +8,7 @@ import type { ScalarComparison } from '@/engine/output-types';
 import { moneyCompact } from '@/ui';
 import { ChartFrame, Cursor, SvgLayer, TipNote, TipRow, TipTitle, textWidth, type Frame, type TableData } from '@/ui/charts';
 import { ValueAxisX } from '@/ui/charts/ext/scenarios-marks';
-import { binDeltas, deltaTolerance, type DeltaBin } from './model';
+import { binDeltas, deltaQuantile, deltaTolerance, type DeltaBin } from './model';
 import { scalarWords } from './text';
 
 const GLIDE = { transition: 'cx var(--duration-slow) var(--easing), cy var(--duration-slow) var(--easing)' };
@@ -33,8 +33,8 @@ export function scalarDelta(v: number, s: Pick<ScalarComparison, 'unit'>, sign =
   }
 }
 
-export function deltaTable(s: ScalarComparison): TableData {
-  const levels = [1, 5, 10, 25, 50, 75, 90, 95, 99];
+export function deltaTable(s: ScalarComparison, quantileLevels: readonly number[]): TableData {
+  const levels = quantileLevels.map((l) => Math.round(l * 100));
   const fmt = (v: number) => scalarDelta(v, s);
   return {
     caption: `Per-life difference in ${scalarWords(s.scalar).noun}: scenario minus plan, over lives with a value under both`,
@@ -57,18 +57,18 @@ export function deltaTable(s: ScalarComparison): TableData {
   };
 }
 
-export function DeltaDots({ scalar, compact }: { scalar: ScalarComparison; compact?: boolean }) {
+export function DeltaDots({ scalar, levels, compact }: { scalar: ScalarComparison; levels: readonly number[]; compact?: boolean }) {
   const words = scalarWords(scalar.scalar);
   const height = compact ? 150 : 236;
   const margin = { top: compact ? 8 : 20, right: 10, bottom: compact ? 40 : 76, left: 10 };
   return (
     <ChartFrame height={height} margin={margin} aria-label={`Per-life difference in ${words.noun}: one dot for each of 100 equally likely lives, scenario minus plan`}>
-      {(frame) => <Plot frame={frame} scalar={scalar} compact={compact} />}
+      {(frame) => <Plot frame={frame} scalar={scalar} levels={levels} compact={compact} />}
     </ChartFrame>
   );
 }
 
-function Plot({ frame, scalar, compact }: { frame: Frame; scalar: ScalarComparison; compact?: boolean }) {
+function Plot({ frame, scalar, levels, compact }: { frame: Frame; scalar: ScalarComparison; levels: readonly number[]; compact?: boolean }) {
   const { plot, theme } = frame;
   const words = scalarWords(scalar.scalar);
   const tolerance = deltaTolerance(scalar);
@@ -134,7 +134,7 @@ function Plot({ frame, scalar, compact }: { frame: Frame; scalar: ScalarComparis
   const lives = (n: number) => `${n} of ${total}`;
 
   // Under the axis: the middle 80 of 100 lives and the median, like the Overview's FI chart.
-  const [p10, p50, p90] = [scalar.quantiles[2] ?? null, scalar.quantiles[4] ?? null, scalar.quantiles[6] ?? null];
+  const [p10, p50, p90] = [deltaQuantile(levels, scalar, 0.1), deltaQuantile(levels, scalar, 0.5), deltaQuantile(levels, scalar, 0.9)];
   const barY = plot.bottom + (compact ? 30 : 46);
   const summaryText =
     p50 === null || p10 === null || p90 === null

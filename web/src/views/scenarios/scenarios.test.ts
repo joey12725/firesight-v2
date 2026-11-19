@@ -9,7 +9,7 @@ import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { PatchOp, Profile } from '@/engine/types';
 import { describePatch, describeValue, fieldLabel, lineText, pathPattern } from './describe';
 import { metricRows, metricTableData, metricTakeaway } from './MetricTable';
-import { METRICS, binDeltas, chooseLives, divergence, flipCounts, flipsOf, formatDelta, rankRows, scalarOf, stageDiffs, type Flips } from './model';
+import { METRICS, binDeltas, chooseLives, deltaQuantile, homeSaleOf, divergence, flipCounts, flipsOf, formatDelta, rankRows, scalarOf, stageDiffs, type Flips } from './model';
 import { quickScenarios, samePatch, stockShare } from './quick';
 import { deltaTakeaway, fanTakeaway, flipNote, flipSentence, plain, provisionalSentence, rankTakeaway, stageTakeaway } from './text';
 
@@ -234,7 +234,16 @@ describe('paired statistics', () => {
       const m = binDeltas(s.dots, 20);
       expect(m.bins.reduce((n, b) => n + b.count, 0) + m.unchanged, scalar).toBe(s.dots.filter((d) => d !== null).length);
       if (s.equal !== null) expect(binDeltas(s.dots, 20, 500, s.equal).unchanged, `${scalar} hollow dots match the engine's share`).toBe(Math.round(s.equal * s.dots.filter((d) => d !== null).length));
-      expect(deltaTakeaway(s)).toMatch(/^(With the change|The change leaves|No simulated life)/);
+      expect(deltaTakeaway(s, c.quantile_levels)).toMatch(/^(With the change|The change leaves|No simulated life)/);
+      expect(deltaQuantile(c.quantile_levels, s, 0.5)).toBe(s.quantiles[4] ?? null);
+    }
+    // The paired home-sale row agrees with each run's own headline rate.
+    const sale = homeSaleOf(c);
+    const base = run(profile).summary;
+    if (sale) {
+      expect(sale.a).toBeCloseTo(base.headline.home_sale_rate.value, 6);
+      expect(sale.difference.value).toBeCloseTo(sale.b - sale.a, 9);
+      expect(sale.difference.lo).toBeLessThanOrEqual(sale.difference.value);
     }
   });
 
@@ -277,7 +286,9 @@ describe('paired statistics', () => {
     const quick = quickScenarios(profile, run(profile).summary);
     const { c } = paired(profile, quick.find((q) => q.key === 'retire_later')?.patch ?? []);
     const rows = metricRows(c);
-    expect(rows.slice(0, 3).map((r) => r.key)).toEqual(['success', 'depleted', 'fi']);
+    expect(rows.filter((r) => r.key !== 'home_sale').slice(0, 3).map((r) => r.key)).toEqual(['success', 'depleted', 'fi']);
+    // When either plan sells a home as a last resort, that row sits directly under the success row.
+    if (rows.some((r) => r.key === 'home_sale')) expect(rows[1]?.key).toBe('home_sale');
     expect(rows.some((r) => r.key === 'terminal_net_worth')).toBe(true);
     const table = metricTableData(c, 'Retire later');
     expect(table.rows).toHaveLength(rows.length);

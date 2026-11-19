@@ -3,7 +3,8 @@
 // settings imply. Pure functions; the two JSON files beside this one are static tables
 // copied from the repository's data at authoring time (the historical record, and the
 // published 2026 federal brackets), and are labelled as such wherever they are shown.
-import type { PathTrace, PlanPreview, Summary } from '@/engine/output-types';
+import type { PathTrace, PlanMoments, PlanPreview, Summary } from '@/engine/output-types';
+import { ofHundred } from '@/ui/charts';
 import type { Profile } from '@/engine/types';
 import history from './history.json';
 import tax2026 from './tax-2026.json';
@@ -40,6 +41,9 @@ export function marketStatement(profile: Profile): string {
   }
 }
 
+/** The engine's default for `assumptions.market.equity_premium_adjustment`: a judgement, and one that moves the headline. */
+export const DEFAULT_EQUITY_ADJUSTMENT = -0.015;
+
 export interface Adjustment {
   label: string;
   detail: string;
@@ -50,7 +54,13 @@ export function marketAdjustments(profile: Profile): Adjustment[] {
   const m = profile.assumptions.market;
   const out: Adjustment[] = [];
   const points = (v: number) => `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)} points a year`;
-  if (Math.abs(m.equity_premium_adjustment) > 1e-9) out.push({ label: 'Stock returns shifted', detail: `${points(m.equity_premium_adjustment)} against history` });
+  if (Math.abs(m.equity_premium_adjustment) > 1e-9) {
+    const isDefault = Math.abs(m.equity_premium_adjustment - DEFAULT_EQUITY_ADJUSTMENT) < 1e-9;
+    out.push({
+      label: m.equity_premium_adjustment < 0 ? 'Stocks are planned below the record' : 'Stocks are planned above the record',
+      detail: `${points(m.equity_premium_adjustment)} against the US record of 7.2% after inflation${isDefault ? ', the default' : ` (the default is ${points(DEFAULT_EQUITY_ADJUSTMENT)})`}. The record is that of the best large market of the century; the world outside the US returned about 4.5%, and estimates from today’s prices run 3 to 5%. Planning on the full record instead would make the plan hold in roughly 2 to 7 more lives in 100`,
+    });
+  }
   if (Math.abs(m.inflation_adjustment) > 1e-9) out.push({ label: 'Inflation shifted', detail: `${points(m.inflation_adjustment)} against history` });
   for (const s of m.stress) out.push({ label: 'Stress forced onto every life', detail: String((s as { type?: string }).type ?? 'stress').replace(/_/g, ' ') });
   return out;
@@ -66,13 +76,19 @@ export interface ModelRange {
   p95: number;
   current: boolean;
   record: boolean;
+  /** Points a year added to the calibration figures for this row: the plan's own stock-return adjustment. 0 for the others. */
+  shift: number;
 }
 
 export function modelRanges(profile: Profile): ModelRange[] {
   const current = profile.assumptions.market.kind.type;
+  const adjustment = profile.assumptions.market.equity_premium_adjustment;
   return history.models_30y_real_us_equity.rows.map((r) => {
-    const [p5, p25, p50, p75, p95] = r.values as [number, number, number, number, number];
-    return { kind: r.kind, label: r.label, p5, p25, p50, p75, p95, current: r.kind === current, record: r.kind === 'record' };
+    // The calibration figures carry no adjustment. The plan's own row is moved by its adjustment (a shift in
+    // the annual return moves every long-run percentile by about the same amount), so the row reads as this plan.
+    const shift = r.kind === current ? adjustment : 0;
+    const [p5, p25, p50, p75, p95] = (r.values as [number, number, number, number, number]).map((v) => v + shift) as [number, number, number, number, number];
+    return { kind: r.kind, label: r.label, p5, p25, p50, p75, p95, current: r.kind === current, record: r.kind === 'record', shift };
   });
 }
 
@@ -84,7 +100,8 @@ export function modelTakeaway(rows: ModelRange[]): string {
   if (!mine || !record) return '';
   const wider = (mine.p95 - mine.p5) / (record.p95 - record.p5);
   const versus = wider >= 1.3 ? `That is ${wider.toFixed(1)} times as wide as the record’s own 30-year windows (${pct(record.p5)} to ${pct(record.p95)}): the model allows futures worse and better than any the record contains.` : `The record’s own 30-year windows run from ${pct(record.p5)} to ${pct(record.p95)}, about as wide.`;
-  return `Under this plan’s model, US stocks return ${pct(mine.p50)} a year after inflation over 30 years in the middle case, and between ${pct(mine.p5)} and ${pct(mine.p95)} in 9 of 10. ${versus}`;
+  const adjusted = Math.abs(mine.shift) > 1e-9 ? ` with its ${mine.shift > 0 ? '+' : '−'}${Math.abs(mine.shift * 100).toFixed(1).replace(/\.0$/, '')}-point adjustment` : '';
+  return `Under this plan’s model${adjusted}, US stocks return about ${pct(mine.p50)} a year after inflation over 30 years in the middle case, and between ${pct(mine.p5)} and ${pct(mine.p95)} in 9 of 10. ${versus}`;
 }
 
 // ---- longevity -----------------------------------------------------------------------
@@ -265,11 +282,15 @@ export function taxStatement(profile: Profile): string {
 
 // ---- Social Security, healthcare, careers ----------------------------------------------
 
-export function socialSecurityFacts(profile: Profile): string[] {
-  const out = profile.household.people.map((p) => {
+export function socialSecurityFacts(profile: Profile, moments?: PlanMoments): string[] {
+  const out = profile.household.people.map((p, i) => {
     const ss = p.social_security;
     const basis = ss.basis.type === 'from_earnings' ? `worked out from a simulated earnings record starting at ${(ss.basis as { career_start_age: number }).career_start_age}` : ss.basis.type.replace(/_/g, ' ');
-    return `${p.name} claims at ${ss.claim_age}; the benefit is ${basis}.`;
+    // What the run did, beside what the plan says: a benefit is only paid in lives that reach the claim age.
+    const paid = moments?.social_security_claim_age[i];
+    const share = moments?.social_security_claim_share[i];
+    const ran = paid !== null && paid !== undefined && share !== null && share !== undefined ? ` In this run it starts at ${String(Math.round(paid * 10) / 10)} in ${ofHundred(share).text} lives; the rest die first.` : '';
+    return `${p.name} claims at ${ss.claim_age}; the benefit is ${basis}.${ran}`;
   });
   const cut = profile.assumptions.taxes.social_security_haircut;
   out.push(cut ? `From ${cut.from_year}, benefits are paid at ${Math.round(cut.factor * 100)}% of the scheduled amount, the cut the trust fund’s shortfall would force.` : 'Benefits are paid in full for life: no cut is assumed when the trust fund runs short (the trustees project that for about 2033).');

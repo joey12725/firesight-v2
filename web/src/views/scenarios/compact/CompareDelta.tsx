@@ -34,8 +34,8 @@ export default function CompareDeltaCompact({ summary, comparison }: AssistantCh
       <FlipBar flips={flips} compact />
       {scalar && scalar.dots.length > 0 && (
         <>
-          <p className="pt-1 text-xs leading-relaxed text-pretty text-ink-2">{deltaTakeaway(scalar)}</p>
-          <DeltaDots scalar={scalar} compact />
+          <p className="pt-1 text-xs leading-relaxed text-pretty text-ink-2">{deltaTakeaway(scalar, paired.quantile_levels)}</p>
+          <DeltaDots scalar={scalar} levels={paired.quantile_levels} compact />
         </>
       )}
     </div>

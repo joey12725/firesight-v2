@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { HistSeries, Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
-import { navigateToLife } from '@/state/route';
+import { navigateToLife, type LifePick } from '@/state/route';
 import { moneyCompact } from '@/ui';
 import {
   AgeAxis,
@@ -66,6 +66,35 @@ export interface NetWorthFanProps {
   height?: number;
   /** A scenario on the same lives: its median is drawn over the baseline fan. */
   compare?: { name: string; summary: Summary };
+  /** One of the named lives to pick out (set by the caption's links). */
+  highlight?: NamedLife['why'] | null;
+}
+
+export interface NamedLife {
+  why: Extract<LifePick, 'p10' | 'median' | 'p90'>;
+  /** "An unlucky life". */
+  title: string;
+  path_index: number;
+  net_worth: number[];
+  investable: number[];
+}
+
+const NAMED: { why: NamedLife['why']; title: string }[] = [
+  { why: 'p10', title: 'An unlucky life' },
+  { why: 'median', title: 'A middling life' },
+  { why: 'p90', title: 'A lucky life' },
+];
+
+/**
+ * The unlucky, middling and lucky lives (ranked 10th, 50th and 90th of 100 by wealth at
+ * the end), with their yearly series from the Summary's `pick_paths`: no trace needed.
+ */
+export function namedLives(summary: Summary): NamedLife[] {
+  return NAMED.flatMap((n) => {
+    const pick = summary.picks.find((p) => p.label === n.why);
+    const path = pick && summary.pick_paths.find((p) => p.path_index === pick.path_index);
+    return path && path.net_worth.length > 1 ? [{ ...n, path_index: path.path_index, net_worth: path.net_worth, investable: path.investable }] : [];
+  });
 }
 
 /**
@@ -79,6 +108,13 @@ export function defaultFanScale(summary: Summary, series: FanSeries): FanScale {
   const typical = p50[Math.floor(p50.length / 2)];
   if (!typical || p95.length === 0) return 'linear';
   return Math.max(...p95) / typical > 12 ? 'log' : 'linear';
+}
+
+interface FanLife {
+  path_index: number;
+  net_worth: number[];
+  investable: number[];
+  named: NamedLife | null;
 }
 
 /** A handful of the sample lives, spread from unlucky to lucky by where they end up. */
@@ -119,13 +155,19 @@ export function fanTable(summary: Summary, series: FanSeries): TableData {
   };
 }
 
-export function NetWorthFan({ summary, profile, series, scale, compact, height, compare }: NetWorthFanProps) {
+export function NetWorthFan({ summary, profile, series, scale, compact, height, compare, highlight }: NetWorthFanProps) {
   const sync = useChartSync();
   const time = useMemo(() => summaryTime(summary), [summary]);
   const range = useTimeRange(time, sync);
   const target = useMemo(() => fanModel(summary, series), [summary, series]);
   const model = useAnimated(target, { blend: interpolateFan, resetKey: `${series}:${summary.axis.start}:${summary.axis.years.length}`, duration: 360 });
-  const samples = useMemo(() => chooseSamples(summary, series, compact ? 3 : 7), [summary, series, compact]);
+  const named = useMemo(() => (compact ? [] : namedLives(summary)), [summary, compact]);
+  // Anonymous lives for texture, then the three named ones: one list, so hover and click treat them alike.
+  const samples = useMemo<FanLife[]>(() => {
+    const taken = new Set(named.map((n) => n.path_index));
+    const plain = chooseSamples(summary, series, compact ? 3 : 4).filter((s) => !taken.has(s.path_index));
+    return [...plain.map((s) => ({ path_index: s.path_index, net_worth: s.net_worth, investable: s.investable, named: null })), ...named.map((n) => ({ ...n, named: n }))];
+  }, [summary, series, compact, named]);
   const moments = useMemo(() => (profile ? planMoments(summary, profile) : []), [summary, profile]);
   const [hovered, setHovered] = useState<number | null>(null);
   const compareMedian = useMemo(() => (compare ? quantileSeries(compare.summary, series, 0.5) : null), [compare, series]);
@@ -186,7 +228,8 @@ export function NetWorthFan({ summary, profile, series, scale, compact, height, 
           }
           return d;
         };
-        const hoveredSample = hovered === null ? null : (samples[hovered] ?? null);
+        const hoveredSample = hovered !== null ? (samples[hovered] ?? null) : highlight ? (samples.find((s) => s.named?.why === highlight) ?? null) : null;
+        const hoveredEnd = hoveredSample ? index.filter((i) => hoveredSample[series][i] !== undefined).at(-1) : undefined;
 
         return (
           <>
@@ -196,7 +239,7 @@ export function NetWorthFan({ summary, profile, series, scale, compact, height, 
                 drawGrid(ctx, plot, y, ticks, theme.grid, bottom < 0 ? theme.axis : undefined);
                 drawDensityFan(ctx, plot, xs, fanColumns(model, first, last), y, { ramp: theme.baseline.ramp });
                 const done = clipPlot(ctx, plot, 1);
-                for (const s of samples) drawLine(ctx, xs, index.map((i) => s[series][i] ?? null), y, { color: theme.baseline.samplePath, width: 1 });
+                for (const s of samples) drawLine(ctx, xs, index.map((i) => s[series][i] ?? null), y, s.named ? { color: theme.ink.secondary, width: 1.1, alpha: 0.6 } : { color: theme.baseline.samplePath, width: 1 });
                 for (const l of LINES) {
                   const outer = l.key === 'p5' || l.key === 'p95';
                   drawLine(ctx, xs, slice(q[l.level]), y, { color: theme.baseline.median, width: l.key === 'p50' ? 2 : 1, alpha: l.key === 'p50' ? 1 : outer ? 0.45 : 0.75 });
@@ -233,7 +276,23 @@ export function NetWorthFan({ summary, profile, series, scale, compact, height, 
               )}
               {hoveredSample && (
                 <PlotClip>
+                  <path d={samplePath(hoveredSample[series])} fill="none" stroke={theme.surface} strokeWidth={4.5} strokeLinejoin="round" opacity={0.7} />
                   <path d={samplePath(hoveredSample[series])} fill="none" stroke={theme.ink.primary} strokeWidth={2} strokeLinejoin="round" />
+                  {hoveredSample.named && hoveredEnd !== undefined && (
+                    <text
+                      x={Math.min(plot.right - 6, x(time.ages[hoveredEnd] as number) - 6)}
+                      y={Math.max(plot.y + 12, Math.min(plot.bottom - 6, y(hoveredSample[series][hoveredEnd] as number) - 8))}
+                      textAnchor="end"
+                      fontSize={11}
+                      fontWeight={600}
+                      fill={theme.ink.primary}
+                      stroke={theme.surface}
+                      strokeWidth={3}
+                      paintOrder="stroke"
+                    >
+                      {hoveredSample.named.title}
+                    </text>
+                  )}
                 </PlotClip>
               )}
             </SvgLayer>
@@ -267,7 +326,7 @@ export function NetWorthFan({ summary, profile, series, scale, compact, height, 
                 });
                 setHovered(best);
               }}
-              onSelect={compact ? undefined : () => hoveredSample && navigateToLife(hoveredSample.path_index, 'sample')}
+              onSelect={compact ? undefined : () => hoveredSample && navigateToLife(hoveredSample.path_index, hoveredSample.named?.why ?? 'sample')}
               clickable={hoveredSample !== null}
               marks={(k) => {
                 const i = index[k] as number;
@@ -294,7 +353,7 @@ export function NetWorthFan({ summary, profile, series, scale, compact, height, 
                     {[...LINES].reverse().map((l) => (
                       <TipRow key={l.key} color={l.key === 'p50' ? theme.baseline.median : withAlpha(theme.baseline.median, 0.55)} label={l.key === 'p50' ? 'Median' : `${l.label} percentile`} value={value(l.level)} strong={l.key === 'p50'} />
                     ))}
-                    {hoveredSample && sampleValue !== undefined && <TipRow color={theme.ink.primary} label={`Life #${hoveredSample.path_index}`} value={moneyCompact(sampleValue)} />}
+                    {hoveredSample && sampleValue !== undefined && <TipRow color={theme.ink.primary} label={hoveredSample.named ? `${hoveredSample.named.title} (#${hoveredSample.path_index})` : `Life #${hoveredSample.path_index}`} value={moneyCompact(sampleValue)} />}
                     <TipNote>
                       {ofHundred(model.alive[i] ?? 0).text} lives still have someone alive.{hoveredSample ? ' Click to open this life.' : ''}
                     </TipNote>

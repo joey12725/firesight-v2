@@ -153,7 +153,10 @@ view's range filter: one row above the charts it scopes, never inside a card.
 `RuleAnnotations { items: [{ x, label, detail?, tone? }] }`: labelled vertical rules
 with labels laid out in rows in the top margin (`rulesHeight(n)` says how much).
 `planMoments(summary, profile)` returns the standard ones: work optional (median),
-retirement, Social Security starts, mortgage paid. `EventMarker { x, y, label }`: a
+retirement, Social Security starts, mortgage paid. They are the engine's own
+`summary.plan_moments` (medians over the lives in which each thing happens, marked only
+when it happens in at least half of lives); the profile supplies names and puts a
+partner's age on the first person's axis. Do not re-derive them from the profile. `EventMarker { x, y, label }`: a
 ringed dot with a short label. `EndLabels { labels }`: direct labels at line ends in the
 right margin, spread apart with leader lines when they would collide (`spreadLabels`).
 `textWidth(text, size)` estimates width for fit tests. `Legend { items }` with
@@ -173,7 +176,9 @@ animate it with `useAnimated(model, { blend: interpolateFan })`.
 
 `summaryTime`, `quantileSeries(summary, series, level)`, `compositionSeries(summary,
 key)`, `statusShares(summary, status)`, `aliveShare`, `indexAtAge`, `QUANTILE_LEVELS`,
-`fanModel`, `planMoments`. Use them instead of indexing arrays by position.
+`fanModel`, `planMoments`. Use them instead of indexing arrays by position. The planned-spending
+line is `quantileSeries(summary, 'spend_planned', 0.5)`; the named lives of the fan come from
+`summary.pick_paths` (see `namedLives` in `views/overview/NetWorthFan.tsx`), not from traces.
 
 ### Animation (`animate.tsx`)
 

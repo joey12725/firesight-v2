@@ -3,7 +3,7 @@
 // with their value, with labelled iso-lines on top and the plan as entered marked.
 import { useMemo, type ReactNode } from 'react';
 import { CanvasLayer, ChartFrame, SvgLayer, TipNote, TipRow, TipTitle, rampCss, textWidth, useChartTheme, type TableData } from '@/ui/charts';
-import { GridCursor, contourLines, drawHeatCells, polylineAt, type HeatCell, type Point } from '@/ui/charts/ext/levers-heatmap';
+import { GridCursor, contourLines, drawHeatCells, heatCellLabels, polylineAt, type HeatCell, type Point } from '@/ui/charts/ext/levers-heatmap';
 import { count } from '@/ui';
 import { METRICS, contourLevels, formatCell, formatContour, formatLevel, formatRange, gridPosition, type MetricId, type Unit, type VarDef } from './model';
 import type { GridRun } from './sweeps';
@@ -112,7 +112,7 @@ export function HeatPlot({ xLabels, yLabels, xTitle, yTitle, values, provisional
         const mark = marker ? px([marker.col, marker.row]) : null;
         return (
           <>
-            <CanvasLayer deps={[values, provisional, lo, hi, tone]} draw={(ctx) => drawHeatCells(ctx, cells, ramp, { surface: theme.surface, empty: theme.grid, font: theme.fontSans })} />
+            <CanvasLayer deps={[values, provisional, lo, hi, tone]} draw={(ctx) => drawHeatCells(ctx, cells, ramp, { surface: theme.surface, empty: theme.grid, font: theme.fontSans, labels: false })} />
             <SvgLayer>
               <text x={0} y={11} fontSize={11} fill={theme.label}>
                 {textWidth(yTitle, 11) > plot.right ? yTitle.split(/[,(]/)[0] : yTitle}
@@ -136,10 +136,18 @@ export function HeatPlot({ xLabels, yLabels, xTitle, yTitle, values, provisional
               </g>
               {paths.map((d, i) => (
                 <g key={i} fill="none" strokeLinejoin="round" strokeLinecap="round">
-                  <path d={d} stroke={theme.surface} strokeWidth={4} strokeOpacity={0.85} />
+                  <path d={d} stroke={theme.surface} strokeWidth={3.5} strokeOpacity={0.8} />
                   <path d={d} stroke={theme.ink.primary} strokeWidth={1.25} />
                 </g>
               ))}
+              {/* Cell values sit above the iso-lines, each on a halo of its own cell's colour, so a line never strikes through a number. */}
+              <g textAnchor="middle" fontWeight={500} style={{ fontVariantNumeric: 'tabular-nums' }} aria-hidden>
+                {heatCellLabels(cells, ramp, textWidth).map((l, i) => (
+                  <text key={i} x={l.x} y={l.y + l.size * 0.36} fontSize={l.size} fill={l.ink} stroke={l.fill} strokeWidth={4} strokeLinejoin="round" paintOrder="stroke">
+                    {l.text}
+                  </text>
+                ))}
+              </g>
               {labels.map((l) => (
                 <text key={l.level} x={Math.min(plot.right - textWidth(l.text, 11) / 2 - 2, Math.max(plot.x + textWidth(l.text, 11) / 2 + 2, l.point[0]))} y={l.point[1] + 3.5} textAnchor="middle" fontSize={11} fontWeight={600} fill={theme.ink.primary} stroke={theme.surface} strokeWidth={3.5} strokeLinejoin="round" paintOrder="stroke">
                   {l.text}

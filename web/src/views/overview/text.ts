@@ -51,6 +51,29 @@ export function outcomeSentence(summary: Summary): Segment[] {
   return out;
 }
 
+/**
+ * The qualifier that belongs beside every success figure: the engine counts selling a
+ * home as a last resort as the plan holding. Null when it (almost) never happens.
+ */
+export function homeSaleSentence(summary: Summary): Segment[] | null {
+  const rate = summary.headline.home_sale_rate.value;
+  if (!(rate >= 0.005)) return null;
+  const n = lives(rate, summary.paths);
+  const when = summary.distributions.find((d) => d.scalar === 'home_sale_age')?.quantiles[4] ?? null;
+  const out: Segment[] = [{ text: 'Holding includes selling a home as a last resort, which happens in ' }, { text: `${n.n} of ${n.of}`, strong: true }, { text: ' lives' }];
+  if (when !== null) out.push({ text: ', typically around age ' }, { text: String(Math.round(when)), strong: true });
+  out.push({ text: '.' });
+  return out;
+}
+
+/** "24 of 100", for a compact mention next to a success figure elsewhere; null when negligible. */
+export function homeSaleNote(summary: Summary | null | undefined): string | null {
+  const rate = summary?.headline.home_sale_rate.value;
+  if (rate === undefined || !(rate >= 0.005) || !summary) return null;
+  const n = lives(rate, summary.paths);
+  return `a home is sold as a last resort in ${n.n} of ${n.of}`;
+}
+
 /** The sampling interval and sample size, as the small print under the sentence. */
 export function samplingNote(summary: Summary): string {
   const s = summary.headline.success_rate;
@@ -85,7 +108,9 @@ export function fanTakeaway(summary: Summary, series: FanSeries): string {
   const fi = summary.headline.median_fi_age;
   const atFi = fi === null ? null : p50[indexAtAge(summary, fi)];
   const lead = atFi !== null && atFi !== undefined && fi !== null ? `Median ${name} is ${moneyCompact(atFi)} when work becomes optional and ${moneyCompact(m)} at ${Math.floor(ages[at] as number)}` : `Median ${name} at ${Math.floor(ages[at] as number)} is ${moneyCompact(m)}`;
-  return `${lead}, but 1 life in 20 has less than ${moneyCompact(lo)} by then and 1 in 20 more than ${moneyCompact(hi)}.`;
+  // At or below nothing reads as that, not as a stray "less than −$4".
+  const low = lo < 1000 ? '1 life in 20 has nothing left by then' : `1 life in 20 has less than ${moneyCompact(lo)} by then`;
+  return `${lead}, but ${low} and 1 in 20 more than ${moneyCompact(hi)}.`;
 }
 
 export function statusTakeaway(summary: Summary): string {
@@ -110,7 +135,8 @@ export function spendingTakeaway(summary: Summary): string {
   const sp = summary.spending;
   const below = sp.paths_below_90.value;
   const years = sp.years_cut.p50;
-  const ratio = summary.headline.delivered_spending_ratio.value;
+  const delivered = summary.headline.plan_delivered_share.value;
+  const extra = summary.headline.extra_spending_ratio.value;
   if (sp.retired_paths === 0 || below === null) return 'No simulated life reaches retirement, so there is no retirement spending to compare with the plan.';
   const cut =
     below < 0.005
@@ -118,7 +144,10 @@ export function spendingTakeaway(summary: Summary): string {
       : `In ${ofHundred(below).text} retired lives spending falls more than 10% below the plan at some point${years !== null ? `, typically for ${Math.round(years)} ${Math.round(years) === 1 ? 'year' : 'years'}` : ''}`;
   const worst = sp.worst_cut[sp.worst_cut_levels.indexOf(0.9)];
   const deep = worst !== null && worst !== undefined && worst > 0.1 ? `; the worst year is a cut of ${Math.round(worst * 100)}% or less in 9 of 10` : '';
-  const average = ratio === null ? '' : ratio >= 1.03 ? ` Averaged over retirement, lives spend ${Math.round((ratio - 1) * 100)}% more than planned, because the spending rule raises spending when markets are kind.` : ratio <= 0.97 ? ` Averaged over retirement, lives spend ${Math.round((1 - ratio) * 100)}% less than planned.` : ' Averaged over retirement, spending matches the plan.';
+  // Shortfalls and extras are reported apart: an average of the two would hide both.
+  const share = delivered === null ? '' : ` Year by year, ${delivered >= 0.995 ? 'all' : `${Math.round(delivered * 100)}%`} of planned retirement spending is delivered on average`;
+  const more = extra !== null && extra >= 0.02 ? `${share ? ';' : ''} separately, lives spend ${Math.round(extra * 100)}% above plan on average, because the spending rule raises spending when markets are kind` : '';
+  const average = share || more ? `${share}${more}.` : '';
   return `${cut}${deep}.${average}`;
 }
 

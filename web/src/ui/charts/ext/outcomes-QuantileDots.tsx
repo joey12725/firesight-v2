@@ -92,8 +92,9 @@ export function layoutDots(input: DotsLayoutInput): DotsLayout {
     const rowsMax = Math.max(1, Math.floor(height / diameter));
     const natural = (count: number) => Math.max(2, Math.ceil(count / Math.min(rowsMax, 10))) * (diameter + 1);
     if (input.groupWidth !== undefined && used.some((g) => natural(g.count) > input.groupWidth! + 0.5)) return null;
-    const groupWidth = (count: number) => input.groupWidth ?? natural(count);
-    const reserved = used.reduce((w, g) => w + groupWidth(g.count) + GROUP_GAP, 0);
+    // A group is at least as wide as its own label (about 6 px a character at 11 px), so the label never runs into the axis beside it.
+    const groupWidth = (count: number, label = '') => input.groupWidth ?? Math.max(natural(count), Math.min(72, label.length * 6));
+    const reserved = used.reduce((w, g) => w + groupWidth(g.count, g.group.label) + GROUP_GAP, 0);
     const axisWidth = width - reserved;
     if (axisWidth < 80) return null;
     let d0 = lo;
@@ -136,8 +137,8 @@ export function layoutDots(input: DotsLayoutInput): DotsLayout {
   let cursor = 0;
   const placed: DotsLayout['groups'] = [];
   for (const g of used.filter((u) => u.group.side === 'left')) {
-    placed.push({ ...g, x0: cursor, width: groupWidth(g.count), cumulative: 0 });
-    cursor += groupWidth(g.count) + GROUP_GAP;
+    placed.push({ ...g, x0: cursor, width: groupWidth(g.count, g.group.label), cumulative: 0 });
+    cursor += groupWidth(g.count, g.group.label) + GROUP_GAP;
   }
   const axis0 = cursor;
   const axisWidth = fit.axisWidth;
@@ -145,8 +146,8 @@ export function layoutDots(input: DotsLayoutInput): DotsLayout {
   cursor += axisWidth;
   for (const g of used.filter((u) => u.group.side === 'right')) {
     cursor += GROUP_GAP;
-    placed.push({ ...g, x0: cursor, width: groupWidth(g.count), cumulative: 0 });
-    cursor += groupWidth(g.count);
+    placed.push({ ...g, x0: cursor, width: groupWidth(g.count, g.group.label), cumulative: 0 });
+    cursor += groupWidth(g.count, g.group.label);
   }
 
   const inverse = scale === 'log' ? (x: number) => 10 ** x : (x: number) => x;

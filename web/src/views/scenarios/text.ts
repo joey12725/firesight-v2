@@ -4,7 +4,7 @@ import type { Comparison, HistSeries, ScalarComparison, Summary } from '@/engine
 import { count, moneyCompact } from '@/ui';
 import { indexAtAge, ofHundred, quantileSeries } from '@/ui/charts';
 import type { Segment } from '../overview/text';
-import { flipCounts, formatDelta, type Flips, type MetricDef, type RankRow, type StageDiff } from './model';
+import { flipCounts, formatDelta, type Flips, type MetricDef, type RankRow, type StageDiff, deltaQuantile, homeSaleOf } from './model';
 
 export type { Segment };
 export const plain = (segments: Segment[]) => segments.map((s) => s.text).join('');
@@ -46,6 +46,23 @@ export function flipNote(f: Flips, scenarioName: string): string {
   return `Net: the plan holds in ${pts(net)} of 100 lives with “${scenarioName}” (95% interval ${pts(f.net.lo)} to ${pts(f.net.hi)}; standard error ${(f.net.std_error * 100).toFixed(2)}). Both plans lived through the same ${count(f.paths)} simulated futures, so the difference is the decision and not market luck. ${verdict}`;
 }
 
+/**
+ * The qualifier beside the flip sentence: holding counts a last-resort home sale, so how
+ * often that happens under each plan is stated with it. Null when neither plan sells.
+ */
+export function homeSaleLine(c: Comparison | null, base: Summary, scenario: Summary): string | null {
+  const paired = c ? homeSaleOf(c) : null;
+  const a = paired?.a ?? base.headline.home_sale_rate.value;
+  const b = paired?.b ?? scenario.headline.home_sale_rate.value;
+  if (a < 0.005 && b < 0.005) return null;
+  const [fa, fb] = [ofHundred(a), ofHundred(b)];
+  const same = fa.text === fb.text;
+  const verdict = !paired ? '' : paired.withinNoise ? ' (a difference within noise)' : paired.difference.value < 0 ? ' (fewer, beyond noise)' : ' (more, beyond noise)';
+  return same
+    ? `Holding includes selling a home as a last resort: ${fa.text} lives do under both plans.`
+    : `Holding includes selling a home as a last resort: ${fb.text} lives do with this change, against ${fa.of === fb.of ? fa.n : fa.text} without it${verdict}.`;
+}
+
 /** Before the life-by-life pairing arrives: the two headline rates side by side, clearly provisional. */
 export function provisionalSentence(base: Summary, scenario: Summary): Segment[] {
   const a = ofHundred(base.headline.success_rate.value);
@@ -78,7 +95,7 @@ function amount(v: number, s: ScalarComparison): string {
 const andList = (parts: string[]) => (parts.length <= 1 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 
 /** "With the change, net worth at the end of life is higher in 71 of 100 lives, lower in 22 and unchanged in 7. In the middle life it is $310k higher." */
-export function deltaTakeaway(s: ScalarComparison): string {
+export function deltaTakeaway(s: ScalarComparison, levels: readonly number[]): string {
   const w = scalarWords(s.scalar);
   if (s.both === 0 || s.b_higher === null || s.a_higher === null || s.equal === null) {
     return `No simulated life has a value for ${w.noun} under both plans, so there is nothing to pair.`;
@@ -98,7 +115,7 @@ export function deltaTakeaway(s: ScalarComparison): string {
       denominator = f.of;
       return `${word} in ${text}`;
     });
-  const median = s.quantiles[4] ?? null;
+  const median = deltaQuantile(levels, s, 0.5);
   const moved = median !== null && Math.abs(median) > (s.unit === 'dollars' ? 500 : 0.04);
   const typical = moved ? ` In the middle life it is ${amount(median, s)} ${median > 0 ? w.more : w.less}.` : s.equal >= 0.5 ? '' : ' In the middle life it barely moves.';
   const oneSided = s.a_only + s.b_only;

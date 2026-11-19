@@ -32,7 +32,7 @@ export const METRICS: Record<MetricId, MetricDef> = {
   short: { id: 'short', label: 'Runs short', axis: 'Lives in 100 in which money runs short', unit: 'share', better: -1, paired: 'the change in the share of lives that run short of money' },
   fi_age: { id: 'fi_age', label: 'Work optional', axis: 'Age work becomes optional, middle life', unit: 'age', better: -1, paired: 'the middle (median) per-life change in the age work becomes optional, over lives in which it happens either way' },
   wealth: { id: 'wealth', label: 'Wealth at the end', axis: "Net worth at the end, middle life, today's dollars", unit: 'dollars', better: 1, paired: 'the middle (median) per-life change in net worth at the end' },
-  spending: { id: 'spending', label: 'Spending delivered', axis: 'Retirement spending delivered, % of plan', unit: 'ratio', better: 1, paired: 'the average per-life change in retirement spending delivered against the plan' },
+  spending: { id: 'spending', label: 'Spending delivered', axis: 'Share of planned retirement spending delivered, %', unit: 'ratio', better: 1, paired: 'the average per-life change in the share of planned retirement spending delivered (capped at the plan each year)' },
 };
 
 export interface Level {
@@ -55,7 +55,7 @@ export function readLevel(h: Headline, metric: MetricId): Level {
     case 'wealth':
       return { value: finite(h.terminal_net_worth.p50), lo: finite(h.terminal_net_worth.p50_lo), hi: finite(h.terminal_net_worth.p50_hi) };
     case 'spending':
-      return { value: finite(h.delivered_spending_ratio.value), lo: finite(h.delivered_spending_ratio.lo), hi: finite(h.delivered_spending_ratio.hi) };
+      return { value: finite(h.plan_delivered_share.value), lo: finite(h.plan_delivered_share.lo), hi: finite(h.plan_delivered_share.hi) };
   }
 }
 
@@ -65,7 +65,7 @@ export const readLevels = (h: Headline): Levels => Object.fromEntries(METRIC_IDS
 
 // ---- paired effects -----------------------------------------------------------------
 
-/** The parts of a `Comparison` this view reads (a full one carries 27 scalars of 100 dots each). */
+/** The parts of a `Comparison` this view reads (a full one carries 36 scalars of 100 dots each). */
 export interface PairedLite {
   paths: number;
   outcomes: OutcomeComparison[];
@@ -73,7 +73,7 @@ export interface PairedLite {
 }
 
 const KEPT_OUTCOMES = ['success', 'depleted'];
-const KEPT_SCALARS = ['fi_age', 'terminal_net_worth', 'delivered_spending_ratio'];
+const KEPT_SCALARS = ['fi_age', 'terminal_net_worth', 'plan_delivered_share'];
 
 export function trimComparison(c: Comparison): PairedLite {
   return { paths: c.paths, outcomes: c.outcomes.filter((o) => KEPT_OUTCOMES.includes(o.outcome)), scalars: c.scalars.filter((s) => KEPT_SCALARS.includes(s.scalar)) };
@@ -136,7 +136,7 @@ export function effectOf(metric: MetricId, paired: PairedLite, base: Headline, v
     const state: EffectState = o.a_only + o.b_only === 0 ? 'none' : o.within_noise ? 'noise' : 'effect';
     return { state, delta: o.difference.value, lo: o.difference.lo, hi: o.difference.hi, base: o.a.value, value: o.b.value, n: paired.paths, gained: o.b_only, lost: o.a_only };
   }
-  const s = paired.scalars.find((x) => x.scalar === (metric === 'fi_age' ? 'fi_age' : metric === 'wealth' ? 'terminal_net_worth' : 'delivered_spending_ratio'));
+  const s = paired.scalars.find((x) => x.scalar === (metric === 'fi_age' ? 'fi_age' : metric === 'wealth' ? 'terminal_net_worth' : 'plan_delivered_share'));
   if (!s || s.both === 0) return { ...UNKNOWN, base: a, value: b, gained: s?.b_only ?? 0, lost: s?.a_only ?? 0 };
   const dots = s.dots.filter((d): d is number => d !== null);
   const flips = { n: s.both, gained: s.b_only, lost: s.a_only };
@@ -298,6 +298,19 @@ export function rankLevers(levers: LeverDef[], effects: ReadonlyMap<string, Effe
       return { lever, sides, swing, quiet: !sides.some((s) => s.effect.state === 'effect') };
     })
     .sort((a, b) => Number(a.quiet) - Number(b.quiet) || b.swing - a.swing);
+}
+
+/**
+ * The controllable lever that moves the measure most, by the tornado's own ranking
+ * (largest paired change in either direction, distinguishable from zero), with the
+ * setting that produces that change. The lead sentence and the tornado takeaway both
+ * name this lever, so they cannot disagree.
+ */
+export function topLever(levers: LeverDef[], effects: ReadonlyMap<string, Effect>): Win | null {
+  const top = rankLevers(levers, effects, 'control')[0];
+  if (!top || top.quiet) return null;
+  const strongest = top.sides.filter((s) => s.effect.state === 'effect' && s.effect.delta !== null).sort((a, b) => Math.abs(b.effect.delta as number) - Math.abs(a.effect.delta as number))[0];
+  return strongest ? { lever: top.lever, side: strongest.side, effect: strongest.effect } : null;
 }
 
 export interface Win {

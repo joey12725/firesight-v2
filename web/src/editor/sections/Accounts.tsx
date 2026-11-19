@@ -172,6 +172,7 @@ function PortfolioFields({ portfolio }: { portfolio: PortfolioPolicy }) {
                   <PercentField path="/portfolio/custom_asset/volatility" label="Volatility" />
                   <NumField path="/portfolio/custom_asset/equity_corr" label="Stock corr." step={0.1} />
                 </Row>
+                <PercentField path="/portfolio/custom_asset/income_yield" label="Paid out as income each year" hint="Part of the return above, taxed as ordinary income in a taxable account. 0 if it pays nothing." />
               </>
             )}
           </div>

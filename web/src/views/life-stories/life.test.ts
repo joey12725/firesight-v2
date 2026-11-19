@@ -64,7 +64,8 @@ describe('buildLife on real traces', () => {
         for (const { life } of lives(slug)) {
           const raw = life.trace.events;
           const count = (kind: string) => life.events.filter((e) => e.kind === kind).length;
-          expect(count('roth_conversion')).toBeLessThanOrEqual(Math.max(1, Math.ceil(raw.filter((e) => e.kind === 'roth_conversion').length / 2)));
+          // Conversions more than 14 months apart are separate runs, so two isolated ones stay two.
+          expect(count('roth_conversion')).toBeLessThanOrEqual(Math.max(2, Math.ceil(raw.filter((e) => e.kind === 'roth_conversion').length / 2)));
           expect(count('spending_raise')).toBeLessThanOrEqual(raw.filter((e) => e.kind === 'spending_raise').length);
           // A layoff followed by a rehire becomes one entry.
           const rehired = raw.filter((e) => e.kind === 'rehired').length;

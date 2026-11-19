@@ -13,7 +13,7 @@ const browser = await chromium.launch({ channel: 'chrome', args: ['--enable-prec
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 page.on('console', (m) => m.type() === 'error' && !/404/.test(m.text()) && console.log('console error', m.text()));
-await page.goto(base);
+await page.goto(base + (process.env.WORKERS ? `?workers=${process.env.WORKERS}` : ''));
 await page.getByTestId(`demo-${slug}`).click();
 await page.waitForFunction(() => window.__firesight?.run.getState().status === 'done', null, { timeout: 120_000 });
 const cores = await page.evaluate(() => navigator.hardwareConcurrency);
@@ -24,6 +24,7 @@ for (const paths of counts) {
     const fs = window.__firesight;
     const stats = fs.stats;
     const before = { ...stats };
+    const poolBefore = { ...fs.pool().stats };
     let longest = 0;
     const observer = new PerformanceObserver((list) => {
       for (const e of list.getEntries()) longest = Math.max(longest, e.duration);
@@ -71,6 +72,8 @@ for (const paths of counts) {
       lastSummarizeMs: +stats.lastSummarizeMs.toFixed(1),
       lastParseMs: +stats.lastParseMs.toFixed(1),
       summaryKB: Math.round((stats.summaryBytes - before.summaryBytes) / Math.max(1, stats.summaries - before.summaries) / 1024),
+      workerUtilisation: +((fs.pool().stats.workerMs - poolBefore.workerMs) / (wall * fs.pool().size)).toFixed(3),
+      workerMsPerLife: +((fs.pool().stats.workerMs - poolBefore.workerMs) / paths).toFixed(3),
       chunks: stats.chunks - before.chunks,
       chunkMB: +((stats.chunkBytes - before.chunkBytes) / 1048576).toFixed(1),
       longestTaskMs: Math.round(longest),

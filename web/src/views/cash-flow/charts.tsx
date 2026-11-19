@@ -173,26 +173,35 @@ export function AccountFlows({ model }: { model: CashFlowModel }) {
 
 // ---- tax --------------------------------------------------------------------------------
 
-export function taxTable(model: CashFlowModel): TableData {
+export function taxTable(model: CashFlowModel, summary: Summary): TableData {
   const columns = model.taxes.map((g) => ({ key: g.key, label: g.label, values: g.values }));
   return {
     caption: "Average tax paid per living household by age, today's dollars a year, and tax as a share of all money coming in",
-    columns: [...AGE_COLUMNS, ...columns.map((c) => ({ key: c.key, label: c.label, format: fmt })), { key: 'share', label: 'Share of money in', format: pct }],
-    rows: rows(model, model.flowStart, [...columns, { key: 'share', values: model.taxShare }]),
+    columns: [...AGE_COLUMNS, ...columns.map((c) => ({ key: c.key, label: c.label, format: fmt })), { key: 'median', label: 'Median total tax', format: fmt }, { key: 'share', label: 'Share of money in', format: pct }],
+    rows: rows(model, model.flowStart, [...columns, { key: 'median', values: quantileSeries(summary, 'total_tax', 0.5) }, { key: 'share', values: model.taxShare }]),
   };
 }
 
-export function TaxLegend({ model }: { model: CashFlowModel }) {
-  const series = useStack(model.taxes, 'up');
-  return <StackLegend className="mb-2" series={series} />;
+/** The middle life's total tax each year: the reference that shows how far the lucky lives lift the average. */
+function useMedianTax(summary: Summary) {
+  const theme = useChartTheme();
+  return useMemo(() => [{ key: 'median', label: 'Median', color: theme.ink.primary, values: quantileSeries(summary, 'total_tax', 0.5), strong: true }], [summary, theme]);
 }
 
-export function TaxChart({ model }: { model: CashFlowModel }) {
+export function TaxLegend({ model, summary }: { model: CashFlowModel; summary: Summary }) {
   const series = useStack(model.taxes, 'up');
+  const lines = useMedianTax(summary);
+  return <StackLegend className="mb-2" series={series} lines={lines.map((l) => ({ ...l, label: 'Tax paid by the middle life' }))} />;
+}
+
+export function TaxChart({ model, summary }: { model: CashFlowModel; summary: Summary }) {
+  const series = useStack(model.taxes, 'up');
+  const lines = useMedianTax(summary);
   return (
     <StackedAreas
       time={model.time}
       series={series}
+      lines={lines}
       from={model.flowStart}
       to={model.end}
       title="Average tax paid a year, today's dollars"

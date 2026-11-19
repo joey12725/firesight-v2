@@ -28,15 +28,27 @@ function duplicate(scenario: Scenario) {
   else if (!result.ok) toast({ title: 'The scenario could not be copied', description: result.error, tone: 'bad' });
 }
 
+/**
+ * An Undo for the change just made, for a toast: it steps back only while that change is
+ * still the latest one, so a later edit is never undone by an old toast.
+ */
+function undoOf(): () => void {
+  const entry = useProfileStore.getState().past.at(-1);
+  return () => {
+    const store = useProfileStore.getState();
+    if (entry && store.past.at(-1) === entry) store.undo();
+    else toast({ title: 'Other changes were made since', description: 'Use undo (Ctrl or ⌘ Z) to step back through them in order.' });
+  };
+}
+
 /** Makes the scenario the plan: its changes are applied to the baseline and the scenario is retired. Undo restores both. */
 function promote(scenario: Scenario) {
-  const store = useProfileStore.getState();
-  const result = store.edit(scenario.patch, { target: 'base', label: `Make “${scenario.name}” the plan` });
+  const result = useProfileStore.getState().promoteScenario(scenario.id);
   if (!result.ok) {
     toast({ title: 'The scenario could not become the plan', description: result.error, tone: 'bad' });
     return;
   }
-  useProfileStore.getState().removeScenario(scenario.id);
+  const undo = undoOf();
   if (useScenarioUi.getState().selected === scenario.id) useScenarioUi.getState().select(null);
   toast({
     title: `“${scenario.name}” is now the plan`,
@@ -44,11 +56,8 @@ function promote(scenario: Scenario) {
     tone: 'good',
     action: {
       label: 'Undo',
-      run: () => {
-        // Two steps: the scenario's removal, then the baseline edit.
-        useProfileStore.getState().undo();
-        useProfileStore.getState().undo();
-      },
+      // One step in the store: the baseline edit and the scenario's removal together.
+      run: undo,
     },
   });
 }
@@ -56,7 +65,7 @@ function promote(scenario: Scenario) {
 function remove(scenario: Scenario) {
   useProfileStore.getState().removeScenario(scenario.id);
   if (useScenarioUi.getState().selected === scenario.id) useScenarioUi.getState().select(null);
-  toast({ title: `“${scenario.name}” deleted`, action: { label: 'Undo', run: () => useProfileStore.getState().undo() } });
+  toast({ title: `“${scenario.name}” deleted`, action: { label: 'Undo', run: undoOf() } });
 }
 
 function Change({ line, onRemove }: { line: ChangeLine; onRemove?: () => void }) {

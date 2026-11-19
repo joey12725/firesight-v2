@@ -10,6 +10,18 @@ function current(): string {
   return isViewId(segment) ? segment : DEFAULT_VIEW;
 }
 
+/**
+ * An address that names no view (a mistyped or stale link) shows the Overview, so the
+ * address bar is put right to match: the app never sits on a path it does not know.
+ * The plan in the fragment, if any, is kept. Call once at startup.
+ */
+export function normaliseLocation() {
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  if (segments.length === 0 || (segments.length === 1 && isViewId(segments[0] as string))) return;
+  const first = segments[0] as string;
+  window.history.replaceState(null, '', (isViewId(first) && first !== DEFAULT_VIEW ? `/${first}` : '/') + window.location.hash);
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   window.addEventListener('popstate', listener);
@@ -18,6 +30,9 @@ function subscribe(listener: () => void) {
     window.removeEventListener('popstate', listener);
   };
 }
+
+/** The active results view, outside React. */
+export const activeView = (): string => current();
 
 export function useActiveView(): string {
   return useSyncExternalStore(subscribe, current);

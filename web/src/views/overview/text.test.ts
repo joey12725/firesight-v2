@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { Summary } from '@/engine/output-types';
 import type { ExampleProfile } from '@/engine/types';
-import { failureTakeaway, fanTakeaway, fiTakeaway, lives, outcomeSentence, plain, samplingNote, spendingTakeaway, statusTakeaway } from './text';
+import { failureTakeaway, fanTakeaway, fiTakeaway, homeSaleNote, homeSaleSentence, lives, outcomeSentence, plain, samplingNote, spendingTakeaway, statusTakeaway } from './text';
 
 let summaries: { slug: string; summary: Summary }[] = [];
 
@@ -38,6 +38,22 @@ describe('overview sentences on real engine output', () => {
         expect(text.trim()).toMatch(/[.)]$/);
         expect(text.length).toBeGreaterThan(20);
       }
+    }
+  });
+
+  it('puts the last-resort home sale beside the success figure and never headlines more than 100% delivered', () => {
+    for (const { summary } of summaries) {
+      const rate = summary.headline.home_sale_rate.value;
+      const sale = homeSaleSentence(summary);
+      if (rate >= 0.005) {
+        expect(plain(sale ?? [])).toMatch(/^Holding includes selling a home as a last resort, which happens in \d+ of 1,?0?00 lives/);
+        expect(homeSaleNote(summary)).toMatch(/^a home is sold as a last resort in \d+ of/);
+      } else {
+        expect(sale).toBeNull();
+      }
+      expect(summary.headline.plan_delivered_share.value ?? 0).toBeLessThanOrEqual(1);
+      const delivered = /(\d+)% of planned retirement spending is delivered/.exec(spendingTakeaway(summary));
+      if (delivered) expect(Number(delivered[1])).toBeLessThanOrEqual(100);
     }
   });
 

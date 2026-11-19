@@ -10,6 +10,31 @@ import type { ScenarioComparison } from '../types';
 export const outcomeOf = (c: Comparison, outcome: OutcomeComparison['outcome']) => c.outcomes.find((o) => o.outcome === outcome) ?? null;
 export const scalarOf = (c: Comparison, scalar: PathScalar) => c.scalars.find((s) => s.scalar === scalar) ?? null;
 
+/** Quantile `level` of a scalar's per-life difference, found by the Comparison's own `quantile_levels` (never by position). */
+export function deltaQuantile(levels: readonly number[], s: ScalarComparison, level: number): number | null {
+  const i = levels.findIndex((l) => Math.abs(l - level) < 1e-9);
+  return i < 0 ? null : (s.quantiles[i] ?? null);
+}
+
+/**
+ * The last-resort home sale as a paired outcome, from the `home_sale_age` scalar's
+ * presence counts: `a` and `b` are the shares of lives that sell under the plan and
+ * under the scenario, and the difference carries the same paired standard error the
+ * engine uses for outcomes (sqrt((d - delta^2) / n), d the share of lives that flip).
+ */
+export function homeSaleOf(c: Comparison): { a: number; b: number; difference: Estimate; withinNoise: boolean } | null {
+  const s = scalarOf(c, 'home_sale_age');
+  const n = c.paths;
+  if (!s || n <= 0) return null;
+  const a = (s.both + s.a_only) / n;
+  const b = (s.both + s.b_only) / n;
+  if (a === 0 && b === 0) return null;
+  const delta = (s.b_only - s.a_only) / n;
+  const flips = (s.b_only + s.a_only) / n;
+  const se = Math.sqrt(Math.max(0, flips - delta * delta) / n);
+  return { a, b, difference: { value: delta, std_error: se, lo: delta - 1.96 * se, hi: delta + 1.96 * se }, withinNoise: delta - 1.96 * se <= 0 && delta + 1.96 * se >= 0 };
+}
+
 // ---- success flips ------------------------------------------------------------------
 
 export interface Flips {

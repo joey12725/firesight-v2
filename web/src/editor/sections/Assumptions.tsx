@@ -1,5 +1,5 @@
 import type { Assumptions, Stress } from '@/engine/types';
-import { append, remove } from '@/state/patches';
+import { append, remove, set } from '@/state/patches';
 import { Button, IconButton, Popover } from '@/ui';
 import { ChoiceField, Group, NumField, PercentField, Row, SliderField, ToggleField } from '../fields';
 import { useEdit, useProfile } from '../hooks';
@@ -95,8 +95,27 @@ export function AssumptionsSection() {
           min={-0.03}
           max={0.02}
           step={0.0025}
-          hint="Per year. Many forecasters expect less than the historical average; -1% is a common haircut."
+          hint="Per year, against the US record since 1926."
         />
+        <p className="text-xs leading-relaxed text-ink-2" data-testid="equity-adjustment-note">
+          {Math.abs(assumptions.market.equity_premium_adjustment + 0.015) < 1e-9 ? (
+            <>
+              <b className="font-medium text-ink-1">The default is −1.5 points, not zero.</b> US stocks returned 7.2% a year after inflation since 1926, the best large market of the century; the rest of the world managed about
+              4.5%, and estimates from today’s prices run 3 to 5%. Planning on the full record would lift “the plan holds” by roughly 2 to 7 lives in 100.
+            </>
+          ) : Math.abs(assumptions.market.equity_premium_adjustment) < 1e-9 ? (
+            <>
+              <b className="font-medium text-ink-1">Using the US record as it was</b> (7.2% a year after inflation), the most generous setting most planners would defend. The default is −1.5 points.
+            </>
+          ) : (
+            <>Stocks are planned at {(assumptions.market.equity_premium_adjustment * 100).toFixed(2).replace(/\.?0+$/, '').replace('-', '−')} points a year against the US record of 7.2% after inflation. The default is −1.5 points.</>
+          )}{' '}
+          {Math.abs(assumptions.market.equity_premium_adjustment + 0.015) >= 1e-9 && (
+            <button type="button" className="rounded-xs font-medium text-accent-ink hover:underline" onClick={() => edit(set(`${m}/equity_premium_adjustment`, -0.015), { label: 'Reset stock returns to the default' })}>
+              Reset to the default
+            </button>
+          )}
+        </p>
         <SliderField path={`${m}/inflation_adjustment`} label="Inflation versus history" kind="percent" min={-0.02} max={0.03} step={0.0025} hint="Per year, added to simulated inflation." />
       </Group>
 

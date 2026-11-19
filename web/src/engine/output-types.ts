@@ -52,7 +52,7 @@ export interface Spread {
 export const STATUSES = ['working', 'retired_surplus', 'retired_on_plan', 'retired_cutting', 'depleted', 'dead'] as const;
 export type Status = (typeof STATUSES)[number];
 
-export const HIST_SERIES = ['net_worth', 'investable', 'spending', 'gross_income', 'total_tax'] as const;
+export const HIST_SERIES = ['net_worth', 'investable', 'spending', 'gross_income', 'total_tax', 'spend_planned'] as const;
 export type HistSeries = (typeof HIST_SERIES)[number];
 
 export const YEAR_SERIES_KINDS = ['balance', 'liability', 'income', 'withdrawal', 'tax', 'spending', 'saving', 'transfer', 'memo'] as const;
@@ -71,14 +71,16 @@ export const YEAR_SERIES = [
 ] as const;
 export type YearSeries = (typeof YEAR_SERIES)[number];
 
-/** One number per path. `coast_fi_age` was appended in accumulator version 3. */
+/** One number per path, in the engine's order. `coast_fi_age` was appended in accumulator version 3, the last nine in version 5. */
 // prettier-ignore
 export const PATH_SCALARS = [
   'fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement',
   'early_retirement_return', 'worst_drawdown', 'months_unemployed', 'long_term_care_cost', 'inflation', 'funded_ratio',
   'failure_cause', 'success', 'years_simulated', 'terminal_net_worth', 'peak_net_worth', 'min_investable',
   'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_retired', 'years_below_90',
-  'years_below_75', 'years_depleted', 'coast_fi_age',
+  'years_below_75', 'years_depleted', 'coast_fi_age', 'extra_spending_ratio', 'initial_withdrawal_rate', 'home_sale_age',
+  'plan_delivered_share', 'social_security_claim_age_0', 'social_security_claim_age_1', 'person_retirement_age_0',
+  'person_retirement_age_1', 'mortgage_payoff_age',
 ] as const;
 export type PathScalar = (typeof PATH_SCALARS)[number];
 
@@ -118,8 +120,16 @@ export interface Headline {
   p10_terminal_net_worth: number | null;
   terminal_net_worth: Spread;
   investable_at_retirement: Spread;
-  /** Mean over retired paths of retired-year spending / retired-year `spend_planned`. Can exceed 1. */
+  /** Mean over retired paths of sum(min(spending, planned)) / sum(planned) over retired years. Never above 1. */
   delivered_spending_ratio: NullableEstimate;
+  /** Mean over retired paths of the per-year capped share min(spending / planned, 1): every year weighs the same. */
+  plan_delivered_share: NullableEstimate;
+  /** Mean over retired paths of retirement spending above the plan, as a fraction of plan. */
+  extra_spending_ratio: NullableEstimate;
+  /** First retired year's draw over investable assets at retirement, among paths that retire. */
+  initial_withdrawal_rate: Spread;
+  /** Share of all paths on which a home was sold as a last resort. These paths are not counted as depleted. */
+  home_sale_rate: Estimate;
   /** Share of retired path-years spent cutting or depleted. */
   years_cutting_share: number | null;
   median_lifetime_tax: number | null;
@@ -138,7 +148,17 @@ export interface SpendingDelivery {
   /** [0.5, 0.75, 0.9, 0.95, 0.99] */
   worst_cut_levels: number[];
   worst_cut: (number | null)[];
-  by_year: { retired: (number | null)[]; below_90: (number | null)[]; below_75: (number | null)[] };
+  by_year: {
+    /** Share of the living that are retired. */
+    retired: (number | null)[];
+    /** Share of the retired below each line. */
+    below_90: (number | null)[];
+    below_75: (number | null)[];
+    /** Share of living households whose year ended depleted. */
+    depleted: (number | null)[];
+    /** Among those, mean planned less delivered spending for the year (annualised); null when nobody is depleted. */
+    depleted_shortfall: (number | null)[];
+  };
 }
 
 /** `values[i][y]` is quantile `levels[i]` in year y. Levels: 1, 5, 10, 25, 50, 75, 90, 95, 99%. */
@@ -268,6 +288,23 @@ export interface Summary {
   picks: PathPick[];
   /** The first 96 paths, annual. */
   samples: SamplePath[];
+  /** The same annual series for each distinct `picks[].path_index`, in the order of `picks`. May be empty. */
+  pick_paths: SamplePath[];
+  plan_moments: PlanMoments;
+}
+
+/**
+ * When the plan's moments fall. Ages are medians over the paths on which the thing happens
+ * (each person's own age; the first person's for the mortgage); shares are of all paths.
+ */
+export interface PlanMoments {
+  social_security_claim_age: (number | null)[];
+  social_security_claim_share: (number | null)[];
+  person_retirement_age: (number | null)[];
+  person_retirement_share: (number | null)[];
+  mortgage_payoff_age: number | null;
+  mortgage_payoff_year: number | null;
+  mortgage_payoff_share: number | null;
 }
 
 // ---- Comparison (B minus A; both runs on the same seed) -----------------------------
@@ -323,6 +360,8 @@ export interface Comparison {
   unpaired_b: number;
   outcomes: OutcomeComparison[];
   scalars: ScalarComparison[];
+  /** The levels of `scalars[].quantiles`. */
+  quantile_levels: number[];
   headline: { metric: ComparisonMetric; a: number | null; b: number | null; delta: number | null }[];
 }
 
@@ -428,6 +467,7 @@ export interface SummaryDigest {
   };
   spending_delivery: {
     delivered_ratio: number | null;
+    extra_ratio: number | null;
     paths_below_90: number | null;
     paths_below_75: number | null;
     years_below_90: number | null;

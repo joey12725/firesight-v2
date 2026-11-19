@@ -181,8 +181,10 @@ export interface LastingModel {
   lasted: number[];
   /** Share of all lives that are alive and short of essentials that year: the engine's joint count, not a product. */
   short: number[];
-  /** Of the lives still going, the share short of essentials. Null where almost nobody is alive. */
+  /** Of the lives still going, the share short of essentials (the engine's own figure). Null where almost nobody is alive. */
   shortAmongLiving: (number | null)[];
+  /** Among the lives short that year, the mean shortfall of spending against plan, a year. Null when nobody is. */
+  shortfall: (number | null)[];
   people: number[][];
 }
 
@@ -193,7 +195,8 @@ export function lastingModel(summary: Summary): LastingModel {
     alive,
     lasted: summary.axis.ages.map((age) => 1 - depletedBy(summary.depletion, age)),
     short: summary.axis.ages.map((_, y) => short[y] ?? 0),
-    shortAmongLiving: summary.axis.ages.map((_, y) => ((summary.axis.alive[y] ?? 0) >= 30 && (alive[y] ?? 0) > 0 ? (short[y] ?? 0) / (alive[y] as number) : null)),
+    shortAmongLiving: summary.axis.ages.map((_, y) => ((summary.axis.alive[y] ?? 0) >= 30 ? (summary.spending.by_year.depleted[y] ?? null) : null)),
+    shortfall: summary.axis.ages.map((_, y) => summary.spending.by_year.depleted_shortfall[y] ?? null),
     people: summary.survival.people,
   };
 }
@@ -211,6 +214,7 @@ export const CIRCUMSTANCES: { scalar: PathScalar; label: string; higher: string;
   { scalar: 'retirement_age', label: 'Age at retirement', higher: 'a later retirement', lower: 'an earlier retirement' },
   { scalar: 'investable_at_retirement', label: 'Savings at retirement', higher: 'more saved', lower: 'less saved' },
   { scalar: 'funded_ratio', label: 'Funded ratio at retirement', higher: 'a fuller pot', lower: 'a thinner pot' },
+  { scalar: 'initial_withdrawal_rate', label: 'Withdrawal rate in the first retired year', higher: 'a higher starting withdrawal rate', lower: 'a lower starting withdrawal rate' },
 ];
 
 export interface Contrast {

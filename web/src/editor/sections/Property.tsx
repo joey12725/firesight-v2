@@ -2,7 +2,7 @@ import type { Debt, Property } from '@/engine/types';
 import { set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
 import { Disclosure, Field, Switch, moneyCompact, percent } from '@/ui';
-import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SegmentField } from '../fields';
+import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SegmentField, ToggleField } from '../fields';
 import { useEdit, useHelp, useProfile } from '../hooks';
 import { AddButton, Item, ItemList } from '../Section';
 import { useAdd } from '../useAdd';
@@ -137,6 +137,16 @@ export function PropertySection() {
           <AddButton label="Vacation home" onAdd={() => addProperty('Vacation home', { use: { type: 'vacation' }, value: 300_000 })} />
         </div>
       </Group>
+      {(profile.properties.some((p) => p.mortgage) || profile.events.some((e) => e.kind.type === 'buy_home')) && (
+        <Group title="Mortgages">
+          <ToggleField
+            path="/debt_policy/refinance_mortgages"
+            label="Refinance when rates fall"
+            hint="Each January, if the market rate is a point or more below the loan’s and four years of saved interest cover the closing costs."
+          />
+        </Group>
+      )}
+
       <Group title="Debts">
         <ItemList empty="No debts besides mortgages.">
           {profile.debts.map((d, i) => (

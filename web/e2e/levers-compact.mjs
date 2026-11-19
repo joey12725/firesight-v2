@@ -16,7 +16,7 @@ for (const theme of ['light', 'dark']) {
   await page.goto(base);
   await page.getByTestId('demo-dual-income-family').click();
   await page.waitForFunction(() => window.__firesight.run.getState().status === 'done', null, { timeout: 180_000 });
-  await page.evaluate(async () => (await import('/e2e/levers-compact.tsx')).mount());
+  await page.evaluate(async () => (await import('/src/views/what-matters/compact/probe.tsx')).mount());
   await page.locator('#levers-compact [data-chart-frame]').nth(2).waitFor({ timeout: 240_000 });
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${shots}/levers-compact-${theme}.png` });

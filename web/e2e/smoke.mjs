@@ -53,7 +53,7 @@ try {
   const sentence = await page.getByTestId('outcome-sentence').innerText();
   expect(/^In (all )?\d+ of 100 simulated lives the plan holds to the end\./.test(sentence), `unexpected outcome sentence: ${sentence}`);
   const figures = await page.getByTestId('headline').innerText();
-  expect(/Work optional at\s+\d+\.\d/.test(figures) && /The plan holds in\s+\d+\s+(\d+\s+)?of 100/.test(figures), `headline figures missing: ${figures}`);
+  expect(/Work becomes optional\s+\d+\.\d/.test(figures) && /The plan holds in\s+\d+\s+(\d+\s+)?of 100/.test(figures), `headline figures missing: ${figures}`);
   expect(/Spending \$[\d.]+[kM] a year now/.test(await page.getByTestId('plan-facts').innerText()), 'the plan facts line should come from planPreview');
   expect((await page.getByTestId('run-notice').count()) === 0, 'no run notice expected when the engine runs');
   const cards = await page.locator('[data-chart-card]').evaluateAll((els) => els.map((e) => e.getAttribute('data-chart-card')));
@@ -158,7 +158,6 @@ try {
   await page.getByRole('button', { name: 'Make the last change a scenario instead' }).click();
   await page.getByText('$128k/yr').first().waitFor();
   await page.getByRole('tab', { name: 'Scenarios' }).click();
-  await page.getByRole('heading', { name: 'Scenarios', exact: true }).waitFor();
   await page.getByLabel('Scenario name').waitFor();
   expect((await page.getByLabel('Scenario name').count()) === 1, 'expected one scenario');
   ok('"make this change a scenario" restores the baseline and creates a scenario');

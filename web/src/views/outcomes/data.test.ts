@@ -276,6 +276,13 @@ describe('assumptions', () => {
     const rows = modelRanges((runs.get('dual-income-family') as { profile: Profile }).profile);
     expect(rows.filter((r) => r.current)).toHaveLength(1);
     expect(rows.filter((r) => r.record)).toHaveLength(1);
-    expect(modelTakeaway(rows)).toMatch(/7\.3% a year/);
+    // The plan's row carries its stock-return adjustment (the default is -1.5 points), and says so; the others do not move.
+    const profile = (runs.get('dual-income-family') as { profile: Profile }).profile;
+    const adjustment = profile.assumptions.market.equity_premium_adjustment;
+    expect(rows.find((r) => r.current)?.shift).toBe(adjustment);
+    expect(rows.filter((r) => !r.current).every((r) => r.shift === 0)).toBe(true);
+    expect(modelTakeaway(rows)).toMatch(adjustment === 0 ? /7\.3% a year/ : /with its −1\.5-point adjustment, US stocks return about 5\.8% a year/);
+    const plain = modelRanges({ ...profile, assumptions: { ...profile.assumptions, market: { ...profile.assumptions.market, equity_premium_adjustment: 0 } } });
+    expect(modelTakeaway(plain)).toMatch(/Under this plan’s model, US stocks return about 7\.3% a year/);
   });
 });

@@ -189,6 +189,24 @@ describe('EnginePool.run', () => {
     expect(pool.activeJobs).toBe(0);
   });
 
+  it('skips progressive summaries nobody would see, still counts progress and always delivers the final one', async () => {
+    const { pool } = makePool(4);
+    const pictures: number[] = [];
+    const arrived: number[] = [];
+    const result = await pool.run(profile(), { paths: 5_000 }, { wanted: () => false, onProgress: (p) => pictures.push(p.done), onArrived: (done) => arrived.push(done) });
+    expect(pictures).toEqual([5_000]);
+    expect(arrived.length).toBeGreaterThan(3);
+    expect(arrived.at(-1)).toBe(5_000);
+    expect(arrived).toEqual([...arrived].sort((a, b) => a - b));
+    expectTiling((result.summary as unknown as { ranges: Range[] }).ranges, 5_000);
+    // A run that becomes wanted part-way starts reporting pictures again.
+    let seen = 0;
+    const later: number[] = [];
+    await pool.run(profile(8), { paths: 5_000 }, { wanted: () => ++seen > 6, onProgress: (p) => later.push(p.done) });
+    expect(later.length).toBeGreaterThan(1);
+    expect(later.at(-1)).toBe(5_000);
+  });
+
   it('gives each worker one chunk at a time', async () => {
     const { pool, workers } = makePool(3, 'manual');
     const run = pool.run(profile(), { paths: 400 });

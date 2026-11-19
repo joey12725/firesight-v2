@@ -23,9 +23,16 @@ export function startEngine(): Promise<void> {
 
 let shared: EnginePool | null = null;
 
+/** `?workers=N` on the page URL sets the number of engine workers, for measuring (web/e2e/perf.mjs). */
+function workersOverride(): number | undefined {
+  const n = Number(new URLSearchParams(globalThis.location?.search ?? '').get('workers'));
+  return Number.isInteger(n) && n >= 1 && n <= 32 ? n : undefined;
+}
+
 /** The app's one pool of engine workers and its coordinator, created on first use. */
 export function getPool(): EnginePool {
   shared ??= new EnginePool({
+    size: workersOverride(),
     aggregator: createWorkerAggregator(() => {
       const worker = new Worker(new URL('./coordinator.ts', import.meta.url), { type: 'module', name: 'firesight-coordinator' });
       void engineModule().then((module) => worker.postMessage({ type: 'init', module }));

@@ -215,6 +215,8 @@ function LeverDetail({ lever, side, run }: { lever: LeverDef; side: LeverSide; r
           Life by life: of {count(holds.n)} lives, <b className="font-medium text-ink-1">{count(holds.gained)}</b> hold only with the change, <b className="font-medium text-ink-1">{count(holds.lost)}</b> hold only without it, and{' '}
           {count(holds.n - holds.gained - holds.lost)} end the same way either way. “Paired change” for ages and wealth is the middle per-life change, which is why it can differ a little from the gap between the two
           columns of medians.
+          {(run.base.home_sale_rate.value >= 0.005 || entry.headline.home_sale_rate.value >= 0.005) &&
+            ` Holding includes selling a home as a last resort: ${Math.round(entry.headline.home_sale_rate.value * 100)} of 100 lives do with the change, ${Math.round(run.base.home_sale_rate.value * 100)} without it.`}
         </p>
       )}
     </div>
@@ -320,7 +322,7 @@ function MapSection({ profile, seed, pool, vars, metric, runnable }: Pick<ViewPr
                       const l = cell.levels[m];
                       return `${METRICS[m].label} ${formatLevel(m, l.value)}${l.lo !== null && l.hi !== null && l.value !== null ? ` (${formatRange(m, l.lo, l.hi)})` : ''}`;
                     }).join(' · ')}
-                    . {count(cell.paths)} lives; brackets are 95% sampling intervals.
+                    . {count(cell.paths)} lives; brackets are 95% sampling intervals.{cell.homeSale !== undefined && cell.homeSale >= 0.005 ? ` Holding includes selling a home as a last resort, in ${Math.round(cell.homeSale * 100)} of 100 lives here.` : ''}
                   </p>
                 </div>
                 <TryButton name={`${x.short} ${x.format(run.xs[selected.col] as number)}, ${y.short.toLowerCase()} ${y.format(run.ys[selected.row] as number)}`} patch={[...x.ops(run.xs[selected.col] as number), ...y.ops(run.ys[selected.row] as number)]} label="Adopt as a scenario" />
@@ -544,6 +546,12 @@ export default function WhatMattersView({ profile, summary, run, pool }: ViewPro
           <Select className="w-48" aria-labelledby="measure-label" value={metric} onChange={setMetric} options={METRIC_IDS.map((m) => ({ value: m, label: METRICS[m].label }))} />
         </div>
         <p className="hidden basis-full text-xs text-ink-3 @2xl:block">The choice applies to everything below. Money is in today’s dollars.</p>
+        {result && (metric === 'holds' || metric === 'short') && result.base.home_sale_rate.value >= 0.005 && (
+          <p className="basis-full text-xs text-pretty text-ink-2" data-testid="levers-home-sale">
+            On these lives the plan holds in {Math.round(result.base.success_rate.value * 100)} of 100, which includes selling a home as a last resort in {Math.round(result.base.home_sale_rate.value * 100)}: a change can look
+            better here by leaning on the home more. The detail of each row says how often.
+          </p>
+        )}
       </div>
 
       {result && (

@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { CONTROL, Icon, cx } from '@/ui';
-import { loadCities, searchCities, type City } from './cities';
+import { countryOptions, loadCities, searchCities, type City } from './cities';
+import { Select } from '@/ui';
 
 interface CitySearchProps {
   value: string | null;
@@ -9,6 +10,13 @@ interface CitySearchProps {
   id?: string;
   invalid?: boolean;
   placeholder?: string;
+}
+
+/** A country as a named choice (stored as its ISO two-letter code). A code the list does not know is kept and shown as itself. */
+export function CountrySelect({ value, onChange, id, invalid }: { value: string; onChange: (code: string) => void; id?: string; invalid?: boolean }) {
+  const options = countryOptions();
+  const all = options.some((o) => o.value === value) || !value ? options : [...options, { value, label: value }];
+  return <Select id={id} invalid={invalid} aria-label={id ? undefined : 'Country'} value={value} placeholder="Choose a country" options={all} onChange={onChange} />;
 }
 
 /** A combobox over the cost-of-living table. The table is fetched when the field is first focused. */

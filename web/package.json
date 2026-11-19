@@ -14,7 +14,10 @@
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b",
-    "smoke": "node e2e/smoke.mjs"
+    "smoke": "node e2e/smoke.mjs",
+    "journeys": "node e2e/journeys.mjs",
+    "perf": "node e2e/perf.mjs",
+    "docs-shots": "node e2e/docs-shots.mjs && python3 scripts/optimise-images.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",

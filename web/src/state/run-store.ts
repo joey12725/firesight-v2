@@ -6,6 +6,7 @@ import { getPool, isAbort, planPreview, toEngineError, type EngineErrorKind, typ
 import type { Comparison, PlanPreview, Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
 import { useProfileStore } from './profile-store';
+import { activeView } from './route';
 
 export type RunStatus =
   /** No plan is open. */
@@ -100,7 +101,10 @@ function start() {
     return [{ id: sc.id, name: sc.name, profile: r.profile, summary: null, done: 0, paired: null }];
   });
   const { paths, seed } = s.run;
-  const jobs = [{ id: 'base', profile: s.profile, paths }, ...scenarios.map((x) => ({ id: x.id, profile: x.profile, paths }))];
+  // Progressive pictures are only worth their merge + summarise while something draws them: never in a
+  // hidden tab, and a scenario's only while the Scenarios view is open. Final summaries always arrive.
+  const visible = () => document.visibilityState !== 'hidden';
+  const jobs = [{ id: 'base', profile: s.profile, paths, wanted: visible }, ...scenarios.map((x) => ({ id: x.id, profile: x.profile, paths, wanted: () => visible() && activeView() === 'scenarios' }))];
   const total = paths * jobs.length;
   const mine = (controller = new AbortController());
   const startedAt = performance.now();
@@ -109,6 +113,7 @@ function start() {
   const doneBy = new Map<string, number>();
   const base = s.profile;
   let first = true;
+  let lastTick = 0;
 
   useRunStore.setState((prev) => ({
     status: 'running',
@@ -130,9 +135,20 @@ function start() {
       seed,
       priority: 1,
       signal: mine.signal,
+      // Progress counts lives as their chunks arrive, so the bar moves for runs whose pictures are not being drawn.
+      onArrived: (id, arrived) => {
+        if (mine.signal.aborted) return;
+        doneBy.set(id, arrived);
+        const now = performance.now();
+        if (now - lastTick < 100) return;
+        lastTick = now;
+        const done = [...doneBy.values()].reduce((a, b) => a + b, 0);
+        const elapsedMs = now - startedAt;
+        useRunStore.setState({ done, elapsedMs, pathsPerSecond: (done / Math.max(elapsedMs, 1)) * 1000 });
+      },
       onProgress: (id, p) => {
         if (mine.signal.aborted) return;
-        doneBy.set(id, p.done);
+        doneBy.set(id, Math.max(doneBy.get(id) ?? 0, p.done));
         const done = [...doneBy.values()].reduce((a, b) => a + b, 0);
         const elapsedMs = performance.now() - startedAt;
         useRunStore.setState((prev) => ({
@@ -193,7 +209,16 @@ export function startRunController() {
       // Scenario changes matter only when they alter what is simulated.
       const key = (x: typeof s) =>
         x.scenarios.filter((sc) => sc.enabled).map((sc) => `${sc.id}:${JSON.stringify(sc.patch)}`).join('|');
-      if (s.scenarios === p.scenarios || key(s) === key(p)) return;
+      if (s.scenarios === p.scenarios) return;
+      if (key(s) === key(p)) {
+        // Nothing to simulate again, but a rename must reach every consumer of the run's scenario names.
+        const names = new Map(s.scenarios.map((sc) => [sc.id, sc.name]));
+        const current = useRunStore.getState().scenarios;
+        if (current.some((x) => names.has(x.id) && names.get(x.id) !== x.name)) {
+          useRunStore.setState({ scenarios: current.map((x) => (names.has(x.id) && names.get(x.id) !== x.name ? { ...x, name: names.get(x.id) as string } : x)) });
+        }
+        return;
+      }
     }
     if (!s.profile) {
       if (timer) clearTimeout(timer);

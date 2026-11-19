@@ -1,8 +1,8 @@
 import type { Child, Person } from '@/engine/types';
 import { set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
-import { Field, Select, Switch, TextInput, currentYearMonth, yearsBetween } from '@/ui';
-import { CitySearch } from '../CitySearch';
+import { Field, Select, Switch, currentYearMonth, yearsBetween } from '@/ui';
+import { CitySearch, CountrySelect } from '../CitySearch';
 import { ChoiceField, Group, MoneyField, PercentField, Row, SegmentField, TextField } from '../fields';
 import { useEdit, useHelp, useIssues, useProfile, useValue } from '../hooks';
 import { US_STATES } from '../labels';
@@ -115,17 +115,15 @@ function LocationFields() {
         <Field label="Country" help={useHelp('/household/location/country')} issues={useIssues('/household/location/country')}>
           {({ id, invalid }) => (
             <span data-path="/household/location/country" className="block">
-              <TextInput
+              <CountrySelect
                 id={id}
                 invalid={invalid}
                 value={location.country}
-                maxLength={2}
-                placeholder="US"
-                onChange={(v) => {
-                  const country = v.toUpperCase();
-                  edit(country === 'US' ? [set('/household/location/country', country)] : [set('/household/location/country', country), set('/household/location/state', null)], {
-                    coalesce: '/household/location/country',
-                  });
+                onChange={(country) => {
+                  // The city belongs to the old country; a state only exists in the US.
+                  const ops = [set('/household/location/country', country), set('/household/location/city', null)];
+                  if (country !== 'US') ops.push(set('/household/location/state', null));
+                  edit(ops, { label: 'Change country' });
                 }}
               />
             </span>
@@ -143,7 +141,12 @@ function LocationFields() {
           <PercentField path="/household/location/foreign_tax_rate" label="Income tax rate there" nullable placeholder="None" />
         )}
       </Row>
-      <Field label="City" help={cityHelp} issues={cityIssues} hint="Used to scale living costs if you plan a move.">
+      <Field
+        label="City"
+        help={cityHelp}
+        issues={cityIssues}
+        hint={isUs ? 'Scales living costs if you plan a move, and decides city income tax where one is levied. The city table does not carry states, so choose the state yourself.' : 'Scales living costs if you plan a move.'}
+      >
         {({ id, invalid }) => (
           <span data-path="/household/location/city" className="block">
             <CitySearch
@@ -152,6 +155,8 @@ function LocationFields() {
               value={location.city}
               onPick={(city, text) => {
                 const ops = [set('/household/location/city', text || null)];
+                // A city from the table sets its country when that differs. Within the US nothing else moves: the table
+                // has no states, so the state stays as chosen (and a state is never guessed from a city name).
                 if (city?.countryCode && city.countryCode !== location.country) {
                   ops.push(set('/household/location/country', city.countryCode));
                   if (city.countryCode !== 'US') ops.push(set('/household/location/state', null));
@@ -175,6 +180,7 @@ export function HouseholdSection() {
   return (
     <>
       <TextField path="/name" label="Plan name" />
+      <TextField path="/description" label="Description" placeholder="A line about this household, shown under its name" />
       <Group title="Adults">
         <ItemList empty="Add the adults this plan covers.">
           {people.map((p, i) => (

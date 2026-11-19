@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { getPool } from '@/engine';
 import type { PlanPreview, Summary } from '@/engine/output-types';
 import { useProfileStore } from '@/state/profile-store';
@@ -8,6 +8,7 @@ import { useUi } from '@/state/ui-store';
 import { Button, EmptyState, Icon, Skeleton, TabPanel, Tabs, count, cx, moneyCompact } from '@/ui';
 import { AnimatedNumber, age, ofHundred } from '@/ui/charts';
 import { VIEWS } from '@/views/registry';
+import { pinnedHeight } from './scroll';
 import type { ScenarioComparison, ViewProps } from '@/views/types';
 
 const TABS = VIEWS.map((v) => ({ id: v.id, label: v.label }));
@@ -59,13 +60,17 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
   const sp = summary.spending;
   const success = h.success_rate;
   const short = h.depletion_rate.value;
-  const ratio = h.delivered_spending_ratio.value;
+  const delivered = h.plan_delivered_share.value;
+  const extra = h.extra_spending_ratio.value;
   const cutYears = sp.years_below_90.value;
+  const homeSold = h.home_sale_rate.value;
+  const interval = `${(success.lo * 100).toFixed(1)}% to ${(success.hi * 100).toFixed(1)}%, 95% sampling interval`;
+  const cutNote = cutYears === null ? 'no retired years to measure' : cutYears < 0.005 ? 'never more than 10% under plan' : `under 90% of plan in ${Math.round(cutYears * 100)}% of retired years`;
   return (
     <dl className={cx('mt-4 grid grid-cols-2 gap-x-6 gap-y-4 transition-opacity duration-[var(--duration-slow)] @xl:grid-cols-4', stale && 'opacity-60')} data-testid="headline">
       <Figure
         testId="headline-fi-age"
-        label="Work optional at"
+        label="Work becomes optional"
         note={
           fi.p50 === null
             ? `It happens in only ${ofHundred(h.fi_rate.value).text} lives`
@@ -77,7 +82,20 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
         {fi.p50 === null ? <span className="text-ink-2">No typical age</span> : <AnimatedNumber value={fi.p50} format={(v) => v.toFixed(1)} />}
         {fi.p50 !== null && <span className="ml-1.5 text-sm font-medium text-ink-2">median age</span>}
       </Figure>
-      <Figure testId="headline-success" label="The plan holds in" note={`${(success.lo * 100).toFixed(1)}% to ${(success.hi * 100).toFixed(1)}%, 95% sampling interval`}>
+      <Figure
+        testId="headline-success"
+        label="The plan holds in"
+        note={
+          homeSold >= 0.005 ? (
+            // Success counts a last-resort home sale as holding, so the two are never shown apart.
+            <span title={interval} data-testid="headline-home-sale">
+              but in {ofHundred(homeSold).text} a home is sold as a last resort
+            </span>
+          ) : (
+            interval
+          )
+        }
+      >
         <Lives share={success.value} paths={summary.paths} />
       </Figure>
       <Figure
@@ -90,10 +108,10 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
       <Figure
         testId="headline-spending"
         label="Spending delivered"
-        note={cutYears === null ? 'no retired years to measure' : cutYears < 0.005 ? 'never more than 10% under plan' : `under 90% of plan in ${Math.round(cutYears * 100)}% of retired years`}
+        note={extra !== null && extra >= 0.005 ? `${cutNote}; ${Math.round(extra * 100)}% extra spent above plan` : cutNote}
       >
-        {ratio === null ? <span className="text-ink-2">n/a</span> : <AnimatedNumber value={ratio * 100} format={(v) => `${Math.round(v)}%`} />}
-        {ratio !== null && <span className="ml-1.5 text-sm font-medium text-ink-2">of plan</span>}
+        {delivered === null ? <span className="text-ink-2">n/a</span> : <AnimatedNumber value={delivered * 100} format={(v) => `${v >= 99.5 && v < 100 ? '99' : Math.round(v)}%`} />}
+        {delivered !== null && <span className="ml-1.5 text-sm font-medium text-ink-2">of plan</span>}
       </Figure>
     </dl>
   );
@@ -125,7 +143,7 @@ function HeadlineStrip({ run }: { run: RunState }) {
     <div className="@container relative px-5 pb-4 pt-5 lg:px-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-balance">{name || 'Untitled household'}</h1>
-        <p className={cx('num flex items-center gap-2 text-xs', run.status === 'blocked' || (run.status === 'error' && run.error?.kind !== 'not_implemented') ? 'text-bad' : 'text-ink-3')} role="status" data-testid="run-status">
+        <p className={cx('num text-xs text-pretty [&>span+span]:ml-2', run.status === 'blocked' || (run.status === 'error' && run.error?.kind !== 'not_implemented') ? 'text-bad' : 'text-ink-3')} role="status" data-testid="run-status">
           <span>{statusLine(run)}</span>
           {scenarioCount > 0 && run.status !== 'idle' && (
             <span className="text-ink-3">
@@ -218,6 +236,7 @@ export function ResultsWorkspace() {
   const profile = useProfileStore((s) => s.profile);
   const run = useRunStore();
   const active = useActiveView();
+  const pane = useRef<HTMLElement>(null);
   const view = VIEWS.find((v) => v.id === active) ?? VIEWS[0];
 
   const comparison = useMemo<ScenarioComparison[]>(
@@ -225,15 +244,51 @@ export function ResultsWorkspace() {
     [run.scenarios],
   );
 
+  // A new view starts at its top: just under the tabs, keeping the figures out of the way if they had scrolled off.
+  const viewId = view?.id;
+  useEffect(() => {
+    const el = pane.current;
+    if (!el) return;
+    const head = el.querySelector<HTMLElement>('[data-results-head]');
+    const strip = el.querySelector<HTMLElement>('[data-headline-strip]');
+    const pinned = head ? getComputedStyle(head).display !== 'contents' : true;
+    el.scrollTop = pinned ? 0 : Math.min(el.scrollTop, strip?.offsetHeight ?? 0);
+  }, [viewId]);
+
+  // Whatever is pinned at the top covers that much of the pane: tell the browser, so focus and
+  // scroll-into-view (keyboard users, "show me where") never land underneath it.
+  const hasPlan = profile !== null;
+  useEffect(() => {
+    const el = pane.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const apply = () => {
+      el.style.scrollPaddingTop = `${pinnedHeight(el) + 8}px`;
+    };
+    const observer = new ResizeObserver(apply);
+    const head = el.querySelector('[data-headline-strip]');
+    if (head) observer.observe(head);
+    observer.observe(el);
+    apply();
+    return () => observer.disconnect();
+  }, [hasPlan]);
+
   if (!profile || !view) return <EmptyState icon="folder" title="No plan is open" />;
   const props: ViewProps = { profile, summary: run.summary, comparison, run, pool: getPool() };
   const View = view.Component;
 
   return (
-    <main className="flex h-full min-h-0 min-w-0 flex-col bg-surface-0">
-      <HeadlineStrip run={run} />
-      <Tabs tabs={TABS} active={view.id} onChange={navigateToView} idBase="view" aria-label="Results" className="shrink-0 px-5 lg:px-8" />
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 pb-16 lg:px-8">
+    <main ref={pane} data-results-scroll className="scroll-thin h-full min-w-0 overflow-y-auto bg-surface-0">
+      {/* Pinned on roomy screens. On a phone, or a short window, the figures scroll away and only the tabs stay. */}
+      <div data-results-head className="results-head z-20 bg-surface-0">
+        <div data-headline-strip>
+          <HeadlineStrip run={run} />
+        </div>
+        <div data-results-tabs className="sticky top-0 z-20 bg-surface-0">
+          <Tabs tabs={TABS} active={view.id} onChange={navigateToView} idBase="view" aria-label="Results" className="px-5 lg:px-8" />
+        </div>
+      </div>
+      {/* At least a pane tall, so the scroll position that hides the figures survives a change of view. */}
+      <div className="min-h-full px-5 pb-16 lg:px-8">
         <RunNotice run={run} />
         <TabPanel idBase="view" id={view.id}>
           <Suspense fallback={<ViewFallback />}>

@@ -115,7 +115,25 @@ export interface HeatCell {
 }
 
 /** Flat cells with a 2 px gap in the surface colour, each optionally labelled with its value. */
-export function drawHeatCells(ctx: CanvasRenderingContext2D, cells: readonly HeatCell[], ramp: string[], style: { surface: string; empty: string; font: string; gap?: number }) {
+/**
+ * The printed value of each cell that has room for it, for drawing above anything laid
+ * over the cells (iso-lines): position, text, its colour and the cell's own fill.
+ */
+export function heatCellLabels(cells: readonly HeatCell[], ramp: string[], measure: (text: string, size: number) => number, gap = 2): { x: number; y: number; text: string; size: number; ink: string; fill: string }[] {
+  const out: { x: number; y: number; text: string; size: number; ink: string; fill: string }[] = [];
+  for (const cell of cells) {
+    if (cell.t === null || !cell.label || cell.provisional) continue;
+    const w = Math.max(1, Math.round(cell.x + cell.width) - Math.round(cell.x) - gap);
+    const h = Math.max(1, Math.round(cell.y + cell.height) - Math.round(cell.y) - gap);
+    const size = w >= 44 && h >= 26 ? 11 : 10;
+    if (measure(cell.label, size) > w - 4 || h < size + 4) continue;
+    const fill = rampCss(ramp, cell.t);
+    out.push({ x: Math.round(cell.x) + gap / 2 + w / 2, y: Math.round(cell.y) + gap / 2 + h / 2, text: cell.label, size, ink: inkOn(fill), fill });
+  }
+  return out;
+}
+
+export function drawHeatCells(ctx: CanvasRenderingContext2D, cells: readonly HeatCell[], ramp: string[], style: { surface: string; empty: string; font: string; gap?: number; labels?: boolean }) {
   const gap = style.gap ?? 2;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -134,7 +152,7 @@ export function drawHeatCells(ctx: CanvasRenderingContext2D, cells: readonly Hea
     ctx.fillStyle = fill;
     ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
-    if (cell.label && !cell.provisional) {
+    if (style.labels !== false && cell.label && !cell.provisional) {
       const size = w >= 44 && h >= 26 ? 11 : 10;
       ctx.font = `500 ${size}px ${style.font}`;
       if (ctx.measureText(cell.label).width <= w - 4 && h >= size + 4) {

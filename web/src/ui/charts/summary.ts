@@ -138,11 +138,14 @@ const yearFraction = (ym: string) => {
 /**
  * The moments worth marking on any chart over time: when work becomes optional (median),
  * when retirement typically starts if that differs, when Social Security starts, and
- * when the mortgage is typically paid. Ages are the first person's.
+ * when the mortgage is typically paid. All from the engine's own `plan_moments` (medians
+ * over the lives in which the thing happens); the profile only supplies names and the
+ * difference in birth dates that puts a partner's age on the first person's axis.
  */
 export function planMoments(summary: Summary, profile: Profile): PlanMoment[] {
   const out: PlanMoment[] = [];
   const h = summary.headline;
+  const pm = summary.plan_moments;
   const fi = h.median_fi_age;
   if (fi !== null) out.push({ key: 'fi', age: fi, label: 'Work optional', detail: `median ${fi.toFixed(1)}` });
   const retire = h.median_retirement_age;
@@ -151,24 +154,25 @@ export function planMoments(summary: Summary, profile: Profile): PlanMoment[] {
   const people = profile.household.people;
   const firstBirth = people[0] ? yearFraction(people[0].birth) : null;
   if (firstBirth !== null) {
-    const claims = people
-      .filter((p) => p.social_security?.claim_age)
-      .map((p) => ({ name: p.name, age: yearFraction(p.birth) + (p.social_security.claim_age as number) - firstBirth }))
+    const claims = pm.social_security_claim_age
+      .flatMap((own, i) => {
+        const person = people[i];
+        const share = pm.social_security_claim_share[i] ?? 0;
+        // Marked only when it happens in at least half of lives, and only if it lies ahead.
+        if (own === null || !person || share < 0.5) return [];
+        return [{ name: person.name, own, age: own + yearFraction(person.birth) - firstBirth }];
+      })
+      .filter((c) => c.age > (summary.axis.start_age ?? 0) + 0.5)
       .sort((a, b) => a.age - b.age);
     const earliest = claims[0];
     if (earliest) {
       const together = claims.every((c) => Math.abs(c.age - earliest.age) < 1.5);
-      out.push({ key: 'social_security', age: earliest.age, label: 'Social Security starts', detail: claims.length > 1 && !together && earliest.name ? `${earliest.name} first` : undefined });
+      out.push({ key: 'social_security', age: earliest.age, label: 'Social Security starts', detail: claims.length > 1 && !together && earliest.name ? `${earliest.name} first, at ${Math.round(earliest.own)}` : undefined });
     }
   }
 
-  const mortgage = compositionSeries(summary, 'mortgage');
-  const peak = Math.max(0, ...mortgage.map((v) => v ?? 0));
-  if (peak > 1000) {
-    const peakIndex = mortgage.findIndex((v) => (v ?? 0) >= peak);
-    const paid = mortgage.findIndex((v, i) => i > peakIndex && (v ?? 0) < peak * 0.02);
-    const age = summary.axis.ages[paid];
-    if (paid > 0 && age !== undefined) out.push({ key: 'mortgage_paid', age, label: 'Mortgage paid', detail: 'typically' });
+  if (pm.mortgage_payoff_age !== null && (pm.mortgage_payoff_share ?? 0) >= 0.5) {
+    out.push({ key: 'mortgage_paid', age: pm.mortgage_payoff_age, label: 'Mortgage paid', detail: (pm.mortgage_payoff_share ?? 0) >= 0.9 ? 'typically' : `in ${Math.round((pm.mortgage_payoff_share ?? 0) * 100)} of 100 lives` });
   }
   return out;
 }

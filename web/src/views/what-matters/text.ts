@@ -6,7 +6,7 @@ import { ofHundred } from '@/ui/charts/format';
 import {
   METRICS,
   biggestRisk,
-  biggestWins,
+  topLever,
   formatDelta,
   formatLevel,
   formatMagnitude,
@@ -44,7 +44,7 @@ export function changeClause(metric: MetricId, delta: number): string {
     case 'wealth':
       return `the middle life ends with ${formatMagnitude(metric, delta)} ${delta > 0 ? 'more' : 'less'}`;
     case 'spending':
-      return `retirement spending delivered is ${formatMagnitude(metric, delta)} of plan ${delta > 0 ? 'higher' : 'lower'}`;
+      return `the share of planned retirement spending delivered is ${formatMagnitude(metric, delta)} ${delta > 0 ? 'higher' : 'lower'}`;
   }
 }
 
@@ -79,8 +79,8 @@ export interface Segment {
 
 /** The view's lead sentence: the decision that moves the chosen measure most. */
 export function leadSentence(levers: LeverDef[], effects: ReadonlyMap<string, Effect>, metric: MetricId, paths: number): Segment[] {
-  const wins = biggestWins(levers, effects, metric, 1);
-  const top = wins[0];
+  // Ranked as the tornado ranks: the largest paired change either way, so the lead and the chart's takeaway name the same lever.
+  const top = topLever(levers, effects);
   if (!top || top.effect.delta === null) {
     return [{ text: `None of the decisions tested moves this measure by more than chance can explain at ${count(paths)} lives each.` }];
   }

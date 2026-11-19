@@ -11,11 +11,11 @@ import { Icon, SegmentedControl, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, summaryTime, type TimeRangePreset } from '@/ui/charts';
 import type { ViewProps } from '../types';
 import { FiAgeChart, fiAgeTable, type FiAgeMode } from './FiAgeChart';
-import { FAN_SERIES_LABEL, NetWorthFan, defaultFanScale, fanTable, type FanScale, type FanSeries } from './NetWorthFan';
+import { FAN_SERIES_LABEL, NetWorthFan, defaultFanScale, fanTable, namedLives, type FanScale, type FanSeries, type NamedLife } from './NetWorthFan';
 import { SpendingChart, SpendingLegend, spendingTable } from './SpendingChart';
 import { StatusLegend, StatusStack, statusTable } from './StatusStack';
 import { WhatCouldGoWrong, failureTable } from './WhatCouldGoWrong';
-import { failureTakeaway, fanTakeaway, fiTakeaway, outcomeSentence, samplingNote, spendingTakeaway, statusTakeaway } from './text';
+import { failureTakeaway, fanTakeaway, fiTakeaway, homeSaleSentence, outcomeSentence, samplingNote, spendingTakeaway, statusTakeaway } from './text';
 
 function OverviewSkeleton() {
   return (
@@ -43,6 +43,7 @@ function Sharpness({ run, summary }: { run: RunState; summary: Summary }) {
 function Hero({ summary, profile, run }: { summary: Summary; profile: Profile; run: RunState }) {
   const [mode, setMode] = useState<FiAgeMode>('dots');
   const sentence = useMemo(() => outcomeSentence(summary), [summary]);
+  const homeSale = useMemo(() => homeSaleSentence(summary), [summary]);
   const who = profile.household.people[0]?.name;
   return (
     <div className="grid grid-cols-1 items-start gap-x-12 gap-y-8 @4xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -64,6 +65,11 @@ function Hero({ summary, profile, run }: { summary: Summary; profile: Profile; r
             ),
           )}
         </p>
+        {homeSale && (
+          <p data-testid="home-sale-sentence" className="mt-3 max-w-[34rem] text-base leading-relaxed text-pretty text-ink-2">
+            {homeSale.map((seg, i) => (seg.strong ? <b key={i} className="font-semibold text-ink-1">{seg.text}</b> : <span key={i}>{seg.text}</span>))}
+          </p>
+        )}
         <p className="mt-3 max-w-[34rem] text-xs leading-relaxed text-pretty text-ink-3">{samplingNote(summary)}</p>
       </div>
       <ChartCard
@@ -88,7 +94,7 @@ function Hero({ summary, profile, run }: { summary: Summary; profile: Profile; r
         }
         table={() => fiAgeTable(summary.fi)}
         filename="age-work-becomes-optional"
-        explain={{ context: () => ({ fi_age: summary.headline.fi_age, fi_rate: summary.headline.fi_rate, never: summary.fi.never, paths: summary.paths }) }}
+        explain={{ context: () => ({ home_sale_rate: summary.headline.home_sale_rate, fi_age: summary.headline.fi_age, fi_rate: summary.headline.fi_rate, never: summary.fi.never, paths: summary.paths }) }}
         dimmed={run.stale}
       >
         <FiAgeChart curve={summary.fi} spread={summary.headline.fi_age} ages={summary.axis.ages} years={summary.axis.years} mode={mode} lives={summary.paths} />
@@ -109,7 +115,7 @@ function presets(summary: Summary): TimeRangePreset[] {
   return out;
 }
 
-function LifeLinks({ summary }: { summary: Summary }) {
+function LifeLinks({ summary, onHighlight }: { summary: Summary; onHighlight: (why: NamedLife['why'] | null) => void }) {
   const pick = (label: string) => summary.picks.find((p) => p.label === label);
   const links = [
     { pick: pick('p10'), why: 'p10' as const, text: 'an unlucky life' },
@@ -124,7 +130,15 @@ function LifeLinks({ summary }: { summary: Summary }) {
       {links.map((l, i) => (
         <span key={l.why}>
           {i > 0 && (i === links.length - 1 ? ' or ' : ', ')}
-          <button type="button" className="rounded-xs font-medium text-accent-ink hover:underline" onClick={() => l.pick && navigateToLife(l.pick.path_index, l.why)}>
+          <button
+            type="button"
+            className="rounded-xs font-medium text-accent-ink hover:underline"
+            onClick={() => l.pick && navigateToLife(l.pick.path_index, l.why)}
+            onMouseEnter={() => onHighlight(l.why)}
+            onMouseLeave={() => onHighlight(null)}
+            onFocus={() => onHighlight(l.why)}
+            onBlur={() => onHighlight(null)}
+          >
             {l.text}
           </button>
         </span>
@@ -137,6 +151,8 @@ function LifeLinks({ summary }: { summary: Summary }) {
 export default function OverviewView({ profile, summary, run }: ViewProps) {
   const [series, setSeries] = useState<FanSeries>('net_worth');
   const [chosenScale, setScale] = useState<FanScale | null>(null);
+  const [highlight, setHighlight] = useState<NamedLife['why'] | null>(null);
+  const named = useMemo(() => (summary ? namedLives(summary).length : 0), [summary]);
   const autoScale = useMemo(() => (summary ? defaultFanScale(summary, series) : 'linear'), [summary, series]);
   const scale = chosenScale ?? autoScale;
   const time = useMemo(() => (summary ? summaryTime(summary) : null), [summary]);
@@ -147,7 +163,7 @@ export default function OverviewView({ profile, summary, run }: ViewProps) {
     return run.status === 'running' || run.status === 'queued' ? <OverviewSkeleton /> : null;
   }
   const dimmed = run.stale;
-  const context = () => ({ paths: summary.paths, success_rate: summary.headline.success_rate, median_fi_age: summary.headline.median_fi_age });
+  const context = () => ({ paths: summary.paths, success_rate: summary.headline.success_rate, home_sale_rate: summary.headline.home_sale_rate, median_fi_age: summary.headline.median_fi_age });
 
   return (
     <ChartSyncProvider>
@@ -169,9 +185,9 @@ export default function OverviewView({ profile, summary, run }: ViewProps) {
           caption={
             <>
               Shading shows how likely each level is at that age (darker is more likely, each age scaled to its own peak), over households with someone still alive: the strip beneath shows how many
-              that is. Lines are the median and the 5th, 25th, 75th and 95th percentiles; no single life follows one. The thin grey lines are {summary.samples.length ? 'seven' : 'no'} real simulated
-              lives, hover to pick one out.
-              <LifeLinks summary={summary} />
+              that is. Lines are the median and the 5th, 25th, 75th and 95th percentiles; no single life follows one. The thin grey lines are real simulated lives
+              {named > 0 ? ', the darker ones the named lives below' : ''}: hover to pick one out, click to read it.
+              <LifeLinks summary={summary} onHighlight={setHighlight} />
             </>
           }
           captionText="Shading: likelihood at each age among households with someone alive (darker is more likely). Lines: median and 5th, 25th, 75th, 95th percentiles. Thin grey lines: real simulated lives. Today's dollars."
@@ -204,7 +220,7 @@ export default function OverviewView({ profile, summary, run }: ViewProps) {
           explain={{ context: () => ({ ...context(), series, terminal_net_worth: summary.headline.terminal_net_worth, investable_at_retirement: summary.headline.investable_at_retirement }) }}
           dimmed={dimmed}
         >
-          <NetWorthFan summary={summary} profile={profile} series={series} scale={scale} />
+          <NetWorthFan summary={summary} profile={profile} series={series} scale={scale} highlight={highlight} />
         </ChartCard>
 
         <div className="mt-12 grid grid-cols-1 gap-x-12 gap-y-12 @5xl:grid-cols-2">
@@ -222,12 +238,12 @@ export default function OverviewView({ profile, summary, run }: ViewProps) {
           </ChartCard>
 
           <ChartCard
-            title="Spending delivered against the plan"
+            title="Spending against the plan"
             takeaway={spendingTakeaway(summary)}
-            caption="The dashed line is what the plan intends to spend, averaged over living households (it includes home, healthcare and care costs, so it moves with age). Bands are what lives actually spend. The plan can hold while spending is cut, which is why this chart sits beside the success figure."
+            caption="The dashed line is what the plan intends to spend in the median life (it includes home, healthcare and care costs, so it moves with age). Bands are what lives actually spend; spending above the line is the spending rule sharing good markets, and is counted apart from the share of plan delivered. The plan can hold while spending is cut, which is why this chart sits beside the success figure."
             table={() => spendingTable(summary)}
             filename="spending-by-age"
-            explain={{ context: () => ({ ...context(), delivered_spending_ratio: summary.headline.delivered_spending_ratio, paths_below_90: summary.spending.paths_below_90, paths_below_75: summary.spending.paths_below_75, years_cut: summary.spending.years_cut, worst_cut: summary.spending.worst_cut }) }}
+            explain={{ context: () => ({ ...context(), plan_delivered_share: summary.headline.plan_delivered_share, extra_spending_ratio: summary.headline.extra_spending_ratio, paths_below_90: summary.spending.paths_below_90, paths_below_75: summary.spending.paths_below_75, years_cut: summary.spending.years_cut, worst_cut: summary.spending.worst_cut }) }}
             dimmed={dimmed}
           >
             <div className="mb-2">

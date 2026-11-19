@@ -70,7 +70,7 @@ function Explain({ children }: { children: string | undefined }) {
 }
 
 export function RetirementSection() {
-  const { retirement } = useProfile();
+  const { retirement, properties, events } = useProfile();
   const people = usePeople();
   const { trigger, spending_rule: rule, withdrawal_order: order } = retirement;
   const t = '/retirement/trigger';
@@ -174,6 +174,24 @@ export function RetirementSection() {
           ]}
         />
       </Group>
+
+      {(properties.length > 0 || events.some((e) => e.kind.type === 'buy_home')) && (
+        <Group title="The home as a last resort">
+          <SegmentField
+            path="/retirement/home_equity"
+            label="If savings run out"
+            options={[
+              { value: 'last_resort', label: 'Sell property' },
+              { value: 'never', label: 'Never sell' },
+            ]}
+          />
+          <Explain>
+            {(retirement.home_equity ?? 'last_resort') === 'last_resort'
+              ? 'When every account is empty, property is sold before essentials are cut: a vacation home first, then a rental, then the home, after which the household rents. Such a life counts as the plan holding, so the results always show how often it happens beside the success figure.'
+              : 'Property is never sold to fund spending. A life whose savings run out cuts spending to its income and counts as running short, whatever the home is worth.'}
+          </Explain>
+        </Group>
+      )}
 
       <Group title="Legacy">
         <MoneyField path="/retirement/bequest_target" label="Amount to leave behind" hint="In today's dollars. Zero means spending the last dollar is fine." />

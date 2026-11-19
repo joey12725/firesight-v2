@@ -112,7 +112,7 @@ export function WorstCutChart({ summary }: { summary: Summary }) {
       domain={[0.05, 1]}
       format={percent}
       formatRange={(lo, hi) => `A cut of ${percent(lo)} to ${percent(hi)}`}
-      axis={{ kind: 'value', format: 'percent', title: 'Deepest cut below planned spending in any one year', ticks: [0.2, 0.4, 0.6, 0.8] }}
+      axis={{ kind: 'value', format: 'percent', title: 'Deepest cut below plan in any one year', ticks: [0.2, 0.4, 0.6, 0.8] }}
       noun="Worst single-year cut to retirement spending"
       height={196}
     />
@@ -157,8 +157,52 @@ export function ShortYearsChart({ summary }: { summary: Summary }) {
   );
 }
 
+/** The rate each retired life actually starts on: the first retired year's draw over savings at retirement. */
+export function WithdrawalRateChart({ summary }: { summary: Summary }) {
+  const dist = distribution(summary, 'initial_withdrawal_rate');
+  const dots = useMemo(() => livesDots(dist, summary.paths).map((d) => (d === null ? null : Math.min(d, 0.1499))), [dist, summary.paths]);
+  const percent = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const w = summary.headline.initial_withdrawal_rate;
+  return (
+    <QuantileDots
+      dots={dots}
+      groupOf={(v) => (v === null ? 'never' : null)}
+      groups={[{ key: 'never', label: 'Never retired', side: 'right', hollow: true, note: 'No retirement to draw on savings in.' }]}
+      steps={[0.0025, 0.005, 0.01]}
+      format={percent}
+      formatRange={(lo, hi) => `${percent(lo)} to ${percent(hi)}${hi >= 0.1499 ? ' or more' : ''}`}
+      axis={{ kind: 'value', format: 'percent', title: 'First retired year’s draw, share of savings at retirement' }}
+      noun="Withdrawal rate in the first retired year"
+      interval={{ p10: w.p10, p50: w.p50, p90: w.p90 }}
+      intervalText={w.p10 !== null && w.p50 !== null && w.p90 !== null ? `Median ${percent(w.p50)} · middle 80 of 100 retired lives: ${percent(w.p10)} to ${percent(w.p90)}` : undefined}
+      height={196}
+    />
+  );
+}
+
+/** The age at which a home is sold because savings had run out; most lives never do. */
+export function HomeSaleChart({ summary }: { summary: Summary }) {
+  const dist = distribution(summary, 'home_sale_age');
+  const time = useMemo(() => createTimeAxis({ ages: summary.axis.ages, years: summary.axis.years }), [summary.axis.ages, summary.axis.years]);
+  const dots = useMemo(() => livesDots(dist, summary.paths), [dist, summary.paths]);
+  const range = (lo: number, hi: number) => (hi - lo <= 1.001 ? `Age ${Math.round(lo)}` : `Ages ${Math.round(lo)} to ${Math.round(hi) - 1}`);
+  return (
+    <QuantileDots
+      dots={dots}
+      groupOf={(v) => (v === null ? 'never' : null)}
+      groups={[{ key: 'never', label: 'Never sold', side: 'right', hollow: true, note: 'Savings always cover essentials, or there is no home to sell.' }]}
+      steps={[1, 2, 5]}
+      format={fmtAge}
+      formatRange={range}
+      axis={{ kind: 'age', time }}
+      noun="Age a home is sold as a last resort"
+      height={196}
+    />
+  );
+}
+
 /** One table for the three smaller dot plots: the engine's quantiles of each quantity. */
-export function scalarTable(summary: Summary, scalar: 'terminal_net_worth' | 'lifetime_tax' | 'years_depleted' | 'worst_spending_ratio', caption: string, format: (v: number) => string): TableData {
+export function scalarTable(summary: Summary, scalar: 'terminal_net_worth' | 'lifetime_tax' | 'years_depleted' | 'worst_spending_ratio' | 'initial_withdrawal_rate' | 'home_sale_age', caption: string, format: (v: number) => string): TableData {
   const dist = distribution(summary, scalar);
   const levels = ['1st', '5th', '10th', '25th', 'Median', '75th', '90th', '95th', '99th'];
   return {

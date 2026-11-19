@@ -4,7 +4,7 @@
 import type { Comparison, NullableEstimate, OutcomeComparison, PathScalar, ScalarComparison } from '@/engine/output-types';
 import { Table, Td, Th, cx, moneyCompact } from '@/ui';
 import { ofHundred, useChartTheme, type TableData } from '@/ui/charts';
-import { outcomeOf, scalarOf } from './model';
+import { deltaQuantile, homeSaleOf, outcomeOf, scalarOf } from './model';
 
 type Unit = 'share' | 'age' | 'dollars' | 'years' | 'ratio';
 
@@ -39,7 +39,8 @@ const SCALARS: { scalar: PathScalar; label: string; short: string; unit: Unit; h
   { scalar: 'retirement_age', label: 'Retirement age', short: 'retirement age', unit: 'age', higherIsBetter: null, among: 'where both retire' },
   { scalar: 'investable_at_retirement', label: 'Savings at retirement', short: 'savings at retirement', unit: 'dollars', higherIsBetter: true, among: 'where both retire' },
   { scalar: 'lifetime_spending', label: 'Lifetime spending', short: 'lifetime spending', unit: 'dollars', higherIsBetter: true },
-  { scalar: 'delivered_spending_ratio', label: 'Retirement spending against plan', short: 'spending delivered', unit: 'ratio', higherIsBetter: true, among: 'where both retire' },
+  { scalar: 'plan_delivered_share', label: 'Share of plan delivered in retirement', short: 'the share of plan delivered', unit: 'ratio', higherIsBetter: true, among: 'where both retire' },
+  { scalar: 'extra_spending_ratio', label: 'Extra spending above plan', short: 'extra spending above plan', unit: 'ratio', higherIsBetter: true, among: 'where both retire' },
   { scalar: 'years_below_90', label: 'Years with spending cut over 10%', short: 'years of spending cuts', unit: 'years', higherIsBetter: false },
   { scalar: 'lifetime_tax', label: 'Lifetime tax', short: 'lifetime tax', unit: 'dollars', higherIsBetter: false },
   { scalar: 'terminal_net_worth', label: 'Net worth at the end of life', short: 'wealth at the end', unit: 'dollars', higherIsBetter: true },
@@ -50,6 +51,9 @@ export function metricRows(c: Comparison): MetricRow[] {
   for (const def of OUTCOMES) {
     const o = outcomeOf(c, def.outcome);
     if (o) rows.push({ key: def.outcome, label: def.label, short: def.short, unit: 'share', a: o.a.value, b: o.b.value, delta: o.difference, withinNoise: o.within_noise, higherIsBetter: def.higherIsBetter });
+    // Holding counts a last-resort home sale, so the sale sits directly under it.
+    const sale = def.outcome === 'success' ? homeSaleOf(c) : null;
+    if (sale) rows.push({ key: 'home_sale', label: 'A home is sold as a last resort', short: 'selling a home as a last resort', unit: 'share', a: sale.a, b: sale.b, delta: sale.difference, withinNoise: sale.withinNoise, higherIsBetter: false });
   }
   for (const def of SCALARS) {
     const s: ScalarComparison | null = scalarOf(c, def.scalar);
@@ -66,7 +70,7 @@ export function metricRows(c: Comparison): MetricRow[] {
       withinNoise: s.within_noise,
       higherIsBetter: def.higherIsBetter,
       lives: s.b_higher === null || s.a_higher === null || s.equal === null ? null : { higher: s.b_higher, lower: s.a_higher, equal: s.equal },
-      median: s.quantiles[4] ?? null,
+      median: deltaQuantile(c.quantile_levels, s, 0.5),
     });
   }
   return rows;

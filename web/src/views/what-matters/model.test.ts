@@ -29,6 +29,7 @@ import {
   rankLevers,
   readLevels,
   samplingBand,
+  topLever,
   trimComparison,
   variablesFor,
   type Effect,
@@ -143,6 +144,14 @@ describe('levers and paired effects on real engine output', () => {
     if (risk) expect(risk.effect.delta as number).toBeLessThan(0);
     expect(leadSentence(defs, effects, 'holds', PATHS).map((s) => s.text).join('')).toMatch(/\.$/);
     expect(tornadoTakeaway(defs, effects, PATHS)).toMatch(/\.$/);
+    // The lead sentence and the tornado takeaway rank by one definition, so they name the same lever first.
+    const top = topLever(defs, effects);
+    if (top) {
+      expect(top.lever.id).toBe(loud[0]?.lever.id);
+      const name = top.lever.label.toLowerCase();
+      expect(leadSentence(defs, effects, 'holds', PATHS).map((s) => s.text).join('').toLowerCase()).toContain(name);
+      expect(tornadoTakeaway(defs, effects, PATHS).toLowerCase()).toMatch(new RegExp(`among your decisions, ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    }
   }, 60_000);
 
   it('calls an identical plan no change, never a small effect', () => {

@@ -8,10 +8,11 @@ import type { EnginePool } from '@/engine';
 import type { Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
 import { Icon, count, moneyCompact } from '@/ui';
-import { ChartCard, ChartSyncProvider, Legend, TimeRangeControl, compositionSeries, ofHundred, summaryTime, useChartTheme, type TableData } from '@/ui/charts';
+import { ChartCard, ChartSyncProvider, Legend, TimeRangeControl, compositionSeries, ofHundred, planMoments, summaryTime, useChartTheme, type TableData } from '@/ui/charts';
 import { QuantileDots } from '@/ui/charts/ext/outcomes-QuantileDots';
 import { distribution, livesDots } from '../outcomes/data';
 import { EditLink, SectionHead, Sharpness, ViewSkeleton } from '../outcomes/shared';
+import { METHODOLOGY_URL } from '@/shell/actions';
 import type { ViewProps } from '../types';
 import { AgeSeriesChart, ModelRangeStrip, RecordRanges, TaxLadder, type AgeSeries } from './charts';
 import {
@@ -144,7 +145,8 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
     { key: 'care', label: 'Long-term care', color: theme.categorical[4] ?? theme.ink.secondary, values: compositionSeries(summary, 'spend_long_term_care') },
   ];
   const ssPeak = Math.max(0, ...ss[0]!.values.map((v) => v ?? 0));
-  const ssStart = summary.axis.ages[ss[0]!.values.findIndex((v) => (v ?? 0) > ssPeak * 0.5)];
+  // When benefits typically begin, on the first person's age axis: the engine's median claim, not a reading of the curve.
+  const ssStart = planMoments(summary, profile).find((m) => m.key === 'social_security')?.age;
   const care = careShare(summary);
   const jobs = unemployment(summary);
   const healthPeak = Math.max(0, ...health[0]!.values.map((v, i) => (v ?? 0) + (health[1]!.values[i] ?? 0)));
@@ -180,7 +182,16 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
           </div>
           <p data-testid="assumptions-sentence" className="mt-3 max-w-[48rem] text-2xl font-medium tracking-tight text-pretty text-ink-2 @4xl:text-[1.75rem] @4xl:leading-[2.25rem]">
             Markets follow <b className="font-semibold text-ink-1">{MARKET_NAME[kind].toLowerCase()}</b>
-            {adjustments.length > 0 ? ', adjusted' : ''}; lifespans are <b className="font-semibold text-ink-1">{profile.assumptions.longevity.type === 'stochastic' ? 'drawn from life tables' : `fixed at ${profile.assumptions.longevity.age}`}</b>; tax is{' '}
+            {Math.abs(market.equity_premium_adjustment) > 1e-9 ? (
+              <>
+                , with stocks <b className="font-semibold text-ink-1">{Math.abs(market.equity_premium_adjustment * 100).toFixed(1).replace(/\.0$/, '')} points a year {market.equity_premium_adjustment < 0 ? 'below' : 'above'} the record</b>
+              </>
+            ) : adjustments.length > 0 ? (
+              ', adjusted'
+            ) : (
+              ''
+            )}
+            ; lifespans are <b className="font-semibold text-ink-1">{profile.assumptions.longevity.type === 'stochastic' ? 'drawn from life tables' : `fixed at ${profile.assumptions.longevity.age}`}</b>; tax is{' '}
             <b className="font-semibold text-ink-1">{usLaw ? '2026 US law, kept for ever' : profile.assumptions.taxes.kind.type === 'flat' ? 'a flat rate' : 'ignored'}</b>; {profile.assumptions.career_risk === profile.assumptions.health_risk ? (
               <>
                 job loss and health shocks are <b className="font-semibold text-ink-1">{profile.assumptions.career_risk ? 'simulated' : 'switched off'}</b>.
@@ -206,15 +217,16 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
                 <b className="font-medium text-ink-1">{a.label}:</b> {a.detail}.
               </>
             )),
-            ...(adjustments.length === 0 ? ['No adjustment: expected returns and inflation are history’s.'] : []),
+            ...(adjustments.length === 0 ? ['No adjustment: expected returns and inflation are history’s. The default plans for stocks 1.5 points a year below the US record; this plan has set that to zero, the most generous setting.'] : []),
+            'Two more long-run levels are judgements rather than history: gold is assumed to return 1% a year after inflation and international stocks 1 point less than US stocks; a crypto holding is assumed to return nothing after inflation, at 73% volatility.',
             'Whether the answer depends on this choice can be tested at the foot of the Outcomes view, which runs the plan under all four models.',
           ]}
-          edit={{ path: '/assumptions/market/kind', label: 'Change the market model' }}
+          edit={{ path: '/assumptions/market/equity_premium_adjustment', label: 'Change the market model or the stock-return adjustment' }}
         >
           <ChartCard
             title="What each market model implies for stocks over 30 years"
             takeaway={modelTakeaway(ranges)}
-            caption="Measured once from 5,000 simulated paths per model when the models were calibrated, with no adjustments and five-year blocks for the reshuffle; the bottom row is every 30-year window that actually occurred between 1926 and 2026. Not output of this plan’s run."
+            caption={`Measured once from 5,000 simulated paths per model when the models were calibrated, with no adjustments and five-year blocks for the reshuffle${Math.abs(market.equity_premium_adjustment) > 1e-9 ? `; this plan’s row is those figures moved by its stock-return adjustment of ${(market.equity_premium_adjustment * 100).toFixed(1).replace('-', '−')} points a year` : ''}. The bottom row is every 30-year window that actually occurred between 1926 and 2026. Not output of this plan’s run.`}
             table={() => ({
               caption: 'Real return a year of US stocks over 30 years, by market model (calibration measurements) and in the historical record',
               columns: [{ key: 'model', label: 'Model', align: 'left' as const }, ...(['p5', 'p25', 'p50', 'p75', 'p95'] as const).map((k) => ({ key: k, label: k === 'p50' ? 'Median' : `${k.slice(1)}th percentile`, format: (v: number) => pct(v) }))],
@@ -333,7 +345,7 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
           </ChartCard>
         </Block>
 
-        <Block title="Social Security" statement="Benefits are computed from each person’s earnings as the simulation generates them, by the Social Security Administration’s own formula, so a life with a broken career earns a smaller benefit." facts={socialSecurityFacts(profile)} edit={{ path: '/household/people/0/social_security', label: 'Change claiming ages or the benefit' }}>
+        <Block title="Social Security" statement="Benefits are computed from each person’s earnings as the simulation generates them, by the Social Security Administration’s own formula, so a life with a broken career earns a smaller benefit." facts={socialSecurityFacts(profile, summary.plan_moments)} edit={{ path: '/household/people/0/social_security', label: 'Change claiming ages or the benefit' }}>
           <ChartCard
             title="Social Security income, average by age"
             takeaway={
@@ -416,7 +428,17 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
           )}
         </Block>
 
-        <SectionHead title="What this model does not know">Left out on purpose, or simplified. None of it appears in any figure in the app, so judge the results with it in mind.</SectionHead>
+        <SectionHead
+          title="What this model does not know"
+          aside={
+            <a href={METHODOLOGY_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs text-xs font-medium text-accent-ink hover:underline">
+              About the model: the full methodology
+              <Icon name="arrowRight" size={12} />
+            </a>
+          }
+        >
+          Left out on purpose, or simplified. None of it appears in any figure in the app, so judge the results with it in mind.
+        </SectionHead>
         <div className="mt-6 grid grid-cols-1 gap-x-12 gap-y-8 @2xl:grid-cols-2 @5xl:grid-cols-3">
           {OMISSIONS.map((o) => (
             <section key={o.area}>

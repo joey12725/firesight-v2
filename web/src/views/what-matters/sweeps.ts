@@ -196,6 +196,8 @@ export interface GridCell {
   /** Lives behind this cell. */
   paths: number;
   levels: Levels;
+  /** Share of lives that sell a home as a last resort (counted as holding). */
+  homeSale?: number;
 }
 
 export interface GridRun {
@@ -301,7 +303,7 @@ export class GridSweeper extends Store<GridSweepState> {
           const cells = run.cells.map((row) => [...row]);
           for (const c of batch) {
             const r = results.get(`${c.yi}:${c.xi}`);
-            if (r) (cells[c.yi] as (GridCell | null)[])[c.xi] = { paths: stage.paths, levels: readLevels(r.summary.headline) };
+            if (r) (cells[c.yi] as (GridCell | null)[])[c.xi] = { paths: stage.paths, levels: readLevels(r.summary.headline), homeSale: r.summary.headline.home_sale_rate.value };
           }
           lives += batch.length * stage.paths;
           run = { ...run, cells };

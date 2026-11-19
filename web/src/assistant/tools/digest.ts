@@ -14,10 +14,27 @@ const round = (v: number | null | undefined, dp: number) => {
 };
 
 /** Core's digest of a run, with what the tools add: the id to refer back to it, and its seed. */
-export type RunDigest = { run_id: string; seed: number } & SummaryDigest;
+export type RunDigest = {
+  run_id: string;
+  seed: number;
+  /** Share of lives that sell a home as a last resort. Those lives count as success, so it is reported with it. */
+  home_sale: { p: number; lo: number; hi: number };
+  /** Mean share of planned retirement spending delivered, every retired year weighing the same (never above 1). */
+  plan_delivered: number | null;
+  /** Median first-year withdrawal rate among lives that retire. */
+  initial_withdrawal_rate_p50: number | null;
+} & SummaryDigest;
 
 export function digestRun(engine: Pick<EngineBridge, 'digest'>, run: RunRecord): RunDigest {
-  return { run_id: run.id, seed: run.seed, ...engine.digest(run) };
+  const h = run.summary.headline;
+  return {
+    run_id: run.id,
+    seed: run.seed,
+    ...engine.digest(run),
+    home_sale: { p: round(h.home_sale_rate.value, 3) ?? 0, lo: round(h.home_sale_rate.lo, 3) ?? 0, hi: round(h.home_sale_rate.hi, 3) ?? 0 },
+    plan_delivered: round(h.plan_delivered_share.value, 3),
+    initial_withdrawal_rate_p50: round(h.initial_withdrawal_rate.p50, 4),
+  };
 }
 
 // ---- metrics ------------------------------------------------------------------------
@@ -119,15 +136,16 @@ export interface ComparisonDigest {
   seed: number;
   success: PairedOutcome | null;
   depleted: PairedOutcome | null;
+  /** Share of the paired lives that sell a home as a last resort under A and under B (such lives count as success). */
+  home_sale: { a: number; b: number; delta: number } | null;
   scalars: PairedScalar[];
   /** B minus A on the headline figures of the full runs. */
   headline: { metric: ComparisonMetric; a: number | null; b: number | null; delta: number | null }[];
 }
 
-const SCALARS: PathScalar[] = ['fi_age', 'retirement_age', 'terminal_net_worth', 'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio'];
-/** Core reports the per-life difference at these quantiles, in this order. */
-const DELTA_LEVELS = [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99];
-const at = (quantiles: (number | null)[], level: number) => quantiles[DELTA_LEVELS.indexOf(level)] ?? null;
+const SCALARS: PathScalar[] = ['fi_age', 'retirement_age', 'terminal_net_worth', 'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'extra_spending_ratio'];
+/** A quantile of the per-life difference, found by the levels the Comparison itself states. */
+const at = (levels: readonly number[], quantiles: (number | null)[], level: number) => quantiles[levels.findIndex((l) => Math.abs(l - level) < 1e-9)] ?? null;
 
 function fitHeadline(metric: ComparisonMetric, v: number | null) {
   if (metric.endsWith('_rate') || metric.endsWith('_ratio')) return round(v, 3);
@@ -154,6 +172,15 @@ function outcome(o: OutcomeComparison | undefined): PairedOutcome | null {
   };
 }
 
+/** Home sales under each plan, from the presence counts of the `home_sale_age` scalar. */
+function homeSale(c: Comparison): ComparisonDigest['home_sale'] {
+  const s = c.scalars.find((x) => x.scalar === 'home_sale_age');
+  if (!s || c.paths <= 0) return null;
+  const a = (s.both + s.a_only) / c.paths;
+  const b = (s.both + s.b_only) / c.paths;
+  return { a: round(a, 3) ?? 0, b: round(b, 3) ?? 0, delta: round(b - a, 4) ?? 0 };
+}
+
 /** The part of core's paired comparison (B minus A, life by life) that answers a what-if. */
 export function digestComparison(c: Comparison, seed: number): ComparisonDigest {
   return {
@@ -162,6 +189,7 @@ export function digestComparison(c: Comparison, seed: number): ComparisonDigest 
     seed,
     success: outcome(c.outcomes.find((o) => o.outcome === 'success')),
     depleted: outcome(c.outcomes.find((o) => o.outcome === 'depleted')),
+    home_sale: homeSale(c),
     scalars: c.scalars
       .filter((s) => SCALARS.includes(s.scalar))
       .map((s) => {
@@ -173,9 +201,9 @@ export function digestComparison(c: Comparison, seed: number): ComparisonDigest 
           std_error: fit(s.mean_delta.std_error),
           lo: fit(s.mean_delta.lo),
           hi: fit(s.mean_delta.hi),
-          delta_p10: fit(at(s.quantiles, 0.1)),
-          delta_p50: fit(at(s.quantiles, 0.5)),
-          delta_p90: fit(at(s.quantiles, 0.9)),
+          delta_p10: fit(at(c.quantile_levels, s.quantiles, 0.1)),
+          delta_p50: fit(at(c.quantile_levels, s.quantiles, 0.5)),
+          delta_p90: fit(at(c.quantile_levels, s.quantiles, 0.9)),
           b_higher: round(s.b_higher, 3),
           a_higher: round(s.a_higher, 3),
           within_noise: s.within_noise,

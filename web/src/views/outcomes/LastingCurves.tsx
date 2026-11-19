@@ -4,6 +4,7 @@
 // That last series is the engine's own joint count, not the product of the two curves.
 import { useMemo } from 'react';
 import type { Summary } from '@/engine/output-types';
+import { moneyCompact } from '@/ui';
 import {
   AgeAxis,
   CanvasLayer,
@@ -43,8 +44,9 @@ export function lastingTable(summary: Summary): TableData {
       { key: 'lasted', label: 'Money has lasted this long', format: share },
       { key: 'short', label: 'Alive and short of essentials', format: share },
       { key: 'among', label: 'Short, of those still alive', format: share },
+      { key: 'shortfall', label: 'Their average shortfall against plan, a year', format: moneyCompact },
     ],
-    rows: summary.axis.ages.map((age, y) => ({ age: Math.floor(age), year: summary.axis.years[y] ?? null, alive: m.alive[y] ?? null, lasted: m.lasted[y] ?? null, short: m.short[y] ?? null, among: m.shortAmongLiving[y] ?? null })),
+    rows: summary.axis.ages.map((age, y) => ({ age: Math.floor(age), year: summary.axis.years[y] ?? null, alive: m.alive[y] ?? null, lasted: m.lasted[y] ?? null, short: m.short[y] ?? null, among: m.shortAmongLiving[y] ?? null, shortfall: m.shortfall[y] ?? null })),
   };
 }
 
@@ -162,13 +164,18 @@ export function LastingCurves({ summary }: { summary: Summary }) {
               tooltip={(k) => {
                 const i = index[k] as number;
                 const among = target.shortAmongLiving[i];
+                const depth = target.shortfall[i];
                 return (
                   <>
                     <TipTitle detail={String(time.years[i])}>Age {Math.floor(time.ages[i] as number)}</TipTitle>
                     <TipRow color={theme.baseline.line} label="Money has lasted" value={ofHundred(target.lasted[i] ?? 0).text} />
                     <TipRow color={theme.ink.secondary} label="Someone alive" value={ofHundred(target.alive[i] ?? 0).text} />
                     <TipRow color={theme.status.depleted} swatch="box" label="Alive and short" value={ofHundred(target.short[i] ?? 0).text} strong />
-                    {among !== null && among !== undefined && <TipNote>Of the lives still going at this age, {ofHundred(among).text} are short of essentials.</TipNote>}
+                    {among !== null && among !== undefined && (
+                      <TipNote>
+                        Of the lives still going at this age, {ofHundred(among).text} are short of essentials{depth !== null && depth !== undefined && among > 0 ? `, spending ${moneyCompact(depth)} a year less than planned on average` : ''}.
+                      </TipNote>
+                    )}
                   </>
                 );
               }}

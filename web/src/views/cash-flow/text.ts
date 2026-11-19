@@ -133,7 +133,7 @@ export function taxTakeaway(model: CashFlowModel, summary: Summary): string {
   return `${lead}${retired}.${life}`;
 }
 
-export function ratesTakeaway(model: CashFlowModel): string {
+export function ratesTakeaway(model: CashFlowModel, initial?: { p10: number | null; p50: number | null; p90: number | null }): string {
   const saving: number[] = [];
   model.savingRate.forEach((v, i) => {
     if (v !== null && (model.workingShare[i] ?? 0) >= 0.5) saving.push(v);
@@ -150,5 +150,6 @@ export function ratesTakeaway(model: CashFlowModel): string {
   const late = l === null ? null : model.withdrawalRate[l];
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
   const then = l !== null && l > e + 3 && late !== null && late !== undefined ? `, and ${pct(late)} at ${ageAt(model, l)}` : '';
-  return `${lead} At ${ageAt(model, e)}, early in retirement, the average household draws ${pct(early)} of its savings in a year${then}.`;
+  const first = initial && initial.p50 !== null ? ` The middle retired life starts on ${pct(initial.p50)}${initial.p10 !== null && initial.p90 !== null ? ` (${pct(initial.p10)} to ${pct(initial.p90)} in 8 of 10)` : ''}.` : '';
+  return `${lead} At ${ageAt(model, e)}, early in retirement, the average household draws ${pct(early)} of its savings in a year${then}.${first}`;
 }

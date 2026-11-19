@@ -19,8 +19,9 @@ import { Rank, rankTable } from './Rank';
 import { SameLife } from './SameLife';
 import { StageLegend, StageShift, stageTable } from './StageShift';
 import { METRICS, flipsOf, metricOf, rankRows, scalarOf, stageDiffs } from './model';
+import { scrollResultsTo } from '@/shell/scroll';
 import { useScenarioUi } from './store';
-import { deltaTakeaway, fanTakeaway, flipNote, flipSentence, pairedNote, provisionalSentence, rankTakeaway, stageTakeaway, type Segment } from './text';
+import { deltaTakeaway, fanTakeaway, flipNote, flipSentence, homeSaleLine, pairedNote, provisionalSentence, rankTakeaway, stageTakeaway, type Segment } from './text';
 
 const DELTA_SCALARS = [
   { value: 'terminal_net_worth', label: 'Wealth at the end' },
@@ -77,12 +78,7 @@ function presets(summary: Summary): TimeRangePreset[] {
  * also scrolls the document behind the app shell, which pushes the toolbar off screen.
  */
 function scrollToDetail() {
-  const target = document.getElementById('scenario-detail-title');
-  let pane = target?.parentElement ?? null;
-  while (pane && !(/auto|scroll/.test(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight)) pane = pane.parentElement;
-  if (!target || !pane) return;
-  const top = pane.scrollTop + target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 20;
-  pane.scrollTo({ top, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  scrollResultsTo(document.getElementById('scenario-detail-title'));
 }
 
 function ViewSkeleton() {
@@ -110,6 +106,7 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
   const options = DELTA_SCALARS.filter((o) => (paired ? (scalarOf(paired, o.value)?.both ?? 0) > 0 : true));
   const scalar = paired ? (scalarOf(paired, options.some((o) => o.value === scalarKey) ? scalarKey : (options[0]?.value ?? 'terminal_net_worth')) ?? null) : null;
   const headline = flips ? flipSentence(flips) : provisionalSentence(base, scenario.summary);
+  const saleLine = homeSaleLine(paired, base, scenario.summary);
   const fan = (series: PairedSeries) => (
     <ChartCard
       title={`${PAIRED_LABEL[series]} among the living: the plan against the change`}
@@ -146,6 +143,11 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
       <div className="mt-1 grid grid-cols-1 items-start gap-x-12 gap-y-8 @4xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <div className="min-w-0">
           <Sentence segments={headline} testId="flip-sentence" />
+          {saleLine && (
+            <p data-testid="scenario-home-sale" className="mt-3 max-w-[36rem] text-sm leading-relaxed text-pretty text-ink-2">
+              {saleLine}
+            </p>
+          )}
           <p className="mt-3 max-w-[36rem] text-xs leading-relaxed text-pretty text-ink-3">{flips ? flipNote(flips, name) : `Both plans are living through the same ${count(run.total / Math.max(1, run.scenarios.length + 1))} simulated futures. The two rates above are each still sharpening.`}</p>
           {flips && (
             <ChartCard
@@ -165,15 +167,15 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
         {scalar ? (
           <ChartCard
             title="The difference, life by life"
-            takeaway={deltaTakeaway(scalar)}
+            takeaway={deltaTakeaway(scalar, paired?.quantile_levels ?? [])}
             caption={`${scalar.both < 100 ? `The ${scalar.both} paired lives are drawn as 100 evenly spaced dots, each placed at a difference` : 'Each dot is one of 100 equally likely lives, placed at its own difference'}: that life with the change, minus the same life without it. Hollow dots are lives the change leaves exactly as they were. The axis covers the middle of the range; the most extreme lives at each end are stacked in the end columns.${scalar.unit === 'dollars' ? ' Today’s dollars.' : ''}`}
             controls={<SegmentedControl aria-label="Quantity" size="sm" value={scalar.scalar as DeltaScalar} onChange={setScalarKey} options={options} />}
-            table={() => deltaTable(scalar)}
+            table={() => deltaTable(scalar, paired?.quantile_levels ?? [])}
             filename={`per-life-difference-${scalar.scalar.replace(/_/g, '-')}`}
-            explain={{ context: () => ({ scenario: name, quantity: scalar.scalar, paired: scalar.both, mean_delta: scalar.mean_delta, median_delta: scalar.quantiles[4], p10_delta: scalar.quantiles[2], p90_delta: scalar.quantiles[6], share_higher: scalar.b_higher, share_lower: scalar.a_higher, share_unchanged: scalar.equal, within_noise: scalar.within_noise }) }}
+            explain={{ context: () => ({ scenario: name, quantity: scalar.scalar, paired: scalar.both, mean_delta: scalar.mean_delta, quantile_levels: paired?.quantile_levels, delta_quantiles: scalar.quantiles, share_higher: scalar.b_higher, share_lower: scalar.a_higher, share_unchanged: scalar.equal, within_noise: scalar.within_noise }) }}
             dimmed={pairedDimmed}
           >
-            <DeltaDots scalar={scalar} />
+            <DeltaDots scalar={scalar} levels={paired?.quantile_levels ?? []} />
           </ChartCard>
         ) : (
           <div className="min-w-0" aria-busy="true">
@@ -252,7 +254,7 @@ export default function ScenariosView({ profile, summary, comparison: ran, run, 
       <div className="@container mx-auto max-w-[76rem] pb-8 pt-7">
         <header>
           <p className="eyebrow">Scenarios</p>
-          <h1 className="mt-3 max-w-[40rem] text-2xl font-medium tracking-tight text-pretty text-ink-1 @4xl:text-[1.75rem] @4xl:leading-[2.25rem]">If I change this decision, what happens to the same simulated lives?</h1>
+          <p data-testid="scenarios-lead" className="mt-3 max-w-[40rem] text-2xl font-medium tracking-tight text-pretty text-ink-1 @4xl:text-[1.75rem] @4xl:leading-[2.25rem]">If I change this decision, what happens to the same simulated lives?</p>
           <p className="mt-3 max-w-[40rem] text-sm leading-relaxed text-pretty text-ink-2">
             Every scenario lives through exactly the futures the plan does: the same markets, jobs, health and lifespans, life for life. So a difference between them is the decision itself and never market luck, and each
             life can be asked what the change did to it.

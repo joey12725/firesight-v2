@@ -75,6 +75,11 @@ await timeline.scrollIntoViewIfNeeded();
 const tb = await timeline.boundingBox();
 await page.mouse.click(tb.x + tb.width * 0.3, tb.y + tb.height / 2);
 await page.waitForTimeout(400);
+// The year under the first click can be the one already open (the ledger opens on the retirement year): try another.
+if ((await inspector.getAttribute('aria-label')) === label0) {
+  await page.mouse.click(tb.x + tb.width * 0.7, tb.y + tb.height / 2);
+  await page.waitForTimeout(400);
+}
 check((await inspector.getAttribute('aria-label')) !== label0, 'clicking the timeline opens that year in the inspector');
 check((await inspector.locator('table').count()) === 1, 'the year has a tax return');
 await page.getByTestId('life-narrative').locator('a').nth(2).click();
@@ -82,7 +87,7 @@ await page.waitForTimeout(600);
 check(true, 'narrative sentences are links to years');
 await go('/life-stories?path=999999&why=sample');
 await page.waitForTimeout(1500);
-check((await page.getByText(/outside the/).count()) > 0, 'a path outside the run is flagged');
+check((await page.getByText(/There is no life #999,999 in this run/).count()) > 0 && (await page.getByTestId('life-headline').count()) === 0, 'a path outside the run is refused, not replayed');
 await page.screenshot({ path: `${shots}/life-stories-interact-out-of-range.png` });
 
 // ---- a tiny sample ----

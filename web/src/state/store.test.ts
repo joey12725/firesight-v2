@@ -130,6 +130,26 @@ describe('profile store', () => {
     expect(store().moveLastEditToScenario().ok).toBe(false);
   });
 
+  it('promotes a scenario to the plan as one undo step', () => {
+    const original = store().profile!.retirement.bequest_target;
+    store().addScenario({ name: 'Leave more', patch: [set('/retirement/bequest_target', 750_000)] });
+    store().addScenario({ name: 'Other', patch: [set('/spending/lifestyle_creep', 0)] });
+    const before = store().past.length;
+    expect(store().promoteScenario('leave_more').ok).toBe(true);
+    expect(store().profile!.retirement.bequest_target).toBe(750_000);
+    expect(store().scenarios.map((x) => x.id)).toEqual(['other']);
+    expect(store().past.length).toBe(before + 1);
+    // The remaining scenario now resolves against the new plan.
+    expect(store().resolved.other?.profile?.retirement.bequest_target).toBe(750_000);
+    store().undo();
+    expect(store().profile!.retirement.bequest_target).toBe(original);
+    expect(store().scenarios.map((x) => x.id)).toEqual(['leave_more', 'other']);
+    store().redo();
+    expect(store().profile!.retirement.bequest_target).toBe(750_000);
+    expect(store().scenarios.map((x) => x.id)).toEqual(['other']);
+    expect(store().promoteScenario('nope').ok).toBe(false);
+  });
+
   it('previews without committing', () => {
     const before = store().profile;
     const preview = store().preview([set('/portfolio/target', { us_stocks: 50, crypto: 50 })]);

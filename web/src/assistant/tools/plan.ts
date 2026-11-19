@@ -46,7 +46,7 @@ export const SCHEMA_TYPES = [
   'Healthcare', 'HealthcareMode', 'EarlyRetirementCoverage', 'PlanTier', 'Account', 'AccountKind', 'CashYield', 'Allocation', 'PortfolioPolicy',
   'GlidePath', 'GlidePoint', 'Rebalance', 'AssetLocation', 'CustomAsset', 'SingleStock', 'Property', 'PropertyUse', 'Mortgage', 'Debt',
   'DebtKind', 'DebtPolicy', 'DebtStrategy', 'LifeEvent', 'EventKind', 'CostOfLivingChange', 'Financing', 'IncomeChangeKind', 'SpendingTarget',
-  'SpendingChangeKind', 'RetirementPlan', 'RetirementTrigger', 'WealthBasis', 'SpendingRule', 'WithdrawalOrder', 'EarlyAccess', 'Assumptions',
+  'SpendingChangeKind', 'RetirementPlan', 'RetirementTrigger', 'WealthBasis', 'SpendingRule', 'WithdrawalOrder', 'EarlyAccess', 'HomeEquity', 'Assumptions',
   'MarketModel', 'MarketKind', 'Stress', 'TaxModel', 'TaxKind', 'SocialSecurityHaircut', 'Longevity', 'SimulationSettings',
 ] as const;
 

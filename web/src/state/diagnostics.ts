@@ -3,15 +3,17 @@
 import { aggregatorStats, getPool } from '@/engine';
 import { useProfileStore } from './profile-store';
 import { useRunStore } from './run-store';
+import { useSettings } from './settings-store';
 
 export interface Diagnostics {
   run: typeof useRunStore;
   plan: typeof useProfileStore;
+  settings: typeof useSettings;
   stats: typeof aggregatorStats;
   pool: () => ReturnType<typeof getPool>;
 }
 
 export function installDiagnostics() {
-  const diagnostics: Diagnostics = { run: useRunStore, plan: useProfileStore, stats: aggregatorStats, pool: getPool };
+  const diagnostics: Diagnostics = { run: useRunStore, plan: useProfileStore, settings: useSettings, stats: aggregatorStats, pool: getPool };
   (window as unknown as { __firesight: Diagnostics }).__firesight = diagnostics;
 }

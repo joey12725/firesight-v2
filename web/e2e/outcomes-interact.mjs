@@ -39,6 +39,8 @@ try {
 
   // A tiny sample: every chart still draws, the page says how rough it is.
   await done(page, 60);
+  // The household is written to this browser a moment after each change; let that land before reloading.
+  await page.waitForTimeout(1200);
   await page.goto(`${base}/outcomes`);
   await done(page, 60);
   await page.getByTestId('range-sentence').waitFor();

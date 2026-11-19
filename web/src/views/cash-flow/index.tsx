@@ -209,15 +209,15 @@ export default function CashFlowView({ profile, summary, run }: ViewProps) {
 
           <ChartCard
             title="How fast money is saved, then drawn"
-            takeaway={ratesTakeaway(model)}
-            caption="Saved: all saving, employer money included, over gross income, drawn while at least a quarter of living households still work. Drawn: withdrawals less anything saved, over investable assets a year earlier, drawn once at least a quarter have retired. Both are ratios of averages, not the rate of any one life; the dashed line is the 4% rule of thumb."
+            takeaway={ratesTakeaway(model, summary.headline.initial_withdrawal_rate)}
+            caption="Saved: all saving, employer money included, over gross income, drawn while at least a quarter of living households still work. Drawn: withdrawals less anything saved, over investable assets a year earlier, drawn once at least a quarter have retired. Both are ratios of averages, not the rate of any one life; the dashed line is the 4% rule of thumb, and the marker is what the middle retired life actually draws in its first retired year."
             table={() => ratesTable(model)}
             filename="saving-and-withdrawal-rates"
-            explain={{ context: () => ({ ...context(), saving_rate_now: model.savingRate[model.flowStart], withdrawal_rate_in_retirement: r === null ? null : model.withdrawalRate[r] }) }}
+            explain={{ context: () => ({ ...context(), saving_rate_now: model.savingRate[model.flowStart], withdrawal_rate_in_retirement: r === null ? null : model.withdrawalRate[r], initial_withdrawal_rate: summary.headline.initial_withdrawal_rate }) }}
             dimmed={dimmed}
           >
             <RatesLegend />
-            <RatesChart model={model} moments={moments} />
+            <RatesChart model={model} moments={moments} initial={summary.headline.initial_withdrawal_rate.p50 !== null && summary.headline.median_retirement_age !== null ? { rate: summary.headline.initial_withdrawal_rate.p50, age: summary.headline.median_retirement_age } : null} />
           </ChartCard>
         </div>
 
@@ -225,14 +225,14 @@ export default function CashFlowView({ profile, summary, run }: ViewProps) {
           <ChartCard
             title="Tax, year by year"
             takeaway={taxTakeaway(model, summary)}
-            caption={`Tax in the year it is paid: withholding and estimates during the year, the balance of the return the following April. Payroll tax is Social Security, Medicare and self-employment tax.${abroad ? ' While the household lives outside the US its income tax there is counted with state tax.' : ''} The strip beneath is total tax over all money coming in, withdrawals included, since in retirement taxable income and money in hand are very different things. The simulation does not yet report taxable income against the bracket thresholds across all lives; Life stories shows each year’s bracket for one life.`}
-            table={() => taxTable(model)}
+            caption={`Tax in the year it is paid: withholding and estimates during the year, the balance of the return the following April. Payroll tax is Social Security, Medicare and self-employment tax.${abroad ? ' While the household lives outside the US its income tax there is counted with state tax.' : ''} The dark line is the tax the middle life pays that year (the median), which sits below the top of the stack when a few lucky lives lift the average. The strip beneath is total tax over all money coming in, withdrawals included, since in retirement taxable income and money in hand are very different things. The simulation does not yet report taxable income against the bracket thresholds across all lives; Life stories shows each year’s bracket for one life.`}
+            table={() => taxTable(model, summary)}
             filename="tax-by-age"
             explain={{ context: () => ({ ...context(), lifetime_tax: summary.headline.lifetime_tax, tax_share_now: model.taxShare[model.flowStart], tax_share_in_retirement: r === null ? null : model.taxShare[r] }) }}
             dimmed={dimmed}
           >
-            <TaxLegend model={model} />
-            <TaxChart model={model} />
+            <TaxLegend model={model} summary={summary} />
+            <TaxChart model={model} summary={summary} />
           </ChartCard>
           <LifetimeTax summary={summary} />
         </div>

@@ -102,6 +102,11 @@ interface ProfileState {
   addScenario: (input: { name: string; patch: PatchOp[]; enabled?: boolean }) => EditResult & { id?: string };
   updateScenario: (id: string, change: Partial<Pick<Scenario, 'name' | 'patch' | 'enabled'>>) => EditResult;
   removeScenario: (id: string) => void;
+  /**
+   * Makes a scenario the plan: its patch is applied to the baseline and the scenario is
+   * retired, as one history entry, so a single undo restores both.
+   */
+  promoteScenario: (id: string) => EditResult;
   setEditTarget: (target: EditTarget) => void;
   /** Undoes the most recent baseline edit and re-creates it as a scenario. */
   moveLastEditToScenario: (name?: string) => EditResult & { id?: string };
@@ -331,6 +336,21 @@ export const useProfileStore = create<ProfileState>((set, get) => {
         { label: `Remove scenario "${scenario.name}"`, key: null, ops: [], target: 'base' },
       );
       if (get().editTarget === id) set({ editTarget: 'base' });
+    },
+
+    promoteScenario: (id) => {
+      const s = get();
+      const scenario = s.scenarios.find((x) => x.id === id);
+      if (!s.profile || !scenario) return { ok: false, error: `There is no scenario "${id}".` };
+      try {
+        const r = applyPatch(s.profile, scenario.patch);
+        const report = { errors: r.errors, warnings: r.warnings };
+        commit({ profile: r.profile, scenarios: s.scenarios.filter((x) => x.id !== id), report }, { label: `Make “${scenario.name}” the plan`, key: null, ops: scenario.patch, target: 'base' });
+        if (get().editTarget === id) set({ editTarget: 'base' });
+        return { ok: true, report };
+      } catch (error) {
+        return { ok: false, error: toEngineError(error).message };
+      }
     },
 
     setEditTarget: (target) => {

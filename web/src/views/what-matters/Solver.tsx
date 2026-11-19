@@ -84,7 +84,8 @@ export function ProbeChart({ probes, goal, variable, outcome }: { probes: Probe[
                   if (p.level.value === null) return null;
                   const px = x(p.x);
                   const py = y(p.level.value);
-                  const labelled = px - lastLabel >= 14;
+                  // Wide enough for two two-digit numbers side by side with air between them.
+                  const labelled = px - lastLabel >= 20;
                   if (labelled) lastLabel = px;
                   return (
                     <g key={p.order}>

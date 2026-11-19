@@ -1,6 +1,7 @@
 // The quantities `solve` and `sweep` can vary: a few named ones that move several
 // fields together, or any single numeric field by its patch path.
 import { budgetTotals } from '@/editor/labels';
+import type { PlanPreview } from '@/engine/output-types';
 import type { PatchOp, Profile } from '@/engine/types';
 import { getAt } from '@/state/pointer';
 import type { JsonSchema } from '../agent/validate-input';
@@ -21,6 +22,8 @@ export interface Variable {
   current: number | null;
   bounds: [number, number];
   tolerance: number;
+  /** What the quantity includes, for the model to repeat when it reports a value. */
+  note?: string;
   ops(value: number): PatchOp[];
 }
 
@@ -29,14 +32,19 @@ export const VARIABLE_SCHEMA_PROPERTIES: Record<string, JsonSchema> = {
     type: 'string',
     enum: VARIABLES,
     description:
-      "annual_spending: the whole budget in today's dollars a year (every line scaled together). retirement_age: the first person's retirement age (sets the trigger to retire at that age). withdrawal_rate: the rate in a when_funded retirement trigger. salary_scale: a multiplier on every salary (1 = today).",
+      "annual_spending: all-in spending this year in today's dollars, the same figure as preview.annual_spending in get_plan (the budget lines are scaled together; home, modelled healthcare, children and debt costs stay as they are). retirement_age: the first person's retirement age (sets the trigger to retire at that age). withdrawal_rate: the rate in a when_funded retirement trigger. salary_scale: a multiplier on every salary (1 = today).",
   },
   path: { type: 'string', description: 'Instead of variable: the patch path of one numeric field to vary, e.g. /portfolio/expense_ratio or /incomes/@alex_job/kind/salary.' },
 };
 
 const round = (v: number, step: number) => Math.round(v / step) * step;
 
-export function resolveVariable(profile: Profile, input: VariableInput): Variable {
+/**
+ * `preview` is core's plan preview for `profile` (null when it cannot be compiled). It
+ * makes `annual_spending` the same all-in figure the plan view and the app report, so a
+ * solved spending level can be set beside every other spending number without a caveat.
+ */
+export function resolveVariable(profile: Profile, input: VariableInput, preview: Pick<PlanPreview, 'annual_spending'> | null = null): Variable {
   if (input.variable && input.path) throw new ToolError('Give either variable or path, not both.');
   if (input.path) {
     const current = getAt(profile, input.path);
@@ -58,13 +66,30 @@ export function resolveVariable(profile: Profile, input: VariableInput): Variabl
     case 'annual_spending': {
       const now = budgetTotals(profile).now;
       if (!(now > 0)) throw new ToolError('The plan has no budget lines, so spending cannot be varied. Add spending first.');
+      // All-in spending is the budget lines plus costs the engine adds (home, modelled healthcare, children,
+      // debt payments). Only the budget lines scale; the rest stays as it is.
+      const fixed = preview ? Math.max(0, preview.annual_spending - now) : 0;
+      const scale = (value: number) => {
+        if (value <= fixed) {
+          throw new ToolError(
+            `annual_spending is all-in spending this year. ${Math.round(fixed).toLocaleString('en-US')} of it is home, healthcare, children and debt costs that this variable does not change, so it cannot go to ${Math.round(value).toLocaleString('en-US')}. Use values above that.`,
+          );
+        }
+        return (value - fixed) / now;
+      };
       return {
-        label: "Annual spending (today's dollars)",
+        label: preview ? "Annual spending, all-in (today's dollars)" : "Annual budget lines only (today's dollars; all-in spending is unavailable for this plan)",
         unit: 'dollars',
-        current: Math.round(now),
-        bounds: [round(now * 0.5, 100), round(now * 1.5, 100)],
+        current: Math.round(now + fixed),
+        bounds: [round(fixed + now * 0.5, 100), round(fixed + now * 1.5, 100)],
         tolerance: Math.max(100, round(now * 0.005, 100)),
-        ops: (value) => profile.spending.items.map((item, i) => ({ op: 'set', path: `/spending/items/${i}/amount`, value: (item.amount * value) / now })),
+        note: preview
+          ? `All-in spending this year, the same figure as preview.annual_spending in get_plan: budget lines of ${Math.round(now).toLocaleString('en-US')} plus ${Math.round(fixed).toLocaleString('en-US')} of home, modelled healthcare, children and debt costs. Only the budget lines are scaled.`
+          : undefined,
+        ops: (value) => {
+          const k = scale(value);
+          return profile.spending.items.map((item, i) => ({ op: 'set', path: `/spending/items/${i}/amount`, value: item.amount * k }));
+        },
       };
     }
     case 'retirement_age': {
