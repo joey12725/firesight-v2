@@ -6,7 +6,7 @@ import type { Summary } from '@/engine/output-types';
 import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { ExampleProfile } from '@/engine/types';
 import { layoutFlow, type FlowNode } from '@/ui/charts/ext/cashflow-FlowDiagram';
-import { MIN_ALIVE, cashFlowModel, handoverIndex, sharesOfUses, yearNodes } from './model';
+import { MIN_ALIVE, cashFlowModel, handoverIndex, livesAbroad, sharesOfUses, yearNodes } from './model';
 import { accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, lower, plain, ratesTakeaway, taxTakeaway, yearTakeaway } from './text';
 
 const summaries = new Map<string, Summary>();
@@ -169,5 +169,19 @@ describe('layoutFlow', () => {
     const layout = layoutFlow([node('in', 0)], [node('out', 0)], options);
     expect(layout.scale).toBe(0);
     expect(layout.sources[0]?.labelY).toBeNull();
+  });
+});
+
+describe('foreign income tax', () => {
+  it('is named when the plan moves the household abroad, and only then', () => {
+    const profiles = new Map((JSON.parse(wasm.exampleProfiles()) as ExampleProfile[]).map((e) => [e.slug, e.profile]));
+    const landlord = profiles.get('side-hustle-landlord') as Parameters<typeof livesAbroad>[0];
+    const family = profiles.get('dual-income-family') as Parameters<typeof livesAbroad>[0];
+    expect(livesAbroad(landlord)).toBe(true);
+    expect(livesAbroad(family)).toBe(false);
+    const abroad = cashFlowModel(summaries.get('side-hustle-landlord') as Summary, { abroad: true });
+    expect(abroad.taxes.find((g) => g.key === 'tax_state')?.label).toBe('State and foreign income tax');
+    expect(yearNodes(abroad, { abroad: true }).uses.find((n) => n.key === 'out:tax_state')?.label).toBe('State and foreign tax');
+    expect(cashFlowModel(summaries.get('dual-income-family') as Summary).taxes.every((g) => g.label !== 'State and foreign income tax')).toBe(true);
   });
 });

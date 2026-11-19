@@ -125,6 +125,19 @@ describe('describing a patch', () => {
     expect(lines[0]?.ops.length).toBe(quick?.patch.length);
   });
 
+  it('says so when the plan already has what the scenario sets', () => {
+    // After a scenario is made the plan, a copy of it changes nothing: no "68k → 68k (+0%)".
+    const profile = demo('dual-income-family');
+    const quick = quickScenarios(profile, null).find((q) => q.key === 'spend_less');
+    const promoted = applyPatch(profile, quick?.patch ?? []).profile;
+    const budget = describePatch(promoted, quick?.patch ?? [], applyPatch(promoted, quick?.patch ?? []).profile);
+    expect(budget).toHaveLength(1);
+    expect(budget[0]?.before).toBeNull();
+    expect(budget[0]?.after).toMatch(/^\$\d+k a year in retirement, which the plan already has$/);
+    const claim = describePatch(profile, [{ op: 'set', path: '/household/people/0/social_security/claim_age', value: 67 }], null);
+    expect(claim.map(lineText)).toEqual(['Priya: Social Security claim age: 67, which the plan already has']);
+  });
+
   it('puts tagged values, removals and additions into words', () => {
     const profile = demo('dual-income-family');
     const quick = quickScenarios(profile, run(profile).summary);
@@ -199,6 +212,11 @@ describe('paired statistics', () => {
     expect(binDeltas([0, 0, null], 8)).toMatchObject({ bins: [], unchanged: 2, total: 2 });
     // A tolerance folds changes too small to matter into "unchanged".
     expect(binDeltas([-200, 3, 900], 8, 500).unchanged).toBe(2);
+    // The engine's exact share of unchanged lives decides how many dots are hollow (the ones nearest zero), so the plot agrees with the sentence above it.
+    const forced = binDeltas([-300, -2, 0, 0, 1, 700, 900, 1200, 1500, 2000], 8, 500, 0.2);
+    expect(forced.unchanged).toBe(2);
+    expect(forced.bins.reduce((n, b) => n + b.count, 0)).toBe(8);
+    expect(binDeltas([0, 0, 0, 50], 8, 0, 0.5).unchanged).toBe(2);
     // An extreme life is gathered into an open end bin, not allowed to stretch the axis.
     const skewed = binDeltas([...Array.from({ length: 99 }, (_, i) => i + 1), 1_000_000], 10);
     expect(skewed.bins.reduce((n, b) => n + b.count, 0)).toBe(100);
@@ -215,6 +233,7 @@ describe('paired statistics', () => {
       if (!s || s.dots.length === 0) continue;
       const m = binDeltas(s.dots, 20);
       expect(m.bins.reduce((n, b) => n + b.count, 0) + m.unchanged, scalar).toBe(s.dots.filter((d) => d !== null).length);
+      if (s.equal !== null) expect(binDeltas(s.dots, 20, 500, s.equal).unchanged, `${scalar} hollow dots match the engine's share`).toBe(Math.round(s.equal * s.dots.filter((d) => d !== null).length));
       expect(deltaTakeaway(s)).toMatch(/^(With the change|The change leaves|No simulated life)/);
     }
   });

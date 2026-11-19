@@ -33,7 +33,7 @@ export function ProbeChart({ probes, goal, variable, outcome }: { probes: Probe[
   const goalText = `Goal: ${goal.id === 'holds' ? 'at least ' : 'at most '}${formatLevel(goal.metric, goal.target)}`;
 
   return (
-    <ChartFrame height={(w) => Math.min(300, Math.max(220, w * 0.42))} margin={{ top: 30, right: 16, bottom: 40, left: 52 }} aria-label={`Values of ${variable.label.toLowerCase()} tested, against ${def.axis.toLowerCase()}`}>
+    <ChartFrame height={(w) => Math.min(316, Math.max(236, w * 0.42 + 16))} margin={{ top: 46, right: 16, bottom: 40, left: 52 }} aria-label={`Values of ${variable.label.toLowerCase()} tested, against ${def.axis.toLowerCase()}`}>
       {({ plot, theme }) => {
         const x = linearScale(bounds, [plot.x + 10, plot.right - 10]);
         const y = linearScale([y0, y1], [plot.bottom, plot.y]);

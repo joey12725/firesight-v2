@@ -3,12 +3,12 @@ import type { AssistantChartProps } from '@/assistant/charts';
 import { ChartSyncProvider, useChartTheme } from '@/ui/charts';
 import { StackLegend } from '@/ui/charts/ext/cashflow-StackedAreas';
 import { MoneyFlows } from '../charts';
-import { cashFlowModel } from '../model';
+import { cashFlowModel, livesAbroad } from '../model';
 
 /** `cash_flow` in the assistant's conversation: average money in (above the line) and money out (below) by age. */
-export default function CashFlowCompact({ summary }: AssistantChartProps) {
+export default function CashFlowCompact({ summary, profile }: AssistantChartProps) {
   const theme = useChartTheme();
-  const model = useMemo(() => (summary ? cashFlowModel(summary) : null), [summary]);
+  const model = useMemo(() => (summary ? cashFlowModel(summary, { abroad: profile ? livesAbroad(profile) : false }) : null), [summary, profile]);
   if (!model) return null;
   const legend = (groups: typeof model.moneyIn) => groups.map((g) => ({ key: g.key, label: g.short, color: theme.categorical[g.color] as string, values: g.values }));
   return (

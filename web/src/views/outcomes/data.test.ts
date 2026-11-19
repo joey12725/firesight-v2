@@ -174,6 +174,12 @@ describe('historical cohorts', () => {
     expect(rows.find((r) => r.year === 1930)?.wraps).toBe(false);
     expect(rows.find((r) => r.year === 2020)?.wraps).toBe(true);
     expect(cohortTakeaway(rows)).not.toMatch(/NaN|undefined|null/);
+    // A worse year past the end of the record is reported as a caveat, never as the headline.
+    const year = (y: number, short: number, wraps: boolean) => ({ year: y, lives: 10, short, shortShare: short / 10, medianWealth: 1, wraps });
+    const made = cohortTakeaway([year(1926, 0, false), year(1927, 1, false), year(1928, 4, false), year(1929, 5, false), year(1930, 0, false), year(1931, 0, false), year(1990, 9, true)]);
+    expect(made).toContain('between 1928 and 1929 fare worst: of those starting in 1929, 5 of 10 run short');
+    expect(made).toContain('In 3 of 6 such starting years, none do.');
+    expect(made).toContain('Later starts look worse (1990: 9 of 10)');
   }, 60_000);
 
   it('changes only the market model', () => {
@@ -232,6 +238,13 @@ describe('assumptions', () => {
         expect(p.expected).toBeGreaterThan(70);
         expect(p.survival[0]).toBeGreaterThan(0.9);
         if (p.reach.half !== null) expect(p.reach.half).toBeGreaterThan(70);
+      }
+      // The ages outlived are the engine's own quantiles of age at death, not a reading off the yearly curve.
+      const first = people[0];
+      const deaths = distribution(summary, 'death_age_0');
+      if (first && deaths && (first.survival.at(-1) ?? 0) < 0.25) {
+        expect(first.reach.half).toBe(deaths.quantiles[4]);
+        expect(first.reach.quarter).toBe(deaths.quantiles[5]);
       }
     });
   });

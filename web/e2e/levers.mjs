@@ -34,7 +34,7 @@ for (const theme of themes) {
       await page.getByTestId('lead-sentence').waitFor({ timeout: 60_000 });
       const first = Date.now() - t0;
       // Tall window so the whole view is laid out (and the map scrolls into view and starts).
-      await page.setViewportSize({ width, height: 4200 });
+      await page.setViewportSize({ width, height: vp === 'phone' ? 6400 : 4200 });
       await page.waitForFunction(() => !/Sharpening|Early picture|Simulating|Updating/.test(document.querySelector('[role=tabpanel]')?.textContent ?? ''), null, { timeout: 240_000 });
       const settled = Date.now() - t0;
       timings.push(`${slug} ${vp} ${theme}: first tornado ${first} ms, all sweeps settled ${settled} ms`);

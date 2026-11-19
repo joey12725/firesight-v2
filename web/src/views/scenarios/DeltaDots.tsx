@@ -73,7 +73,7 @@ function Plot({ frame, scalar, compact }: { frame: Frame; scalar: ScalarComparis
   const words = scalarWords(scalar.scalar);
   const tolerance = deltaTolerance(scalar);
   const columns = Math.max(8, Math.min(26, Math.floor(plot.width / 15)));
-  const model = useMemo(() => binDeltas(scalar.dots, columns, tolerance), [scalar.dots, columns, tolerance]);
+  const model = useMemo(() => binDeltas(scalar.dots, columns, tolerance, scalar.equal), [scalar.dots, columns, tolerance, scalar.equal]);
   const { bins, unchanged, total, domain, step } = model;
 
   if (total === 0) {
@@ -110,7 +110,7 @@ function Plot({ frame, scalar, compact }: { frame: Frame; scalar: ScalarComparis
   const x = (v: number) => {
     const c = Math.min(domain[1], Math.max(domain[0], v));
     if (Math.abs(v) <= tolerance) return zeroCentre;
-    return c < 0 ? plot.x + ((c - domain[0]) / -domain[0]) * leftWidth : zeroRight + (c / domain[1]) * (usable - leftWidth);
+        return c < 0 ? plot.x + ((c - domain[0]) / -domain[0]) * leftWidth : zeroRight + (c / domain[1]) * (usable - leftWidth);
   };
   const r = diameter / 2 - 0.75;
   const base = plot.bottom - 1;

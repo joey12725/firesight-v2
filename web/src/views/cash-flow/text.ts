@@ -97,7 +97,9 @@ export function balanceTakeaway(model: CashFlowModel, summary: Summary): string 
   const hold = biggest ? `, ${Math.round(share(biggest.values[at] ?? 0, assets) * 100)}% of it in ${lower(biggest.label)}` : '';
   const pulled =
     median === null || median === undefined ? '' : mean > median * 1.15 ? ` The middle life has ${moneyCompact(median)}: the average is pulled up by the luckiest lives.` : ` The middle life has ${moneyCompact(median)}.`;
-  return `At ${ageAt(model, at)} the average household owns ${moneyCompact(assets)}${hold}, and is worth ${moneyCompact(mean)} after debts.${pulled}`;
+  const owed = model.liabilities.reduce((t, g) => t + (g.values[at] ?? 0), 0);
+  const worth = owed >= assets * 0.005 ? `, and is worth ${moneyCompact(mean)} after debts` : ' and owes nothing';
+  return `At ${ageAt(model, at)} the average household owns ${moneyCompact(assets)}${hold}${worth}.${pulled}`;
 }
 
 export function accountsTakeaway(model: CashFlowModel): string {

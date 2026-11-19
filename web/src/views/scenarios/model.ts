@@ -189,14 +189,19 @@ function niceStep(raw: number): number {
 
 /**
  * Bins the engine's 100 quantile dots of a per-life difference for a dot plot. Zero is
- * always a bin edge, so no bin mixes gains with losses; dots at exactly zero (the same
- * life, unchanged by the decision) are counted apart. The axis spans the middle 84% of
+ * always a bin edge, so no bin mixes gains with losses; unchanged dots (the same life,
+ * untouched by the decision) are counted apart. The axis spans the middle 84% of
  * the changed dots so a few extreme lives cannot flatten the rest; anything beyond is
  * piled into the end bins, which are marked open.
  */
-export function binDeltas(dots: (number | null)[], columns = 24, tolerance = 0): DeltaDots {
+export function binDeltas(dots: (number | null)[], columns = 24, tolerance = 0, equalShare: number | null = null): DeltaDots {
   const values = dots.filter((d): d is number => d !== null && Number.isFinite(d)).sort((a, b) => a - b);
-  const moved = values.filter((v) => Math.abs(v) > tolerance);
+  // When the engine says what share of all lives is exactly unchanged, that many dots
+  // (the ones nearest zero) are the unchanged ones, so the plot and the sentence above it
+  // count the same lives. Otherwise a dot within `tolerance` of zero is unchanged.
+  const forced = equalShare === null ? null : Math.min(values.length, Math.round(equalShare * values.length));
+  const nearest = forced === null ? null : new Set([...values.keys()].sort((i, j) => Math.abs(values[i] as number) - Math.abs(values[j] as number)).slice(0, forced));
+  const moved = nearest ? values.filter((_, i) => !nearest.has(i)) : values.filter((v) => Math.abs(v) > tolerance);
   const unchanged = values.length - moved.length;
   if (moved.length === 0) return { bins: [], unchanged, total: values.length, domain: [-1, 1], step: 1 };
   const at = (q: number) => moved[Math.min(moved.length - 1, Math.max(0, Math.round(q * (moved.length - 1))))] as number;

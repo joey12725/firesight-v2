@@ -203,6 +203,16 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
     push(s.a, 'spending_raise', 'Spending raised', `The spending rule raises spending ${group.length === 1 ? 'once' : `in ${group.length} years`} ${s.text}${Number.isFinite(biggest) && biggest > 0 ? `; the largest single step is ${biggest.toFixed(1)}%` : ''}.`, g === 0 ? 1 : 0);
   });
 
+  // Running short and recovering can alternate month by month near the end: the first time is the event, the rest are repeats.
+  const shortfalls = raw.filter((e) => e.kind === 'depleted');
+  const lastShort = shortfalls.length ? at(shortfalls[shortfalls.length - 1] as TraceEvent) : -1;
+  shortfalls.forEach((e, n) => {
+    const m = at(e);
+    if (n > 0) return void push(m, 'depleted', 'Savings run out', `Savings are exhausted again at ${who} ${ageOf(m)}.`, 0, true);
+    const again = shortfalls.length > 1 ? ` Essentials are covered again for a time and then not, ${shortfalls.length - 1} more ${shortfalls.length === 2 ? 'time' : 'times'}, the last at ${who} ${ageOf(lastShort)}.` : '';
+    push(m, 'depleted', 'Savings run out', `Savings are exhausted at ${who} ${ageOf(m)}: spending is cut to what income covers.${again}`, 5, true);
+  });
+
   raw.forEach((e, i) => {
     if (used.has(i)) return;
     const m = at(e);
@@ -277,9 +287,9 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       case 'long_term_care':
         return void push(m, e.kind, 'Long-term care', `${label} at ${who} ${ageOf(m)}.`, 4, true);
       case 'depleted':
-        return void push(m, e.kind, 'Savings run out', `Savings are exhausted at ${who} ${ageOf(m)}: spending is cut to what income covers.`, 5, true);
+        return;
       case 'recovered':
-        return void push(m, e.kind, 'Essentials covered again', `${label} at ${who} ${ageOf(m)}.`, 3);
+        return void push(m, e.kind, 'Essentials covered again', `${label} at ${who} ${ageOf(m)}.`, m > lastShort ? 3 : 0);
       case 'died':
         return void push(m, e.kind, label.replace(/ at \d+$/, ''), `${label}.`, 5);
       case 'windfall':
@@ -368,7 +378,7 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
 
   // Retirement: what happened after.
   life.events
-    .filter((e) => e.month >= turning && ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock'].includes(e.kind))
+    .filter((e) => e.priority > 0 && e.month >= turning && ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock'].includes(e.kind))
     .forEach((e) => out.push({ text: e.detail, year: e.year }));
 
   // The spending rule, in one sentence rather than one per adjustment.
@@ -573,6 +583,35 @@ export function taxReturn(life: Life, y: number): { year: number; priceLevel: nu
   };
 }
 
+export interface TaxYear {
+  /** Federal bracket rate on one more dollar of ordinary income. Null when no return was traced for the year. */
+  marginal: number | null;
+  /** Everything owed for the year over adjusted gross income. Null when there is no income to speak of. */
+  effective: number | null;
+  /** Federal taxable income in today's dollars. */
+  taxable: number | null;
+  /** True when the household lived outside the US: the rate is the plan's flat foreign rate, not a federal bracket. */
+  foreign: boolean;
+}
+
+/** What each year's return says about the rate this life paid, by year index. */
+export function taxYears(life: Life): TaxYear[] {
+  const byYear = new Map(life.trace.tax_returns.map((r) => [r.year, r]));
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return life.time.years.map((year) => {
+    const r = byYear.get(year);
+    if (!r) return { marginal: null, effective: null, taxable: null, foreign: false };
+    const level = r.price_level > 0 ? r.price_level : 1;
+    const agi = num(r.result.agi);
+    const total = num(r.result.total);
+    const taxable = num(r.result.taxable_income);
+    // Under a few thousand dollars of income a ratio is noise (payroll tax over a tiny AGI).
+    const effective = agi !== null && total !== null && agi / level >= 5_000 ? Math.max(0, total / agi) : null;
+    const foreign = (num(r.result.foreign) ?? 0) > 0 || r.lines.some((l) => /foreign/i.test(l.key));
+    return { marginal: num(r.result.marginal_ordinary_rate), effective, taxable: taxable === null ? null : taxable / level, foreign };
+  });
+}
+
 // ---- which lives to offer -------------------------------------------------------------
 
 export interface LifeChoice {
@@ -595,7 +634,15 @@ export function lifeChoices(summary: Summary): LifeChoice[] {
   const death = column('death_age_0');
   const describe = (path: number) => {
     const row = summary.scatter.paths.indexOf(path);
-    if (row < 0) return '';
+    if (row < 0) {
+      // Not in the scatter sample: say what the pick itself carries.
+      const p = summary.picks.find((x) => x.path_index === path);
+      if (!p || p.value === null) return '';
+      if (p.scalar === 'terminal_net_worth') return `Ends with ${moneyCompact(p.value)}.`;
+      if (p.scalar === 'fi_age') return `Work optional at ${Math.floor(p.value)}.`;
+      if (p.scalar === 'depletion_age') return `Short of money from ${Math.floor(p.value)}.`;
+      return '';
+    }
     const f = fi[row];
     const d = depleted[row];
     const t = terminal[row];

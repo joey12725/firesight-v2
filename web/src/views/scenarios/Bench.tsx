@@ -111,7 +111,7 @@ function Row({ scenario, base, result, running, selected }: { scenario: Scenario
         <Switch aria-label={`Simulate ${scenario.name}`} checked={scenario.enabled} onChange={(enabled) => updateScenario(scenario.id, { enabled })} />
         <TextInput
           aria-label="Scenario name"
-          className="h-8 min-w-0 flex-1 basis-40 border-transparent bg-transparent px-1.5 text-base font-semibold tracking-tight hover:border-line focus:border-line-strong"
+          className="order-first h-8 min-w-0 flex-1 basis-full border-transparent @lg:order-none @lg:basis-40 bg-transparent px-1.5 text-base font-semibold tracking-tight hover:border-line focus:border-line-strong"
           value={scenario.name}
           onChange={(name) => updateScenario(scenario.id, { name })}
         />

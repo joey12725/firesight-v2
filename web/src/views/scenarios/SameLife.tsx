@@ -177,7 +177,8 @@ function LifeChart({ pair, ages, name }: { pair: Pair; ages: number[]; name: str
             <SvgLayer>
               <ValueAxis y={y} format="money" title="Net worth in this one life, today's dollars" titleY={rules.length ? 10 : undefined} ticks={ticks} grid={false} />
               <AgeAxis x={x} time={time} />
-              <RuleAnnotations items={rules.map((r) => ({ x: xs[r.index] as number, label: r.label, detail: r.detail, tone: 'event' as const }))} />
+              {/* A narrow plot has no room for the whole phrase beside the rule. */}
+              <RuleAnnotations items={rules.map((r) => ({ x: xs[r.index] as number, label: plot.width < 300 ? 'Part ways' : r.label, detail: plot.width < 300 ? `age ${Math.floor(time.ages[r.index] ?? 0)}` : r.detail, tone: 'event' as const }))} />
               {shown.map((m) => (
                 <EventMarker key={m.key} x={xs[m.i] as number} y={y(m.values[m.i] as number)} label={at !== null && Math.abs(m.i - at) <= 1 ? undefined : m.label} color={m.key.endsWith('a') ? theme.baseline.median : theme.scenario.line} side={(m.values[m.i] as number) >= (m.other[m.i] ?? -Infinity) ? 'above' : 'below'} />
               ))}

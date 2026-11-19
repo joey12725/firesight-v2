@@ -9,13 +9,13 @@ import { navigateToLife, useSelectedLife, type LifePick } from '@/state/route';
 import { Button, EmptyState, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, type TimeRangePreset } from '@/ui/charts';
 import type { ViewProps } from '../types';
-import { AccountLane, AccountLaneLegend, FlowLane, FlowLaneLegend, MarketLane, MarketLaneLegend, accountLaneTable, flowLaneTable, marketLaneTable } from './Lanes';
+import { AccountLane, AccountLaneLegend, FlowLane, FlowLaneLegend, MarketLane, MarketLaneLegend, TaxLane, TaxLaneLegend, accountLaneTable, flowLaneTable, marketLaneTable, taxLaneTable } from './Lanes';
 import { Picker } from './Picker';
 import { Timeline, TimelineLegend, crowdFor, timelineTable, yearEnds } from './Timeline';
 import { YearInspector } from './YearInspector';
 import { buildLife, headline, lifeChoices, narrative, type Life, type LifeChoice } from './life';
 import { useTrace } from './useTrace';
-import { accountTakeaway, flowTakeaway, marketTakeaway, timelineTakeaway } from './words';
+import { accountTakeaway, flowTakeaway, marketTakeaway, taxLaneTakeaway, timelineTakeaway } from './words';
 
 function LifeSkeleton({ label }: { label: string }) {
   return (
@@ -118,7 +118,7 @@ function Story({ life, summary, selected, onSelect, why, dimmed }: { life: Life;
       <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-5">
         <h2 className="text-base font-semibold tracking-tight">The whole life</h2>
         <TimeRangeControl time={life.time} presets={ranges} className="ml-auto" />
-        <p className="hidden basis-full text-xs text-ink-3 @2xl:block">The four charts share one age axis and one crosshair. Drag across any of them to zoom all of them; click a year to open its ledger. Every figure is in today’s dollars.</p>
+        <p className="hidden basis-full text-xs text-ink-3 @2xl:block">The five charts share one age axis and one crosshair. Drag across any of them to zoom all of them; click a year to open its ledger. Every figure is in today’s dollars.</p>
       </div>
 
       <ChartCard
@@ -144,6 +144,17 @@ function Story({ life, summary, selected, onSelect, why, dimmed }: { life: Life;
         >
           <FlowLaneLegend life={life} />
           <FlowLane life={life} selected={selected} onSelect={onSelect} />
+        </ChartCard>
+
+        <ChartCard
+          title="The tax bracket, year by year"
+          takeaway={taxLaneTakeaway(life)}
+          caption="From each year’s tax return: the federal rate on one more dollar of ordinary income (the bracket, drawn as steps), and everything owed that year, payroll and state tax included, as a share of adjusted gross income. A year of Roth conversions or large pre-tax withdrawals shows as a step up. Open a year below to read its return line by line."
+          table={() => taxLaneTable(life)}
+          filename={`life-${id}-tax-bracket`}
+        >
+          <TaxLaneLegend life={life} />
+          <TaxLane life={life} selected={selected} onSelect={onSelect} />
         </ChartCard>
 
         <ChartCard title="Where the money sat" takeaway={accountTakeaway(life)} caption="Year-end balances by tax treatment, property at market value, debts below the line; the dark line is net worth." table={() => accountLaneTable(life)} filename={`life-${id}-accounts`}>

@@ -181,8 +181,15 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
           <p data-testid="assumptions-sentence" className="mt-3 max-w-[48rem] text-2xl font-medium tracking-tight text-pretty text-ink-2 @4xl:text-[1.75rem] @4xl:leading-[2.25rem]">
             Markets follow <b className="font-semibold text-ink-1">{MARKET_NAME[kind].toLowerCase()}</b>
             {adjustments.length > 0 ? ', adjusted' : ''}; lifespans are <b className="font-semibold text-ink-1">{profile.assumptions.longevity.type === 'stochastic' ? 'drawn from life tables' : `fixed at ${profile.assumptions.longevity.age}`}</b>; tax is{' '}
-            <b className="font-semibold text-ink-1">{usLaw ? '2026 US law, kept for ever' : profile.assumptions.taxes.kind.type === 'flat' ? 'a flat rate' : 'ignored'}</b>; job loss is <b className="font-semibold text-ink-1">{profile.assumptions.career_risk ? 'simulated' : 'switched off'}</b> and health
-            shocks are <b className="font-semibold text-ink-1">{profile.assumptions.health_risk ? 'simulated' : 'switched off'}</b>.
+            <b className="font-semibold text-ink-1">{usLaw ? '2026 US law, kept for ever' : profile.assumptions.taxes.kind.type === 'flat' ? 'a flat rate' : 'ignored'}</b>; {profile.assumptions.career_risk === profile.assumptions.health_risk ? (
+              <>
+                job loss and health shocks are <b className="font-semibold text-ink-1">{profile.assumptions.career_risk ? 'simulated' : 'switched off'}</b>.
+              </>
+            ) : (
+              <>
+                job loss is <b className="font-semibold text-ink-1">{profile.assumptions.career_risk ? 'simulated' : 'switched off'}</b> and health shocks are <b className="font-semibold text-ink-1">{profile.assumptions.health_risk ? 'simulated' : 'switched off'}</b>.
+              </>
+            )}
           </p>
           <p className="mt-3 max-w-[46rem] text-xs leading-relaxed text-pretty text-ink-3">
             Each section says what is assumed, shows what that implies for this plan across {count(summary.paths)} simulated lives, and links to where it can be changed. Every dollar figure is in today’s dollars. Figures from the historical record are
@@ -304,7 +311,9 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
         <Block
           title="Lifespans"
           statement={longevityStatement(profile)}
-          facts={people.filter((p) => p.expected !== null).map((p) => `${p.name}: life expectancy ${Math.round(p.expected as number)} from the tables.`)}
+          facts={people
+            .filter((p) => p.expected !== null)
+            .map((p, i) => `${p.name}: life expectancy ${Math.round(p.expected as number)} from the tables${i === 0 ? ', which is the average age at death' : ''}${p.reach.half !== null && p.reach.half - (p.expected as number) >= 1.5 ? `; half of lives run past ${Math.round(p.reach.half)}${i === 0 ? ', because early deaths pull an average down' : ''}` : ''}.`)}
           edit={{ path: '/assumptions/longevity', label: 'Change how lifespans are drawn' }}
         >
           <ChartCard

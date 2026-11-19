@@ -4,6 +4,7 @@
 // scenario runs through exactly the futures the plan did (same seed, same path indices).
 import { useMemo, useState } from 'react';
 import type { Summary } from '@/engine/output-types';
+import { useProfileStore } from '@/state/profile-store';
 import type { RunState } from '@/state/run-store';
 import { SegmentedControl, Select, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, summaryTime, type TimeRangePreset } from '@/ui/charts';
@@ -69,6 +70,19 @@ function presets(summary: Summary): TimeRangePreset[] {
     out.push({ id: 'retired', label: 'Retirement', range: [Math.max(start, Math.floor(summary.headline.retirement_age.p10 ?? retire) - 2), end] });
   }
   return out;
+}
+
+/**
+ * Brings the detail's heading to the top of the results pane. Not `scrollIntoView`: that
+ * also scrolls the document behind the app shell, which pushes the toolbar off screen.
+ */
+function scrollToDetail() {
+  const target = document.getElementById('scenario-detail-title');
+  let pane = target?.parentElement ?? null;
+  while (pane && !(/auto|scroll/.test(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight)) pane = pane.parentElement;
+  if (!target || !pane) return;
+  const top = pane.scrollTop + target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 20;
+  pane.scrollTo({ top, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 
 function ViewSkeleton() {
@@ -152,7 +166,7 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
           <ChartCard
             title="The difference, life by life"
             takeaway={deltaTakeaway(scalar)}
-            caption={`${scalar.both < 100 ? `The ${scalar.both} paired lives are drawn as 100 evenly spaced dots, each placed at a difference` : 'Each dot is one of 100 equally likely lives, placed at its own difference'}: that life with the change, minus the same life without it. Hollow dots are lives the change leaves untouched (${scalar.unit === 'dollars' ? 'within $500' : 'within two weeks'}). The axis covers the middle of the range; the most extreme lives at each end are stacked in the end columns.${scalar.unit === 'dollars' ? ' Today’s dollars.' : ''}`}
+            caption={`${scalar.both < 100 ? `The ${scalar.both} paired lives are drawn as 100 evenly spaced dots, each placed at a difference` : 'Each dot is one of 100 equally likely lives, placed at its own difference'}: that life with the change, minus the same life without it. Hollow dots are lives the change leaves exactly as they were. The axis covers the middle of the range; the most extreme lives at each end are stacked in the end columns.${scalar.unit === 'dollars' ? ' Today’s dollars.' : ''}`}
             controls={<SegmentedControl aria-label="Quantity" size="sm" value={scalar.scalar as DeltaScalar} onChange={setScalarKey} options={options} />}
             table={() => deltaTable(scalar)}
             filename={`per-life-difference-${scalar.scalar.replace(/_/g, '-')}`}
@@ -217,14 +231,18 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
   );
 }
 
-export default function ScenariosView({ profile, summary, comparison, run, pool }: ViewProps) {
+export default function ScenariosView({ profile, summary, comparison: ran, run, pool }: ViewProps) {
+  // The run remembers each scenario's name from when it started; a rename does not (and
+  // should not) re-run anything, so names are read live from the plan.
+  const scenarios = useProfileStore((s) => s.scenarios);
+  const comparison = useMemo(() => ran.map((c) => ({ ...c, name: scenarios.find((x) => x.id === c.id)?.name || c.name })), [ran, scenarios]);
   const chosen = useScenarioUi((s) => s.selected);
   const metricKey = useScenarioUi((s) => s.metric);
   const metric = metricOf(metricKey);
   const selected = comparison.find((c) => c.id === chosen) ?? comparison.find((c) => c.summary) ?? comparison[0] ?? null;
   const select = (id: string) => {
     useScenarioUi.getState().select(id);
-    requestAnimationFrame(() => document.getElementById('scenario-detail-title')?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
+    requestAnimationFrame(scrollToDetail);
   };
   const rows = useMemo(() => rankRows(comparison, metric), [comparison, metric]);
   const waiting = run.status === 'running' || run.status === 'queued';
@@ -253,7 +271,9 @@ export default function ScenariosView({ profile, summary, comparison, run, pool 
               <h2 id="scenario-board-title" className="text-base font-semibold tracking-tight">
                 All {comparison.length} scenarios against the plan
               </h2>
-              <SegmentedControl aria-label="Rank scenarios by" size="sm" className="ml-auto max-w-full" value={metricKey} onChange={(m) => useScenarioUi.getState().setMetric(m)} options={METRICS.map((m) => ({ value: m.key, label: m.label }))} />
+              <SegmentedControl aria-label="Rank scenarios by" size="sm" className="ml-auto @max-xl:hidden" value={metricKey} onChange={(m) => useScenarioUi.getState().setMetric(m)} options={METRICS.map((m) => ({ value: m.key, label: m.label }))} />
+              {/* Four labels do not fit a phone: the same choice as a menu. */}
+              <Select aria-label="Rank scenarios by" className="ml-auto h-7 text-sm @xl:hidden" value={metricKey} onChange={(m) => useScenarioUi.getState().setMetric(m)} options={METRICS.map((m) => ({ value: m.key, label: m.label }))} />
             </div>
             <ChartCard
               className="mt-5"

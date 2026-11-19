@@ -244,7 +244,7 @@ function CohortStrip({ rows, focusYear, onFocus }: { rows: CohortYear[]; focusYe
   const firstWrap = rows.find((r) => r.wraps);
   return (
     <ChartSyncProvider>
-      <ChartFrame height={150} margin={{ top: 30, right: 12, bottom: 24, left: 52 }} aria-label="Share of simulated lives that ran short, by the year of the historical record they start in">
+      <ChartFrame height={164} margin={{ top: 44, right: 12, bottom: 24, left: 52 }} aria-label="Share of simulated lives that ran short, by the year of the historical record they start in">
         {({ plot, theme }) => {
           const first = rows[0]?.year ?? HISTORY.firstYear;
           const last = rows[rows.length - 1]?.year ?? first + 1;
@@ -262,13 +262,14 @@ function CohortStrip({ rows, focusYear, onFocus }: { rows: CohortYear[]; focusYe
           return (
             <>
               <SvgLayer>
-                <ValueAxis y={y} format="share100" count={2} title="Ran short, of 100 lives starting that year" />
+                <ValueAxis y={y} format="share100" count={2} title="Ran short, of 100 lives starting that year" titleY={12} />
                 <XAxis x={x} format={(v) => String(v)} ticks={Array.from({ length: Math.floor((last - 1930) / 10) + 1 }, (_, i) => 1930 + i * 10)} />
                 {rows.map((r, i) => bar(r, withAlpha(theme.status.depleted, r.wraps ? 0.45 : 1), i))}
                 {firstWrap && x(firstWrap.year) < plot.right - 40 && (
                   <g fontSize={10.5}>
                     <line x1={x(firstWrap.year - 0.5)} x2={x(firstWrap.year - 0.5)} y1={plot.y - 12} y2={plot.bottom} stroke={theme.annotation} strokeWidth={1} />
-                    <text x={x(firstWrap.year - 0.5) + 5} y={plot.y - 4} fill={theme.ink.secondary}>
+                    {/* On its own row under the axis title; flipped to the left of the rule when it would run off the plot. */}
+                    <text x={x(firstWrap.year - 0.5) + (x(firstWrap.year - 0.5) + 172 > plot.right ? -5 : 5)} y={plot.y - 4} textAnchor={x(firstWrap.year - 0.5) + 172 > plot.right ? 'end' : 'start'} fill={theme.ink.secondary}>
                       From {firstWrap.year}, lives outrun the record
                     </text>
                   </g>

@@ -41,7 +41,7 @@ import {
   type VarId,
 } from './model';
 import { GRID_STAGES, GridSweeper, LEVER_STAGES, LeverSweeper, SOLVER_PATHS, Solver, planKeyOf, useStore, type LeverRun, type Progress } from './sweeps';
-import { intervalWords, leadSentence, mapTakeaway, riskSentence, solverSentence, tornadoTakeaway } from './text';
+import { changeClause, intervalWords, leadSentence, mapTakeaway, riskSentence, solverSentence, tornadoTakeaway } from './text';
 
 const rate = (p: Progress) => (p.perSecond >= 1000 ? `${Math.round(p.perSecond / 1000)}k` : String(Math.round(p.perSecond)));
 
@@ -113,10 +113,21 @@ const scenarioName = (lever: LeverDef, side: LeverSide) => `${lever.label}: ${sh
 
 // ---- the biggest wins ---------------------------------------------------------------
 
-function Wins({ levers, effects, metric, run }: { levers: LeverDef[]; effects: ReadonlyMap<string, Effect>; metric: MetricId; run: LeverRun }) {
+function Wins({ levers, effects, metric, run, whenFunded }: { levers: LeverDef[]; effects: ReadonlyMap<string, Effect>; metric: MetricId; run: LeverRun; whenFunded: boolean }) {
   const wins = useMemo(() => biggestWins(levers, effects, metric), [levers, effects, metric]);
   const risk = useMemo(() => riskSentence(levers, effects, metric), [levers, effects, metric]);
   const unit = METRICS[metric].unit;
+  // What the same change does to the other thing people trade against: when work can stop, or whether the plan holds.
+  const also = (side: LeverSide): string | null => {
+    const entry = run.sides[side.key];
+    const other: MetricId = metric === 'fi_age' ? 'holds' : 'fi_age';
+    if (!entry) return null;
+    const e = effectOf(other, entry.paired, run.base, entry.headline);
+    if (e.state !== 'effect' || e.delta === null) return null;
+    const clause = changeClause(other, e.delta);
+    return `${e.delta * METRICS[other].better > 0 ? 'Also' : 'The price'}: ${clause}.`;
+  };
+  const funded = wins.some((w) => (w.lever.id === 'spending' && w.side.side === 'high') || (w.lever.id === 'salary' && w.side.side === 'low') || (w.lever.id === 'salaries' && w.side.side === 'low'));
   return (
     <div>
       {wins.length > 0 && (
@@ -129,10 +140,11 @@ function Wins({ levers, effects, metric, run }: { levers: LeverDef[]; effects: R
               </p>
               <p className="mt-1 flex items-baseline gap-1.5">
                 <span className="num text-2xl font-semibold tracking-tight text-ink-1">{formatDelta(metric, w.effect.delta).replace(/ (yr|pts)$/, '')}</span>
-                <span className="text-xs text-ink-2">{unit === 'share' ? 'of 100 lives' : unit === 'age' ? 'years, middle life' : unit === 'ratio' ? 'points of plan' : 'at the end, middle life'}</span>
+                <span className="text-xs text-ink-2">{unit === 'share' ? 'of 100 lives' : unit === 'age' ? 'years' : unit === 'ratio' ? 'points of plan' : 'at the end'}</span>
               </p>
               <p className="mt-0.5 text-xs text-pretty text-ink-3">95% interval {intervalWords(metric, w.effect.lo, w.effect.hi)}</p>
-              <div className="mt-2.5">
+              {also(w.side) && <p className="mt-1.5 text-xs leading-relaxed text-pretty text-ink-2">{also(w.side)}</p>}
+              <div className="mt-auto pt-2.5">
                 <TryButton name={scenarioName(w.lever, w.side)} patch={w.side.ops} />
               </div>
             </li>
@@ -141,6 +153,7 @@ function Wins({ levers, effects, metric, run }: { levers: LeverDef[]; effects: R
       )}
       <p className="mt-5 max-w-[46rem] text-xs leading-relaxed text-pretty text-ink-3">
         {risk && <span className="text-ink-2">{risk} </span>}
+        {funded && whenFunded && <span className="text-ink-2">This plan retires when savings cover spending, so spending more or earning less also means working longer and retiring with more behind you: that is why they can appear here. </span>}
         Each change was simulated on the same {count(run.paths)} lives as the plan, one change at a time, so a difference comes from the change and not from luck; the intervals cover sampling error only. These are
         associations inside this model, not advice: changes made together do not simply add up, and the ranges tested (10% of spending, a point of return) are not equally likely.
       </p>
@@ -535,7 +548,7 @@ export default function WhatMattersView({ profile, summary, run, pool }: ViewPro
 
       {result && (
         <div className={dimmed ? 'opacity-60 transition-opacity duration-[var(--duration-slow)]' : 'transition-opacity duration-[var(--duration-slow)]'}>
-          <Wins levers={defs} effects={effects} metric={metric} run={result} />
+          <Wins levers={defs} effects={effects} metric={metric} run={result} whenFunded={profile.retirement.trigger.type === 'when_funded'} />
         </div>
       )}
 

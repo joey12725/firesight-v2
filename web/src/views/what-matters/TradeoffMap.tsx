@@ -80,11 +80,33 @@ export function HeatPlot({ xLabels, yLabels, xTitle, yTitle, values, provisional
           if (length >= 36 && (!best || length > best.length)) longest.set(level, { length, pts, text });
           return `M${pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L')}`;
         });
+        // A label sits where its line crosses the seam between two rows of cells, so it never covers a cell's printed value.
+        const seams = (pts: Point[]): { at: number; point: Point }[] => {
+          const out: { at: number; point: Point }[] = [];
+          const total = polylineAt(pts).length;
+          let walked = 0;
+          for (let i = 1; i < pts.length; i++) {
+            const p = pts[i - 1] as Point;
+            const q = pts[i] as Point;
+            const step = Math.hypot(q[0] - p[0], q[1] - p[1]);
+            for (let r = 1; r < rows; r++) {
+              const y = plot.bottom - r * ch;
+              if (p[1] !== q[1] && y >= Math.min(p[1], q[1]) && y <= Math.max(p[1], q[1])) {
+                const f = (y - p[1]) / (q[1] - p[1]);
+                out.push({ at: total > 0 ? (walked + f * step) / total : 0, point: [p[0] + (q[0] - p[0]) * f, y] });
+              }
+            }
+            walked += step;
+          }
+          return out;
+        };
         const labels = [...longest.entries()]
           .sort((a, b) => a[0] - b[0])
           .map(([level, l], i, all) => {
             const downward = (l.pts[0] as Point)[1] <= (l.pts[l.pts.length - 1] as Point)[1] ? l.pts : [...l.pts].reverse();
-            return { level, text: l.text, point: polylineAt(downward, (i + 1) / (all.length + 1)).point };
+            const want = (i + 1) / (all.length + 1);
+            const seam = seams(downward).sort((a, b) => Math.abs(a.at - want) - Math.abs(b.at - want))[0];
+            return { level, text: l.text, point: seam ? seam.point : polylineAt(downward, want).point };
           });
         const every = cw < 34 ? 2 : 1;
         const mark = marker ? px([marker.col, marker.row]) : null;

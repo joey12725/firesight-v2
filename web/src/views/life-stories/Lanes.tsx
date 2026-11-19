@@ -29,7 +29,7 @@ import {
 import { StackLegend, StackedAreas, type StackSeries } from '@/ui/charts/ext/cashflow-StackedAreas';
 import { ACCOUNT_COLOR } from '../cash-flow/model';
 import { yearEnds } from './Timeline';
-import type { Life } from './life';
+import { taxYears, type Life } from './life';
 
 interface LaneSeries {
   key: string;
@@ -41,6 +41,8 @@ interface LaneSeries {
   values: (number | null)[];
   strong?: boolean;
   dash?: boolean;
+  /** Draw as steps that change halfway between points (a rate that holds for a whole year). */
+  step?: boolean;
 }
 
 interface LineLaneProps {
@@ -110,16 +112,21 @@ function LineLane({ life, ages, pointOfYear, series, format, tick, title, log, s
         const x = linearScale([lo, hi], [plot.x, plot.right]);
         const y = log ? logScale([Math.min(0.5, bottom * 0.9), Math.max(2, top * 1.1)], [plot.bottom, plot.y]) : linearScale(niceDomain(Math.min(0, bottom), top * 1.04, 3), [plot.bottom, plot.y]);
         const xs = index.map((i) => x(time.ages[i] as number));
-        const path = (row: (number | null)[]) => {
+        const path = (row: (number | null)[], step = false) => {
           let d = '';
           let pen = false;
+          let before = 0;
           for (const p of points) {
             const v = row[p];
             if (v === null || v === undefined) {
               pen = false;
               continue;
             }
-            d += `${pen ? 'L' : 'M'}${x(ages[p] as number).toFixed(1)},${y(v).toFixed(1)}`;
+            const px = x(ages[p] as number);
+            if (!pen) d += `M${px.toFixed(1)},${y(v).toFixed(1)}`;
+            else if (step) d += `H${((before + px) / 2).toFixed(1)}V${y(v).toFixed(1)}H${px.toFixed(1)}`;
+            else d += `L${px.toFixed(1)},${y(v).toFixed(1)}`;
+            before = px;
             pen = true;
           }
           return d;
@@ -139,7 +146,7 @@ function LineLane({ life, ages, pointOfYear, series, format, tick, title, log, s
               {shade && shadeX && (shadeX[1] as number) > (shadeX[0] as number) && (
                 <g>
                   <rect x={shadeX[0]} y={plot.y} width={(shadeX[1] as number) - (shadeX[0] as number)} height={plot.height} fill={withAlpha(theme.status.depleted, theme.dark ? 0.18 : 0.1)} />
-                  <text x={Math.min(plot.right - 4, (shadeX[1] as number) + 5)} y={plot.bottom - 6} fontSize={10} fill={theme.annotation} stroke={theme.surface} strokeWidth={3} paintOrder="stroke" textAnchor={(shadeX[1] as number) > plot.right - 120 ? 'end' : 'start'}>
+                  <text x={(shadeX[0] as number) > plot.right - 110 ? (shadeX[1] as number) : (shadeX[0] as number)} y={plot.y - 5} fontSize={10} fill={theme.annotation} textAnchor={(shadeX[0] as number) > plot.right - 110 ? 'end' : 'start'}>
                     {shade.label}
                   </text>
                 </g>
@@ -148,7 +155,7 @@ function LineLane({ life, ages, pointOfYear, series, format, tick, title, log, s
               <AgeAxis x={x} time={time} years={life.hasAges} label={life.hasAges ? 'Age' : 'Year'} />
               <PlotClip bleed={2}>
                 {series.map((s) => (
-                  <path key={s.key} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={s.strong ? 2 : 1.5} strokeDasharray={s.dash ? '5 4' : undefined} strokeLinejoin="round" strokeLinecap="round" />
+                  <path key={s.key} d={path(s.values, s.step)} fill="none" stroke={s.color} strokeWidth={s.strong ? 2 : 1.5} strokeDasharray={s.dash ? '5 4' : undefined} strokeLinejoin="round" strokeLinecap="round" />
                 ))}
               </PlotClip>
               <EndLabels labels={ends} />
@@ -397,6 +404,71 @@ export function MarketLane({ life, selected, onSelect }: { life: Life; selected?
         return `Investments returned ${((g / g0 - 1) * 100).toFixed(1)}% after inflation in ${life.time.years[i]}.`;
       }}
       label={`Life number ${life.trace.path_index}: real growth of its investments and the price level`}
+    />
+  );
+}
+
+// ---- the tax bracket, year by year ----------------------------------------------------
+
+const rate = (v: number) => `${(v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0)}%`;
+
+export function taxLaneTable(life: Life): TableData {
+  const rows = taxYears(life);
+  return {
+    caption: `Life #${life.trace.path_index}: the federal bracket on the next dollar of ordinary income, all tax owed as a share of adjusted gross income, and taxable income, from each year's return`,
+    columns: [
+      { key: 'age', label: life.hasAges ? 'Age' : 'Year' },
+      { key: 'year', label: 'Year', format: String },
+      { key: 'marginal', label: 'Rate on the next dollar', format: rate },
+      { key: 'where', label: 'Taxed', align: 'left' as const },
+      { key: 'effective', label: 'All tax, share of income', format: (v: number) => `${(v * 100).toFixed(1)}%` },
+      { key: 'taxable', label: "Taxable income, today's dollars", format: (v: number) => moneyCompact(v) },
+    ],
+    rows: life.time.years.map((year, y) => ({ age: Math.floor(life.time.ages[y] ?? 0), year, marginal: rows[y]?.marginal ?? null, where: rows[y]?.marginal === null || rows[y]?.marginal === undefined ? '' : rows[y]?.foreign ? 'Abroad' : 'US', effective: rows[y]?.effective ?? null, taxable: rows[y]?.taxable ?? null })),
+  };
+}
+
+function useTaxSeries(life: Life): LaneSeries[] {
+  const theme = useChartTheme();
+  return useMemo(() => {
+    const rows = taxYears(life);
+    return [
+      { key: 'marginal', label: rows.some((r) => r.foreign) ? 'Rate on the next dollar (federal bracket, or the flat rate abroad)' : 'Federal bracket on the next dollar', end: 'Bracket', color: theme.ink.primary, values: rows.map((r) => r.marginal), strong: true, step: true },
+      { key: 'effective', label: 'All tax, as a share of income', end: 'All tax', color: theme.categorical[4] as string, values: rows.map((r) => r.effective) },
+    ];
+  }, [life, theme]);
+}
+
+export function TaxLaneLegend({ life }: { life: Life }) {
+  const series = useTaxSeries(life);
+  return (
+    <div data-chart-legend>
+      <Legend className="mb-1" items={series.map((s) => ({ key: s.key, label: s.label, color: s.color, swatch: 'line' as const }))} />
+    </div>
+  );
+}
+
+export function TaxLane({ life, selected, onSelect }: { life: Life; selected?: number | null; onSelect?: (year: number) => void }) {
+  const series = useTaxSeries(life);
+  const rows = useMemo(() => taxYears(life), [life]);
+  const identity = useMemo(() => life.time.ages.map((_, y) => y), [life]);
+  return (
+    <LineLane
+      life={life}
+      ages={life.time.ages}
+      pointOfYear={identity}
+      series={series}
+      format={rate}
+      tick={(v) => `${Math.round(v * 100)}%`}
+      title="Rate"
+      selected={selected}
+      onSelect={onSelect}
+      note={(i) => {
+        const t = rows[i]?.taxable;
+        return t === null || t === undefined ? 'No return was filed for this year.' : `Taxable income ${moneyCompact(t)} in today’s dollars.`;
+      }}
+      label={`Life number ${life.trace.path_index}: federal tax bracket and overall tax rate by year`}
+      height={180}
     />
   );
 }

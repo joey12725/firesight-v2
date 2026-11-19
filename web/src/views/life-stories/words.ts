@@ -1,7 +1,7 @@
 // The takeaways of the Life stories charts, computed from the life (and the crowd it is
 // drawn against). Plain strings, so they also serve the image export and the assistant.
 import { moneyCompact } from '@/ui';
-import type { Life } from './life';
+import { taxYears, type Life } from './life';
 
 /** Net-worth quantiles of all lives, re-indexed to one life's years (null where the summary has none). */
 export interface Crowd {
@@ -105,4 +105,39 @@ export function marketTakeaway(life: Life): string {
   const d = life.drawdown;
   if (!d || d.depth < 0.15) return `${lead} The investments never lose more than 15% of their real value.`;
   return `${lead} The worst fall is ${Math.round(d.depth * 100)}%, from ${ageWord(life)} ${at(life, d.peak)} to ${at(life, d.trough)}.`;
+}
+
+export function taxLaneTakeaway(life: Life): string {
+  const rows = taxYears(life);
+  const filed = rows.map((r, y) => ({ r, y })).filter((e) => e.r.marginal !== null);
+  if (filed.length === 0) return 'No tax return was traced for this life.';
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const ageOf = (y: number) => Math.floor(life.time.ages[y] ?? 0);
+  const home = filed.filter((e) => !e.r.foreign);
+  const away = filed.filter((e) => e.r.foreign);
+  const parts: string[] = [];
+  if (home.length > 0) {
+    const peak = Math.max(...home.map((e) => e.r.marginal as number));
+    const atPeak = home.filter((e) => e.r.marginal === peak);
+    const first = atPeak[0] as { y: number };
+    parts.push(
+      peak <= 0
+        ? `Deductions cover all ordinary income in ${home.length === filed.length ? 'every year' : 'every US year'}: this life never reaches a federal bracket.`
+        : `The highest federal bracket this life reaches is ${pct(peak)}, in ${atPeak.length} of its ${home.length} ${away.length ? 'US ' : ''}years${atPeak.length === 1 ? ` (${ageWord(life)} ${ageOf(first.y)})` : `, first at ${ageWord(life)} ${ageOf(first.y)}`}.`,
+    );
+  }
+  if (away.length > 0) {
+    const first = away[0] as { r: { marginal: number | null }; y: number };
+    parts.push(`${home.length ? `From ${ageWord(life)} ${ageOf(first.y)}` : 'Throughout,'} it lives outside the US, where the plan taxes income at a flat ${pct(first.r.marginal ?? 0)}.`);
+  }
+  const retiredFrom = life.scalar('retirement_age');
+  const later = retiredFrom === null ? [] : home.filter((e) => (life.time.ages[e.y] ?? 0) - 1 >= retiredFrom);
+  if (later.length >= 3) {
+    // The bracket this life sits in most often once retired.
+    const tally = new Map<number, number>();
+    later.forEach((e) => tally.set(e.r.marginal as number, (tally.get(e.r.marginal as number) ?? 0) + 1));
+    const [mode, n] = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0] as [number, number];
+    parts.push(`Once retired it sits in the ${pct(mode)} bracket in ${n} of ${later.length} ${away.length ? 'US ' : ''}years.`);
+  }
+  return parts.join(' ');
 }

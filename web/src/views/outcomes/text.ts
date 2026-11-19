@@ -102,6 +102,12 @@ export function luckTakeaway(split: LuckSplit | null, lives: number): string {
   const r = split.rest;
   const wealth = u.medianWealth !== null && r.medianWealth !== null ? ` The middle unlucky life ends with ${moneyCompact(u.medianWealth)}, against ${moneyCompact(r.medianWealth)}.` : '';
   if (u.shortShare === 0 && r.shortShare === 0) return `Even the unluckiest fifth of lives, whose first ten retirement years return less than ${pct(split.threshold, 1)} a year after inflation, never run short.${wealth}`;
+  // The difference between the two groups against its own sampling error: when it is inside the noise (or the wrong way round), say so plainly.
+  const noise = 2 * Math.sqrt((u.shortShare * (1 - u.shortShare)) / Math.max(1, u.lives) + (r.shortShare * (1 - r.shortShare)) / Math.max(1, r.lives));
+  if (u.shortShare - r.shortShare <= Math.max(0.01, noise)) {
+    const left = u.medianWealth !== null && r.medianWealth !== null && u.medianWealth < r.medianWealth * 0.95 ? ` What it changes is how much is left: ${moneyCompact(u.medianWealth)} in the middle unlucky life, against ${moneyCompact(r.medianWealth)}.` : '';
+    return `A poor first decade does not make this plan likelier to run short: ${ofHundred(u.shortShare).text} lives do in the unluckiest fifth (first ten retirement years returning less than ${pct(split.threshold, 1)} a year after inflation), and ${ofHundred(r.shortShare).n} of ${ofHundred(r.shortShare).of} among the rest.${left}`;
+  }
   return `When the first ten years of retirement return less than ${pct(split.threshold, 1)} a year after inflation (the unluckiest fifth), ${ofHundred(u.shortShare).text} lives run short. Among the rest, ${ofHundred(r.shortShare).n} of ${ofHundred(r.shortShare).of} do.${wealth}`;
 }
 
@@ -135,17 +141,25 @@ export function contrastSentence(c: Contrast): string {
 export function cohortTakeaway(rows: CohortYear[]): string {
   const usable = rows.filter((r) => r.shortShare !== null && r.lives >= 4);
   if (usable.length === 0) return 'Too few lives per starting year to compare them yet.';
-  const clean = usable.filter((r) => r.short === 0).length;
-  const worst = [...usable].sort((a, b) => (b.shortShare as number) - (a.shortShare as number))[0] as CohortYear;
-  if ((worst.shortShare as number) === 0) return 'Whichever year of the record a life starts in, the money lasts.';
+  if (usable.every((r) => r.short === 0)) return 'Whichever year of the record a life starts in, the money lasts.';
+  // Starting years the record covers to the end of the plan are the clean test; later starts replay 1926 onward.
+  const clean = usable.filter((r) => !r.wraps);
+  const worstOf = (set: CohortYear[]) => [...set].sort((a, b) => (b.shortShare as number) - (a.shortShare as number))[0];
+  const pool = clean.length >= 5 ? clean : usable;
+  const worst = worstOf(pool) as CohortYear;
+  const none = pool.filter((r) => r.short === 0).length;
+  const scope = pool === clean && clean.length < usable.length ? `Of the starting years the record covers in full (${(clean[0] as CohortYear).year} to ${(clean[clean.length - 1] as CohortYear).year}), lives` : 'Lives';
+  const late = worstOf(usable.filter((r) => r.wraps));
+  const caveat = pool === clean && late && (late.shortShare as number) > (worst.shortShare as number) ? ` Later starts look worse (${late.year}: ${late.short} of ${late.lives}), but those lives outrun the record and replay it from 1926.` : '';
+  if ((worst.shortShare as number) === 0) return `${scope} never run short.${caveat}`;
   // The run of consecutive bad starting years around the worst one.
   const bad = (r: CohortYear | undefined) => r !== undefined && r.shortShare !== null && r.shortShare >= Math.max(0.25, (worst.shortShare as number) / 2);
-  let from = usable.indexOf(worst);
+  let from = pool.indexOf(worst);
   let to = from;
-  while (bad(usable[from - 1]) && (usable[from - 1] as CohortYear).year === (usable[from] as CohortYear).year - 1) from--;
-  while (bad(usable[to + 1]) && (usable[to + 1] as CohortYear).year === (usable[to] as CohortYear).year + 1) to++;
-  const span = from === to ? `in ${worst.year}` : `between ${(usable[from] as CohortYear).year} and ${(usable[to] as CohortYear).year}`;
-  return `Lives that start ${span} fare worst: of those starting in ${worst.year}, ${worst.short} of ${worst.lives} run short. In ${clean} of ${usable.length} starting years, none do.`;
+  while (bad(pool[from - 1]) && (pool[from - 1] as CohortYear).year === (pool[from] as CohortYear).year - 1) from--;
+  while (bad(pool[to + 1]) && (pool[to + 1] as CohortYear).year === (pool[to] as CohortYear).year + 1) to++;
+  const span = from === to ? `in ${worst.year}` : `between ${(pool[from] as CohortYear).year} and ${(pool[to] as CohortYear).year}`;
+  return `${scope} that start ${span} fare worst: ${from === to ? '' : `of those starting in ${worst.year}, `}${worst.short} of ${worst.lives} run short. In ${none} of ${pool.length} ${pool === clean && clean.length < usable.length ? 'such ' : ''}starting years, none do.${caveat}`;
 }
 
 export interface ModelResult {

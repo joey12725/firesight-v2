@@ -122,6 +122,24 @@ export function ageReachedBy(survival: number[], ages: number[], share: number):
   return null;
 }
 
+/**
+ * Own ages outlived by 1 in 2, 1 in 4 and 1 in 10 lives. Read from the engine's own
+ * distribution of ages at death (exact, to the month); null where that many lives are
+ * still going when the plan ends, since their age at death is then unknown. Without the
+ * distribution, read off the survival curve: a year's entry counts lives alive at some
+ * point in it, which is to say at its start, eleven months before that December's age.
+ */
+function reachAges(summary: Summary, person: number, survival: number[], ownAges: number[]): PersonLongevity['reach'] {
+  const dist = summary.distributions.find((d) => d.scalar === (person === 0 ? 'death_age_0' : 'death_age_1'));
+  const atEnd = survival[survival.length - 1] ?? 0;
+  const [q50, q75, q90] = [dist?.quantiles[4], dist?.quantiles[5], dist?.quantiles[6]];
+  if (person < 2 && dist && dist.count > 0 && typeof q50 === 'number' && typeof q75 === 'number' && typeof q90 === 'number') {
+    return { half: atEnd >= 0.5 ? null : q50, quarter: atEnd >= 0.25 ? null : q75, tenth: atEnd >= 0.1 ? null : q90 };
+  }
+  const starts = ownAges.map((a, i) => (i === 0 ? a : a - 11 / 12));
+  return { half: ageReachedBy(survival, starts, 0.5), quarter: ageReachedBy(survival, starts, 0.25), tenth: ageReachedBy(survival, starts, 0.1) };
+}
+
 export function longevity(profile: Profile, summary: Summary, preview: PlanPreview | null): PersonLongevity[] {
   const first = profile.household.people[0];
   return profile.household.people.flatMap((person, p) => {
@@ -135,7 +153,7 @@ export function longevity(profile: Profile, summary: Summary, preview: PlanPrevi
         expected: preview?.expected_age_at_death[p] ?? null,
         survival,
         ownAge: (y: number) => ownAges[y] ?? 0,
-        reach: { half: ageReachedBy(survival, ownAges, 0.5), quarter: ageReachedBy(survival, ownAges, 0.25), tenth: ageReachedBy(survival, ownAges, 0.1) },
+        reach: reachAges(summary, p, survival, ownAges),
       },
     ];
   });

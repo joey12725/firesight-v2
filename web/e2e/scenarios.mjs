@@ -2,7 +2,8 @@
 //   BASE_URL=http://localhost:5184 node e2e/scenarios.mjs [slug,slug] [viewport,viewport] [light,dark] [quick,quick]
 // Opens a demo household, creates a few what-ifs with the quick buttons, waits for every
 // paired comparison, and writes e2e/shots/scenarios-<slug>-<viewport>-<theme>.png (the
-// fold) and -full.png (the whole view). PATHS sets the lives per run (default 10,000).
+// fold) and -full.png (the whole view). PATHS sets the lives per run (default 10,000);
+// DSF=1 keeps a tall phone capture within Chrome's texture limit.
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +33,7 @@ const problems = [];
 for (const theme of themes) {
   for (const vp of viewports) {
     const [width, height] = VIEWPORTS[vp];
-    const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme, deviceScaleFactor: vp === 'phone' ? 2 : 1 });
+    const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme, deviceScaleFactor: Number(process.env.DSF ?? (vp === 'phone' ? 2 : 1)) });
     for (const slug of slugs) {
       const page = await context.newPage();
       page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && !/status of 404/.test(m.text()) && problems.push(`${slug} ${vp} ${theme} console ${m.type()}: ${m.text()}`));
@@ -66,7 +67,7 @@ for (const theme of themes) {
       await page.setViewportSize({ width, height });
       if (process.env.COMPACT) {
         for (const paired of [true, false]) {
-          await page.evaluate(async (p) => (await import('/e2e/scenarios-compact.tsx')).mount(p), paired);
+          await page.evaluate(async (p) => (await import('/src/views/scenarios/compact/probe.tsx')).mount(p), paired);
           await page.waitForTimeout(700);
           await page.locator('#compact-probe').last().screenshot({ path: `${shots}/scenarios-${slug}-${theme}-compact${paired ? '' : '-pending'}.png` });
           await page.evaluate(() => document.querySelectorAll('#compact-probe').forEach((n) => n.remove()));

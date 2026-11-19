@@ -284,7 +284,7 @@ describe('solver', () => {
     const [lo, hi] = spending.bounds;
     const { outcome } = run(makeGoal('holds', 0.9), spending.bounds, (x) => 1 - (0.3 * (x - lo)) / (hi - lo));
     const words = solverSentence(makeGoal('holds', 0.9), spending, outcome, 4000);
-    expect(words.answer).toMatch(/^The plan holds in at least 90 of 100 lives when the annual budget is at most \$[\d,]+ a year\.$/);
+    expect(words.answer).toMatch(/^The plan holds in at least 90 of 100 lives when the annual budget is at most \$[\d,]+ a year[;,] .+\.$/);
     expect(words.detail).toContain('assuming the measure moves in one direction');
   });
 });
@@ -322,6 +322,13 @@ describe('words', () => {
     const values = y.values.map((_, r) => x.values.map((_, c) => 0.99 - c * 0.03 - r * 0.02));
     const text = mapTakeaway({ metric: 'holds', x, y, values, paths: 400 });
     expect(text).toMatch(/90 of 100 lives/);
+    // A plan well inside the line is told where it would fall below it; one outside, how it would reach it.
+    const px = Math.round(gridPosition(x.values, x.current) ?? 0);
+    const py = Math.round(gridPosition(y.values, y.current) ?? 0);
+    const centred = (at: number) => y.values.map((_, r) => x.values.map((_, c) => at - (c - px) * 0.03 - (r - py) * 0.02));
+    expect(mapTakeaway({ metric: 'holds', x, y, values: centred(0.95), paths: 1000 })).toMatch(/^The plan as entered holds in 95 of 100 lives\. It would fall below 90 of 100 lives at about /);
+    expect(mapTakeaway({ metric: 'holds', x, y, values: centred(0.85), paths: 1000 })).toMatch(/^The plan as entered holds in 85 of 100 lives\. It would reach 90 of 100 lives by /);
+    expect(mapTakeaway({ metric: 'holds', x, y, values: centred(0.905), paths: 1000 })).toMatch(/on the 90 of 100 line to within the sampling error/);
     expect(mapTakeaway({ metric: 'wealth', x, y, values: values.map((r) => r.map((v) => v * 1e6)), paths: 400 })).toMatch(/runs from \$/);
   });
 });

@@ -173,14 +173,15 @@ export function MetricTable({ comparison }: { comparison: Comparison }) {
   const rows = metricRows(comparison);
   return (
     <div className="scroll-thin -mx-1 overflow-x-auto px-1" tabIndex={0} role="region" aria-label="Every measure under the plan and with the change">
-      <Table className="min-w-[35rem]">
+      {/* Narrow: four columns, with the verdict under the difference and no drawing. */}
+      <Table>
         <colgroup>
           <col />
-          <col className="w-[11%]" />
-          <col className="w-[12%]" />
-          <col className="w-[20%]" />
-          <col style={{ width: 100 }} />
-          <col className="w-[12%]" />
+          <col className="w-[17%] @xl:w-[11%]" />
+          <col className="w-[19%] @xl:w-[12%]" />
+          <col className="w-[33%] @xl:w-[20%]" />
+          <col className="hidden @xl:table-column" style={{ width: 100 }} />
+          <col className="hidden w-[12%] @xl:table-column" />
         </colgroup>
         <thead>
           <tr>
@@ -188,10 +189,10 @@ export function MetricTable({ comparison }: { comparison: Comparison }) {
             <Th numeric>Plan</Th>
             <Th numeric>Changed</Th>
             <Th numeric>Difference</Th>
-            <Th>
+            <Th className="hidden @xl:table-cell">
               <span className="sr-only">Interval against no change</span>
             </Th>
-            <Th>Verdict</Th>
+            <Th className="hidden @xl:table-cell">Verdict</Th>
           </tr>
         </thead>
         <tbody>
@@ -211,16 +212,21 @@ export function MetricTable({ comparison }: { comparison: Comparison }) {
                 <Td numeric className="py-2 !align-top whitespace-nowrap text-ink-1">
                   {formatLevel(r.b, r.unit).replace(' of 100', '')}
                 </Td>
-                <Td numeric className="py-2 !align-top whitespace-nowrap">
-                  <span className={cx(still ? 'text-ink-3' : 'font-medium text-ink-1')}>{still ? 'none' : formatChange(r.delta.value, r.unit)}</span>
-                  {!still && r.delta.lo !== null && r.delta.hi !== null && <span className="block text-xs text-ink-3">{`${formatChange(r.delta.lo, r.unit)} to ${formatChange(r.delta.hi, r.unit)}`}</span>}
+                <Td numeric className="py-2 !align-top @xl:whitespace-nowrap">
+                  <span className={cx('whitespace-nowrap', still ? 'text-ink-3' : 'font-medium text-ink-1')}>{still ? 'none' : formatChange(r.delta.value, r.unit)}</span>
+                  {!still && r.delta.lo !== null && r.delta.hi !== null && (
+                    <span className="block text-xs text-ink-3">
+                      <span className="whitespace-nowrap">{formatChange(r.delta.lo, r.unit)}</span> <span className="whitespace-nowrap">to {formatChange(r.delta.hi, r.unit)}</span>
+                    </span>
+                  )}
+                  {!still && <span className={cx('block font-sans text-xs @xl:hidden', v.tone === 'good' ? 'font-medium text-good' : v.tone === 'bad' ? 'font-medium text-bad' : 'text-ink-3')}>{v.text}</span>}
                 </Td>
-                <Td className="py-2 !align-top">
+                <Td className="hidden py-2 !align-top @xl:table-cell">
                   <div className="pt-0.5 pl-1">
                     <IntervalGlyph row={r} />
                   </div>
                 </Td>
-                <Td className={cx('py-2 !align-top text-xs leading-5 whitespace-nowrap', v.tone === 'good' ? 'font-medium text-good' : v.tone === 'bad' ? 'font-medium text-bad' : 'text-ink-3')}>{v.text}</Td>
+                <Td className={cx('hidden py-2 !align-top text-xs leading-5 whitespace-nowrap @xl:table-cell', v.tone === 'good' ? 'font-medium text-good' : v.tone === 'bad' ? 'font-medium text-bad' : 'text-ink-3')}>{v.text}</Td>
               </tr>
             );
           })}

@@ -308,7 +308,9 @@ export function describePatch(base: Profile, patch: PatchOp[], after: Profile | 
     } else {
       const change = (a: number, b: number) => (a > 0 ? ` (${b >= a ? '+' : '−'}${Math.round(Math.abs(b / a - 1) * 100)}%)` : '');
       if (Math.round(now[0]) !== Math.round(now[1] as number)) lines.push({ key: 'budget-now', label: `Budget while working, across ${count}`, before: `${moneyCompact(now[0])} a year`, after: `${moneyCompact(now[1] as number)}${change(now[0], now[1] as number)}`, ops: budget });
-      if (Math.round(retired[0]) !== Math.round(retired[1] as number) || lines.length === 0)
+      // The plan already says the same (a scenario left over after its twin became the plan).
+      if (Math.round(retired[0]) === Math.round(retired[1] as number) && lines.length === 0) lines.push({ key: 'budget-retired', label: `Budget, across ${count}`, before: null, after: `${moneyCompact(retired[0])} a year in retirement, which the plan already has`, ops: budget });
+      else if (Math.round(retired[0]) !== Math.round(retired[1] as number))
         lines.push({ key: 'budget-retired', label: `Budget in retirement, across ${count}`, before: `${moneyCompact(retired[0])} a year`, after: `${moneyCompact(retired[1] as number)}${change(retired[0], retired[1] as number)}`, ops: budget });
     }
   }
@@ -321,7 +323,8 @@ export function describePatch(base: Profile, patch: PatchOp[], after: Profile | 
     group.forEach((r) => used.add(r.index));
     const names = group.map((r) => r.entity).filter((n): n is string => n !== null);
     const label = names.length ? `${listNames(names)}: ${raw.label}` : upperFirst(raw.label);
-    lines.push({ key: `${raw.pattern}:${raw.index}`, label, before: raw.before, after: raw.after, ops: group.map((r) => r.index) });
+    const noop = raw.before !== null && raw.before === raw.after;
+    lines.push({ key: `${raw.pattern}:${raw.index}`, label, before: noop ? null : raw.before, after: noop ? `${raw.after}, which the plan already has` : raw.after, ops: group.map((r) => r.index) });
   }
   return lines;
 }

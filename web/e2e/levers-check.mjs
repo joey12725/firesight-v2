@@ -38,8 +38,8 @@ await page.waitForFunction(() => window.__firesight.run.getState().status === 'd
 await page.waitForTimeout(300);
 check((await jobs()) === 0, 'leaving the view leaves no sweep running');
 
-// Undo twice: back to the first plan, whose tornado is cached and appears at once, complete.
-await page.evaluate(() => (window.__firesight.plan.getState().undo(), window.__firesight.plan.getState().undo()));
+// Undo once: back to the plan whose tornado finished, which is cached and appears at once, complete.
+await page.evaluate(() => window.__firesight.plan.getState().undo());
 await page.waitForFunction(() => window.__firesight.run.getState().status === 'done', null, { timeout: 60_000 });
 await page.getByRole('tab', { name: 'What matters' }).click();
 await page.getByTestId('lead-sentence').waitFor({ timeout: 10_000 });
@@ -64,6 +64,7 @@ await page.keyboard.press('ArrowUp');
 const spoken = await page.locator('[data-chart-card=trade-off-map] [aria-live]').textContent();
 check(/Trigger rate .*%, spending \$/.test(spoken ?? ''), `arrow keys read a map cell aloud (${spoken})`);
 // The table view of each chart has rows.
+await page.waitForFunction(() => !/Updating|Sharpening|Early picture|Simulating/.test(document.querySelector('[role=tabpanel]')?.textContent ?? ''), null, { timeout: 240_000 });
 for (const card of ['what-moves-holds', 'trade-off-map']) {
   await page.locator(`[data-chart-card=${card}]`).getByRole('button', { name: 'View as a table' }).click();
   const rows = await page.locator(`[data-chart-card=${card}] tbody tr`).count();

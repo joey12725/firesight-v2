@@ -12,7 +12,7 @@ import type { ViewProps } from '../types';
 import { RatesChart, RatesLegend, ratesTable } from './RatesChart';
 import { YearControls, YearFlow, yearTable, type YearJump } from './YearFlow';
 import { AccountFlows, AccountsLegend, BalanceLegend, BalanceSheet, FlowsLegend, MoneyFlows, TaxChart, TaxLegend, accountsTable, balanceTable, flowsTable, taxTable } from './charts';
-import { cashFlowModel, handoverIndex, sharesOfUses, yearNodes, type CashFlowModel } from './model';
+import { cashFlowModel, handoverIndex, livesAbroad, sharesOfUses, yearNodes, type CashFlowModel } from './model';
 import { accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, ratesTakeaway, retirementIndex, taxTakeaway, yearTakeaway } from './text';
 
 function CashFlowSkeleton() {
@@ -96,8 +96,9 @@ function LifetimeTax({ summary }: { summary: Summary }) {
 }
 
 export default function CashFlowView({ profile, summary, run }: ViewProps) {
-  const model = useMemo(() => (summary ? cashFlowModel(summary) : null), [summary]);
-  const nodes = useMemo(() => (model ? yearNodes(model) : null), [model]);
+  const abroad = useMemo(() => livesAbroad(profile), [profile]);
+  const model = useMemo(() => (summary ? cashFlowModel(summary, { abroad }) : null), [summary, abroad]);
+  const nodes = useMemo(() => (model ? yearNodes(model, { abroad }) : null), [model, abroad]);
   const moments = useMemo(() => (summary ? planMoments(summary, profile) : []), [summary, profile]);
   const ranges = useMemo(() => (summary ? presets(summary) : []), [summary]);
   const jumpList = useMemo(() => (model ? jumps(model) : []), [model]);
@@ -224,7 +225,7 @@ export default function CashFlowView({ profile, summary, run }: ViewProps) {
           <ChartCard
             title="Tax, year by year"
             takeaway={taxTakeaway(model, summary)}
-            caption="Tax in the year it is paid: withholding and estimates during the year, the balance of the return the following April. Payroll tax is Social Security, Medicare and self-employment tax. The strip beneath is total tax over all money coming in, withdrawals included, since in retirement taxable income and money in hand are very different things."
+            caption={`Tax in the year it is paid: withholding and estimates during the year, the balance of the return the following April. Payroll tax is Social Security, Medicare and self-employment tax.${abroad ? ' While the household lives outside the US its income tax there is counted with state tax.' : ''} The strip beneath is total tax over all money coming in, withdrawals included, since in retirement taxable income and money in hand are very different things. The simulation does not yet report taxable income against the bracket thresholds across all lives; Life stories shows each year’s bracket for one life.`}
             table={() => taxTable(model)}
             filename="tax-by-age"
             explain={{ context: () => ({ ...context(), lifetime_tax: summary.headline.lifetime_tax, tax_share_now: model.taxShare[model.flowStart], tax_share_in_retirement: r === null ? null : model.taxShare[r] }) }}

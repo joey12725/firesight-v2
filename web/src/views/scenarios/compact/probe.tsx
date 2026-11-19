@@ -1,9 +1,9 @@
 // Loaded by e2e/scenarios.mjs (COMPACT=1) through the dev server: mounts the assistant's
 // `compare_delta` chart at chat width from the live run, so it can be looked at without
-// a model connection. Not part of the app bundle.
+// a model connection. Nothing in the app imports it, so it is not in the bundle.
 import { createRoot } from 'react-dom/client';
-import type { Diagnostics } from '../src/state/diagnostics';
-import CompareDelta from '../src/views/scenarios/compact/CompareDelta';
+import type { Diagnostics } from '@/state/diagnostics';
+import CompareDelta from './CompareDelta';
 
 export function mount(paired: boolean) {
   const fs = (window as unknown as { __firesight: Diagnostics }).__firesight;

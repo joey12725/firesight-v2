@@ -7,8 +7,8 @@ import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { ExampleProfile, Profile } from '@/engine/types';
 import { layoutLanes } from '@/ui/charts/ext/cashflow-lanes';
 import { crowdFor, yearEnds } from './Timeline';
-import { buildLife, fallAt, headline, lifeChoices, narrative, taxReturn, yearLedger, type Life } from './life';
-import { accountTakeaway, flowTakeaway, marketTakeaway, timelineTakeaway } from './words';
+import { buildLife, fallAt, headline, lifeChoices, narrative, taxReturn, taxYears, yearLedger, type Life } from './life';
+import { accountTakeaway, flowTakeaway, marketTakeaway, taxLaneTakeaway, timelineTakeaway } from './words';
 
 interface Fixture {
   profile: Profile;
@@ -200,5 +200,48 @@ describe('layoutLanes', () => {
     expect(layoutLanes([{ x: 200, width: 50, priority: 1 }], { min: 0, max: 400, rows: 1 })[0]).toEqual({ row: 0, left: 175 });
     expect(layoutLanes([{ x: 395, width: 50, priority: 1 }], { min: 0, max: 400, rows: 1 })[0]).toEqual({ row: 0, left: 350 });
     expect(layoutLanes([{ x: 5, width: 500, priority: 1 }], { min: 0, max: 400, rows: 1 })[0]?.row).toBe(-1);
+  });
+});
+
+describe('tax by year and repeated shortfalls', () => {
+  for (const slug of SLUGS) {
+    it(`${slug}: reads each return's rates and never writes a broken sentence`, () => {
+      for (const { life } of lives(slug)) {
+        const rows = taxYears(life);
+        expect(rows.length).toBe(life.time.length);
+        rows.forEach((r, y) => {
+          const filed = life.trace.tax_returns.some((t) => t.year === life.time.years[y]);
+          expect(r.marginal !== null).toBe(filed);
+          if (r.marginal !== null) {
+            expect(r.marginal).toBeGreaterThanOrEqual(0);
+            expect(r.marginal).toBeLessThan(0.6);
+          }
+          if (r.effective !== null) expect(r.effective).toBeGreaterThanOrEqual(0);
+          if (r.taxable !== null) expect(r.taxable).toBeGreaterThanOrEqual(0);
+        });
+        const words = taxLaneTakeaway(life);
+        expect(words).not.toMatch(/undefined|NaN|null/);
+        expect(words.endsWith('.')).toBe(true);
+        // Only the first shortfall is an event; later ones are unlabelled repeats, and the story tells it once.
+        const short = life.events.filter((e) => e.kind === 'depleted');
+        expect(short.length).toBe(life.trace.events.filter((e) => e.kind === 'depleted').length);
+        expect(short.filter((e) => e.priority > 0).length).toBe(short.length ? 1 : 0);
+        const story = narrative(life, null).map((x) => x.text);
+        expect(story.filter((t) => /^Savings are exhausted/.test(t)).length).toBe(short.length ? 1 : 0);
+      }
+    });
+  }
+
+  it('marks years lived abroad, where the rate is the flat foreign rate', () => {
+    const abroad = lives('side-hustle-landlord').flatMap(({ life }) => taxYears(life).filter((r) => r.foreign));
+    expect(abroad.length).toBeGreaterThan(0);
+    for (const { life } of lives('dual-income-family')) expect(taxYears(life).some((r) => r.foreign)).toBe(false);
+  });
+
+  it('describes a pick that is not in the scatter sample from the pick itself', () => {
+    const { summary } = lives('dual-income-family')[0] as { summary: Summary };
+    const trimmed: Summary = { ...summary, scatter: { paths: [], columns: summary.scatter.columns.map((c) => ({ ...c, values: [] })) } };
+    const choices = lifeChoices(trimmed);
+    expect(choices.find((c) => c.key === 'median')?.describes).toMatch(/^Ends with \$/);
   });
 });

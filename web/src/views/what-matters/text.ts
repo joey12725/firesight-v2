@@ -140,7 +140,7 @@ export interface MapReading {
   paths: number;
 }
 
-export function mapTakeaway({ metric, x, y, values }: MapReading): string {
+export function mapTakeaway({ metric, x, y, values, paths }: MapReading): string {
   const flat = values.flat().filter((v): v is number => v !== null);
   if (flat.length === 0) return 'Simulating the first combinations.';
   const lo = Math.min(...flat);
@@ -157,14 +157,22 @@ export function mapTakeaway({ metric, x, y, values }: MapReading): string {
   const row = values[Math.round(py)] ?? [];
   const column = values.map((r) => r[Math.round(px)] ?? null);
   const here = row[Math.round(px)] ?? null;
-  const goal = metric === 'holds' ? `holding in ${ofHundred(target).text} lives` : `running short in only ${ofHundred(target).text}`;
+  const line = `${ofHundred(target).text} lives`;
   const ax = crossingAlong(row, x.values, target);
   const ay = crossingAlong(column, y.values, target);
   const routes = [ax !== null ? x.phrase(x.round(ax)) : null, ay !== null ? y.phrase(y.round(ay)) : null].filter((s): s is string => s !== null);
   const meets = here !== null && (metric === 'holds' ? here >= target : here <= target);
-  const now = here !== null ? ` (${metric === 'holds' ? 'it holds in' : 'it runs short in'} ${ofHundred(here).text} here)` : '';
-  if (routes.length === 0) return meets ? `The plan as entered clears ${goal}${now}, and stays clear along both axes of this map.` : `From the plan as entered${now}, ${goal} is not reached by moving along either axis alone; the map shows the combinations that do.`;
-  return meets ? `The plan as entered clears ${goal}${now}. It stops doing so at about ${routes.join(', or ')}.` : `From the plan as entered${now}, ${goal} is reached by ${routes.join(', or by ')}, the rest as planned.`;
+  const now = here === null ? 'The plan as entered is not on a measured cell.' : metric === 'holds' ? `The plan as entered holds in ${ofHundred(here).text} lives.` : `Under the plan as entered money runs short in ${ofHundred(here).text} lives.`;
+  // Within the sampling error of one cell the plan cannot be said to be on either side of the line.
+  if (here !== null && paths > 0 && Math.abs(here - target) <= 1.96 * Math.sqrt((target * (1 - target)) / paths)) {
+    return `${now} That is on the ${line.replace(' lives', '')} line to within the sampling error of a cell, so small moves along either axis cross it.`;
+  }
+  if (routes.length === 0) {
+    if (meets) return `${now} It stays ${metric === 'holds' ? 'at or above' : 'at or below'} ${line} along both axes of this map.`;
+    return `${now} Moving along either axis alone does not reach ${line}; the map shows the combinations that do.`;
+  }
+  if (meets) return `${now} It would ${metric === 'holds' ? 'fall below' : 'rise above'} ${line} at about ${routes.join(', or ')}, the rest as planned.`;
+  return `${now} It would reach ${line} by ${routes.join(', or by ')}, the rest as planned.`;
 }
 
 // ---- solver -------------------------------------------------------------------------
@@ -189,10 +197,10 @@ export function solverValue(variable: VarDef, x: number, bare = false): string {
   return variable.format(x);
 }
 
-/** A probe's level to one more digit than a label, so the two sides of a boundary read differently. */
-function levelWords(metric: MetricId, level: Level): string {
+/** A probe's level precisely enough that the two sides of a boundary read differently: shares as counts of the lives simulated. */
+function levelWords(metric: MetricId, level: Level, paths: number): string {
   if (level.value === null) return 'undefined (too few lives get there)';
-  if (METRICS[metric].unit === 'share') return `${(level.value * 100).toFixed(1)} of 100`;
+  if (METRICS[metric].unit === 'share') return `${count(Math.round(level.value * paths))} of ${count(paths)} lives`;
   return formatLevel(metric, level.value);
 }
 
@@ -202,19 +210,22 @@ export function solverSentence(goal: Goal, variable: VarDef, outcome: SolveOutco
   const Clause = clause.charAt(0).toUpperCase() + clause.slice(1);
   const [lo, hi] = variable.bounds ?? [0, 0];
   if (outcome.status === 'always') {
-    return { answer: `${Clause} everywhere between ${solverValue(variable, lo)} and ${solverValue(variable, hi)}.`, detail: `At the two ends the measure is ${levelWords(goal.metric, outcome.lo.level)} and ${levelWords(goal.metric, outcome.hi.level)}, so there is no boundary to find in this range.` };
+    return { answer: `${Clause} everywhere between ${solverValue(variable, lo)} and ${solverValue(variable, hi)}.`, detail: `At the two ends the measure is ${levelWords(goal.metric, outcome.lo.level, paths)} and ${levelWords(goal.metric, outcome.hi.level, paths)}, so there is no boundary to find in this range.` };
   }
   if (outcome.status === 'never') {
     return {
       answer: `No value of ${noun} between ${solverValue(variable, lo)} and ${solverValue(variable, hi)} gets there.`,
-      detail: `The closest is ${solverValue(variable, outcome.closest.x)}, where the measure is ${levelWords(goal.metric, outcome.closest.level)}. Try another variable, or a gentler goal.`,
+      detail: `The closest is ${solverValue(variable, outcome.closest.x)}, where the measure is ${levelWords(goal.metric, outcome.closest.level, paths)}. Try another variable, or a gentler goal.`,
     };
   }
   const { safe, unsafe, band } = outcome;
   const side = safe.x < unsafe.x ? 'at most' : 'at least';
-  const sampling = band && band[1] - band[0] > outcome.tolerance ? ` On a different draw of ${count(paths)} lives the boundary could fall anywhere from ${solverValue(variable, variable.round(band[0]), true)} to ${solverValue(variable, variable.round(band[1]))}.` : '';
+  const wide = band !== null && band[1] - band[0] > outcome.tolerance;
+  const width = solverValue(variable, variable.round(Math.abs(unsafe.x - safe.x)), true);
+  // The tolerance belongs in the answer: the search's own resolution, or the sampling range when that is wider.
+  const tolerance = wide ? `; on a different draw of lives the boundary could fall anywhere from ${solverValue(variable, variable.round(band[0]), true)} to ${solverValue(variable, variable.round(band[1]), true)}` : `, to within ${width}`;
   return {
-    answer: `${Clause} when ${noun} ${verb} ${side} ${solverValue(variable, safe.x)}.`,
-    detail: `At ${solverValue(variable, safe.x)} the measure is ${levelWords(goal.metric, safe.level)}; at ${solverValue(variable, unsafe.x)} it is ${levelWords(goal.metric, unsafe.level)}. The search narrowed the boundary to within ${solverValue(variable, variable.round(Math.abs(unsafe.x - safe.x)), true)}, assuming the measure moves in one direction as ${noun} ${verb === 'are' ? 'grow' : 'grows'}.${sampling}`,
+    answer: `${Clause} when ${noun} ${verb} ${side} ${solverValue(variable, safe.x)}${tolerance}.`,
+    detail: `At ${solverValue(variable, safe.x)} the measure is ${levelWords(goal.metric, safe.level, paths)}; at ${solverValue(variable, unsafe.x)} it is ${levelWords(goal.metric, unsafe.level, paths)}. The search narrowed the boundary to within ${width}, assuming the measure moves in one direction as ${noun} ${verb === 'are' ? 'grow' : 'grows'}; the sampling range comes from the 95% intervals of the ${count(paths)}-life runs.`,
   };
 }

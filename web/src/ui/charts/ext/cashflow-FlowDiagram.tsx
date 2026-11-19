@@ -201,7 +201,7 @@ export function FlowDiagram({ sources, uses, format, trunkLabel, headings, heigh
               {side(uses, layout.uses, 'right')}
               <rect x={layout.trunk.x} y={layout.trunk.y} width={layout.trunk.width} height={Math.max(1, layout.trunk.height)} rx={2} fill={theme.ink.primary} />
               <g fontSize={11} fill={theme.label}>
-                {headings && (
+                {headings && (!trunkLabel || labelWidth + 8 < width / 2 - textWidth(trunkLabel(total), 11) / 2 - 14) && (
                   <>
                     <text x={labelWidth + 8} y={11} textAnchor="end">
                       {headings.sources}

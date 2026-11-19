@@ -59,7 +59,7 @@ export function Rank({ comparison, metric, selected, onSelect }: RankProps) {
         const { theme, width } = frame;
         const stacked = width < 520;
         const rowHeight = stacked ? 50 : 38;
-        const nameWidth = stacked ? 0 : Math.min(Math.round(width * 0.3), Math.max(90, ...rows.map((r) => textWidth(r.name, 12) + 14)));
+        const nameWidth = stacked ? 0 : Math.min(Math.round(width * 0.38), Math.max(90, ...rows.map((r) => textWidth(r.name, 12) + 14)));
         const valueWidth = stacked ? 0 : Math.max(96, ...rows.map((r) => textWidth(label(r, metric), 12) + textWidth(note(r), 11) + 18));
         const x0 = nameWidth + 6;
         const x1 = width - valueWidth - 6;

@@ -3,6 +3,7 @@
 // alive that year: at any age it mixes lives still working with lives already retired,
 // and late in life it is pulled up by the luckiest. The view says so wherever it matters.
 import type { Summary, YearSeries } from '@/engine/output-types';
+import type { Profile } from '@/engine/types';
 import { compositionSeries, statusShares, summaryTime, type TimeAxis } from '@/ui/charts';
 
 /** A stack member: one colour, one label, possibly the sum of several engine series. */
@@ -71,8 +72,15 @@ function present(groups: Group[], from: number, to: number, floor = 0.004): Grou
   return groups.filter((g) => Math.max(0, ...g.values.slice(from, to + 1)) >= peak * floor && peak > 0);
 }
 
-export function cashFlowModel(summary: Summary): CashFlowModel {
+/** True when the plan ever has the household living outside the US: the engine then reports foreign income tax in the state series. */
+export function livesAbroad(profile: Profile): boolean {
+  const abroad = (country: string | null | undefined) => typeof country === 'string' && country !== '' && country.toUpperCase() !== 'US';
+  return abroad(profile.household?.location?.country) || (profile.events ?? []).some((e) => e.kind.type === 'relocate' && abroad(e.kind.country));
+}
+
+export function cashFlowModel(summary: Summary, options: { abroad?: boolean } = {}): CashFlowModel {
   const time = summaryTime(summary);
+  const stateTax = options.abroad ? 'State and foreign income tax' : 'State income tax';
   const n = time.length;
   const s = (key: YearSeries) => {
     const row = compositionSeries(summary, key);
@@ -110,7 +118,7 @@ export function cashFlowModel(summary: Summary): CashFlowModel {
   ];
   const taxParts = [
     part('tax_federal', 'Federal income tax', s('tax_federal')),
-    part('tax_state', 'State income tax', s('tax_state')),
+    part('tax_state', stateTax, s('tax_state')),
     part('tax_payroll', 'Payroll tax', s('tax_payroll')),
     part('tax_penalties', 'Penalties', s('tax_penalties')),
   ];
@@ -194,7 +202,7 @@ export function cashFlowModel(summary: Summary): CashFlowModel {
   const taxes = present(
     [
       account('tax_federal', 'Federal income tax', 'Federal', 4, s('tax_federal')),
-      account('tax_state', 'State income tax', 'State', 5, s('tax_state')),
+      account('tax_state', stateTax, options.abroad ? 'State and foreign' : 'State', 5, s('tax_state')),
       account('tax_payroll', 'Payroll tax', 'Payroll', 1, s('tax_payroll')),
       account('tax_penalties', 'Penalties', 'Penalties', 2, s('tax_penalties')),
     ],
@@ -272,12 +280,12 @@ const NODE_LABEL: Record<string, string> = {
  * total, in stack order. The set is fixed for a summary, so the diagram can glide from
  * year to year; a part that is zero in the chosen year simply has no height.
  */
-export function yearNodes(model: CashFlowModel): { sources: YearNode[]; uses: YearNode[] } {
+export function yearNodes(model: CashFlowModel, options: { abroad?: boolean } = {}): { sources: YearNode[]; uses: YearNode[] } {
   const side = (groups: Group[], total: number[], prefix: string) =>
     groups.flatMap((g) =>
       g.parts
         .filter((p) => p.values.some((v, i) => i >= model.flowStart && i <= model.end && v >= (total[i] ?? 0) * 0.005 && v > 0))
-        .map((p): YearNode => ({ key: `${prefix}:${p.key}`, label: NODE_LABEL[p.key] ?? p.label, group: g.key, color: g.color, values: p.values })),
+        .map((p): YearNode => ({ key: `${prefix}:${p.key}`, label: p.key === 'tax_state' && options.abroad ? 'State and foreign tax' : (NODE_LABEL[p.key] ?? p.label), group: g.key, color: g.color, values: p.values })),
     );
   return { sources: side(model.moneyIn, model.totalIn, 'in'), uses: side(model.moneyOut, model.totalOut, 'out') };
 }
