@@ -18,6 +18,7 @@ use crate::model::{
 use crate::stats::{Recorder, TraceEventKind, YearSeries};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, CHILD_SERVICE_REAL_GROWTH};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_SERIES, TAX_STATE};
 
@@ -474,6 +475,30 @@ impl State {
                 });
             }
             self.last_phase[i] = hm.phase;
+        }
+        if plan.family.cover_children {
+            let mut ap = AdultPhases::default();
+            for i in 0..self.n {
+                if self.alive[i] && self.present[i] {
+                    ap.note(self.last_phase[i]);
+                }
+            }
+            ap.employer = employer_coverage;
+            let kids = self.child_health(plan, t, price, ap);
+            health_cost += kids.total;
+            aca_premiums += kids.aca_premium;
+            self.ty.aca_benchmark_premium += kids.aca_benchmark;
+            if self.detail && (kids.total > 0.0) != self.fam.kids_on_plan {
+                self.fam.kids_on_plan = kids.total > 0.0;
+                let on = self.fam.kids_on_plan;
+                self.event(now, TraceEventKind::Child, Some(kids.total / price), || {
+                    if on {
+                        "Children are on the health plan".to_string()
+                    } else {
+                        "Children are off the health plan".to_string()
+                    }
+                });
+            }
         }
         if aca_people > 0 {
             self.ty.aca_months += 1;

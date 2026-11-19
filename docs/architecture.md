@@ -117,7 +117,9 @@ Spending { items: Vec<BudgetItem>,
            retirement_smile: bool,                 // Blanchett real decline through the 70s, healthcare rises separately
            shocks: Off|Typical|High,               // irregular expenses, compound Poisson
            healthcare: Healthcare { mode: Modeled|InBudget, early_retirement: Aca|Cobra|Custom{annual},
-                                    long_term_care: bool, quality: Bronze|Silver|Gold },
+                                    long_term_care: bool, quality: Bronze|Silver|Gold,
+                                    cover_children: bool (false),            // children on the household plan
+                                    children_coverage_end_age: f64 (26) },
            survivor_factor: f64 (0.7) }
 BudgetItem { id, name, category: Category, amount, frequency: Monthly|Annual|Weekly|Biweekly|Quarterly,
              essential: bool, real_growth: Option<f64> (default by category),

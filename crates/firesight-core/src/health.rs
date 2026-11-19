@@ -33,6 +33,8 @@
 //! Children's health costs are not modelled here: the USDA-style child cost in the
 //! spending module already includes them.
 
+pub mod children;
+
 use serde_json::Value;
 
 use crate::data::Data;
@@ -633,6 +635,8 @@ pub struct HealthModel {
     ltc_monthly_cost: [f64; 3],
     /// Mix-weighted cost per month.
     ltc_blended_monthly: f64,
+    /// Monthly increments for putting children on the household's plan.
+    child: children::ChildCoverage,
 }
 
 fn sex_index(sex: Sex) -> usize {
@@ -901,6 +905,7 @@ impl HealthModel {
             ],
             ltc_monthly_cost,
             ltc_blended_monthly,
+            child: children::ChildCoverage::new(employer),
         }
     }
 

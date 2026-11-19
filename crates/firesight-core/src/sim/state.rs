@@ -154,6 +154,8 @@ pub(crate) struct State {
     pub kids_until: i32,
     /// Cached modelled child cost per month, today's dollars (negative: stale).
     pub kids_real: f64,
+    /// Per-path state of the opt-in family features.
+    pub fam: super::family::FamilyState,
     // Location and tax law.
     pub tax_state: StateCode,
     pub in_us: bool,
@@ -361,6 +363,7 @@ impl State {
             service_growth: 1.0,
             kids_until: 0,
             kids_real: -1.0,
+            fam: super::family::FamilyState::new(plan),
             tax_state: StateCode::NONE,
             in_us: true,
             foreign_rate: None,
@@ -683,6 +686,7 @@ impl State {
             .map(|c| c.birth + 22 * 12)
             .max()
             .unwrap_or(0);
+        self.fam.begin(plan, seed, path);
 
         // Location and tax.
         self.tax_state = plan.state0;

@@ -409,6 +409,8 @@ pub struct Plan {
     pub(crate) children: Vec<ChildPlan>,
     /// Bit `k` set when some child's birthday falls in a month with `t % 12 == k`.
     pub(crate) birthday_months: u32,
+    /// Opt-in family features (children's health cover, uncertain births, ...).
+    pub(crate) family: super::family::FamilyPlan,
     pub(crate) jobs: Vec<JobPlan>,
     pub(crate) selfemp: Vec<SePlan>,
     pub(crate) streams: Vec<StreamPlan>,
@@ -882,6 +884,14 @@ impl Plan {
                 }
             })
             .collect();
+        let mut children = children;
+        super::family::drop_usda_health_share(
+            &mut children,
+            profile,
+            data,
+            tiers[tier],
+            usda_factor,
+        );
 
         // Properties: existing ones, then one slot per purchase event.
         let default_property_tax = law.property_tax_rate(state0);
@@ -1252,6 +1262,7 @@ impl Plan {
                 .iter()
                 .fold(0, |mask, c| mask | 1 << c.birth.rem_euclid(12)),
             children,
+            family: super::family::compile(profile),
             jobs,
             selfemp,
             streams,

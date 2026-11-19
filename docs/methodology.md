@@ -398,6 +398,44 @@ insurance at full price: households withdrew from retirement accounts and re-sav
 a median $210,000 in taxable accounts before 65, and the HSA paid "medical" bills
 of $177,000 more than was spent on health.
 
+### Children on the health plan (opt-in)
+
+`spending.healthcare.cover_children` (default false, with
+`children_coverage_end_age`, default 26, the ACA dependent-coverage age) charges
+each child the household's coverage phase. It applies only to `modeled` healthcare.
+
+* **Employer plan** (a parent has employer cover): the worker contribution moves
+  from the single tier to the family tier, $7,471 against $1,765 a year (KFF
+  Employer Health Benefits Survey 2026), a $475 a month increment charged once
+  however many children are covered.
+* **COBRA**: the full family plan over the single plan, $28,303 against $9,804, with
+  the 2% load.
+* **ACA marketplace** (a parent is on it): the benchmark premium at the child's age on
+  the CMS age curve (0.765 of the age-21 price to 14, 1.0 at 21), times the metal-tier
+  factor, for at most the three oldest children under 21 (the rating rule, 45 CFR
+  147.102(c)(1)); older dependants up to the end age are charged in full. These
+  premiums join the advance credit, and their benchmark joins the benchmark premium
+  of the credit calculation and of the January plan, so a covered child raises the
+  credit and the credit cliff the planner steers under.
+* Adults on Medicare: the children are charged an unsubsidised marketplace plan and are
+  not counted in the credit. Households on a custom early-retirement amount or abroad
+  are not charged (the custom amount is the household's own figure).
+* **Out-of-pocket**: the mean of the age band for the plan (MEPS: $400 a year under 18,
+  $800 from 18; bronze and gold scaling as for adults), as an expected value: children
+  draw no random numbers.
+* The health-care column of the USDA child cost (mean $1,645 a year for the
+  high-income tier in 2015 dollars) is removed from the modelled core child cost when
+  the switch is on, so health is not counted twice.
+
+Measured on `dual-income-family` (3,000 paths, seed 7, paired): success 92.2% to
+91.0%, median terminal net worth down $133,000 (the health increase of about $180,000
+over the children's years, less the $62,000 of USDA health share removed).
+
+Not modelled: the funded test (the retirement trigger) does not include the children's
+premiums in its health projection; the tax value of pre-tax employer premiums is
+ignored for adults and children alike; state children's programs (CHIP, Medicaid) are
+not modelled; a dependant over 18 who is covered is not a tax dependant after 23.
+
 ### Long-term care
 
 Each person may spend the end of their life in paid care. The probability depends

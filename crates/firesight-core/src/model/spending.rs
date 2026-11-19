@@ -71,6 +71,18 @@ pub struct Healthcare {
     pub long_term_care: bool,
     /// Plan generosity, which trades premiums against out-of-pocket costs.
     pub quality: PlanTier,
+    /// Charge each child the household's health-insurance premiums and out-of-pocket
+    /// costs, by the household's coverage phase: the employer family-tier contribution
+    /// while a parent has employer cover, COBRA at the family price, or ACA marketplace
+    /// premiums at the child rates of the age curve (at most three children under 21
+    /// are charged, the ACA rating rule) that also count toward the benchmark premium
+    /// and the premium tax credit. When on, the health-care share of the modelled child
+    /// cost is dropped so health is not counted twice. Off (the default): children
+    /// carry no premiums beyond that share. Only applies to `mode` "modeled".
+    pub cover_children: bool,
+    /// Age at which a child leaves the parents' health plan, 26 by default (the ACA
+    /// dependent-coverage age). Used only when `cover_children` is on.
+    pub children_coverage_end_age: f64,
 }
 
 impl Default for Healthcare {
@@ -80,6 +92,8 @@ impl Default for Healthcare {
             early_retirement: EarlyRetirementCoverage::Aca,
             long_term_care: true,
             quality: PlanTier::Silver,
+            cover_children: false,
+            children_coverage_end_age: 26.0,
         }
     }
 }

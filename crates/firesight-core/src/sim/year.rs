@@ -35,6 +35,7 @@ use crate::stats::TraceEventKind;
 use crate::tax::{self, FilingStatus, Indexation, TaxInputs};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, TriggerPlan};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_PENALTY, TAX_STATE};
 
@@ -303,6 +304,7 @@ impl State {
                 }
             }
         }
+        let mut adults_on = AdultPhases::default();
         for i in 0..self.n {
             if !self.present[i] {
                 continue;
@@ -316,6 +318,7 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             });
+            adults_on.note(phase);
             let (premium, pocket) = plan.health.expected_annual_parts_at(age, phase, t as u32);
             let (premium, pocket) = (premium / 12.0 * price, pocket / 12.0 * price);
             r.health += premium + pocket + self.irmaa_m[i];
@@ -339,6 +342,12 @@ impl State {
                     * plan.health.excess_growth(t as u32)
                     * price;
             }
+        }
+        if plan.family.cover_children {
+            let kids = self.child_health(plan, t, price, adults_on);
+            r.health += kids.total;
+            r.aca_premium += kids.aca_premium;
+            r.aca_benchmark += kids.aca_benchmark;
         }
         if (t as i32) < self.kids_until {
             r.children = self.children_cost(plan, t) * price;
