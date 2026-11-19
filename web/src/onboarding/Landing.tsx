@@ -3,7 +3,7 @@ import { exampleProfiles } from '@/engine';
 import { openHousehold, useHouseholds } from '@/state/households';
 import { useUi } from '@/state/ui-store';
 import { Button, Icon, type IconName } from '@/ui';
-import { METHODOLOGY_URL, openBlank, openExample } from '@/shell/actions';
+import { METHODOLOGY_URL, PRIMER_URL, openBlank, openExample } from '@/shell/actions';
 import { askAssistant } from '@/assistant';
 
 function Way({ icon, title, children, action }: { icon: IconName; title: string; children: React.ReactNode; action: React.ReactNode }) {
@@ -42,6 +42,13 @@ export function Landing() {
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-ink-2">
           FIRESight lives your financial plan forward tens of thousands of times: through bull markets and crashes, layoffs, long lives and short ones. Then it shows you the whole range, not one hopeful
           line. Everything runs on your device.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-pretty text-ink-3">
+          New to early retirement planning?{' '}
+          <a href={PRIMER_URL} target="_blank" rel="noreferrer" className="rounded-xs font-medium text-ink-2 underline decoration-line-strong underline-offset-2 hover:text-accent-ink">
+            A ten-minute primer
+          </a>{' '}
+          explains the ideas and every term the app uses.
         </p>
 
         {saved.length > 0 && (
