@@ -730,70 +730,71 @@ pub fn execute_plan(
         }
     };
 
+    // A context is built only for a withdrawal that will be made (`pull` ignores
+    // amounts that are not positive): most sources of most plans are untouched.
+    let wanted = |amount: f64| amount > 0.0 || amount.is_nan();
     for p in 0..MAX_PEOPLE {
-        let base = WithdrawContext {
+        let base = || WithdrawContext {
             owner_age: inputs.ages[p],
             qualified_medical: 0.0,
             penalty_exempt: inputs.penalty_exempt[p],
             prefer_overweight: prefer,
         };
         let medical = plan.from_hsa[p] * fraction;
-        pull(
-            accounts,
-            &mut done,
-            Bucket::Hsa(p),
-            medical,
-            &WithdrawContext {
-                qualified_medical: medical,
-                ..base
-            },
-        );
+        if wanted(medical) {
+            pull(
+                accounts,
+                &mut done,
+                Bucket::Hsa(p),
+                medical,
+                &WithdrawContext {
+                    qualified_medical: medical,
+                    ..base()
+                },
+            );
+        }
         // RMDs go to people long past 59 and a half, so the only part of a
         // traditional withdrawal that needs an explicit exemption is the 72(t) one.
         let sepp = plan.sepp[p].min(plan.from_traditional[p]).max(0.0);
-        pull(
-            accounts,
-            &mut done,
-            Bucket::Traditional(p),
-            sepp * fraction,
-            &WithdrawContext {
-                penalty_exempt: true,
-                ..base
-            },
-        );
-        pull(
-            accounts,
-            &mut done,
-            Bucket::Traditional(p),
-            (plan.from_traditional[p] - sepp) * fraction,
-            &base,
-        );
-        pull(
-            accounts,
-            &mut done,
-            Bucket::Roth(p),
-            plan.from_roth[p] * fraction,
-            &base,
-        );
-        pull(
-            accounts,
-            &mut done,
-            Bucket::Hsa(p),
-            plan.from_hsa_other[p] * fraction,
-            &base,
-        );
+        if wanted(sepp * fraction) {
+            pull(
+                accounts,
+                &mut done,
+                Bucket::Traditional(p),
+                sepp * fraction,
+                &WithdrawContext {
+                    penalty_exempt: true,
+                    ..base()
+                },
+            );
+        }
+        let traditional = (plan.from_traditional[p] - sepp) * fraction;
+        if wanted(traditional) {
+            pull(
+                accounts,
+                &mut done,
+                Bucket::Traditional(p),
+                traditional,
+                &base(),
+            );
+        }
+        let roth = plan.from_roth[p] * fraction;
+        if wanted(roth) {
+            pull(accounts, &mut done, Bucket::Roth(p), roth, &base());
+        }
+        let other = plan.from_hsa_other[p] * fraction;
+        if wanted(other) {
+            pull(accounts, &mut done, Bucket::Hsa(p), other, &base());
+        }
     }
-    let taxable_ctx = WithdrawContext {
-        prefer_overweight: prefer,
-        ..WithdrawContext::default()
-    };
-    pull(
-        accounts,
-        &mut done,
-        Bucket::Taxable,
-        plan.from_taxable * fraction,
-        &taxable_ctx,
-    );
+    let taxable = plan.from_taxable * fraction;
+    if wanted(taxable) {
+        let taxable_ctx = WithdrawContext {
+            prefer_overweight: prefer,
+            ..WithdrawContext::default()
+        };
+        pull(accounts, &mut done, Bucket::Taxable, taxable, &taxable_ctx);
+    }
     for (p, amount) in plan.roth_conversion.iter().enumerate() {
         let c = accounts.convert_to_roth(p, amount * fraction);
         tax_inputs.roth_conversions += c;
@@ -894,11 +895,44 @@ impl Draw {
     }
 }
 
+/// What each source holds when a plan is made: the bucket totals the allocator
+/// works from, summed once per plan rather than once per candidate.
+#[derive(Clone, Copy)]
+struct Balances {
+    cash: f64,
+    taxable: f64,
+    traditional: [f64; MAX_PEOPLE],
+    roth: [f64; MAX_PEOPLE],
+    /// Roth money the owner can take at any age without tax or penalty.
+    roth_accessible: [f64; MAX_PEOPLE],
+    hsa: [f64; MAX_PEOPLE],
+}
+
+impl Balances {
+    fn of(a: &Accounts) -> Balances {
+        let mut b = Balances {
+            cash: a.cash,
+            taxable: a.total(Bucket::Taxable),
+            traditional: [0.0; MAX_PEOPLE],
+            roth: [0.0; MAX_PEOPLE],
+            roth_accessible: [0.0; MAX_PEOPLE],
+            hsa: [0.0; MAX_PEOPLE],
+        };
+        for p in 0..MAX_PEOPLE {
+            b.traditional[p] = a.total(Bucket::Traditional(p));
+            b.roth[p] = a.total(Bucket::Roth(p));
+            b.roth_accessible[p] = a.roth_accessible(p);
+            b.hsa[p] = a.total(Bucket::Hsa(p));
+        }
+        b
+    }
+}
+
 /// Everything about the year that does not change between gross-up iterations.
 struct Setup<'a> {
     /// The order actually followed (see [`effective_order`]).
     order: WithdrawalOrder,
-    accounts: &'a Accounts,
+    balances: Balances,
     inputs: &'a PlanInputs,
     /// Under 59 and a half, not exempt, and the plan avoids penalties (`Auto`).
     restricted: [bool; MAX_PEOPLE],
@@ -935,7 +969,7 @@ impl Setup<'_> {
 
     /// Chooses sources for a cash need of `need` (tax on the withdrawals included).
     fn allocate(&self, need: f64) -> WithdrawalPlan {
-        let a = self.accounts;
+        let a = &self.balances;
         let inp = self.inputs;
         let mut plan = WithdrawalPlan::default();
         let mut d = Draw {
@@ -961,18 +995,18 @@ impl Setup<'_> {
         } else {
             (target - cash).max(0.0)
         };
-        d.rem[TAXABLE] = a.total(Bucket::Taxable).max(0.0);
+        d.rem[TAXABLE] = a.taxable.max(0.0);
         for p in 0..MAX_PEOPLE {
-            d.rem[TRAD + p] = a.total(Bucket::Traditional(p)).max(0.0);
-            let roth = a.total(Bucket::Roth(p)).max(0.0);
+            d.rem[TRAD + p] = a.traditional[p].max(0.0);
+            let roth = a.roth[p].max(0.0);
             let free = if self.restricted[p] {
-                a.roth_accessible(p)
+                a.roth_accessible[p]
             } else {
                 roth
             };
             d.rem[ROTH + p] = free;
             d.rem[ROTH_EXTRA + p] = roth - free;
-            d.rem[HSA + p] = a.total(Bucket::Hsa(p)).max(0.0);
+            d.rem[HSA + p] = a.hsa[p].max(0.0);
         }
 
         // Forced: RMDs and running 72(t) schedules.
@@ -1236,6 +1270,7 @@ fn burden(r: &TaxResult) -> f64 {
 /// steps on `f(g) = g - net_need - extra_tax(g)`. The result is left in `best`.
 fn gross_up<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
     setup: &Setup,
+    accounts: &Accounts,
     tax: &TaxYearParams,
     compute: &F,
     base_total: f64,
@@ -1243,7 +1278,7 @@ fn gross_up<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
 ) {
     let evaluate = |need: f64, e: &mut Eval| {
         e.plan = setup.allocate(need);
-        e.after = *setup.accounts;
+        e.after = *accounts;
         e.t = setup.inputs.base_tax_inputs;
         e.done = execute_plan(&e.plan, 1.0, &mut e.after, setup.inputs, &mut e.t, None);
         e.result = compute(tax, &e.t);
@@ -1296,11 +1331,12 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
             && inputs.ages[p] < EARLY_WITHDRAWAL_AGE
             && !inputs.penalty_exempt[p];
     }
-    let taxable_value = accounts.total(Bucket::Taxable);
+    let balances = Balances::of(accounts);
+    let taxable_value = balances.taxable;
     let order = &effective_order(order, tax);
     let mut setup = Setup {
         order: *order,
-        accounts,
+        balances,
         inputs,
         restricted,
         bracket_room: 0.0,
@@ -1327,7 +1363,7 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
         let mut any_forced = false;
         for p in 0..MAX_PEOPLE {
             let f = (inputs.rmd[p].max(0.0) + inputs.sepp_available[p].max(0.0))
-                .min(accounts.total(Bucket::Traditional(p)));
+                .min(balances.traditional[p]);
             if f > 0.0 {
                 forced.traditional_distributions += f;
                 any_forced = true;
@@ -1427,7 +1463,14 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
         after: *accounts,
         result: base_result,
     };
-    gross_up(&setup, tax, &compute, base_result.total, &mut best);
+    gross_up(
+        &setup,
+        accounts,
+        tax,
+        &compute,
+        base_result.total,
+        &mut best,
+    );
 
     // A conversion is sized on the ordinary bracket, but its real cost includes
     // what it does to the rest of the return: gains realised by this year's sales
@@ -1469,7 +1512,14 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
         }
         if cap < converted - CENT {
             setup.conversion_cap = cap;
-            gross_up(&setup, tax, &compute, base_result.total, &mut best);
+            gross_up(
+                &setup,
+                accounts,
+                tax,
+                &compute,
+                base_result.total,
+                &mut best,
+            );
         }
     }
     let Eval {
@@ -1539,11 +1589,11 @@ pub fn cover_shortfall(
         penalty_exempt: inputs.penalty_exempt,
         ..PlanInputs::default()
     };
-    let mut snapshot = *accounts;
-    snapshot.cash = 0.0;
+    let mut balances = Balances::of(accounts);
+    balances.cash = 0.0;
     let setup = Setup {
         order: WithdrawalOrder::Conventional,
-        accounts: &snapshot,
+        balances,
         inputs: &bare,
         restricted,
         bracket_room: 0.0,

@@ -162,6 +162,7 @@ impl Brackets {
     }
 
     /// Tax on `income` under this schedule.
+    #[inline]
     pub fn tax(&self, income: f64) -> f64 {
         let mut tax = 0.0;
         for i in 0..self.len {
@@ -179,6 +180,7 @@ impl Brackets {
     }
 
     /// Marginal rate on the next dollar above `income`.
+    #[inline]
     pub fn marginal_rate(&self, income: f64) -> f64 {
         let mut rate = 0.0;
         for i in 0..self.len {

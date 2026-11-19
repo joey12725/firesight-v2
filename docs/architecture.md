@@ -371,10 +371,61 @@ counts.
   reusable `Workspace`.
 * Tax is computed once a year (plus the January plan), never monthly.
 * Target on one M-series core, native, 60-year horizon, typical two-earner profile:
-  at least 5,000 paths per second; wasm at least 60% of native.
+  at least 5,000 paths per second; wasm at least 70% of native.
   100,000 paths in a few seconds on an 8-core laptop in the browser.
-* `firesight-cli bench` reports paths/sec and month-steps/sec; CI fails if it regresses
-  by more than 25% against the committed baseline.
+* `firesight bench [profile] [--paths N] [--repeat R]` reports paths/sec and
+  month-steps/sec on one thread and paths/sec on all threads, each the best of `R`
+  runs, and prints a one-line JSON summary last (`... | tail -1`).
+* Regression check: `tools/bench-check.sh` runs the bench on the three shipped
+  examples and fails if any is more than 25% below `tools/bench-baseline.json`.
+  What is compared is a score, single-thread paths/sec divided by the speed of a
+  calibration kernel timed in the same process, so that a slower, faster or busy
+  machine does not move it; `tools/bench-check.sh --record` re-records the baseline
+  (do that on the runner class that runs the check, and after an intended change).
+  `firesight bench --check FILE` is the same check for one profile.
+
+### How the engine stays fast (and bit-identical)
+
+Every optimisation in the engine keeps results identical to the bit; the golden
+digests (`tests/sim_golden.rs`) and the native/wasm comparison are the proof. The
+rules: never reorder floating-point arithmetic, never skip a random draw, and skip
+work only when its result is provably unchanged or provably a zero that is added.
+
+* **Asset classes nobody holds.** `Accounts::idle` records which of the nine asset
+  classes are held in no bucket (set by `apply_returns` from what it sees, cleared by
+  everything that can buy into a class). Sums and the monthly return step then run
+  over the leading classes only, in the same order: adding a zero never changes a
+  sum. Code that writes holdings directly must call `Accounts::holdings_changed`
+  (debug builds assert that an idle class really is empty).
+* **The tax law of the year.** Each January only the tables of the filing status the
+  household files under are indexed (`State::build_law` / `ensure_law`), and the
+  parameters that do not depend on the year are copied once per path, not once per
+  year (`TaxLaw::for_year_statuses_into` with `refresh`).
+* **Tables for path-independent values.** Growth factors of budget lines, the
+  funded test's discount powers and a child's remaining cost by age are computed at
+  compile time with the same calls the month loop used to make.
+* **The withdrawal plan.** Bucket totals are summed once per plan, not once per
+  candidate (`decumulation::Balances`), and a withdrawal context is built only for a
+  source that is drawn on.
+* **Cold code out of line.** Trace events, the monthly detail record and the
+  conservation checks are `#[cold]` functions, so the month loop the optimiser sees
+  is the one that runs.
+* **Build settings** (`.cargo/config.toml`): a larger LLVM inlining budget for every
+  target and `simd128` for wasm. `tools/pgo-build.sh` builds a profile-guided native
+  CLI (3 to 5% faster again; optional, needs `llvm-profdata`).
+
+Measured on a 10-core M-series laptop, best of five runs: 5,670 paths/sec on one
+core and about 32,000 on ten threads for the dual-income example natively (4,460
+and 26,500 before this work), 6,100 for the early-career example and 8,270 for
+the landlord; in wasm (node, one worker) 3,970, 4,260 and 5,660, about 70% of
+native (2,930, 3,180 and 4,460 before, 66%).
+
+Measuring: wall-clock numbers on a busy machine are noisy, and the position of
+the main thread's stack alone moves them by about 5% (the bench therefore times on
+a spawned thread). To compare two builds use instructions retired, which does not
+depend on load: `/usr/bin/time -l firesight run <profile> --paths 4000 --threads 1`
+on macOS, `perf stat` on Linux. The dual-income example takes about 3.64 million
+instructions per simulated life.
 
 ## 8. Testing
 

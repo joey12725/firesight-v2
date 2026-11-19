@@ -1,0 +1,30 @@
+{
+  "note": "Throughput baseline for `firesight bench --check` (tools/bench-check.sh). score = single-thread paths per second / calibration kernel speed, both measured in the same process; the check fails when a score falls more than `tolerance` below the one recorded here. Re-record with `firesight bench <profile> --write-baseline <this file>` on the machine class that runs the check.",
+  "tolerance": 0.25,
+  "profiles": {
+    "dual-income-family": {
+      "score": 8.961,
+      "paths_per_sec_1t": 5662.0,
+      "paths_per_sec_mt": 29443.0,
+      "threads": 10,
+      "calibration": 631.82,
+      "machine": "Darwin arm64, 10 cores"
+    },
+    "early-career-saver": {
+      "score": 9.665,
+      "paths_per_sec_1t": 6107.0,
+      "paths_per_sec_mt": 31663.0,
+      "threads": 10,
+      "calibration": 631.87,
+      "machine": "Darwin arm64, 10 cores"
+    },
+    "side-hustle-landlord": {
+      "score": 13.1,
+      "paths_per_sec_1t": 8275.0,
+      "paths_per_sec_mt": 41973.0,
+      "threads": 10,
+      "calibration": 631.72,
+      "machine": "Darwin arm64, 10 cores"
+    }
+  }
+}

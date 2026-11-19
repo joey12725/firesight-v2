@@ -173,6 +173,10 @@ pub(crate) struct ChildPlan {
     pub care: [f64; 18],
     /// College cost per year for ages 18 to 21, the parents' share.
     pub college: f64,
+    /// What a whole year at each age 0..22 adds to the funded test's lump for
+    /// costs still due: the year's cost times twelve months over twelve, exactly
+    /// as the test computes it.
+    pub lump_year: [f64; 22],
 }
 
 /// Annual real growth of childcare and college prices above CPI
@@ -422,6 +426,17 @@ pub struct Plan {
     /// Real discount rate of the funded test's bridge: the return at which the
     /// test's withdrawal rate exhausts a portfolio in [`BRIDGE_HORIZON_YEARS`].
     pub(crate) bridge_discount: f64,
+    /// `(1 + bridge_discount)^-(m / 12)` for a wait of `m` months, `m` up to the
+    /// horizon: the powers the bridge needs, computed once.
+    pub(crate) bridge_pow: Vec<f64>,
+    /// `(1 + growth)^years` for each budget line and each year of the plan
+    /// (`item_growth[line * growth_years + years]`), and the same for rent taken
+    /// on after a home sale and for childcare and college prices.
+    pub(crate) item_growth: Vec<f64>,
+    pub(crate) rent_growth: Vec<f64>,
+    pub(crate) service_growth: Vec<f64>,
+    /// Years covered by the growth tables.
+    pub(crate) growth_years: usize,
     /// Month by which Coast-FI is judged (the planned or latest retirement month).
     pub(crate) coast_month: i32,
     /// `(1 + expected real return)^-(years from month t to coast_month)`: what a
@@ -849,11 +864,21 @@ impl Plan {
                     College::Private => num(college_defaults, &["private"]),
                     College::Custom { annual } => annual.max(0.0),
                 } * child.college_share.clamp(0.0, 1.0);
+                let mut lump_year = [0.0; 22];
+                for (years, lump) in lump_year.iter_mut().enumerate() {
+                    let annual = if years < 18 {
+                        core[years] + care[years]
+                    } else {
+                        college
+                    };
+                    *lump = annual * f64::from(12) / 12.0;
+                }
                 ChildPlan {
                     birth: child.birth - start,
                     core,
                     care,
                     college,
+                    lump_year,
                 }
             })
             .collect();
@@ -1204,6 +1229,20 @@ impl Plan {
             .map(|t| math::powi(coast_step, (coast_month - t).max(0)))
             .collect();
 
+        let bridge_pow: Vec<f64> = (0..=n as i32 + 12)
+            .map(|m| math::pow(1.0 + bridge_discount, -(f64::from(m) / 12.0)))
+            .collect();
+        let growth_years = n / 12 + 2;
+        let growth_table = |growth: f64| {
+            (0..growth_years as i32).map(move |years| math::powi(1.0 + growth, years))
+        };
+        let item_growth: Vec<f64> = items
+            .iter()
+            .flat_map(|item| growth_table(item.growth))
+            .collect();
+        let rent_growth: Vec<f64> = growth_table(Category::Rent.default_real_growth()).collect();
+        let service_growth: Vec<f64> = growth_table(CHILD_SERVICE_REAL_GROWTH).collect();
+
         Ok(Plan {
             profile: profile.clone(),
             start,
@@ -1225,6 +1264,11 @@ impl Plan {
             partner_offset: (profile.retirement.partner_offset_years * 12.0).round() as i32,
             latest_retirement_age,
             bridge_discount,
+            bridge_pow,
+            item_growth,
+            rent_growth,
+            service_growth,
+            growth_years,
             coast_month,
             coast_discount,
             econ,

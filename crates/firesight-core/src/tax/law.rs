@@ -922,6 +922,9 @@ fn parse_published_next_year(root: &Node, base_year: i32) -> Result<Indexation, 
     })
 }
 
+/// Every filing status, as a bit mask over `FilingStatus::index()`.
+pub(crate) const ALL_STATUSES: u8 = (1 << FilingStatus::COUNT) - 1;
+
 impl TaxLaw {
     /// Builds the typed law from the embedded JSON (`data.tax_federal`,
     /// `data.tax_states`) and the profile's tax assumptions. Fails on the first
@@ -1004,85 +1007,84 @@ impl TaxLaw {
     /// [`TaxLaw::for_year`] written into an existing value, so the simulation's
     /// January re-indexing makes no copy of the (large) result.
     pub fn for_year_into(&self, index: Indexation, state: StateCode, out: &mut TaxYearParams) {
+        self.for_year_statuses_into(index, state, out, ALL_STATUSES, false);
+    }
+
+    /// [`TaxLaw::for_year_into`] with the per-status tables (brackets, deductions,
+    /// phase-outs, IRMAA tiers) indexed only for the filing statuses in the bit mask
+    /// `statuses` (bit `FilingStatus::index()`); the tables of the other statuses
+    /// must not be used until [`TaxLaw::index_status_into`] has been called for
+    /// them. A household files under one status in almost every year, and the
+    /// per-status tables are most of the indexing work.
+    ///
+    /// With `refresh`, `out` must hold parameters this law built earlier for the
+    /// same `state` (any year, any statuses): the parameters that never change
+    /// from year to year are then left as they are instead of being copied again,
+    /// and only the year-dependent ones are rewritten. Every year-dependent
+    /// parameter is computed from the base-year law, never from what `out` holds,
+    /// so the result is the same either way.
+    pub(crate) fn for_year_statuses_into(
+        &self,
+        index: Indexation,
+        state: StateCode,
+        out: &mut TaxYearParams,
+        statuses: u8,
+        refresh: bool,
+    ) {
         let (cpi, wage) = if self.index_brackets {
             (index.cpi_factor, index.wage_factor)
         } else {
             (1.0, 1.0)
         };
         let base = &self.federal;
-        out.federal = base.year;
+        let b = &base.year;
+        if !refresh {
+            out.federal = *b;
+        }
         let f = &mut out.federal;
-        let bracket = |x: f64| index_rounded(x, cpi, BRACKET_INCREMENT);
 
         for s in 0..FilingStatus::COUNT {
-            f.ordinary[s] = base.year.ordinary[s].indexed_rounded(cpi, BRACKET_INCREMENT);
-            f.capital_gains[s] = base.year.capital_gains[s].indexed_rounded(cpi, BRACKET_INCREMENT);
-            f.standard_deduction[s] = bracket(f.standard_deduction[s]);
-            f.additional_deduction_65[s] = bracket(f.additional_deduction_65[s]);
-            f.qbi_threshold[s] = bracket(f.qbi_threshold[s]);
-            f.limits.roth_ira_phaseout_start[s] = index_rounded(
-                f.limits.roth_ira_phaseout_start[s],
-                cpi,
-                ROTH_PHASEOUT_INCREMENT,
-            );
-            f.limits.roth_ira_phaseout_end[s] = index_rounded(
-                f.limits.roth_ira_phaseout_end[s],
-                cpi,
-                ROTH_PHASEOUT_INCREMENT,
-            );
-            f.limits.ira_deduction_phaseout_start[s] = index_rounded(
-                f.limits.ira_deduction_phaseout_start[s],
-                cpi,
-                ROTH_PHASEOUT_INCREMENT,
-            );
-            f.limits.ira_deduction_phaseout_end[s] = index_rounded(
-                f.limits.ira_deduction_phaseout_end[s],
-                cpi,
-                ROTH_PHASEOUT_INCREMENT,
-            );
-            let table = &mut f.irmaa[s];
-            for tier in 1..table.len {
-                let top_frozen =
-                    tier + 1 == table.len && index.year <= IRMAA_TOP_TIER_FROZEN_THROUGH;
-                if !top_frozen {
-                    table.over[tier] = index_rounded(table.over[tier], cpi, IRMAA_INCREMENT);
-                }
-                table.monthly[tier] *= index.health_factor;
-            }
-            // A frozen top tier must never sit below the indexed tier beneath it.
-            if table.len >= 2 {
-                let top = table.len - 1;
-                table.over[top] = table.over[top].max(table.over[top - 1]);
+            if statuses & (1 << s) != 0 {
+                self.index_federal_status(index, cpi, f, s);
             }
         }
 
-        f.child_tax_credit = index_rounded(f.child_tax_credit, cpi, CHILD_CREDIT_INCREMENT);
+        f.child_tax_credit = index_rounded(b.child_tax_credit, cpi, CHILD_CREDIT_INCREMENT);
         f.child_credit_refundable_max =
-            index_rounded(f.child_credit_refundable_max, cpi, CHILD_CREDIT_INCREMENT);
-        f.oasdi_wage_base = index_rounded(f.oasdi_wage_base, wage, WAGE_BASE_INCREMENT);
+            index_rounded(b.child_credit_refundable_max, cpi, CHILD_CREDIT_INCREMENT);
+        f.oasdi_wage_base = index_rounded(b.oasdi_wage_base, wage, WAGE_BASE_INCREMENT);
 
-        f.limits.k401_employee = index_rounded(f.limits.k401_employee, cpi, K401_INCREMENT);
-        f.limits.k401_catch_up = index_rounded(f.limits.k401_catch_up, cpi, K401_INCREMENT);
+        f.limits.k401_employee = index_rounded(b.limits.k401_employee, cpi, K401_INCREMENT);
+        f.limits.k401_catch_up = index_rounded(b.limits.k401_catch_up, cpi, K401_INCREMENT);
         f.limits.k401_catch_up_60_63 =
-            index_rounded(f.limits.k401_catch_up_60_63, cpi, K401_INCREMENT);
-        f.limits.k401_total = index_rounded(f.limits.k401_total, cpi, K401_TOTAL_INCREMENT);
+            index_rounded(b.limits.k401_catch_up_60_63, cpi, K401_INCREMENT);
+        f.limits.k401_total = index_rounded(b.limits.k401_total, cpi, K401_TOTAL_INCREMENT);
         f.limits.compensation_limit =
-            index_rounded(f.limits.compensation_limit, cpi, COMPENSATION_INCREMENT);
-        for bound in &mut f.limits.ira_deduction_phaseout_spouse {
-            *bound = index_rounded(*bound, cpi, ROTH_PHASEOUT_INCREMENT);
+            index_rounded(b.limits.compensation_limit, cpi, COMPENSATION_INCREMENT);
+        for (bound, from) in f
+            .limits
+            .ira_deduction_phaseout_spouse
+            .iter_mut()
+            .zip(&b.limits.ira_deduction_phaseout_spouse)
+        {
+            *bound = index_rounded(*from, cpi, ROTH_PHASEOUT_INCREMENT);
         }
-        f.limits.ira = index_rounded(f.limits.ira, cpi, IRA_INCREMENT);
-        f.limits.ira_catch_up = index_rounded(f.limits.ira_catch_up, cpi, IRA_CATCH_UP_INCREMENT);
-        f.limits.hsa_self = index_rounded(f.limits.hsa_self, cpi, HSA_INCREMENT);
-        f.limits.hsa_family = index_rounded(f.limits.hsa_family, cpi, HSA_INCREMENT);
+        f.limits.ira = index_rounded(b.limits.ira, cpi, IRA_INCREMENT);
+        f.limits.ira_catch_up = index_rounded(b.limits.ira_catch_up, cpi, IRA_CATCH_UP_INCREMENT);
+        f.limits.hsa_self = index_rounded(b.limits.hsa_self, cpi, HSA_INCREMENT);
+        f.limits.hsa_family = index_rounded(b.limits.hsa_family, cpi, HSA_INCREMENT);
 
         // Calendar rules.
         let salt = salt_row(&base.salt_schedule, index.year);
         f.salt_cap = salt.cap;
         f.salt_phase_down_threshold = salt.threshold;
-        if index.year < base.senior_first_year || index.year > base.senior_last_year {
-            f.senior_deduction = 0.0;
-        }
+        f.senior_deduction =
+            if index.year < base.senior_first_year || index.year > base.senior_last_year {
+                0.0
+            } else {
+                b.senior_deduction
+            };
+        f.aca.cliff = b.aca.cliff;
         for &(year, cliff) in &base.aca_cliff {
             if year <= index.year {
                 f.aca.cliff = cliff;
@@ -1093,7 +1095,7 @@ impl TaxLaw {
         let (first, each) = match &state.0 {
             b"AK" => base.fpl_alaska,
             b"HI" => base.fpl_hawaii,
-            _ => (base.year.fpl_base, base.year.fpl_per_person),
+            _ => (b.fpl_base, b.fpl_per_person),
         };
         f.fpl_base = first * index.fpl_factor;
         f.fpl_per_person = each * index.fpl_factor;
@@ -1101,8 +1103,78 @@ impl TaxLaw {
         out.kind = self.kind;
         out.year = index.year;
         out.cpi_factor = cpi;
-        self.state_year_into(state, cpi, &out.federal, &mut out.state);
+        self.state_year_into(state, cpi, &out.federal, &mut out.state, statuses, refresh);
         out.foreign_tax_rate = None;
+    }
+
+    /// Indexes the per-status tables of filing status `s` in parameters built by
+    /// [`TaxLaw::for_year_statuses_into`] with the same `index` and `state`.
+    pub(crate) fn index_status_into(
+        &self,
+        index: Indexation,
+        state: StateCode,
+        out: &mut TaxYearParams,
+        s: usize,
+    ) {
+        let cpi = if self.index_brackets {
+            index.cpi_factor
+        } else {
+            1.0
+        };
+        self.index_federal_status(index, cpi, &mut out.federal, s);
+        if let Some(base) = self.state_base(state) {
+            Self::index_state_status(base, cpi, &out.federal, &mut out.state, s);
+        }
+    }
+
+    /// The federal tables of filing status `s`, from the base-year law.
+    fn index_federal_status(&self, index: Indexation, cpi: f64, f: &mut FederalYear, s: usize) {
+        let b = &self.federal.year;
+        let bracket = |x: f64| index_rounded(x, cpi, BRACKET_INCREMENT);
+        f.ordinary[s] = b.ordinary[s].indexed_rounded(cpi, BRACKET_INCREMENT);
+        f.capital_gains[s] = b.capital_gains[s].indexed_rounded(cpi, BRACKET_INCREMENT);
+        f.standard_deduction[s] = bracket(b.standard_deduction[s]);
+        f.additional_deduction_65[s] = bracket(b.additional_deduction_65[s]);
+        f.qbi_threshold[s] = bracket(b.qbi_threshold[s]);
+        f.limits.roth_ira_phaseout_start[s] = index_rounded(
+            b.limits.roth_ira_phaseout_start[s],
+            cpi,
+            ROTH_PHASEOUT_INCREMENT,
+        );
+        f.limits.roth_ira_phaseout_end[s] = index_rounded(
+            b.limits.roth_ira_phaseout_end[s],
+            cpi,
+            ROTH_PHASEOUT_INCREMENT,
+        );
+        f.limits.ira_deduction_phaseout_start[s] = index_rounded(
+            b.limits.ira_deduction_phaseout_start[s],
+            cpi,
+            ROTH_PHASEOUT_INCREMENT,
+        );
+        f.limits.ira_deduction_phaseout_end[s] = index_rounded(
+            b.limits.ira_deduction_phaseout_end[s],
+            cpi,
+            ROTH_PHASEOUT_INCREMENT,
+        );
+        let from = &b.irmaa[s];
+        let table = &mut f.irmaa[s];
+        table.len = from.len;
+        table.over[0] = from.over[0];
+        table.monthly[0] = from.monthly[0];
+        for tier in 1..from.len {
+            let top_frozen = tier + 1 == from.len && index.year <= IRMAA_TOP_TIER_FROZEN_THROUGH;
+            table.over[tier] = if top_frozen {
+                from.over[tier]
+            } else {
+                index_rounded(from.over[tier], cpi, IRMAA_INCREMENT)
+            };
+            table.monthly[tier] = from.monthly[tier] * index.health_factor;
+        }
+        // A frozen top tier must never sit below the indexed tier beneath it.
+        if table.len >= 2 {
+            let top = table.len - 1;
+            table.over[top] = table.over[top].max(table.over[top - 1]);
+        }
     }
 
     fn state_base(&self, state: StateCode) -> Option<&StateBase> {
@@ -1118,43 +1190,67 @@ impl TaxLaw {
         cpi: f64,
         federal: &FederalYear,
         y: &mut StateYear,
+        statuses: u8,
+        refresh: bool,
     ) {
         let Some(base) = self.state_base(state) else {
-            *y = StateYear {
-                code: StateCode::NONE,
-                capital_gains_rate: -1.0,
-                ss_max_taxable_fraction_of_benefits: 1.0,
-                property_tax_rate: self.national_property_tax_rate,
-                ..StateYear::default()
-            };
+            // Nothing here depends on the year.
+            if !refresh {
+                *y = StateYear {
+                    code: StateCode::NONE,
+                    capital_gains_rate: -1.0,
+                    ss_max_taxable_fraction_of_benefits: 1.0,
+                    property_tax_rate: self.national_property_tax_rate,
+                    ..StateYear::default()
+                };
+            }
             return;
         };
-        *y = base.year;
+        let b = &base.year;
+        if !refresh {
+            *y = *b;
+        }
+        let bracket_factor = if base.brackets_indexed { cpi } else { 1.0 };
+        for s in 0..FilingStatus::COUNT {
+            if statuses & (1 << s) != 0 {
+                Self::index_state_status(base, cpi, federal, y, s);
+            }
+        }
+        y.ss_phase_out_step = b.ss_phase_out_step * bracket_factor;
+        y.dependent_exemption = b.dependent_exemption * bracket_factor;
+        y.dependent_credit = b.dependent_credit * bracket_factor;
+        // Washington indexes the excise deduction (the state's own note in the data);
+        // the $1,000,000 rate break is not indexed.
+        y.capital_gains_excise_deduction = b.capital_gains_excise_deduction * cpi;
+    }
+
+    /// The state tables of filing status `s`, from the base-year law.
+    fn index_state_status(
+        base: &StateBase,
+        cpi: f64,
+        federal: &FederalYear,
+        y: &mut StateYear,
+        s: usize,
+    ) {
+        let b = &base.year;
         let bracket_factor = if base.brackets_indexed { cpi } else { 1.0 };
         let deduction_factor = if base.standard_deduction_indexed {
             cpi
         } else {
             1.0
         };
-        for s in 0..FilingStatus::COUNT {
-            y.brackets[s] = y.brackets[s].indexed(bracket_factor);
-            y.personal_exemption[s] *= bracket_factor;
-            y.personal_credit[s] *= bracket_factor;
-            y.ss_exempt_below_agi[s] *= bracket_factor;
-            y.ss_phase_out_end_agi[s] *= bracket_factor;
-            y.standard_deduction[s] *= deduction_factor;
-            y.standard_credit[s] *= deduction_factor;
-            y.standard_credit_phaseout_start[s] *= deduction_factor;
-            if base.standard_deduction_follows_federal && y.allows_itemizing {
-                y.standard_deduction[s] = federal.standard_deduction[s];
-            }
+        y.brackets[s] = b.brackets[s].indexed(bracket_factor);
+        y.personal_exemption[s] = b.personal_exemption[s] * bracket_factor;
+        y.personal_credit[s] = b.personal_credit[s] * bracket_factor;
+        y.ss_exempt_below_agi[s] = b.ss_exempt_below_agi[s] * bracket_factor;
+        y.ss_phase_out_end_agi[s] = b.ss_phase_out_end_agi[s] * bracket_factor;
+        y.standard_deduction[s] = b.standard_deduction[s] * deduction_factor;
+        y.standard_credit[s] = b.standard_credit[s] * deduction_factor;
+        y.standard_credit_phaseout_start[s] =
+            b.standard_credit_phaseout_start[s] * deduction_factor;
+        if base.standard_deduction_follows_federal && y.allows_itemizing {
+            y.standard_deduction[s] = federal.standard_deduction[s];
         }
-        y.ss_phase_out_step *= bracket_factor;
-        y.dependent_exemption *= bracket_factor;
-        y.dependent_credit *= bracket_factor;
-        // Washington indexes the excise deduction (the state's own note in the data);
-        // the $1,000,000 rate break is not indexed.
-        y.capital_gains_excise_deduction *= cpi;
     }
 
     /// True if `state` is in the data (a state or DC).

@@ -72,6 +72,8 @@ const BALANCES: [YearSeries; 8] = [
 
 impl State {
     /// Snapshot for the conservation checks, taken before the month begins.
+    #[cold]
+    #[inline(never)]
     pub(crate) fn check_begin(&mut self) {
         let kinds = self.acc.by_kind();
         self.chk_other_start = kinds[1] + kinds[2] + kinds[3] + kinds[4];
@@ -86,6 +88,8 @@ impl State {
     }
 
     /// Asserts the three conservation identities for the month just simulated.
+    #[cold]
+    #[inline(never)]
     fn check_end(&self, t: usize) {
         let led = &self.led;
         let get = |s: YearSeries| led[s.index()];
@@ -200,43 +204,7 @@ impl State {
         self.last_spend = spending;
 
         if self.detail {
-            // Returns of earlier years go in before this month; the final return
-            // (closed in the last month) after it.
-            let pending = std::mem::take(&mut self.tax_details);
-            for (year, detail) in &pending {
-                if *year < now.year() {
-                    rec.record_tax_return(*year, detail);
-                }
-            }
-            let mut m = MonthRecord::new(now);
-            for (out, v) in m.values.iter_mut().zip(&self.led) {
-                *out = v * deflate;
-            }
-            for s in BALANCES {
-                m.values[s.index()] = 0.0;
-            }
-            self.balances(&mut m.values, end_price);
-            m.price_level = end_price;
-            m.retired = self.retired;
-            m.status = Status::classify(
-                self.retired,
-                self.depleted_now,
-                spending,
-                self.planned,
-                crate::stats::investable_of(&m.values),
-                self.inv_at_ret,
-            );
-            m.portfolio_return = self.port_return;
-            m.asset_returns = econ.returns_at(t);
-            rec.record_month(&m);
-            for (year, detail) in &pending {
-                if *year >= now.year() {
-                    rec.record_tax_return(*year, detail);
-                }
-            }
-            for event in self.trace_events.drain(..) {
-                rec.record_event(event);
-            }
+            self.record_detail(econ, rec, t, now, spending);
         }
 
         if now.month() == 12 || t + 1 == self.months {
@@ -260,6 +228,59 @@ impl State {
             self.yr = YearRecord::default();
             self.yr_months = 0;
             self.depleted_year = self.depleted_now;
+        }
+    }
+
+    /// The month's full ledger, tax returns and events, for a trace.
+    #[cold]
+    #[inline(never)]
+    fn record_detail<R: Recorder>(
+        &mut self,
+        econ: &EconomyPath,
+        rec: &mut R,
+        t: usize,
+        now: crate::model::YearMonth,
+        spending: f64,
+    ) {
+        let now_year = now.year();
+        let deflate = 1.0 / econ.price_level[t];
+        let end_price = econ.price_level[t + 1];
+        // Returns of earlier years go in before this month; the final return
+        // (closed in the last month) after it.
+        let pending = std::mem::take(&mut self.tax_details);
+        for (year, detail) in &pending {
+            if *year < now_year {
+                rec.record_tax_return(*year, detail);
+            }
+        }
+        let mut m = MonthRecord::new(now);
+        for (out, v) in m.values.iter_mut().zip(&self.led) {
+            *out = v * deflate;
+        }
+        for s in BALANCES {
+            m.values[s.index()] = 0.0;
+        }
+        self.balances(&mut m.values, end_price);
+        m.price_level = end_price;
+        m.retired = self.retired;
+        m.status = Status::classify(
+            self.retired,
+            self.depleted_now,
+            spending,
+            self.planned,
+            crate::stats::investable_of(&m.values),
+            self.inv_at_ret,
+        );
+        m.portfolio_return = self.port_return;
+        m.asset_returns = econ.returns_at(t);
+        rec.record_month(&m);
+        for (year, detail) in &pending {
+            if *year >= now_year {
+                rec.record_tax_return(*year, detail);
+            }
+        }
+        for event in self.trace_events.drain(..) {
+            rec.record_event(event);
         }
     }
 
