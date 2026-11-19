@@ -86,3 +86,61 @@ fn chained_cpi_default_is_bit_identical_and_on_raises_lifetime_tax() {
     );
     assert_conserves_and_is_finite(&on);
 }
+
+// ---------------------------------------------------------------- F22 state detail
+
+fn in_state(slug: &str, state: &str) -> Profile {
+    let mut p = example(slug);
+    p.household.location.state = Some(state.into());
+    p
+}
+
+fn lifetime_tax_change(profile: &Profile) -> f64 {
+    let off = run_profile(profile);
+    let mut on = profile.clone();
+    on.assumptions.taxes.state_detail = StateDetail::Full;
+    let on_acc = run_profile(&on);
+    mean(&on_acc, PathScalar::LifetimeTax) / mean(&off, PathScalar::LifetimeTax) - 1.0
+}
+
+#[test]
+fn state_detail_basic_is_the_default_and_changes_nothing_outside_ca_ny_ut() {
+    for state in ["TX", "CO", "FL"] {
+        let base = in_state("dual-income-family", state);
+        let mut full = base.clone();
+        full.assumptions.taxes.state_detail = StateDetail::Full;
+        assert_eq!(
+            run_profile(&base).to_bytes(),
+            run_profile(&full).to_bytes(),
+            "{state}"
+        );
+    }
+    let mut stated = example("dual-income-family");
+    stated.assumptions.taxes.state_detail = StateDetail::Basic;
+    assert_eq!(
+        run_profile(&example("dual-income-family")).to_bytes(),
+        run_profile(&stated).to_bytes()
+    );
+}
+
+#[test]
+fn state_detail_full_moves_lifetime_tax_the_right_way_in_each_state() {
+    // Measured on 2,000 paths of the dual-income example moved to each state: California
+    // +6.0% (1.3% payroll tax on two salaries), New York +2.3% (recapture on a
+    // household above $107,650), Utah -1.4% (the credit on Social Security).
+    let ca = lifetime_tax_change(&in_state("dual-income-family", "CA"));
+    assert!((0.03..0.10).contains(&ca), "CA {ca}");
+    let ny = lifetime_tax_change(&in_state("dual-income-family", "NY"));
+    assert!((0.005..0.05).contains(&ny), "NY {ny}");
+    let ut = lifetime_tax_change(&in_state("dual-income-family", "UT"));
+    assert!((-0.04..-0.002).contains(&ut), "UT {ut}");
+}
+
+#[test]
+fn state_detail_full_conserves_money_and_stays_finite() {
+    for state in ["CA", "NY", "UT"] {
+        let mut p = in_state("dual-income-family", state);
+        p.assumptions.taxes.state_detail = StateDetail::Full;
+        assert_conserves_and_is_finite(&p);
+    }
+}

@@ -39,6 +39,8 @@ mod law;
 #[cfg(test)]
 mod realism_tests;
 #[cfg(test)]
+mod state_detail_tests;
+#[cfg(test)]
 mod tests;
 
 pub use calc::{
@@ -584,6 +586,28 @@ pub struct StateYear {
     pub taxes_deferrals: bool,
     /// Average effective property tax rate, used when a property gives none.
     pub property_tax_rate: f64,
+    /// Employee-paid payroll tax on wages that the state levies besides income tax
+    /// (California SDI); 0 unless `state_detail` is `full`. Added to `state`.
+    pub sdi_rate: f64,
+    /// Federal-style AGI above which the state recaptures the benefit of its lower
+    /// brackets (New York, 107,650); 0 when the state has no such rule or the detail
+    /// is off.
+    pub recapture_agi_start: f64,
+    /// Width of the AGI range over which each tier of recapture phases in (50,000).
+    pub recapture_phase_width: f64,
+    /// AGI above which the top rate applies to all taxable income (25,000,000).
+    pub recapture_agi_top: f64,
+    /// By filing status, the index in `brackets` of the bracket where the first
+    /// recapture tier ends: taxable income up to the top of that bracket is taxed at
+    /// that bracket's rate on all of it once the benefit is fully recaptured.
+    pub recapture_first_bracket: [usize; FilingStatus::COUNT],
+    /// Rate of a nonrefundable credit on Social Security benefits in federal AGI
+    /// (Utah); 0 when none.
+    pub ss_credit_rate: f64,
+    /// The credit falls by this much per dollar of modified AGI above the start.
+    pub ss_credit_phase_out_rate: f64,
+    /// Modified AGI above which the Social Security credit phases out, by status.
+    pub ss_credit_phase_out_start: [f64; FilingStatus::COUNT],
 }
 
 /// The local income tax of one place, to be laid over a state's parameters with

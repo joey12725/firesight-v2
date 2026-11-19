@@ -330,6 +330,43 @@ median terminal net worth $1.726m to $1.721m. Not modelled: the CPI-U path is th
 simulated one, so the wedge is a fixed rate rather than something that varies with
 the inflation regime (the historical wedge is larger when inflation is high).
 
+### State detail (`assumptions.taxes.state_detail: full`, `basic` by default)
+
+Three state rules that the base tables leave out, each read from its statute or the
+state's own form and stored under a `detail` key of the state in
+`data/tax/us-states-2026.json` (sources and what could not be checked are in
+`data/tax/SOURCES-states.md`). They change nothing for a household in any other state.
+
+* **California State Disability Insurance**: 1.3% of all wages for 2026, no wage
+  ceiling since 2024 (EDD). Charged on wages (RSU vests and bonuses included), not on
+  self-employment profit, and counted as state tax, so it is also part of the SALT
+  deduction as the IRS allows.
+* **New York's tax-benefit recapture** (Tax Law 601(d)-(e)): above $107,650 of New
+  York AGI the benefit of the lower brackets is taken back over $50,000 of AGI, tier
+  by tier, until taxable income pays the flat rate of its bracket on every dollar
+  (and above $25 million of AGI the top rate on everything). The mechanism is the
+  state's own worksheet logic: for taxable income in bracket m the recapture is the
+  base (flat tax at the rate below, on the bottom of bracket m, less the schedule's tax
+  there) plus the increment of bracket m scaled by (AGI minus the bracket's start) over
+  $50,000, capped at one. The engine reproduces the bases printed in the 2024 IT-201-I
+  (joint 333, 807 and 2,747; head of household 787, 2,289 and 3,076) to the dollar.
+  It is applied to the 2026 rates in the data (the first five rates cut by 0.1 point);
+  the 2026 worksheet was not read, and head of household uses the single schedule
+  because that is all the data holds.
+* **Utah's Social Security benefits credit** (Utah Code 59-10-1042): a nonrefundable
+  credit of the flat rate (4.45%) times the benefits included in federal AGI, reduced
+  by 2.5 cents per dollar of AGI above $54,000 single or $90,000 joint (2025
+  thresholds, not indexed). The text read was the introduced H.B. 130; whether the
+  enacted S.B. 71 measures income as federal AGI or state taxable income was not
+  confirmed, and the retirement credit it excludes is not modelled.
+
+Measured on 2,000 paths of the dual-income example moved to each state (same seed,
+option on against off): lifetime tax in California $1.22m to $1.29m (+6.0%, the
+payroll tax on two salaries), New York $1.53m to $1.56m (+2.3%), Utah $1.345m to
+$1.327m (-1.4%, the credit once both are on benefits). Not modelled: other states'
+recapture or phase-out rules (Connecticut's), New Jersey and other disability or
+family-leave payroll taxes, Washington's payroll programmes, Oregon's.
+
 ## 6. Income and careers
 
 A job pays its entered salary (today's dollars) and follows either a flat real

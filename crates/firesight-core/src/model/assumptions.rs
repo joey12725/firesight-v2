@@ -179,7 +179,16 @@ pub struct TaxModel {
     /// CPI-U that drives everything else. Off by default, which indexes them with the
     /// CPI-U. Brackets creep up on real income by about 2.5% per decade when on.
     /// Contribution limits, IRMAA tiers and state schedules stay on the CPI-U.
+    #[serde(skip_serializing_if = "is_false")]
     pub chained_cpi: bool,
+    /// How much of the state rules to apply. `basic` (the default) is the schedule,
+    /// deductions, exemptions and the main retirement and Social Security rules.
+    /// `full` adds three rules the basic tables leave out: California's 1.3% State
+    /// Disability Insurance payroll tax on wages, New York's recapture of the lower
+    /// brackets above $107,650 of income, and Utah's Social Security benefits credit.
+    /// It changes nothing for households in other states.
+    #[serde(skip_serializing_if = "is_basic")]
+    pub state_detail: StateDetail,
 }
 
 impl Default for TaxModel {
@@ -189,8 +198,32 @@ impl Default for TaxModel {
             index_brackets: true,
             social_security_haircut: None,
             chained_cpi: false,
+            state_detail: StateDetail::Basic,
         }
     }
+}
+
+/// Serde helper: options that are off are left out of the JSON, so profiles written
+/// before an option existed serialise exactly as they did.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_basic(d: &StateDetail) -> bool {
+    *d == StateDetail::Basic
+}
+
+/// How completely state tax rules are applied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StateDetail {
+    /// State schedule, deductions, exemptions, credits and retirement-income rules as
+    /// in the standard tables.
+    #[default]
+    Basic,
+    /// Also California SDI on wages, New York's tax-benefit recapture for high
+    /// earners and Utah's Social Security benefits credit.
+    Full,
 }
 
 /// Tax system.

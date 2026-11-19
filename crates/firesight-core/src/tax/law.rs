@@ -12,7 +12,7 @@ use super::{
     MAX_BRACKETS, MAX_IRMAA_TIERS,
 };
 use crate::data::{Data, DataError};
-use crate::model::TaxModel;
+use crate::model::{StateDetail, TaxModel};
 
 /// How much more slowly the chained CPI-U rises than the CPI-U, per year, as a
 /// fraction. CBO, "Using the Chained CPI to Index Social Security, Other Federal
@@ -624,6 +624,7 @@ fn parse_state(
     node: &Node,
     full_retirement_age: f64,
     retirement_age: f64,
+    detail: bool,
 ) -> Result<StateBase, DataError> {
     let mut y = StateYear {
         code,
@@ -839,6 +840,12 @@ fn parse_state(
         }
     }
 
+    if detail {
+        if let Some(detail) = node.opt("detail") {
+            parse_state_detail(&detail, &mut y)?;
+        }
+    }
+
     Ok(StateBase {
         year: y,
         brackets_indexed: node.get("inflation_indexed")?.boolean()?,
@@ -850,11 +857,46 @@ fn parse_state(
     })
 }
 
+/// The `detail` block of a state (`assumptions.taxes.state_detail: full`): payroll
+/// disability insurance, high-income bracket recapture and a Social Security credit.
+fn parse_state_detail(detail: &Node, y: &mut StateYear) -> Result<(), DataError> {
+    if let Some(sdi) = detail.opt("sdi") {
+        y.sdi_rate = sdi.get_rate("rate")?;
+    }
+    if let Some(r) = detail.opt("benefit_recapture") {
+        y.recapture_agi_start = r.get_amount("agi_start")?;
+        y.recapture_phase_width = r.get_amount("phase_in_width")?;
+        y.recapture_agi_top = r.get_amount("agi_top")?;
+        if y.recapture_phase_width <= 0.0 {
+            return Err(r.err("phase_in_width must be positive"));
+        }
+        let first = r.get("first_tier_bracket_index")?;
+        for status in FilingStatus::ALL {
+            let index = first.get_amount(status.key())?;
+            let len = y.brackets[status.index()].len;
+            if index < 0.0 || index.fract() != 0.0 || (index as usize) + 1 >= len {
+                return Err(
+                    first.err("bracket index must be a whole number below the last bracket")
+                );
+            }
+            y.recapture_first_bracket[status.index()] = index as usize;
+        }
+    }
+    if let Some(c) = detail.opt("social_security_credit") {
+        y.ss_credit_rate = c.get_rate("rate")?;
+        y.ss_credit_phase_out_rate = c.get_rate("phase_out_per_dollar")?;
+        let start = c.get("phase_out_start")?;
+        y.ss_credit_phase_out_start = start.by_status(true)?;
+    }
+    Ok(())
+}
+
 fn parse_states(
     states: &Value,
     base_year: i32,
     full_retirement_age: f64,
     retirement_age: f64,
+    detail: bool,
 ) -> Result<Vec<StateBase>, DataError> {
     let root = Node::root(states, STATES_FILE);
     let map = states
@@ -875,6 +917,7 @@ fn parse_states(
             &node,
             full_retirement_age,
             retirement_age,
+            detail,
         )?);
     }
     if out.is_empty() {
@@ -964,6 +1007,7 @@ impl TaxLaw {
             base_year,
             full_retirement_age,
             retirement_age,
+            model.state_detail == StateDetail::Full,
         )?;
         let national_property_tax_rate =
             states.iter().map(|s| s.year.property_tax_rate).sum::<f64>() / states.len() as f64;
