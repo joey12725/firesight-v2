@@ -145,13 +145,18 @@ impl State {
             }
         }
         let (mut young, mut other) = (0, 0);
-        for c in &plan.children {
-            let born = (plan.start + c.birth).year();
+        for (k, c) in plan.children.iter().enumerate() {
+            let birth = self.child_birth(plan, k);
+            if birth >= super::family::NEVER {
+                continue;
+            }
+            let born = (plan.start + birth).year();
             let age = year - born;
+            let n = self.child_count(k);
             if (0..17).contains(&age) {
-                young += 1;
+                young += n;
             } else if (17..19).contains(&age) || ((19..23).contains(&age) && c.college > 0.0) {
-                other += 1;
+                other += n;
             }
         }
         // A surviving spouse files jointly for the year of the death.

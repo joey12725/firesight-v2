@@ -372,6 +372,35 @@ divided by 0.8 (a retired household used to get the lowest tier whatever it spen
 In the funded test, child costs still to come are a sum set aside, not a permanent
 cost.
 
+### Uncertain arrival of planned children (opt-in)
+
+A child whose birth month is in the future can carry
+`arrival: {"type": "uncertain", "probability", "delay_mean_months", "twins_probability"}`
+(default `certain`). On each path three uniforms from the child's own stream
+(`ChildArrival(index)`, drawn whatever the values) decide whether the child arrives
+(probability, default 0.85), how many whole months after the stated month (an
+exponential with the given mean, default 4) and whether it is twins (default 3%).
+Costs, the child tax credit and dependants, family size in the USDA adjustment, college,
+the age at which a child leaves the health plan and the events in the trace all follow
+the realised birth; a twin birth incurs every per-child cost twice.
+
+Sources: twin births 30.1 per 1,000 births in 2024 (CDC NCHS, Health E-Stat "A Decade of
+Decline in Twin Childbearing in the United States, 2014-2024"). Time to pregnancy:
+reviews of time-to-pregnancy studies find 78 to 92% of couples conceive within a year
+(monthly fecundability about 0.2 below 35, falling toward 0.05 at 40). The default
+arrival probability and mean delay are judgements near those figures, named constants in
+`model/family.rs` and listed under `unverified_from_memory` in `params.json`.
+
+Measured on `dual-income-family` with the second (planned) child uncertain at the
+defaults (3,000 paired paths, seed 7): success 92.2% to 92.6% (within noise), median
+terminal net worth up $57,000, median lifetime spending down $20,000.
+
+Not modelled: the funded test and the January plan still plan on the stated birth
+(the household does not know it will be late or fail to arrive); births are independent
+of the parents' ages and health, and a late arrival does not change leave or career
+plans; no adoption, fertility-treatment costs or pregnancy medical costs; higher-order
+multiples.
+
 ### Healthcare
 
 With `modeled` healthcare each adult is, month by month, on an employer plan, COBRA

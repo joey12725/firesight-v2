@@ -297,6 +297,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             childcare_monthly: Some(1_400.0),
             college,
             college_share: 0.75,
+            ..Child::default()
         },
         Child {
             id: "second_child".into(),
@@ -306,6 +307,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             childcare_monthly: Some(1_600.0),
             college,
             college_share: 0.75,
+            ..Child::default()
         },
     ];
     let pm_job = Income {

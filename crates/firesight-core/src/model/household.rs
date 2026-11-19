@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::YearMonth;
+use super::{Arrival, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -177,6 +177,11 @@ pub struct Child {
     /// aid or scholarships). 1.0 means parents pay everything.
     #[serde(default = "one")]
     pub college_share: f64,
+    /// For a planned child (birth month in the future): whether the child is certain to
+    /// arrive on that date or the birth is uncertain (may not happen, may be later,
+    /// may be twins). Default certain.
+    #[serde(default)]
+    pub arrival: Arrival,
 }
 
 fn one() -> f64 {
@@ -193,6 +198,7 @@ impl Default for Child {
             childcare_monthly: None,
             college: College::default(),
             college_share: 1.0,
+            arrival: Arrival::Certain,
         }
     }
 }

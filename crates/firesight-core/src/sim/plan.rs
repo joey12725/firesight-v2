@@ -1262,7 +1262,7 @@ impl Plan {
                 .iter()
                 .fold(0, |mask, c| mask | 1 << c.birth.rem_euclid(12)),
             children,
-            family: super::family::compile(profile),
+            family: super::family::compile(profile, start),
             jobs,
             selfemp,
             streams,

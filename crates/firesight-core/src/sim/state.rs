@@ -686,7 +686,7 @@ impl State {
             .map(|c| c.birth + 22 * 12)
             .max()
             .unwrap_or(0);
-        self.fam.begin(plan, seed, path);
+        self.kids_until = self.fam.begin(plan, seed, path, self.kids_until);
 
         // Location and tax.
         self.tax_state = plan.state0;

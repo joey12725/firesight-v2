@@ -9,10 +9,24 @@
 use crate::data::Data;
 use crate::health::children::{ACA_CHILD_RATING_AGE, ACA_MAX_CHILDREN_CHARGED};
 use crate::health::CoveragePhase;
-use crate::model::{ChildCosts, HealthcareMode, Profile};
+use crate::math;
+use crate::model::{Arrival, ChildCosts, HealthcareMode, Profile, YearMonth};
+use crate::rng::{Rng, Stream};
 
 use super::plan::{ChildPlan, Plan};
 use super::state::State;
+use crate::stats::TraceEventKind;
+
+/// Month index standing for "never": a child who does not arrive.
+pub(crate) const NEVER: i32 = i32::MAX / 2;
+
+/// Compiled uncertain arrival of one planned child.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ArrivalPlan {
+    pub probability: f64,
+    pub delay_mean: f64,
+    pub twins: f64,
+}
 
 /// Compiled family settings. Everything is `false`/empty when the profile uses none
 /// of the family features.
@@ -22,6 +36,11 @@ pub(crate) struct FamilyPlan {
     pub cover_children: bool,
     /// Age at which a child leaves the parents' plan.
     pub cover_until_age: f64,
+    /// Per child: uncertain arrival, for planned children only.
+    pub arrival: Vec<Option<ArrivalPlan>>,
+    /// Something needs the monthly family calendar (births to announce, leave to
+    /// start, support spells).
+    pub dynamic: bool,
 }
 
 /// Per-path state of the family features.
@@ -29,25 +48,99 @@ pub(crate) struct FamilyPlan {
 pub(crate) struct FamilyState {
     /// Children are on the health plan (for the trace event).
     pub kids_on_plan: bool,
+    /// Month index of each child's birth on this path (`NEVER` if it does not happen).
+    pub birth: Vec<i32>,
+    /// Whether the birth is twins.
+    pub twin: Vec<bool>,
+    /// Bit `k` set when some realised birth falls in a month with `t % 12 == k`.
+    pub birthday_extra: u32,
 }
 
 impl FamilyState {
-    pub(crate) fn new(_plan: &Plan) -> Self {
-        Self::default()
+    pub(crate) fn new(plan: &Plan) -> Self {
+        let n = plan.children.len();
+        FamilyState {
+            birth: vec![0; n],
+            twin: vec![false; n],
+            ..Self::default()
+        }
     }
 
-    /// Resets for path `path`. Allocation-free.
-    pub(crate) fn begin(&mut self, _plan: &Plan, _seed: u64, _path: u64) {
+    /// Resets for path `path`, drawing what is random about the family. Returns the
+    /// month by which the last child's costs end (`kids_until`), at least `until`.
+    /// Allocation-free.
+    pub(crate) fn begin(&mut self, plan: &Plan, seed: u64, path: u64, until: i32) -> i32 {
         self.kids_on_plan = false;
+        self.birthday_extra = 0;
+        let mut until = until;
+        for (k, c) in plan.children.iter().enumerate() {
+            self.birth[k] = c.birth;
+            self.twin[k] = false;
+            if let Some(a) = plan.family.arrival[k] {
+                // Always three draws, whatever the values.
+                let mut rng = Rng::stream(seed, path, Stream::ChildArrival(k));
+                let (u_arrive, u_delay, u_twin) = (rng.uniform(), rng.uniform(), rng.uniform());
+                let (birth, twin) = realise_arrival(&a, c.birth, u_arrive, u_delay, u_twin);
+                self.birth[k] = birth;
+                self.twin[k] = twin;
+                if birth < NEVER {
+                    self.birthday_extra |= 1 << birth.rem_euclid(12);
+                    until = until.max(birth + 22 * 12);
+                }
+            }
+        }
+        until
     }
 }
 
-/// Reads the family settings of a profile.
-pub(crate) fn compile(profile: &Profile) -> FamilyPlan {
+/// Turns three uniforms into a realised birth: `(month index, twins)`. The child
+/// arrives when `u_arrive < probability`; the delay is exponential with the given
+/// mean, rounded to whole months; the birth is twins when `u_twin < twins`.
+pub(crate) fn realise_arrival(
+    a: &ArrivalPlan,
+    planned: i32,
+    u_arrive: f64,
+    u_delay: f64,
+    u_twin: f64,
+) -> (i32, bool) {
+    if u_arrive >= a.probability {
+        return (NEVER, false);
+    }
+    let delay = if a.delay_mean > 0.0 {
+        (-a.delay_mean * math::ln(1.0 - u_delay) + 0.5).floor() as i32
+    } else {
+        0
+    };
+    (planned + delay, u_twin < a.twins)
+}
+
+/// Reads the family settings of a profile. `start` is the plan's first month.
+pub(crate) fn compile(profile: &Profile, start: YearMonth) -> FamilyPlan {
     let hc = &profile.spending.healthcare;
+    let arrival: Vec<Option<ArrivalPlan>> = profile
+        .household
+        .children
+        .iter()
+        .map(|c| match c.arrival {
+            // Only a child still to be born can fail to arrive.
+            Arrival::Uncertain {
+                probability,
+                delay_mean_months,
+                twins_probability,
+            } if c.birth - start > 0 => Some(ArrivalPlan {
+                probability: probability.clamp(0.0, 1.0),
+                delay_mean: delay_mean_months.max(0.0),
+                twins: twins_probability.clamp(0.0, 1.0),
+            }),
+            _ => None,
+        })
+        .collect();
+    let any_arrival = arrival.iter().any(Option::is_some);
     FamilyPlan {
         cover_children: hc.cover_children && hc.mode == HealthcareMode::Modeled,
         cover_until_age: hc.children_coverage_end_age,
+        dynamic: any_arrival,
+        arrival,
     }
 }
 
@@ -63,7 +156,9 @@ pub(crate) fn drop_usda_health_share(
     tier: &str,
     usda_factor: f64,
 ) {
-    if !compile(profile).cover_children {
+    if !(profile.spending.healthcare.cover_children
+        && profile.spending.healthcare.mode == HealthcareMode::Modeled)
+    {
         return;
     }
     const BANDS: [&str; 6] = ["0-2", "3-5", "6-8", "9-11", "12-14", "15-17"];
@@ -216,13 +311,95 @@ impl State {
 
     /// Month index of child `k`'s birth on this path.
     #[inline]
-    pub(crate) fn child_birth(&self, plan: &Plan, k: usize) -> i32 {
-        plan.children[k].birth
+    pub(crate) fn child_birth(&self, _plan: &Plan, k: usize) -> i32 {
+        self.fam.birth[k]
     }
 
-    /// Children born at child `k`'s birth: 1, or 2 for twins.
+    /// Children born at child `k`'s birth: 1, or 2 for twins (0 if it never happens).
     #[inline]
-    pub(crate) fn child_count(&self, _k: usize) -> u32 {
-        1
+    pub(crate) fn child_count(&self, k: usize) -> u32 {
+        1 + u32::from(self.fam.twin[k])
+    }
+
+    /// The monthly family calendar: announces realised births in the trace.
+    pub(crate) fn family_calendar(&mut self, plan: &Plan, t: usize, now: YearMonth) {
+        if !self.detail {
+            return;
+        }
+        let ti = t as i32;
+        for k in 0..plan.children.len() {
+            if plan.family.arrival[k].is_none() {
+                continue;
+            }
+            let birth = self.fam.birth[k];
+            let name = &plan.profile.household.children[k].name;
+            if birth == ti {
+                let twins = self.fam.twin[k];
+                let late = birth - plan.children[k].birth;
+                self.event(now, TraceEventKind::Child, None, || {
+                    format!(
+                        "{} born{}{}",
+                        name,
+                        if twins { " (twins)" } else { "" },
+                        if late > 0 {
+                            format!(", {late} months later than planned")
+                        } else {
+                            String::new()
+                        }
+                    )
+                });
+            } else if birth >= NEVER && plan.children[k].birth == ti {
+                self.event(now, TraceEventKind::Child, None, || {
+                    format!("Planned child {name} does not arrive")
+                });
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const A: ArrivalPlan = ArrivalPlan {
+        probability: 0.85,
+        delay_mean: 4.0,
+        twins: 0.03,
+    };
+
+    #[test]
+    fn arrival_is_hand_computed() {
+        // No arrival when the first uniform is at or above the probability.
+        assert_eq!(realise_arrival(&A, 14, 0.85, 0.5, 0.0), (NEVER, false));
+        assert_eq!(realise_arrival(&A, 14, 0.99, 0.5, 0.0), (NEVER, false));
+        // Median of an exponential with mean 4 is 4 ln 2 = 2.77; plus a half and
+        // floored gives 3 months late.
+        assert_eq!(realise_arrival(&A, 14, 0.1, 0.5, 0.5), (17, false));
+        // u_delay = 0 is no delay; u_delay = 0.99: -4 ln 0.01 = 18.4 -> 18.
+        assert_eq!(realise_arrival(&A, 14, 0.1, 0.0, 0.5), (14, false));
+        assert_eq!(realise_arrival(&A, 14, 0.1, 0.99, 0.5), (32, false));
+        // Twins when the third uniform is below 0.03.
+        assert_eq!(realise_arrival(&A, 14, 0.1, 0.0, 0.029), (14, true));
+        assert_eq!(realise_arrival(&A, 14, 0.1, 0.0, 0.03), (14, false));
+        // Mean delay of zero: exactly on time.
+        let on_time = ArrivalPlan {
+            delay_mean: 0.0,
+            ..A
+        };
+        assert_eq!(realise_arrival(&on_time, 14, 0.1, 0.9, 0.5), (14, false));
+    }
+
+    #[test]
+    fn delay_distribution_has_the_stated_mean() {
+        // Average of the rounded exponential over a grid of the uniform: mean 4.
+        let n = 20_000;
+        let total: f64 = (0..n)
+            .map(|i| {
+                let u = (f64::from(i) + 0.5) / f64::from(n);
+                f64::from(realise_arrival(&A, 0, 0.0, u, 0.5).0)
+            })
+            .sum();
+        let mean = total / f64::from(n);
+        assert!((mean - 4.0).abs() < 0.1, "{mean}");
     }
 }

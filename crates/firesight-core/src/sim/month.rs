@@ -112,6 +112,9 @@ impl State {
         // The turn of the year comes before January's events, so that what they add
         // to the tax year (a sale's gain, a taxable windfall) is on this year's
         // return and not on the one being closed.
+        if plan.family.dynamic {
+            self.family_calendar(plan, t, now);
+        }
         let new_year = month == 1 && t > 0;
         if new_year {
             self.close_year(plan, econ, t);
@@ -411,7 +414,10 @@ impl State {
         self.planned += discretionary;
         if ti < self.kids_until {
             // A child's cost changes on a birthday and each January.
-            if t % 12 == 0 || plan.birthday_months & (1 << (t % 12)) != 0 || self.kids_real < 0.0 {
+            if t % 12 == 0
+                || (plan.birthday_months | self.fam.birthday_extra) & (1 << (t % 12)) != 0
+                || self.kids_real < 0.0
+            {
                 self.kids_real = self.children_cost(plan, t);
             }
             let kids = self.kids_real * price;
@@ -1029,10 +1035,10 @@ impl State {
     pub(crate) fn children_cost(&self, plan: &Plan, t: usize) -> f64 {
         let ti = t as i32;
         let mut minors = 0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for k in 0..plan.children.len() {
+            let age = ti - self.child_birth(plan, k);
             if (0..18 * 12).contains(&age) {
-                minors += 1;
+                minors += self.child_count(k);
             }
         }
         // USDA family-size adjustment (`children.usda_2015.family_size_adjustment`).
@@ -1042,16 +1048,17 @@ impl State {
             _ => 0.76,
         };
         let mut total = 0.0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for (k, c) in plan.children.iter().enumerate() {
+            let age = ti - self.child_birth(plan, k);
             if age < 0 {
                 continue;
             }
             let years = (age / 12) as usize;
+            let n = f64::from(self.child_count(k));
             if years < 18 {
-                total += c.core[years] * family + c.care[years] * self.service_growth;
+                total += (c.core[years] * family + c.care[years] * self.service_growth) * n;
             } else if years < 22 {
-                total += c.college * self.service_growth;
+                total += c.college * self.service_growth * n;
             }
         }
         total / 12.0

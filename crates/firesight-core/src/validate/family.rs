@@ -3,7 +3,7 @@
 
 use crate::model::*;
 
-use super::Checker;
+use super::{seg, Checker};
 
 impl Checker<'_> {
     pub(super) fn family(&mut self) {
@@ -29,6 +29,58 @@ impl Checker<'_> {
                 "/spending/healthcare/cover_children",
                 "Children's health cover is on but the household has no children.",
             );
+        }
+        for (i, child) in p.household.children.iter().enumerate() {
+            let path = format!("/household/children/{}", seg(&child.id, i));
+            self.arrival(&path, child);
+        }
+    }
+
+    fn arrival(&mut self, path: &str, child: &Child) {
+        let Arrival::Uncertain {
+            probability,
+            delay_mean_months,
+            twins_probability,
+        } = child.arrival
+        else {
+            return;
+        };
+        self.r.range(
+            &format!("{path}/arrival/probability"),
+            "Arrival probability",
+            probability,
+            0.0,
+            1.0,
+        );
+        self.r.range(
+            &format!("{path}/arrival/delay_mean_months"),
+            "Mean arrival delay (months)",
+            delay_mean_months,
+            0.0,
+            120.0,
+        );
+        self.r.range(
+            &format!("{path}/arrival/twins_probability"),
+            "Twins probability",
+            twins_probability,
+            0.0,
+            1.0,
+        );
+        if twins_probability > 0.2 {
+            self.r.warn(
+                "twins_implausible",
+                &format!("{path}/arrival/twins_probability"),
+                "A twins probability above 20% is far above the population rate (about 3% of births, higher with fertility treatment).",
+            );
+        }
+        if let Some(start) = self.p.start {
+            if child.birth - start <= 0 {
+                self.r.warn(
+                    "arrival_born_child",
+                    &format!("{path}/arrival"),
+                    "Uncertain arrival applies only to a child whose birth month is after the start; this child is already born, so the setting is ignored.",
+                );
+            }
         }
     }
 }

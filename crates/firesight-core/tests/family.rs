@@ -199,3 +199,157 @@ fn children_health_cover_conserves_money_and_is_finite() {
         trace.events
     );
 }
+
+// ---------------------------------------------------------------------------
+// F07: uncertain arrival of planned children
+// ---------------------------------------------------------------------------
+
+/// One planned child, no others.
+fn planned_child_household(arrival: Arrival) -> Profile {
+    let mut p = family();
+    p.household.children = vec![Child {
+        id: "planned".into(),
+        name: "Planned".into(),
+        birth: START + 12,
+        arrival,
+        ..Child::default()
+    }];
+    p
+}
+
+fn mean_lifetime_spending(plan: &sim::Plan, paths: u64) -> f64 {
+    let acc = run(plan, 21, 0..paths);
+    let col = acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending);
+    col.iter().map(|v| f64::from(*v)).sum::<f64>() / col.len() as f64
+}
+
+#[test]
+fn certain_is_the_default_and_probability_one_on_time_is_the_same() {
+    let certain = planned_child_household(Arrival::Certain);
+    let json = serde_json::to_value(&certain).unwrap();
+    assert!(json["household"]["children"][0]["arrival"]["type"] == "certain");
+    let on_time = planned_child_household(Arrival::Uncertain {
+        probability: 1.0,
+        delay_mean_months: 0.0,
+        twins_probability: 0.0,
+    });
+    let (pc, pu) = (compile(&certain), compile(&on_time));
+    let (ac, au) = (run(&pc, 5, 0..200), run(&pu, 5, 0..200));
+    let sc = serde_json::to_string(&pc.summarize(&ac).digest()).unwrap();
+    let su = serde_json::to_string(&pu.summarize(&au).digest()).unwrap();
+    assert_eq!(sc, su);
+}
+
+#[test]
+fn a_child_who_never_arrives_costs_nothing_and_changes_nothing_else() {
+    let none = {
+        let mut p = family();
+        p.household.children.clear();
+        p
+    };
+    let never = planned_child_household(Arrival::Uncertain {
+        probability: 0.0,
+        delay_mean_months: 6.0,
+        twins_probability: 0.5,
+    });
+    let (pn, pv) = (compile(&none), compile(&never));
+    let (an, av) = (run(&pn, 5, 0..200), run(&pv, 5, 0..200));
+    use firesight_core::stats::PathScalar::*;
+    for s in [LifetimeSpending, LifetimeTax] {
+        assert_eq!(an.scalar_column(s), av.scalar_column(s), "{s:?}");
+    }
+}
+
+#[test]
+fn uncertain_arrival_scales_child_costs_by_probability_and_twins() {
+    let none = {
+        let mut p = family();
+        p.household.children.clear();
+        p
+    };
+    let certain = planned_child_household(Arrival::Certain);
+    let uncertain = planned_child_household(Arrival::Uncertain {
+        probability: 0.6,
+        delay_mean_months: 0.0,
+        twins_probability: 0.1,
+    });
+    let (pn, pc, pu) = (compile(&none), compile(&certain), compile(&uncertain));
+    let paths = 1500;
+    let (sn, sc, su) = (
+        mean_lifetime_spending(&pn, paths),
+        mean_lifetime_spending(&pc, paths),
+        mean_lifetime_spending(&pu, paths),
+    );
+    // The household has one child to 22, so the extra spending of the certain child
+    // is sc - sn. With probability 0.6 and 10% twins (two children each cost 1.0 of
+    // the USDA two-child rate against 1.27 for an only child: a twin birth costs
+    // 2/1.27 = 1.57 as much), the expected extra is 0.6 * (0.9 + 0.1 * 1.57) = 0.634
+    // of it.
+    let ratio = (su - sn) / (sc - sn);
+    assert!(sc > sn, "the child must cost something");
+    assert!(
+        ratio > 0.55 && ratio < 0.72,
+        "ratio {ratio} (expected 0.63)"
+    );
+}
+
+#[test]
+fn delayed_births_leave_trace_events() {
+    let p = planned_child_household(Arrival::Uncertain {
+        probability: 1.0,
+        delay_mean_months: 12.0,
+        twins_probability: 0.5,
+    });
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    ws.set_check(true);
+    let (mut late, mut twins) = (0, 0);
+    for i in 0..30 {
+        let trace = sim::trace_path_in(&plan, 8, i, &mut ws);
+        let born = trace
+            .events
+            .iter()
+            .find(|e| e.kind.key() == "child" && e.label.contains("born"))
+            .unwrap_or_else(|| panic!("no birth event on path {i}: {:?}", trace.events));
+        // The planned month is START + 12; delays are never negative.
+        assert!(born.month >= START + 12, "{born:?}");
+        if born.month > START + 12 {
+            late += 1;
+        }
+        if born.label.contains("twins") {
+            twins += 1;
+        }
+    }
+    assert!(late >= 20, "{late} of 30 late with a 12-month mean delay");
+    assert!(
+        (5..=25).contains(&twins),
+        "{twins} twin births of 30 at 50%"
+    );
+}
+
+#[test]
+fn uncertain_births_conserve_money_and_are_finite() {
+    let mut p = planned_child_household(Arrival::Uncertain {
+        probability: 0.7,
+        delay_mean_months: 8.0,
+        twins_probability: 0.3,
+    });
+    p.household.children.push(Child {
+        id: "second".into(),
+        birth: START + 40,
+        arrival: Arrival::Uncertain {
+            probability: 0.5,
+            delay_mean_months: 12.0,
+            twins_probability: 0.1,
+        },
+        college: College::PublicInState,
+        ..Child::default()
+    });
+    for kind in MARKETS {
+        let plan = compile(&with_market(p.clone(), kind));
+        let acc = run_checked(&plan, 6, 0..120);
+        for s in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+            assert!(s.is_finite());
+        }
+    }
+}

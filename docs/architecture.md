@@ -86,7 +86,9 @@ Child     { id, name, birth: YearMonth (may be in the future = planned),
             costs: Modeled | InBudget,              // Modeled: USDA-style cost by age and income tier
             childcare_monthly: Option<f64>,         // ages 0-4 override
             college: None | PublicInState | PublicOutOfState | Private | Custom{annual},
-            college_share: f64 (fraction parents pay, default 1.0) }
+            college_share: f64 (fraction parents pay, default 1.0),
+            arrival: Certain | Uncertain{ probability (0.85), delay_mean_months (4), twins_probability (0.03) } }
+                                                    // Uncertain: planned children only; random births per path
 Location  { country (default "US"), state: Option<String> (2-letter), city: Option<String>,
             foreign_tax_rate: Option<f64> }         // flat effective income tax when not in the US
 

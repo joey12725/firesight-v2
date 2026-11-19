@@ -69,6 +69,9 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Whether, when and how many: the arrival of one planned child (index into
+    /// `household.children`). Three draws per uncertain child per path.
+    ChildArrival(usize),
 }
 
 impl Stream {
@@ -85,6 +88,7 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
         }
     }
 }
