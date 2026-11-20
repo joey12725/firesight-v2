@@ -502,3 +502,97 @@ fn stochastic_college_conserves_money_and_shows_events() {
         "{seen} college events in 10 paths of two children"
     );
 }
+
+// ---------------------------------------------------------------------------
+// F09: adult children who need support
+// ---------------------------------------------------------------------------
+
+fn support_household(support: Option<AdultSupport>) -> Profile {
+    let mut p = family();
+    p.household.children = vec![Child {
+        id: "kid".into(),
+        birth: START - 10 * 12,
+        adult_support: support,
+        ..Child::default()
+    }];
+    p
+}
+
+#[test]
+fn adult_support_is_off_by_default_and_has_documented_defaults() {
+    assert!(Child::default().adult_support.is_none());
+    let s: AdultSupport = serde_json::from_str("{}").unwrap();
+    assert_eq!(
+        s,
+        AdultSupport {
+            probability: 0.3,
+            annual: 12_000.0,
+            mean_years: 2.0
+        }
+    );
+}
+
+#[test]
+fn adult_support_costs_probability_times_annual_times_years() {
+    let paths = 600;
+    let base = child_spending(&support_household(None), paths);
+    // Never needed: the same, to the dollar.
+    let never = child_spending(
+        &support_household(Some(AdultSupport {
+            probability: 0.0,
+            ..AdultSupport::default()
+        })),
+        paths,
+    );
+    assert_eq!(base, never);
+    // 0.5 * $12,000 a year * 2 years on average = $12,000 per path (the spell is
+    // exponential with mean 24 months, rounded to whole months, at least one).
+    let some = child_spending(
+        &support_household(Some(AdultSupport {
+            probability: 0.5,
+            annual: 12_000.0,
+            mean_years: 2.0,
+        })),
+        paths,
+    );
+    let extra = some - base;
+    assert!(
+        extra > 9_500.0 && extra < 14_500.0,
+        "extra {extra} (expected 12,000)"
+    );
+}
+
+#[test]
+fn adult_support_conserves_money_and_leaves_events() {
+    let p = support_household(Some(AdultSupport {
+        probability: 1.0,
+        annual: 20_000.0,
+        mean_years: 3.0,
+    }));
+    for kind in MARKETS {
+        let plan = compile(&with_market(p.clone(), kind));
+        let acc = run_checked(&plan, 3, 0..100);
+        for s in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+            assert!(s.is_finite());
+        }
+    }
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    ws.set_check(true);
+    let t = sim::trace_path_in(&plan, 3, 0, &mut ws);
+    let started = t
+        .events
+        .iter()
+        .find(|e| e.label.contains("needs support"))
+        .expect("a support spell starts");
+    // Child is 10 now: school ends at 22 (12 years), the spell starts within the
+    // next six years.
+    let months_in =
+        |m: YearMonth| (m.year() - START.year()) * 12 + m.month() as i32 - START.month() as i32;
+    let at = months_in(started.month);
+    assert!((12 * 12..=18 * 12).contains(&at), "starts {at} months in");
+    assert!(t
+        .events
+        .iter()
+        .any(|e| e.label.contains("independent again")));
+}

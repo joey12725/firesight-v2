@@ -34,6 +34,37 @@ impl Checker<'_> {
             let path = format!("/household/children/{}", seg(&child.id, i));
             self.arrival(&path, child);
             self.college_cost(&path, child);
+            self.adult_support(&path, child);
+        }
+    }
+
+    fn adult_support(&mut self, path: &str, child: &Child) {
+        let Some(s) = child.adult_support else {
+            return;
+        };
+        let at = format!("{path}/adult_support");
+        self.r.range(
+            &format!("{at}/probability"),
+            "Support probability",
+            s.probability,
+            0.0,
+            1.0,
+        );
+        self.r
+            .money(&format!("{at}/annual"), "Yearly support", s.annual);
+        self.r.range(
+            &format!("{at}/mean_years"),
+            "Mean support years",
+            s.mean_years,
+            0.0,
+            30.0,
+        );
+        if s.annual > 60_000.0 {
+            self.r.warn(
+                "support_implausible",
+                &format!("{at}/annual"),
+                "Support of more than $60,000 a year for an adult child is far above typical help (the extra cost of an adult living at home is $10,000 to $15,000 a year).",
+            );
         }
     }
 

@@ -116,3 +116,39 @@ fn default_volatility() -> f64 {
 fn one() -> f64 {
     1.0
 }
+
+/// Default chance that an adult child needs support for a spell (a judgement: 18% of
+/// 25 to 34 year olds lived in a parent's home in 2023 (Pew Research Center, April 2025,
+/// from Census data), and a larger share live there at some point).
+pub const DEFAULT_SUPPORT_PROBABILITY: f64 = 0.3;
+/// Default yearly support in today's dollars (a judgement: the extra food, utilities,
+/// phone and insurance of an adult at home, or an allowance of $1,000 a month).
+pub const DEFAULT_SUPPORT_ANNUAL: f64 = 12_000.0;
+/// Default mean length of a spell in years (a judgement).
+pub const DEFAULT_SUPPORT_YEARS: f64 = 2.0;
+
+/// Support for an adult child who returns home or needs money for a spell.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct AdultSupport {
+    /// Chance that the child needs support at some point after finishing school, between
+    /// 0 and 1. Default 0.3.
+    pub probability: f64,
+    /// What the household spends on the child each year of the spell, in today's dollars.
+    /// Default 12,000.
+    pub annual: f64,
+    /// Average length of a spell in years (the length is random, exponential, at least
+    /// one month). The spell starts at a random month in the six years after the child
+    /// finishes school. Default 2.
+    pub mean_years: f64,
+}
+
+impl Default for AdultSupport {
+    fn default() -> Self {
+        Self {
+            probability: DEFAULT_SUPPORT_PROBABILITY,
+            annual: DEFAULT_SUPPORT_ANNUAL,
+            mean_years: DEFAULT_SUPPORT_YEARS,
+        }
+    }
+}

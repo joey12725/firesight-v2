@@ -1062,6 +1062,9 @@ impl State {
                 total += c.college * self.college_factor(plan, k, t) * n;
             }
         }
+        if plan.family.any_support {
+            total += self.adult_support_rate(plan, t);
+        }
         total / 12.0
     }
 

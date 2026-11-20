@@ -73,6 +73,19 @@ pub(crate) struct CollegePlan {
     pub aid_scale: f64,
 }
 
+/// Compiled adult-child support of one child.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SupportPlan {
+    pub probability: f64,
+    /// Today's dollars a year.
+    pub annual: f64,
+    /// Mean spell in months.
+    pub mean_months: f64,
+}
+
+/// Months after the end of school within which a spell starts (six years).
+pub(crate) const SUPPORT_START_WINDOW_MONTHS: f64 = 72.0;
+
 /// Compiled uncertain arrival of one planned child.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ArrivalPlan {
@@ -95,6 +108,10 @@ pub(crate) struct FamilyPlan {
     pub college: Vec<Option<CollegePlan>>,
     /// Some child has stochastic college costs.
     pub any_college: bool,
+    /// Per child: adult support.
+    pub support: Vec<Option<SupportPlan>>,
+    /// Some child may need adult support.
+    pub any_support: bool,
     /// Something needs the monthly family calendar (births to announce, leave to
     /// start, support spells).
     pub dynamic: bool,
@@ -111,6 +128,10 @@ pub(crate) struct FamilyState {
     pub twin: Vec<bool>,
     /// Bit `k` set when some realised birth falls in a month with `t % 12 == k`.
     pub birthday_extra: u32,
+    /// First and last month (exclusive) of each child's adult support spell on this
+    /// path (`NEVER` when there is none).
+    pub support_from: Vec<i32>,
+    pub support_to: Vec<i32>,
     /// Years each child spends in college on this path (4 unless stochastic).
     pub college_years: Vec<u8>,
     /// Standardised aid shock of each child.
@@ -132,6 +153,8 @@ impl FamilyState {
         FamilyState {
             birth: vec![0; n],
             twin: vec![false; n],
+            support_from: vec![NEVER; n],
+            support_to: vec![NEVER; n],
             college_years: vec![4; n],
             aid_z: vec![0.0; n],
             tuition: vec![1.0; n * (TUITION_YEARS + 1)],
@@ -160,6 +183,8 @@ impl FamilyState {
             self.birth[k] = c.birth;
             self.twin[k] = false;
             self.college_years[k] = 4;
+            self.support_from[k] = NEVER;
+            self.support_to[k] = NEVER;
             if let Some(a) = plan.family.arrival[k] {
                 // Always three draws, whatever the values.
                 let mut rng = Rng::stream(seed, path, Stream::ChildArrival(k));
@@ -185,9 +210,44 @@ impl FamilyState {
                     until = until.max(b + (18 + i32::from(self.college_years[k])) * 12);
                 }
             }
+            if let Some(sp) = plan.family.support[k] {
+                let mut rng = Rng::stream(seed, path, Stream::ChildSupport(k));
+                let (u_need, u_start, u_len) = (rng.uniform(), rng.uniform(), rng.uniform());
+                let b = self.birth[k];
+                if b < NEVER {
+                    let school_end = b + (18 + i32::from(self.college_years[k])) * 12;
+                    if let Some((from, to)) =
+                        realise_support(&sp, school_end, u_need, u_start, u_len)
+                    {
+                        self.support_from[k] = from;
+                        self.support_to[k] = to;
+                        self.birthday_extra |= 1 << from.rem_euclid(12) | 1 << to.rem_euclid(12);
+                        until = until.max(to);
+                    }
+                }
+            }
         }
         until
     }
+}
+
+/// A support spell from three uniforms: `Some((first month, month after the last))`
+/// when `u_need < probability`. It starts uniformly within the six years after
+/// `school_end` and lasts an exponential number of months with the mean, rounded, at
+/// least one.
+pub(crate) fn realise_support(
+    sp: &SupportPlan,
+    school_end: i32,
+    u_need: f64,
+    u_start: f64,
+    u_len: f64,
+) -> Option<(i32, i32)> {
+    if u_need >= sp.probability {
+        return None;
+    }
+    let from = school_end + (u_start * SUPPORT_START_WINDOW_MONTHS).floor() as i32;
+    let months = ((-sp.mean_months * math::ln(1.0 - u_len)).round() as i32).max(1);
+    Some((from, from + months))
 }
 
 /// The tuition index relative to CPI by year since the start: `idx[0] = 1` and
@@ -283,13 +343,28 @@ pub(crate) fn compile(profile: &Profile, start: YearMonth) -> FamilyPlan {
         })
         .collect();
     let any_college = college.iter().any(Option::is_some);
+    let support: Vec<Option<SupportPlan>> = profile
+        .household
+        .children
+        .iter()
+        .map(|c| {
+            c.adult_support.map(|s| SupportPlan {
+                probability: s.probability.clamp(0.0, 1.0),
+                annual: s.annual.max(0.0),
+                mean_months: s.mean_years.max(0.0) * 12.0,
+            })
+        })
+        .collect();
+    let any_support = support.iter().any(Option::is_some);
     FamilyPlan {
         cover_children: hc.cover_children && hc.mode == HealthcareMode::Modeled,
         cover_until_age: hc.children_coverage_end_age,
-        dynamic: any_arrival || any_college,
+        dynamic: any_arrival || any_college || any_support,
         arrival,
         college,
         any_college,
+        support,
+        any_support,
     }
 }
 
@@ -512,6 +587,20 @@ impl State {
         (c.aid_scale * (mean + AID_SD * self.fam.aid_z[k])).clamp(0.0, AID_MAX)
     }
 
+    /// What the household spends on adult children this month, today's dollars a year.
+    pub(crate) fn adult_support_rate(&self, plan: &Plan, t: usize) -> f64 {
+        let ti = t as i32;
+        let mut total = 0.0;
+        for k in 0..plan.children.len() {
+            if let Some(sp) = plan.family.support[k] {
+                if ti >= self.fam.support_from[k] && ti < self.fam.support_to[k] {
+                    total += sp.annual;
+                }
+            }
+        }
+        total
+    }
+
     /// The monthly family calendar: announces realised births in the trace.
     pub(crate) fn family_calendar(&mut self, plan: &Plan, t: usize, now: YearMonth) {
         if !self.detail {
@@ -534,6 +623,18 @@ impl State {
                                 discount * 100.0
                             )
                         }
+                    });
+                }
+            }
+            if let Some(sp) = plan.family.support[k] {
+                if self.fam.support_from[k] == ti {
+                    let months = self.fam.support_to[k] - ti;
+                    self.event(now, TraceEventKind::Child, Some(sp.annual), || {
+                        format!("{name} needs support for {months} months")
+                    });
+                } else if self.fam.support_to[k] == ti {
+                    self.event(now, TraceEventKind::Child, None, || {
+                        format!("{name} is independent again")
                     });
                 }
             }
@@ -676,5 +777,22 @@ mod tests {
         let rho = cov / var;
         assert!((sd - 0.012).abs() < 0.0006, "sd {sd}");
         assert!((rho - TUITION_AR1).abs() < 0.03, "autocorrelation {rho}");
+    }
+
+    #[test]
+    fn support_spell_is_hand_computed() {
+        let sp = SupportPlan {
+            probability: 0.3,
+            annual: 12_000.0,
+            mean_months: 24.0,
+        };
+        // No need when the first uniform is at or above 0.3.
+        assert_eq!(realise_support(&sp, 264, 0.3, 0.5, 0.5), None);
+        // Start: 264 + floor(0.5 * 72) = 300. Length: -24 ln 0.5 = 16.6 -> 17 months.
+        assert_eq!(realise_support(&sp, 264, 0.1, 0.5, 0.5), Some((300, 317)));
+        // The earliest start is the end of school; a tiny length rounds up to one month.
+        assert_eq!(realise_support(&sp, 264, 0.0, 0.0, 0.0), Some((264, 265)));
+        // The latest start is 71 months after school.
+        assert_eq!(realise_support(&sp, 264, 0.0, 0.999, 0.0), Some((335, 336)));
     }
 }

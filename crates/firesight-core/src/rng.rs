@@ -78,6 +78,9 @@ pub enum Stream {
     /// Whether a child attends, for how many years and how much aid: three draws per
     /// child with stochastic college costs (index into `household.children`).
     ChildCollege(usize),
+    /// Whether, when and for how long an adult child needs support: three draws per
+    /// child with `adult_support` (index into `household.children`).
+    ChildSupport(usize),
 }
 
 impl Stream {
@@ -97,6 +100,7 @@ impl Stream {
             Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
             Stream::CollegePrices => 1200,
             Stream::ChildCollege(i) => 0x1280_0000 + i as u64,
+            Stream::ChildSupport(i) => 0x1210_0000 + i as u64,
         }
     }
 }

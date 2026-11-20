@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Arrival, CollegeCost, YearMonth};
+use super::{AdultSupport, Arrival, CollegeCost, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -187,6 +187,11 @@ pub struct Child {
     /// Default fixed.
     #[serde(default)]
     pub college_cost: CollegeCost,
+    /// Opt-in: after school the child may return home or need money for a random spell
+    /// (a "boomerang" child), which adds spending for those years. Empty (the default)
+    /// means the child is never supported as an adult.
+    #[serde(default)]
+    pub adult_support: Option<AdultSupport>,
 }
 
 fn one() -> f64 {
@@ -205,6 +210,7 @@ impl Default for Child {
             college_share: 1.0,
             arrival: Arrival::Certain,
             college_cost: CollegeCost::Fixed,
+            adult_support: None,
         }
     }
 }

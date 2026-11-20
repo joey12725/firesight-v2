@@ -440,6 +440,28 @@ aid of an early retiree with a large portfolio is overstated), merit aid is only
 average, loans and 529 plans are not modelled, and tuition shocks are independent of
 inflation and markets.
 
+### Adult children who need support (opt-in)
+
+`adult_support: {"probability", "annual", "mean_years"}` on a child (default absent: none).
+With probability 0.3 (judgement; 18% of 25 to 34 year olds lived in a parent's home in
+2023, Pew Research Center 2025 from Census data, and more do at some point) the child
+needs support for one spell. The spell starts at a uniformly random month in the six years
+after school ends (the realised college years, so it follows stochastic college costs) and
+lasts an exponential number of months with the given mean (default 2 years, a judgement),
+at least one month. Support is `annual` (default $12,000 in today's dollars, a judgement)
+and is added to the child spending of those months, so it flows into the existing
+child-cost ledger category and year series. Three draws per child from stream
+`ChildSupport` (0x1210_0000 + i), always taken. The trace shows when a spell starts and
+ends.
+
+Measured on `dual-income-family` with both children at the defaults (3,000 paired paths,
+seed 7): success 92.2% to 92.1%, median terminal net worth down $19,000. The effect is
+small because the household's wealth is large relative to about $14,000 expected extra
+spending.
+
+Not modelled: support does not depend on the household's wealth or the child's income,
+only one spell per child, and no grandchildren.
+
 ### Healthcare
 
 With `modeled` healthcare each adult is, month by month, on an employer plan, COBRA
