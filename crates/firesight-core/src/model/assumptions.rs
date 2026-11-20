@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{BondPricing, When};
+use super::{BondPricing, Valuation, When};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -60,6 +60,12 @@ pub struct MarketModel {
     /// change of a 10-year bond when the yield moves), so a path's bond returns and
     /// its yield level agree.
     pub bond_pricing: BondPricing,
+    /// Start expected stock returns from today's valuation instead of the
+    /// historical average: an expensive market returns less over the next decade or
+    /// two while its valuation drifts back to normal. Applies to the bootstrap,
+    /// regime, lognormal and fat-tailed models. Leave empty to keep history's
+    /// average from the first month.
+    pub valuation: Option<Valuation>,
 }
 
 /// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
@@ -75,6 +81,7 @@ impl Default for MarketModel {
             inflation_adjustment: 0.0,
             stress: Vec::new(),
             bond_pricing: BondPricing::default(),
+            valuation: None,
         }
     }
 }

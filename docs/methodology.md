@@ -223,6 +223,52 @@ It matters. On the early-career example (10,000 paired paths, after the audit):
 success 84.2% at the default, 90.7% at 0, 75.2% at -0.03; the median age of
 financial independence moves from 39.3 to 38.7 and 40.0.
 
+#### Valuation-aware expected returns (`market.valuation`, opt-in)
+
+The adjustment above lowers every month's stock return by the same amount for the
+whole plan. `valuation: { starting_cape, fair_cape, half_life_years }` instead
+starts expected US stock returns from today's valuation and lets it fade. The
+state is the log gap between the cyclically adjusted price-earnings ratio (CAPE) and
+its normal level, `v = ln(CAPE / fair)`. Each month the model's own US stock return
+is multiplied by `exp(-k v)`, with `k` set by the half-life, and the month's real
+surprise (its real log return less the model's mean) moves `v` one for one, since a
+ten-year earnings average barely moves in a month. So `v` is a stationary AR(1):
+an expensive start returns less until the CAPE has come back to normal, a crash
+lowers the CAPE and raises later expected returns, and from a fair start the
+long-run mean is the model's own. The expected shortfall of the cumulative log
+return after `t` months is `v0 (1 - (1 - k)^t)`, which tends to `v0`: the level lost
+while valuations normalise is not made up. This is Campbell and Shiller's finding
+(1998, 2001) that valuation ratios forecast ten-year stock returns and revert mostly
+through prices. Listed real estate, the single stock and the custom asset follow by
+their equity beta (as under a stress). International stocks, gold and crypto are
+left alone. The overlay applies to the bootstrap, regime and lognormal models, not
+to the historical replay. The model's mean is computed exactly for the bootstrap
+(the record's mean) and the lognormal model (its parameter), and for the regime
+model from 2,000 fixed-seed paths of 60 years, computed once per process. It draws
+no random numbers, so the sampled shocks and every other series are unchanged.
+
+Parameters (`data/actuarial/params.json`, `market_realism.valuation`): starting
+CAPE 40 (Shiller CAPE of the S&P 500, 38 to 42 through 2026: YCharts, Financer,
+multpl.com), normal CAPE 17.3 (its mean since 1881; reverting all the way to it is
+the bearish reading, and 25 to 30 assumes part of today's level is permanent),
+half-life 15 years (a judgement in the 10 to 20 year range; the papers do not pin
+down the speed).
+
+Measured. Over 1,000 paths the first decade's real log return falls short by 0.310
+(bootstrap), 0.322 (regime) and 0.303 (lognormal) against the formula's 0.310, about
+3.1 points a year. The third decade still loses 0.11 to 0.15. From a fair start the
+60-year mean real return moves by less than 0.15 points, and the spread of ten-year
+real returns narrows by 18 to 19% (the price feedback is a source of mean reversion
+the models did not have). On the early-career example (4,000 paired paths, the
+record as it was, `equity_premium_adjustment: 0`): success 90.4% to 88.4% and the
+median age of independence 38.7 to 39.7. Combined with the default -1.5 point
+adjustment, which partly counts the same high valuations twice (a validation warning
+says so), success falls from 83.7% to 80.8% and independence moves from 39.3 to 40.4.
+
+Not modelled: earnings growth shocks separate from prices (all reversion goes
+through prices), valuations of international markets, and any link from valuation
+to dividend yields unless `dynamic_yields` is also on.
+
 ### 2.8 Stress scenarios
 
 Applied to every path on top of the random draws.

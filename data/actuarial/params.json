@@ -2446,5 +2446,15 @@
       "gold_real_return": "Annual geometric real return of gold. Gold kept its real value over the very long run (0 to 1% a year; 1926-2026 about 2.4% including the 1970s repricing after the end of the gold standard). 1% is the upper end of the long-run range. Before this was fixed the models implied 3.4%, 4.3% and 5.3%: the 1968-2026 nominal mean set against full-sample inflation."
     },
     "confidence": "judgement; the direction and rough size are supported by the long-run record, the exact values are not estimable"
+  },
+  "market_realism": {
+    "summary": "Parameters of the optional market refinements (assumptions.market: valuation, stress episodes, the fat-tailed model, dynamic_yields). Each entry gives its value, where it comes from and how sure it is. Constants are kept equal to this section by tests/unverified_constants.rs.",
+    "valuation": {
+      "starting_cape": 40.0,
+      "fair_cape": 17.3,
+      "half_life_years": 15.0,
+      "source": "starting_cape: Shiller CAPE of the S&P 500, 38 to 42 through 2026 (YCharts 39.8 February 2026; Financer 38.2 March 2026; multpl.com about 40.5), rounded. fair_cape: mean of Shiller's CAPE since 1881, about 17.3 (Shiller's online data as summarised by multpl.com and Financer). half_life_years: Campbell and Shiller (1998, 'Valuation Ratios and the Long-Run Stock Market Outlook', Journal of Portfolio Management 24(2); 2001 update, NBER w8221) find that valuation ratios forecast ten-year price changes and revert mostly through prices, without pinning down the speed.",
+      "confidence": "starting_cape sourced (update it with the published value); fair_cape sourced as a statistic, but reverting all the way to it is the bearish reading; half_life_years judgement"
+    }
   }
 }

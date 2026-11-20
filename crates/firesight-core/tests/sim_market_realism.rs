@@ -6,7 +6,8 @@ mod common;
 
 use common::*;
 use firesight_core::model::*;
-use firesight_core::stats::{PathScalar, Summary};
+use firesight_core::sim;
+use firesight_core::stats::{PathScalar, Summary, TraceEventKind};
 
 const SEED: u64 = 1800;
 
@@ -87,4 +88,62 @@ fn bonds_priced_from_the_yield_raise_a_bond_heavy_retirees_wealth_modestly() {
     let r_off = scalar_mean(&off, 2000, PathScalar::EarlyRetirementReturn);
     let r_on = scalar_mean(&on, 2000, PathScalar::EarlyRetirementReturn);
     assert!(r_on > r_off && r_on - r_off < 0.01, "{r_off} {r_on}");
+}
+
+// ---------------------------------------------------------------------------------
+// F37: valuation-aware expected returns.
+// ---------------------------------------------------------------------------------
+
+fn example(slug: &str) -> Profile {
+    Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == slug)
+        .unwrap()
+        .profile
+}
+
+/// A CAPE of 40 against a normal 17.3 lowers stock returns by about three points a
+/// year over the first decade: a saver reaches independence later and succeeds
+/// less often. A fairly valued start changes little.
+#[test]
+fn an_expensive_market_delays_independence_and_lowers_success() {
+    let mut off = example("early-career-saver");
+    off.assumptions.market.equity_premium_adjustment = 0.0;
+    let mut on = off.clone();
+    on.assumptions.market.valuation = Some(Valuation::default());
+    let n = 2000;
+    let (a, b) = (summary(&off, SEED, n), summary(&on, SEED, n));
+    let (sa, sb) = (a.headline.success_rate.value, b.headline.success_rate.value);
+    let (fa, fb) = (a.headline.median_fi_age, b.headline.median_fi_age);
+    eprintln!("early career: success {sa:.3} -> {sb:.3}; median FI age {fa:.2} -> {fb:.2}");
+    assert!(sb < sa - 0.02 && sb > sa - 0.30, "{sa} {sb}");
+    assert!(fb > fa + 0.25 && fb < fa + 8.0, "{fa} {fb}");
+
+    let mut fair = off.clone();
+    fair.assumptions.market.valuation = Some(Valuation {
+        starting_cape: 17.3,
+        ..Valuation::default()
+    });
+    let f = summary(&fair, SEED, n).headline.success_rate.value;
+    eprintln!("early career, fairly valued start: success {f:.3}");
+    assert!((f - sa).abs() < 0.03, "{sa} {f}");
+}
+
+#[test]
+fn a_traced_path_says_where_valuations_start() {
+    let mut p = example("early-career-saver");
+    p.assumptions.market.valuation = Some(Valuation::default());
+    let trace = sim::trace_path(&compile(&p), SEED, 1);
+    let note = trace
+        .events
+        .iter()
+        .find(|e| e.kind == TraceEventKind::Market)
+        .expect("a market note");
+    assert_eq!(note.month, START);
+    assert!(note.label.contains("CAPE of 40.0"), "{}", note.label);
+    let plain = sim::trace_path(&compile(&example("early-career-saver")), SEED, 1);
+    assert!(!plain
+        .events
+        .iter()
+        .any(|e| e.kind == TraceEventKind::Market));
 }

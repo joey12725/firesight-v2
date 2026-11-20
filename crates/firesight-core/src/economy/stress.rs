@@ -73,7 +73,7 @@ pub enum ResolvedStress {
 /// collapse (a failed token or company) and is left alone: an imposed market move
 /// does not bring it back.
 #[inline]
-fn shifted(r: f64, beta: f64, delta: f64) -> f64 {
+pub(super) fn shifted(r: f64, beta: f64, delta: f64) -> f64 {
     if r <= -1.0 {
         return -1.0;
     }

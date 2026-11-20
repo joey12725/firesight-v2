@@ -534,6 +534,26 @@ impl RegimeParams {
         y0 / 12.0 - d * dy + 0.5 * c * dy * dy
     }
 
+    /// Mean monthly real log return of US equities over the first `months` of a
+    /// path from today's state, estimated on `paths` paths of a fixed private seed
+    /// (deterministic). The regime model's mean has no closed form: the bill rate
+    /// floor, the start from today's state and the logarithms all move it.
+    pub(super) fn real_equity_log_mean(&self, paths: u64, months: usize) -> f64 {
+        let normal = &super::sampler::normal().table;
+        let (mut sum, mut n) = (0.0, 0.0);
+        for path in 0..paths {
+            let mut market = Rng::from_seed(0x1800_0000_0000_0001 ^ path);
+            let mut inflation = Rng::from_seed(0x1800_0000_0000_0002 ^ path);
+            let mut state = self.start;
+            for _ in 0..months {
+                let c = self.step(&mut state, &mut market, &mut inflation, normal);
+                sum += math::ln_1p(c.eq) - math::ln_1p(c.cpi);
+                n += 1.0;
+            }
+        }
+        sum / n
+    }
+
     /// Advances one month. Draws from `market`: 1 uniform (regime), 4 uniforms
     /// (mixing), 5 normals, 1 normal (spread), 1 uniform (recession); from
     /// `inflation`: 1 normal.
@@ -707,6 +727,12 @@ impl LognormalParams {
                 counts[1][1] / (counts[1][0] + counts[1][1]),
             ],
         }
+    }
+
+    /// Mean of the monthly real log return of US equities: exactly `mu_eq - mu_cpi`
+    /// (log returns are normal with these means).
+    pub(super) fn real_equity_log_mean(&self) -> f64 {
+        self.mu[0] - self.mu[LN_DIM - 1]
     }
 
     /// Long-run share of recession months implied by the chain.

@@ -289,6 +289,8 @@ pub(crate) struct State {
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// Market annotations of the traced path, due month first (`market_notes.rs`).
+    pub market_notes: super::market_notes::MarketNotes,
 }
 
 impl State {
@@ -472,6 +474,7 @@ impl State {
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
             tax_details: Vec::new(),
+            market_notes: Default::default(),
         }
     }
 
@@ -779,6 +782,9 @@ impl State {
         self.port_return = 0.0;
         self.trace_events.clear();
         self.tax_details.clear();
+        if detail {
+            self.plan_market_notes(plan, econ);
+        }
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs
         // the funded test before the first annual plan, and would otherwise read

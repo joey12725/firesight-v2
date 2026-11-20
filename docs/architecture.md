@@ -188,7 +188,8 @@ Assumptions {
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,
                         stress: Vec<Stress>,
-                        bond_pricing: Sampled (default) | FromYield },   // bootstrap: bond returns priced from the path's yield
+                        bond_pricing: Sampled (default) | FromYield,     // bootstrap: bond returns priced from the path's yield
+                        valuation: Option<{ starting_cape (40), fair_cape (17.3), half_life_years (15) }> },  // None (default): no valuation tilt
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },

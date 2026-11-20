@@ -7,6 +7,8 @@
 use super::*;
 use crate::rng::Stream;
 
+mod valuation;
+
 const SEED: u64 = 0x5EED_1800;
 
 fn market(kind: MarketKind) -> MarketModel {

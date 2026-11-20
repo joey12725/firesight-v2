@@ -45,3 +45,28 @@ fn constants_quoted_from_memory_match_the_data_file() {
         num(&section["good_health_mortality_multiplier"]["value"])
     );
 }
+
+/// The optional market refinements keep their sourced values and judgements in
+/// `market_realism`, each with a source and a confidence note.
+#[test]
+fn market_realism_constants_match_the_data_file() {
+    use firesight_core::model;
+    let section = &Data::embedded().actuarial["market_realism"];
+    let num = |v: &serde_json::Value| v.as_f64().unwrap();
+    for (_, entry) in section
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(k, _)| *k != "summary")
+    {
+        assert!(entry["source"].as_str().is_some_and(|s| !s.is_empty()));
+        assert!(entry["confidence"].as_str().is_some_and(|s| !s.is_empty()));
+    }
+    let v = &section["valuation"];
+    assert_eq!(model::DEFAULT_STARTING_CAPE, num(&v["starting_cape"]));
+    assert_eq!(model::DEFAULT_FAIR_CAPE, num(&v["fair_cape"]));
+    assert_eq!(
+        model::DEFAULT_VALUATION_HALF_LIFE_YEARS,
+        num(&v["half_life_years"])
+    );
+}
