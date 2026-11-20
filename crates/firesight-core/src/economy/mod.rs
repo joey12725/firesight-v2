@@ -82,7 +82,7 @@
 
 mod fit;
 mod regime;
-mod sampler;
+pub(crate) mod sampler;
 mod stress;
 #[cfg(test)]
 mod tests;

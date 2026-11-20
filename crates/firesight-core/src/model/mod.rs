@@ -27,6 +27,7 @@ mod property;
 mod retirement;
 mod spending;
 mod time;
+mod uncertain;
 
 pub use accounts::*;
 pub use assumptions::*;
@@ -41,3 +42,4 @@ pub use property::*;
 pub use retirement::*;
 pub use spending::*;
 pub use time::*;
+pub use uncertain::*;

@@ -28,14 +28,14 @@ const UNIT53: f64 = 1.0 / (1u64 << 53) as f64;
 /// A quantile table for one distribution. Layout: for each sign (0 = positive side,
 /// 1 = negative side) a main level then a tail level, each `KNOTS` long.
 #[derive(Clone, Debug)]
-pub(super) struct ShockTable {
+pub(crate) struct ShockTable {
     t: Box<[f64]>,
 }
 
 impl ShockTable {
     /// Builds the table of `f(x)` where `x` is symmetric with `|x|` having quantile
     /// function `half_q(u)`, `u` in `[0, 1)` (that is, `Q(0.5 + u / 2)` of `x`).
-    pub(super) fn build(half_q: impl Fn(f64) -> f64, f: impl Fn(f64) -> f64) -> ShockTable {
+    pub(crate) fn build(half_q: impl Fn(f64) -> f64, f: impl Fn(f64) -> f64) -> ShockTable {
         let mut t = vec![0.0; 4 * KNOTS];
         let mut half = vec![0.0; 2 * KNOTS];
         for j in 0..KNOTS {
@@ -57,7 +57,7 @@ impl ShockTable {
     /// One variate from 64 random bits: 1 sign bit, 10 cell bits, 53 bits of position
     /// inside the cell.
     #[inline(always)]
-    pub(super) fn sample(&self, bits: u64) -> f64 {
+    pub(crate) fn sample(&self, bits: u64) -> f64 {
         let base = (bits >> 63) as usize * (2 * KNOTS);
         let cell = ((bits >> 53) & (CELLS as u64 - 1)) as usize;
         let frac = (bits & MASK53) as f64 * UNIT53;
@@ -90,24 +90,24 @@ impl ShockTable {
     }
 
     /// Exact mean of the sampled distribution.
-    pub(super) fn mean(&self) -> f64 {
+    pub(crate) fn mean(&self) -> f64 {
         self.integrate(|a, b| 0.5 * (a + b))
     }
 
     /// Exact second moment of the sampled distribution.
-    pub(super) fn second_moment(&self) -> f64 {
+    pub(crate) fn second_moment(&self) -> f64 {
         self.integrate(|a, b| (a * a + a * b + b * b) / 3.0)
     }
 
     /// Multiplies every value by `k`.
-    pub(super) fn scale(&mut self, k: f64) {
+    pub(crate) fn scale(&mut self, k: f64) {
         for v in self.t.iter_mut() {
             *v *= k;
         }
     }
 
     /// A table that always returns `value`.
-    pub(super) fn constant(value: f64) -> ShockTable {
+    pub(crate) fn constant(value: f64) -> ShockTable {
         ShockTable {
             t: vec![value; 4 * KNOTS].into(),
         }
@@ -115,13 +115,13 @@ impl ShockTable {
 }
 
 /// Standard normal CDF.
-pub(super) fn normal_cdf(x: f64) -> f64 {
+pub(crate) fn normal_cdf(x: f64) -> f64 {
     0.5 * crate::math::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
 }
 
 /// Standard normal quantile: Acklam's rational approximation (relative error about
 /// 1e-9) polished with two Newton steps on the exact CDF.
-pub(super) fn normal_quantile(p: f64) -> f64 {
+pub(crate) fn normal_quantile(p: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969_683_028_665_376e1,
         2.209_460_984_245_205e2,
@@ -180,7 +180,7 @@ pub(super) fn normal_quantile(p: f64) -> f64 {
 /// CDF of Student's t with an even number of degrees of freedom, which is algebraic:
 /// `F(t) = 1/2 + (s/2) * sum_{j < dof/2} c_j * cos2^j`, with `s = t / sqrt(dof + t^2)`,
 /// `cos2 = dof / (dof + t^2)`, `c_0 = 1`, `c_j = c_{j-1} * (2j - 1) / (2j)`.
-pub(super) fn student_t_cdf_even(t: f64, dof: u32) -> f64 {
+pub(crate) fn student_t_cdf_even(t: f64, dof: u32) -> f64 {
     debug_assert!(dof >= 2 && dof % 2 == 0);
     let nu = f64::from(dof);
     let s = t / (nu + t * t).sqrt();
@@ -219,9 +219,9 @@ fn student_t_half_quantile(u: f64, dof: u32) -> f64 {
 /// transformed tables (lognormal, capped exponentials) can be derived from the same
 /// quantiles.
 #[derive(Debug)]
-pub(super) struct UnitShock {
+pub(crate) struct UnitShock {
     /// Additive table with variance exactly 1.
-    pub(super) table: ShockTable,
+    pub(crate) table: ShockTable,
     /// `|x|` quantiles at the main and tail knots, in units where the variance is 1.
     half: Box<[f64]>,
 }
@@ -236,7 +236,7 @@ impl UnitShock {
     }
 
     /// The table of `f(x)` for `x` distributed as this unit shock.
-    pub(super) fn transformed(&self, f: impl Fn(f64) -> f64) -> ShockTable {
+    pub(crate) fn transformed(&self, f: impl Fn(f64) -> f64) -> ShockTable {
         let mut t = vec![0.0; 4 * KNOTS];
         for (k, &x) in self.half.iter().enumerate() {
             t[k] = f(x);
@@ -247,27 +247,27 @@ impl UnitShock {
 }
 
 /// Standard normal.
-pub(super) fn normal() -> &'static UnitShock {
+pub(crate) fn normal() -> &'static UnitShock {
     static T: OnceLock<UnitShock> = OnceLock::new();
     T.get_or_init(|| UnitShock::new(|u| normal_quantile(0.5 + 0.5 * u)))
 }
 
 /// Student-t with 6 degrees of freedom, unit variance (excess kurtosis 3 before
 /// truncation).
-pub(super) fn student_t6() -> &'static UnitShock {
+pub(crate) fn student_t6() -> &'static UnitShock {
     static T: OnceLock<UnitShock> = OnceLock::new();
     T.get_or_init(|| UnitShock::new(|u| student_t_half_quantile(u, 6)))
 }
 
 /// Student-t with 4 degrees of freedom, unit variance.
-pub(super) fn student_t4() -> &'static UnitShock {
+pub(crate) fn student_t4() -> &'static UnitShock {
     static T: OnceLock<UnitShock> = OnceLock::new();
     T.get_or_init(|| UnitShock::new(|u| student_t_half_quantile(u, 4)))
 }
 
 /// Unit-variance Student-t for 4 or 6 degrees of freedom; other values map to the
 /// nearer of the two (the data file specifies 4).
-pub(super) fn student_t(dof: u32) -> &'static UnitShock {
+pub(crate) fn student_t(dof: u32) -> &'static UnitShock {
     if dof <= 4 {
         student_t4()
     } else {

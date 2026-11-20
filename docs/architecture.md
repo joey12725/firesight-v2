@@ -30,7 +30,11 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events}`, plus the streams of the opt-in models
+  `{MarketParams, Disaster, AssetExt, CareerShape(person), Business(income),
+  HealthPath, Frailty(person), EventShape, Benefactor, SpendingPath, Policy,
+  LocalMarket(property)}`, which are never drawn from when those models are off.
+  Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -272,6 +276,7 @@ for each month t:
 |---|---|
 | `model` | The schema above, defaults, schemars derives |
 | `rng` | SplitMix64 seeding, xoshiro256++, normal / student-t / lognormal / exponential / poisson, named streams |
+| `dist` | `Uncertain` (a number given as a range in the profile) compiled to `CompiledDist`, a one-uniform quantile sampler with an exact mean; the shared validation check; `sampler` re-exports the economy's one-draw shock tables |
 | `data` | Embedded datasets parsed once: `data/history/monthly.csv`, `data/tax/*.json`, `data/actuarial/*` |
 | `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise |
 | `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |

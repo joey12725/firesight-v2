@@ -677,7 +677,11 @@ A success rate alone hides most of what matters, so the engine also reports:
 **Random streams.** The generator is xoshiro256++, seeded through SplitMix64, with
 one independent stream per `(seed, path, subsystem)`: market, inflation, each
 person's career, equity compensation, each person's health, each person's
-longevity, expense shocks, each property, and life events. The number of draws from
+longevity, expense shocks, each property, and life events. The opt-in models have
+streams of their own (market parameters, rare disasters, extra asset draws, career
+shape and business outcomes, household health processes and personal frailty, event
+amounts, benefactors' lifespans, spending processes, policy, local housing markets),
+so switching one on never moves a draw of the default model. The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.

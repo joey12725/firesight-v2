@@ -19,6 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+// The shared check for a user-supplied distribution lives beside its sampler; it is
+// re-exported here so validation code calls it like any other check:
+// `check_uncertain(&mut self.r, &path, "Windfall amount", &dist, Bounds::MONEY)`.
+pub use crate::dist::{check_uncertain, Bounds};
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -52,7 +57,7 @@ impl Report {
         r
     }
 
-    fn error(&mut self, code: &str, path: &str, message: impl Into<String>) {
+    pub(crate) fn error(&mut self, code: &str, path: &str, message: impl Into<String>) {
         self.errors.push(Issue {
             code: code.into(),
             path: path.into(),
