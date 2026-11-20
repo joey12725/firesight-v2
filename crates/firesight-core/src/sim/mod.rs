@@ -56,6 +56,7 @@ use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
 mod events;
+mod housing_ext;
 mod month;
 mod plan;
 mod preview;

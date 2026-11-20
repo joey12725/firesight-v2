@@ -453,6 +453,37 @@ rule (76.3%).
 Other debts are amortised with their payments; extra payments follow the avalanche
 or snowball order.
 
+**Home-equity line of credit** (opt-in, `retirement.home_equity_borrowing: {type:
+heloc}`; code in `home_equity.rs` and `sim/housing_ext.rs`). At any age, working or
+retired, when liquid savings cannot pay the month and an essential would otherwise be
+cut or property sold, the household opens a line on its main home (once, the first
+time it is needed) and draws what is missing. The credit limit is
+`max_combined_ltv x value - mortgage` (default 0.80; CFPB's HELOC brochure and lender
+practice: 80 to 85%), cut further if the home later loses value. The rate is the
+simulated Treasury bill yield plus `spread` (default 3.5 points: prime is the federal
+funds target plus 3, and Bankrate's national average HELOC rate was 7.81% in early
+December 2025 against a 6.75% prime). Interest only for `draw_years` (10), then a
+level payment over `repay_years` (20). When a recession begins, or national home
+prices fall 10% below their running peak (a judgement), lenders freeze the unused
+part of the line and new lines with probability `freeze_probability` (0.3, a
+judgement: in the Fed's April 2008 Senior Loan Officer Survey about half of the banks
+had tightened terms on existing lines, nearly all citing falling collateral values;
+no borrower-level freeze rate is published); lines open again when the downturn
+ends. The freeze draw comes from its own stream (`HomeEquityCredit`), one uniform a
+month whatever the household does, so paths stay paired. Draws are booked as cash
+from property (`property_sale`, a transfer, not income), interest and repayments as
+housing spending, and the balance in the `mortgage` series; the FI test counts it as
+a debt to clear. Surpluses repay the line before they are invested, and a sale repays
+it out of the proceeds. Measured on the family example (4,000 paired paths, the profile's seed):
+with `home_equity: last_resort` the success rate is unchanged (91.5%, 33 paths rescued
+and 32 harmed: the line's interest can cost a path that would have sold the house
+early anyway) while the 10th percentile of terminal net worth rises from $104,000 to
+$144,000; FI falls 0.4 points because a working household that borrowed must clear the
+line first. With `home_equity: never` the line lifts success from 76.3% to 85.9%. Not
+modelled: closing and annual fees (commonly waived), the lender's income test,
+interest deductibility (only for home improvements since 2018), lines on second homes
+or rentals, and fixed-rate conversion options.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus

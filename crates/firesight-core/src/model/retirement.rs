@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::YearMonth;
+use super::{HomeEquityBorrowing, YearMonth};
 
 /// The retirement plan.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -25,6 +25,11 @@ pub struct RetirementPlan {
     pub bequest_target: f64,
     /// What happens to property when savings run out.
     pub home_equity: HomeEquity,
+    /// Borrowing against the home when savings run out, before property is sold or
+    /// essential spending is cut: none (default), a home-equity line, or a reverse
+    /// mortgage.
+    #[serde(skip_serializing_if = "HomeEquityBorrowing::is_none")]
+    pub home_equity_borrowing: HomeEquityBorrowing,
 }
 
 /// Whether property is sold when every account is empty.
@@ -54,6 +59,7 @@ impl Default for RetirementPlan {
             early_access: EarlyAccess::Auto,
             bequest_target: 0.0,
             home_equity: HomeEquity::LastResort,
+            home_equity_borrowing: HomeEquityBorrowing::None,
         }
     }
 }

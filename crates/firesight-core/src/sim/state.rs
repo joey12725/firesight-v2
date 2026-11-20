@@ -289,6 +289,8 @@ pub(crate) struct State {
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// Housing decisions in force (`housing_ext.rs`).
+    pub hx: super::housing_ext::HxState,
 }
 
 impl State {
@@ -472,6 +474,7 @@ impl State {
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
             tax_details: Vec::new(),
+            hx: super::housing_ext::HxState::new(plan),
         }
     }
 
@@ -779,6 +782,7 @@ impl State {
         self.port_return = 0.0;
         self.trace_events.clear();
         self.tax_details.clear();
+        self.hx.begin(plan, seed, path);
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs
         // the funded test before the first annual plan, and would otherwise read
@@ -916,6 +920,9 @@ impl State {
                 value += p.value;
                 mortgage += p.mortgage_balance();
             }
+        }
+        if self.hx.any_line {
+            mortgage += self.hx.liability();
         }
         (value, mortgage)
     }

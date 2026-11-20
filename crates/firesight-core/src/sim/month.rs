@@ -553,6 +553,9 @@ impl State {
             }
         }
         self.home_index *= 1.0 + home_national;
+        if plan.hx.monthly {
+            self.hx_month(plan, econ, t);
+        }
 
         // 8. Debts: required payments, then the extra payment by strategy.
         self.pay_debts(plan, t, price);
@@ -1275,6 +1278,7 @@ impl State {
             // is reported as debt and repaid from later surpluses.
             let mut release = plan.profile.retirement.home_equity == HomeEquity::LastResort
                 && self.props.iter().any(|p| p.owned);
+            let mut borrow = plan.hx.lines;
             const CUTS: [(YearSeries, bool); 6] = [
                 (YearSeries::SpendDiscretionary, false),
                 (YearSeries::SpendOneOff, true),
@@ -1287,6 +1291,16 @@ impl State {
                 let mut missing = -self.acc.cash - overdraft;
                 if missing <= DUST {
                     break;
+                }
+                if essential && borrow {
+                    // Before property is sold or an essential is cut, the household
+                    // borrows against its home if the plan allows it.
+                    borrow = false;
+                    self.hx_borrow(plan, t, price, missing);
+                    missing = -self.acc.cash - overdraft;
+                    if missing <= DUST {
+                        break;
+                    }
                 }
                 if essential && release {
                     // Before an essential is cut, property is sold.
@@ -1306,7 +1320,10 @@ impl State {
             }
         }
         // Housing costs, debt service and tax cannot be cut: if they alone are more
-        // than there is, property goes too.
+        // than there is, the household borrows against its home, then property goes.
+        if plan.hx.lines && -self.acc.cash - overdraft > DUST {
+            self.hx_borrow(plan, t, price, -self.acc.cash - overdraft);
+        }
         if -self.acc.cash - overdraft > DUST
             && plan.profile.retirement.home_equity == HomeEquity::LastResort
             && self.props.iter().any(|p| p.owned)
@@ -1347,7 +1364,10 @@ impl State {
             self.efund_target
         } + self.tax_reserve();
         if self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
-            let surplus = self.acc.cash - cap;
+            if plan.hx.surplus {
+                self.hx_surplus(plan, t, cap);
+            }
+            let surplus = (self.acc.cash - cap).max(0.0);
             self.acc.cash -= surplus;
             let flows = self.acc.save_surplus(surplus, &self.sctx, &target);
             for p in 0..MAX_PEOPLE {

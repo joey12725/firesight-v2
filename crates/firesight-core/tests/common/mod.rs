@@ -165,3 +165,19 @@ pub const MARKETS: [MarketKind; 4] = [
     MarketKind::Lognormal,
     MarketKind::Historical,
 ];
+
+/// Switches on every opt-in housing decision (home-equity borrowing, downsizing,
+/// cash-out refinancing and prepayment, realistic rentals), for the conservation
+/// and finite-value tests.
+pub fn with_housing_decisions(mut p: Profile) -> Profile {
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::Heloc(Heloc::default());
+    p
+}
+
+/// Every budget line `factor` times larger, so that savings run out on many paths.
+pub fn overspending(mut p: Profile, factor: f64) -> Profile {
+    for item in &mut p.spending.items {
+        item.amount *= factor;
+    }
+    p
+}

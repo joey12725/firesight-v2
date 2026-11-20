@@ -479,6 +479,9 @@ pub struct Plan {
     pub(crate) eq12_months: u32,
     /// Household earned-income rate at the start, today's dollars per year.
     pub(crate) income_rate0: f64,
+    /// Housing decisions (home-equity borrowing, downsizing, refinancing, rental
+    /// dynamics), all opt-in.
+    pub(crate) hx: super::housing_ext::HxPlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -1243,6 +1246,7 @@ impl Plan {
         let rent_growth: Vec<f64> = growth_table(Category::Rent.default_real_growth()).collect();
         let service_growth: Vec<f64> = growth_table(CHILD_SERVICE_REAL_GROWTH).collect();
 
+        let hx = super::housing_ext::HxPlan::compile(profile, &props);
         Ok(Plan {
             profile: profile.clone(),
             start,
@@ -1299,6 +1303,7 @@ impl Plan {
             plain_mix: !matches!(policy.rebalance, Rebalance::Never),
             eq12_months,
             income_rate0,
+            hx,
         })
     }
 

@@ -543,3 +543,24 @@ fn traces_conserve_money_and_show_the_events() {
         );
     }
 }
+
+#[test]
+fn housing_decisions_conserve_money() {
+    // Spending high enough that savings run out: lines are opened and drawn, homes
+    // downsized and sold, loans refinanced, with every opt-in housing decision on.
+    let profiles = [
+        with_housing_decisions(overspending(kitchen_sink(), 2.5)),
+        with_housing_decisions(kitchen_sink()),
+    ];
+    for profile in profiles {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let acc = run_checked(&plan, 9, 0..paths());
+            assert_eq!(acc.paths, paths());
+        }
+    }
+    for example in Profile::examples(START) {
+        let plan = compile(&with_housing_decisions(overspending(example.profile, 1.6)));
+        run_checked(&plan, 9, 0..paths());
+    }
+}

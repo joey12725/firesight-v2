@@ -2097,6 +2097,36 @@
       "mortgage refinancing decisions (separate module)"
     ]
   },
+  "housing_decisions": {
+    "summary": "Parameters of the opt-in housing decisions (crates/firesight-core/src/home_equity.rs, sim/housing_ext.rs): home-equity lines, reverse mortgages, downsizing, cash-out refinancing and prepayment, realistic rental dynamics. Sourced values carry their source; judgements say so. tests/housing_decision_constants.rs keeps the code equal to this section.",
+    "heloc": {
+      "default_max_combined_ltv": {
+        "value": 0.8,
+        "source": "Lender practice: combined loan-to-value limits of 80 to 85% for home-equity lines (CFPB, What you should know about home equity lines of credit, 2012; lender disclosures).",
+        "confidence": "medium"
+      },
+      "default_spread_over_bills": {
+        "value": 0.035,
+        "source": "Prime rate = federal funds target + 3 points (bank convention). Bankrate national average HELOC rate 7.81% on 3 December 2025 against a 6.75% prime (margin about 1 point); 2025 readings 7.8 to 8.9%. Bills sit near the federal funds rate, so bills + 3.5 points is prime + 0.5.",
+        "confidence": "medium"
+      },
+      "draw_and_repay_years": {
+        "value": [10, 20],
+        "source": "CFPB HELOC brochure (2012): a draw period of, for example, 10 years, then repayment often over 10 or 20 years.",
+        "confidence": "medium"
+      },
+      "default_freeze_probability": {
+        "value": 0.3,
+        "source": "Judgement. Federal Reserve Senior Loan Officer Opinion Survey, April 2008: about 50% of domestic banks had tightened terms on existing HELOCs over the past six months, nearly all citing falling collateral values; about 70% had tightened standards for new lines. No borrower-level share of frozen or cut lines is published. 0.3 is the chance per downturn that the household's lender freezes its line.",
+        "confidence": "judgement"
+      },
+      "housing_slump_drawdown": {
+        "value": 0.1,
+        "source": "Judgement: lenders tightened existing lines when collateral values fell (SLOOS April 2008); a 10% fall of national prices from their peak marks a slump outside a recession.",
+        "confidence": "judgement"
+      }
+    }
+  },
   "equity_compensation": {
     "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
     "private_company": {

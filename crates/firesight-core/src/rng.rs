@@ -69,6 +69,12 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Lenders' response to a downturn: whether home-equity lines freeze (drawn only
+    /// when `retirement.home_equity_borrowing` is a home-equity line).
+    HomeEquityCredit,
+    /// Tenants, market rent and repairs of one rental with realistic dynamics (index
+    /// into the plan's property table).
+    RentalMarket(usize),
 }
 
 impl Stream {
@@ -81,10 +87,12 @@ impl Stream {
             Stream::EquityComp => 3,
             Stream::Shocks => 4,
             Stream::Events => 5,
+            Stream::HomeEquityCredit => 1600,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::RentalMarket(i) => 0x1600_0000 + i as u64,
         }
     }
 }
@@ -475,6 +483,9 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::HomeEquityCredit,
+            Stream::RentalMarket(0),
+            Stream::RentalMarket(1),
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

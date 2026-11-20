@@ -72,6 +72,11 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    // Every opt-in housing decision on, with savings running out so that they act.
+    profiles.push(common::with_housing_decisions(common::overspending(
+        kitchen_sink_lite(),
+        2.0,
+    )));
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

@@ -181,6 +181,9 @@ RetirementPlan {
   early_access: Auto | PayPenalty,               // Auto: taxable, Roth basis, seasoned conversions, 72(t)
   bequest_target: f64,
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
+  home_equity_borrowing: None (default)         // borrow against the main home before selling it or cutting essentials
+    | Heloc{ max_combined_ltv (0.80), spread (0.035 over bills), draw_years (10), repay_years (20),
+             freeze_probability (0.3, per downturn) },
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

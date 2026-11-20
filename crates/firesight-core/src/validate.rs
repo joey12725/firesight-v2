@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod housing;
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -187,6 +189,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.properties_and_debts();
     c.events();
     c.retirement();
+    c.housing_decisions();
     c.assumptions();
     if c.r.errors.is_empty() {
         // Lints read the profile as a whole and assume it is structurally sound.
