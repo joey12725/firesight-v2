@@ -52,7 +52,7 @@ use crate::stats::{
 };
 
 use super::plan::Plan;
-use super::state::{State, N_SERIES};
+use super::state::State;
 
 /// Absolute tolerance of the conservation checks, dollars.
 const CHECK_ABSOLUTE: f64 = 0.02;
@@ -153,20 +153,22 @@ impl State {
         }
     }
 
-    /// Year-end (or month-end) balances in today's dollars. An overdrawn cash bucket
-    /// is reported as debt.
-    fn balances(&self, values: &mut [f64; N_SERIES], end_price: f64) {
+    /// Year-end (or month-end) balances in today's dollars, in the order of
+    /// [`BALANCES`]. An overdrawn cash bucket is reported as debt.
+    fn balances(&self, end_price: f64) -> [f64; BALANCES.len()] {
         let kinds = self.acc.by_kind();
         let (value, mortgage) = self.property_totals();
         let k = 1.0 / end_price;
-        values[YearSeries::BalanceCash.index()] = kinds[0].max(0.0) * k;
-        values[YearSeries::BalanceTaxable.index()] = kinds[1] * k;
-        values[YearSeries::BalanceTraditional.index()] = kinds[2] * k;
-        values[YearSeries::BalanceRoth.index()] = kinds[3] * k;
-        values[YearSeries::BalanceHsa.index()] = kinds[4] * k;
-        values[YearSeries::PropertyValue.index()] = value * k;
-        values[YearSeries::Mortgage.index()] = mortgage * k;
-        values[YearSeries::Debt.index()] = (self.debt_total() + (-kinds[0]).max(0.0)) * k;
+        [
+            kinds[0].max(0.0) * k,
+            kinds[1] * k,
+            kinds[2] * k,
+            kinds[3] * k,
+            kinds[4] * k,
+            value * k,
+            mortgage * k,
+            (self.debt_total() + (-kinds[0]).max(0.0)) * k,
+        ]
     }
 
     /// Step 12: adds the month to the year, and the year to the recorder in December
@@ -208,12 +210,12 @@ impl State {
         }
 
         if now.month() == 12 || t + 1 == self.months {
-            for s in BALANCES {
-                self.yr.values[s.index()] = 0.0;
+            // Every balance series is overwritten (the monthly sums of the
+            // ledger's zero balance lines are discarded).
+            let balances = self.balances(end_price);
+            for (s, v) in BALANCES.into_iter().zip(balances) {
+                self.yr.values[s.index()] = v;
             }
-            let mut values = self.yr.values;
-            self.balances(&mut values, end_price);
-            self.yr.values = values;
             self.yr.months = self.yr_months;
             self.yr.retired = self.retired;
             self.yr.status = Status::classify(
@@ -257,10 +259,9 @@ impl State {
         for (out, v) in m.values.iter_mut().zip(&self.led) {
             *out = v * deflate;
         }
-        for s in BALANCES {
-            m.values[s.index()] = 0.0;
+        for (s, v) in BALANCES.into_iter().zip(self.balances(end_price)) {
+            m.values[s.index()] = v;
         }
-        self.balances(&mut m.values, end_price);
         m.price_level = end_price;
         m.retired = self.retired;
         m.status = Status::classify(

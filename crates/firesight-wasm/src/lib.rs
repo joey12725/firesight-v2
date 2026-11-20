@@ -105,12 +105,12 @@ impl Merger {
     }
 
     /// The `Summary` JSON of what has been merged so far.
-    pub fn summarize(&self, profile_json: &str) -> Result<String, JsError> {
+    pub fn summarize(&mut self, profile_json: &str) -> Result<String, JsError> {
         self.inner.summarize(profile_json, today()).map_err(throw)
     }
 
     /// The `SummaryDigest` JSON (about 2 KB) of what has been merged so far.
-    pub fn digest(&self, profile_json: &str) -> Result<String, JsError> {
+    pub fn digest(&mut self, profile_json: &str) -> Result<String, JsError> {
         self.inner.digest(profile_json, today()).map_err(throw)
     }
 
@@ -307,16 +307,44 @@ pub mod api {
     #[derive(Default)]
     pub struct Merger {
         acc: Option<Accumulator>,
+        /// What the last `summarize` derived from its profile JSON. Every
+        /// progressive summary of a run passes the same profile, so it is parsed
+        /// and compiled once per run instead of once per picture.
+        prepared: Option<Prepared>,
+    }
+
+    /// A profile parsed for summaries: the summary's context and, when it
+    /// compiles, the plan that re-simulates the picked paths.
+    struct Prepared {
+        json: String,
+        today: YearMonth,
+        context: stats::SummaryContext,
+        plan: Option<Plan>,
+    }
+
+    impl Prepared {
+        fn new(profile_json: &str, today: YearMonth) -> Result<Prepared, String> {
+            let (context, profile) = context_of(profile_json, today)?;
+            // A profile that does not compile, or is not the one the accumulator
+            // was run with, simply yields no picked paths.
+            let plan = Plan::compile(&profile, Data::embedded()).ok();
+            Ok(Prepared {
+                json: profile_json.to_string(),
+                today,
+                context,
+                plan,
+            })
+        }
     }
 
     impl Merger {
-        /// See the wasm export.
+        /// See the wasm export. The first chunk is decoded; later ones are added
+        /// to it straight from their bytes.
         pub fn add(&mut self, bytes: &[u8]) -> Result<(), String> {
-            let chunk = Accumulator::from_bytes(bytes).map_err(|e| e.to_string())?;
             match &mut self.acc {
-                Some(acc) => acc.merge(&chunk).map_err(|e| e.to_string()),
+                Some(acc) => acc.merge_bytes(bytes).map_err(|e| e.to_string()),
                 None => {
-                    self.acc = Some(chunk);
+                    self.acc = Some(Accumulator::from_bytes(bytes).map_err(|e| e.to_string())?);
                     Ok(())
                 }
             }
@@ -333,20 +361,42 @@ pub mod api {
                 .ok_or_else(|| "no chunk has been added yet".to_string())
         }
 
-        /// See the wasm export.
-        pub fn summarize(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
-            Ok(to_json(&summary_of(
-                self.acc()?,
-                profile_json,
-                today,
-                true,
-            )?))
+        /// The accumulator and the prepared profile, parsing it only when it is not
+        /// the one the last call saw.
+        fn parts(
+            &mut self,
+            profile_json: &str,
+            today: YearMonth,
+        ) -> Result<(&Accumulator, &Prepared), String> {
+            self.acc()?;
+            let fresh = self
+                .prepared
+                .as_ref()
+                .is_some_and(|p| p.today == today && p.json == profile_json);
+            if !fresh {
+                self.prepared = Some(Prepared::new(profile_json, today)?);
+            }
+            match (&self.acc, &self.prepared) {
+                (Some(acc), Some(prepared)) => Ok((acc, prepared)),
+                _ => unreachable!("both are set above"),
+            }
         }
 
         /// See the wasm export.
-        pub fn digest(&self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+        pub fn summarize(&mut self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+            let (acc, prepared) = self.parts(profile_json, today)?;
+            let mut summary = stats::Summary::from_accumulator(acc, &prepared.context);
+            if let Some(plan) = &prepared.plan {
+                plan.fill_pick_paths(&mut summary, acc, plan.seed());
+            }
+            Ok(to_json(&summary))
+        }
+
+        /// See the wasm export.
+        pub fn digest(&mut self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+            let (acc, prepared) = self.parts(profile_json, today)?;
             Ok(to_json(
-                &summary_of(self.acc()?, profile_json, today, false)?.digest(),
+                &stats::Summary::from_accumulator(acc, &prepared.context).digest(),
             ))
         }
 
@@ -356,34 +406,42 @@ pub mod api {
         }
     }
 
+    /// The summary context of a profile, and the profile with its start month
+    /// filled in.
+    fn context_of(
+        profile_json: &str,
+        today: YearMonth,
+    ) -> Result<(stats::SummaryContext, Profile), String> {
+        let mut profile = parse_profile(profile_json, today)?;
+        let start = profile.start.unwrap_or(today);
+        let people = &profile.household.people;
+        let first = people
+            .first()
+            .ok_or_else(|| "the profile has no people".to_string())?;
+        let context = stats::SummaryContext {
+            start,
+            first_birth: first.birth,
+            second_birth: people.get(1).map(|p| p.birth),
+        };
+        profile.start = Some(start);
+        Ok((context, profile))
+    }
+
     fn summary_of(
         acc: &Accumulator,
         profile_json: &str,
         today: YearMonth,
         with_pick_paths: bool,
     ) -> Result<stats::Summary, String> {
-        let profile = parse_profile(profile_json, today)?;
-        let start = profile.start.unwrap_or(today);
-        let people = &profile.household.people;
-        let first = people
-            .first()
-            .ok_or_else(|| "the profile has no people".to_string())?;
-        let mut summary = stats::Summary::from_accumulator(
-            acc,
-            &stats::SummaryContext {
-                start,
-                first_birth: first.birth,
-                second_birth: people.get(1).map(|p| p.birth),
-            },
-        );
+        let (context, profile) = context_of(profile_json, today)?;
+        let mut summary = stats::Summary::from_accumulator(acc, &context);
         if with_pick_paths {
             // The annual series of the picked lives: those few paths simulated
-            // again. A profile that does not compile, or is not the one the
-            // accumulator was run with, simply yields none.
-            let mut profile = profile;
-            profile.start = Some(start);
+            // again (computed into this summary, not a second one). A profile that
+            // does not compile, or is not the one the accumulator was run with,
+            // simply yields none.
             if let Ok(plan) = Plan::compile(&profile, Data::embedded()) {
-                summary.pick_paths = plan.summarize(acc).pick_paths;
+                plan.fill_pick_paths(&mut summary, acc, plan.seed());
             }
         }
         Ok(summary)
@@ -419,8 +477,7 @@ pub mod api {
     /// See the wasm export.
     pub fn merge_chunks(a: &[u8], b: &[u8]) -> Result<Vec<u8>, String> {
         let mut acc = Accumulator::from_bytes(a).map_err(|e| e.to_string())?;
-        let other = Accumulator::from_bytes(b).map_err(|e| e.to_string())?;
-        acc.merge(&other).map_err(|e| e.to_string())?;
+        acc.merge_bytes(b).map_err(|e| e.to_string())?;
         Ok(acc.to_bytes())
     }
 

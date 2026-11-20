@@ -255,15 +255,24 @@ pub(crate) fn sorted_finite(values: impl Iterator<Item = f32>) -> Vec<f32> {
     if keys.len() < RADIX_MIN {
         keys.sort_unstable();
     } else {
-        let mut scratch = vec![0u32; keys.len()];
-        for (shift, bits) in [(0u32, 11u32), (11, 11), (22, 10)] {
-            let mask = (1u32 << bits) - 1;
-            let mut counts = vec![0usize; 1 << bits];
-            for &k in &keys {
-                counts[((k >> shift) & mask) as usize] += 1;
+        const DIGITS: [(u32, u32); 3] = [(0, 11), (11, 11), (22, 10)];
+        // The three digit histograms in one pass over the keys.
+        let mut counts = [vec![0usize; 1 << 11], vec![0usize; 1 << 11], vec![0usize; 1 << 10]];
+        for &k in &keys {
+            for (c, (shift, bits)) in counts.iter_mut().zip(DIGITS) {
+                c[((k >> shift) & ((1 << bits) - 1)) as usize] += 1;
             }
+        }
+        let mut scratch = vec![0u32; keys.len()];
+        for (counts, (shift, bits)) in counts.iter_mut().zip(DIGITS) {
+            // A digit every key shares (the high bits of a column of small whole
+            // numbers, say) leaves the stable pass an identity: skip it.
+            if counts.contains(&keys.len()) {
+                continue;
+            }
+            let mask = (1u32 << bits) - 1;
             let mut at = 0;
-            for c in &mut counts {
+            for c in counts.iter_mut() {
                 let n = *c;
                 *c = at;
                 at += n;

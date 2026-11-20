@@ -288,28 +288,31 @@ fn pool(threads: Option<usize>) -> Result<rayon::ThreadPool, String> {
 
 /// Simulates paths `0..paths` on the pool. Chunks merge in any order to the same
 /// bytes, so the result does not depend on scheduling.
+///
+/// Each rayon split folds its chunks into one workspace and one accumulator (a
+/// split's chunks are contiguous, so its rows simply append), and only the splits'
+/// accumulators are merged: one accumulator (several MB of histograms) and one
+/// merge per split, not one per chunk plus an empty one per reduce step.
 fn simulate(plan: &Plan, seed: u64, paths: u64, pool: &rayon::ThreadPool) -> Accumulator {
     let chunks: Vec<u64> = (0..paths).step_by(CHUNK as usize).collect();
     pool.install(|| {
         chunks
             .into_par_iter()
-            .map_init(
-                || Workspace::new(plan),
-                |ws, first| {
-                    let mut acc = plan.new_accumulator();
+            .fold(
+                || (Workspace::new(plan), plan.new_accumulator()),
+                |(mut ws, mut acc), first| {
                     for i in first..(first + CHUNK).min(paths) {
-                        sim::run_path(plan, seed, i, ws, &mut acc);
+                        sim::run_path(plan, seed, i, &mut ws, &mut acc);
                     }
-                    acc
+                    (ws, acc)
                 },
             )
-            .reduce(
-                || plan.new_accumulator(),
-                |mut a, b| {
-                    a.merge(&b).expect("chunks of one plan always merge");
-                    a
-                },
-            )
+            .map(|(_, acc)| acc)
+            .reduce_with(|mut a, b| {
+                a.merge_owned(b).expect("chunks of one plan always merge");
+                a
+            })
+            .unwrap_or_else(|| plan.new_accumulator())
     })
 }
 
