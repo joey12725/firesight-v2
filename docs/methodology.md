@@ -462,6 +462,33 @@ spending.
 Not modelled: support does not depend on the household's wealth or the child's income,
 only one spell per child, and no grandchildren.
 
+### Parental leave (opt-in)
+
+`parental_leave: {"person", "months", "pay_fraction"}` on a child (default absent: none).
+When the child is born during the plan, in the month of the realised birth (so a late,
+absent or twin birth under uncertain arrival follows the draw; twins are one leave), the
+named person's employed jobs go onto the engine's existing career break for `months`
+(default 3, the length of the 12 weeks of unpaid job-protected leave of the FMLA, US
+Department of Labor) at `pay_fraction` of pay (default 0.6, a judgement between unpaid
+FMLA leave and the 60% to 100% many employer and disability plans replace). Wages, bonus
+and commission fall to that fraction; payroll deferrals, the employer match, HSA payroll
+contributions, FICA, the wage tax base and the Social Security earnings record are all
+computed from the pay actually received. Equity keeps vesting and the job cannot be lost
+during the leave (the career-break rules). A person who is not employed in the birth
+month (unemployed, retired, not yet started) has nothing to take leave from. The trace
+shows "Parental leave for ...". No new random draws are taken.
+
+Measured on `dual-income-family` with unpaid three-month leave for the first person at
+the second child's birth (3,000 paired paths, seed 7): about $32,500 of wages lost per
+path; median terminal net worth down $14,000 (1,740,552 to 1,726,222), success 92.2% to
+92.4%, which is inside the 95% interval and is a change of who retires when, not a gain
+(the leave lowers early savings, so some paths retire a little later).
+
+Not modelled: state paid family leave programmes (enter their effect in `pay_fraction`),
+leave for adoption or for children already born, a split of one leave between two
+parents (give each parent's leave to a different child, or use a career-break event),
+loss of promotion or wage growth after leave, and leave before the job begins.
+
 ### Healthcare
 
 With `modeled` healthcare each adult is, month by month, on an employer plan, COBRA

@@ -227,7 +227,8 @@ fn mean_lifetime_spending(plan: &sim::Plan, paths: u64) -> f64 {
 fn certain_is_the_default_and_probability_one_on_time_is_the_same() {
     let certain = planned_child_household(Arrival::Certain);
     let json = serde_json::to_value(&certain).unwrap();
-    assert!(json["household"]["children"][0]["arrival"]["type"] == "certain");
+    // The default is not written, so older profiles serialise as they always did.
+    assert!(json["household"]["children"][0].get("arrival").is_none());
     let on_time = planned_child_household(Arrival::Uncertain {
         probability: 1.0,
         delay_mean_months: 0.0,
@@ -388,10 +389,9 @@ fn child_spending(p: &Profile, paths: u64) -> f64 {
 fn college_cost_defaults_to_fixed() {
     let p = college_household(CollegeCost::Fixed, College::PublicInState);
     let json = serde_json::to_value(&p).unwrap();
-    assert_eq!(
-        json["household"]["children"][0]["college_cost"]["type"],
-        "fixed"
-    );
+    assert!(json["household"]["children"][0]
+        .get("college_cost")
+        .is_none());
     // An empty stochastic object takes the documented defaults.
     let c: CollegeCost = serde_json::from_str(r#"{"type": "stochastic"}"#).unwrap();
     assert_eq!(c, stochastic(0.95, 0.01, 0.012, 1.0));
@@ -595,4 +595,146 @@ fn adult_support_conserves_money_and_leaves_events() {
         .events
         .iter()
         .any(|e| e.label.contains("independent again")));
+}
+
+// ---------------------------------------------------------------------------
+// F10: parental leave
+// ---------------------------------------------------------------------------
+
+fn leave_household(birth_months_in: i32, leave: Option<ParentalLeave>) -> Profile {
+    let mut p = family();
+    p.household.children = vec![Child {
+        id: "baby".into(),
+        birth: START + birth_months_in,
+        parental_leave: leave,
+        ..Child::default()
+    }];
+    for inc in &mut p.incomes {
+        if let IncomeKind::Job(j) = &mut inc.kind {
+            j.plan = Some(EmployerPlan::default());
+        }
+    }
+    p
+}
+
+fn leave(person: usize, months: u32, pay_fraction: f64) -> Option<ParentalLeave> {
+    Some(ParentalLeave {
+        person,
+        months,
+        pay_fraction,
+    })
+}
+
+fn wages(p: &Profile) -> f64 {
+    trace_total(&compile(p), 5, 3, "income_wages")
+}
+
+fn employer_match(p: &Profile) -> f64 {
+    trace_total(&compile(p), 5, 3, "save_employer")
+}
+
+#[test]
+fn parental_leave_is_off_by_default_and_has_documented_defaults() {
+    assert!(Child::default().parental_leave.is_none());
+    let l: ParentalLeave = serde_json::from_str("{}").unwrap();
+    assert_eq!(
+        l,
+        ParentalLeave {
+            person: 0,
+            months: 3,
+            pay_fraction: 0.6
+        }
+    );
+}
+
+#[test]
+fn parental_leave_cuts_wages_by_months_times_unpaid_share() {
+    // Person 0 earns 130,000 a year (10,833 a month, nominal slightly more after
+    // inflation). Unpaid, three months lose about 32,500; at 60% pay the loss is 40%
+    // of that, exactly in proportion since the job has no risk.
+    let base = wages(&leave_household(12, None));
+    let unpaid = wages(&leave_household(12, leave(0, 3, 0.0)));
+    let part = wages(&leave_household(12, leave(0, 3, 0.6)));
+    let full = wages(&leave_household(12, leave(0, 3, 1.0)));
+    let loss = base - unpaid;
+    assert!(
+        loss > 31_000.0 && loss < 38_000.0,
+        "loss {loss} (expected 32,500 plus inflation)"
+    );
+    assert!(
+        ((base - part) / loss - 0.4).abs() < 1e-9,
+        "{}",
+        (base - part) / loss
+    );
+    assert_eq!(full, base);
+    // The second parent's leave takes their (80,000) pay.
+    let second = base - wages(&leave_household(12, leave(1, 3, 0.0)));
+    assert!(second > 19_000.0 && second < 24_000.0, "second {second}");
+}
+
+#[test]
+fn parental_leave_lowers_the_match_and_ignores_born_children() {
+    // The employer match is 50% of the first 6% of pay: 3% of the 32,500 of pay lost
+    // in three unpaid months is 975 (a little more in nominal dollars). The employee
+    // deferral also follows pay, but the planner redirects other savings to offset
+    // it, so the match is the clean measure.
+    let base = employer_match(&leave_household(12, None));
+    let unpaid = employer_match(&leave_household(12, leave(0, 3, 0.0)));
+    let drop = base - unpaid;
+    assert!(drop > 900.0 && drop < 1_200.0, "match fell by {drop}");
+    // A child already born has no leave to take.
+    let born = leave_household(-12, leave(0, 3, 0.0));
+    assert_eq!(wages(&born), wages(&leave_household(-12, None)));
+}
+
+#[test]
+fn parental_leave_follows_realised_births_and_twins_take_one_leave() {
+    let mut p = leave_household(12, leave(0, 3, 0.0));
+    // A child who never arrives: no leave.
+    p.household.children[0].arrival = Arrival::Uncertain {
+        probability: 0.0,
+        delay_mean_months: 4.0,
+        twins_probability: 0.0,
+    };
+    let mut never = p.clone();
+    never.household.children[0].parental_leave = None;
+    assert_eq!(wages(&p), wages(&never));
+    // Twins are one leave, not two.
+    let mut twins = leave_household(12, leave(0, 3, 0.0));
+    twins.household.children[0].arrival = Arrival::Uncertain {
+        probability: 1.0,
+        delay_mean_months: 0.0,
+        twins_probability: 1.0,
+    };
+    let single = wages(&leave_household(12, leave(0, 3, 0.0)));
+    assert_eq!(wages(&twins), single);
+}
+
+#[test]
+fn parental_leave_conserves_money_and_leaves_an_event() {
+    let p = leave_household(12, leave(0, 6, 0.5));
+    for kind in MARKETS {
+        let plan = compile(&with_market(p.clone(), kind));
+        let acc = run_checked(&plan, 3, 0..60);
+        for s in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+            assert!(s.is_finite());
+        }
+    }
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    let t = sim::trace_path_in(&plan, 3, 0, &mut ws);
+    assert!(t.events.iter().any(|e| e.label.contains("Parental leave")));
+}
+
+#[test]
+fn parental_leave_validation() {
+    let mut p = leave_household(12, leave(5, 3, 0.6));
+    let r = firesight_core::validate::validate(&p);
+    assert!(r.errors.iter().any(|e| e.code == "leave_person"));
+    p.household.children[0].parental_leave = leave(0, 3, 1.5);
+    let r = firesight_core::validate::validate(&p);
+    assert!(!r.errors.is_empty());
+    p.household.children[0].parental_leave = leave(0, 18, 0.6);
+    let r = firesight_core::validate::validate(&p);
+    assert!(r.warnings.iter().any(|w| w.code == "leave_long"));
 }

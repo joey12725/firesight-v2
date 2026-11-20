@@ -152,3 +152,53 @@ impl Default for AdultSupport {
         }
     }
 }
+
+/// Default months of leave (a judgement: the FMLA entitles eligible workers to up to
+/// 12 weeks of unpaid, job-protected leave for a birth (US Department of Labor), about
+/// three months).
+pub const DEFAULT_LEAVE_MONTHS: u32 = 3;
+/// Default share of normal pay received during the leave (a judgement: employer paid
+/// leave and short-term disability typically replace 60% to 100% of pay for part of
+/// the time; unpaid FMLA leave is 0).
+pub const DEFAULT_LEAVE_PAY_FRACTION: f64 = 0.6;
+
+/// Time off work around the birth of a child.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ParentalLeave {
+    /// Who takes the leave: 0 for the first person, 1 for the second.
+    pub person: usize,
+    /// Length of the leave in months, starting in the month the child is born.
+    /// Default 3.
+    pub months: u32,
+    /// Share of normal pay received during the leave, between 0 (unpaid) and 1 (full
+    /// pay). Default 0.6. State paid-family-leave programmes are not modelled: enter
+    /// their effect here.
+    pub pay_fraction: f64,
+}
+
+impl Default for ParentalLeave {
+    fn default() -> Self {
+        Self {
+            person: 0,
+            months: DEFAULT_LEAVE_MONTHS,
+            pay_fraction: DEFAULT_LEAVE_PAY_FRACTION,
+        }
+    }
+}
+
+impl Arrival {
+    /// True for the default, so profiles that do not use uncertain births serialise
+    /// exactly as they did before the field existed.
+    pub fn is_certain(&self) -> bool {
+        matches!(self, Arrival::Certain)
+    }
+}
+
+impl CollegeCost {
+    /// True for the default, so profiles that do not use stochastic college costs
+    /// serialise exactly as they did before the field existed.
+    pub fn is_fixed(&self) -> bool {
+        matches!(self, CollegeCost::Fixed)
+    }
+}

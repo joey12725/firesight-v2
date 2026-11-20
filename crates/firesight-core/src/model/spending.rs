@@ -79,10 +79,20 @@ pub struct Healthcare {
     /// and the premium tax credit. When on, the health-care share of the modelled child
     /// cost is dropped so health is not counted twice. Off (the default): children
     /// carry no premiums beyond that share. Only applies to `mode` "modeled".
+    #[serde(skip_serializing_if = "is_false")]
     pub cover_children: bool,
     /// Age at which a child leaves the parents' health plan, 26 by default (the ACA
     /// dependent-coverage age). Used only when `cover_children` is on.
+    #[serde(skip_serializing_if = "is_default_coverage_end_age")]
     pub children_coverage_end_age: f64,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn is_default_coverage_end_age(v: &f64) -> bool {
+    *v == 26.0
 }
 
 impl Default for Healthcare {

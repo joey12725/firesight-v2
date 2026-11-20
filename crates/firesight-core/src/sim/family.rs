@@ -6,6 +6,7 @@
 //! The hooks in `month.rs`, `year.rs`, `state.rs` and `plan.rs` are one-line calls
 //! into this file.
 
+use crate::career::Employment;
 use crate::data::Data;
 use crate::health::children::{ACA_CHILD_RATING_AGE, ACA_MAX_CHILDREN_CHARGED};
 use crate::health::CoveragePhase;
@@ -86,6 +87,14 @@ pub(crate) struct SupportPlan {
 /// Months after the end of school within which a spell starts (six years).
 pub(crate) const SUPPORT_START_WINDOW_MONTHS: f64 = 72.0;
 
+/// Compiled parental leave of one child.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LeavePlan {
+    pub person: usize,
+    pub months: u32,
+    pub fraction: f64,
+}
+
 /// Compiled uncertain arrival of one planned child.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ArrivalPlan {
@@ -112,6 +121,10 @@ pub(crate) struct FamilyPlan {
     pub support: Vec<Option<SupportPlan>>,
     /// Some child may need adult support.
     pub any_support: bool,
+    /// Per child: parental leave at the birth.
+    pub leave: Vec<Option<LeavePlan>>,
+    /// Some child carries a parental leave.
+    pub any_leave: bool,
     /// Something needs the monthly family calendar (births to announce, leave to
     /// start, support spells).
     pub dynamic: bool,
@@ -356,15 +369,30 @@ pub(crate) fn compile(profile: &Profile, start: YearMonth) -> FamilyPlan {
         })
         .collect();
     let any_support = support.iter().any(Option::is_some);
+    let leave: Vec<Option<LeavePlan>> = profile
+        .household
+        .children
+        .iter()
+        .map(|c| {
+            c.parental_leave.map(|l| LeavePlan {
+                person: l.person.min(1),
+                months: l.months,
+                fraction: l.pay_fraction.clamp(0.0, 1.0),
+            })
+        })
+        .collect();
+    let any_leave = leave.iter().any(Option::is_some);
     FamilyPlan {
         cover_children: hc.cover_children && hc.mode == HealthcareMode::Modeled,
         cover_until_age: hc.children_coverage_end_age,
-        dynamic: any_arrival || any_college || any_support,
+        dynamic: any_arrival || any_college || any_support || any_leave,
         arrival,
         college,
         any_college,
         support,
         any_support,
+        leave,
+        any_leave,
     }
 }
 
@@ -601,8 +629,39 @@ impl State {
         total
     }
 
+    /// Starts the leave of every child born this month: the named person's employed
+    /// jobs go onto a career break at the leave's pay fraction. A person who is not
+    /// employed (unemployed, retired, not yet started) has nothing to take leave from.
+    fn start_parental_leave(&mut self, plan: &Plan, t: usize, now: YearMonth) {
+        let ti = t as i32;
+        for k in 0..plan.children.len() {
+            let Some(l) = plan.family.leave[k] else {
+                continue;
+            };
+            if self.fam.birth[k] != ti {
+                continue;
+            }
+            let mut started = false;
+            for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
+                if jp.owner == l.person && rt.st.employment == Employment::Employed {
+                    jp.model.start_break(&mut rt.st, l.months, l.fraction);
+                    started = l.months > 0;
+                }
+            }
+            if started {
+                let name = &plan.profile.household.children[k].name;
+                self.event(now, TraceEventKind::CareerBreak, None, || {
+                    format!("Parental leave for {name} ({} months)", l.months)
+                });
+            }
+        }
+    }
+
     /// The monthly family calendar: announces realised births in the trace.
     pub(crate) fn family_calendar(&mut self, plan: &Plan, t: usize, now: YearMonth) {
+        if plan.family.any_leave {
+            self.start_parental_leave(plan, t, now);
+        }
         if !self.detail {
             return;
         }
@@ -744,7 +803,11 @@ mod tests {
         build_tuition_index(&mut idx, &cp, &vec![1.7; TUITION_YEARS]);
         assert_eq!(idx[0], 1.0);
         // 1.02^10 = 1.21899...
-        assert!((idx[10] - 1.02f64.powi(10)).abs() < 1e-12, "{}", idx[10]);
+        assert!(
+            (idx[10] - math::powi(1.02, 10)).abs() < 1e-12,
+            "{}",
+            idx[10]
+        );
     }
 
     #[test]

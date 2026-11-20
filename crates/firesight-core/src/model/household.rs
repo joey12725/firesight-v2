@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{AdultSupport, Arrival, CollegeCost, YearMonth};
+use super::{AdultSupport, Arrival, CollegeCost, ParentalLeave, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -180,18 +180,24 @@ pub struct Child {
     /// For a planned child (birth month in the future): whether the child is certain to
     /// arrive on that date or the birth is uncertain (may not happen, may be later,
     /// may be twins). Default certain.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Arrival::is_certain")]
     pub arrival: Arrival,
     /// Whether the college cost is the plan's fixed figure or uncertain (random tuition
     /// growth, income-dependent aid, whether the child attends, how many years).
     /// Default fixed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "CollegeCost::is_fixed")]
     pub college_cost: CollegeCost,
     /// Opt-in: after school the child may return home or need money for a random spell
     /// (a "boomerang" child), which adds spending for those years. Empty (the default)
     /// means the child is never supported as an adult.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adult_support: Option<AdultSupport>,
+    /// Opt-in: when this child is born during the plan (a child already born has no
+    /// leave), the named person's wages drop to a fraction of pay for some months.
+    /// Retirement deferrals, payroll tax and Social Security earnings follow the pay
+    /// actually received. Twins are one leave. Empty (the default) means no leave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parental_leave: Option<ParentalLeave>,
 }
 
 fn one() -> f64 {
@@ -211,6 +217,7 @@ impl Default for Child {
             arrival: Arrival::Certain,
             college_cost: CollegeCost::Fixed,
             adult_support: None,
+            parental_leave: None,
         }
     }
 }

@@ -35,6 +35,54 @@ impl Checker<'_> {
             self.arrival(&path, child);
             self.college_cost(&path, child);
             self.adult_support(&path, child);
+            self.parental_leave(&path, child);
+        }
+    }
+
+    fn parental_leave(&mut self, path: &str, child: &Child) {
+        let Some(l) = child.parental_leave else {
+            return;
+        };
+        let at = format!("{path}/parental_leave");
+        let people = self.p.household.people.len();
+        if l.person >= people {
+            self.r.error(
+                "leave_person",
+                &format!("{at}/person"),
+                format!(
+                    "Parental leave names person {} but the household has {people}.",
+                    l.person
+                ),
+            );
+        }
+        self.r.range(
+            &format!("{at}/pay_fraction"),
+            "Leave pay fraction",
+            l.pay_fraction,
+            0.0,
+            1.0,
+        );
+        if l.months > 36 {
+            self.r.error(
+                "leave_months",
+                &format!("{at}/months"),
+                "Parental leave of more than 36 months is not modelled as leave; use a career break event or end the job.",
+            );
+        } else if l.months > 12 {
+            self.r.warn(
+                "leave_long",
+                &format!("{at}/months"),
+                "Parental leave of more than 12 months is longer than almost any employer or state programme.",
+            );
+        }
+        if let Some(start) = self.p.start {
+            if child.birth - start < 0 {
+                self.r.warn(
+                    "leave_born_child",
+                    &at,
+                    "Parental leave starts at a birth during the plan; this child is already born, so no leave is taken.",
+                );
+            }
         }
     }
 
