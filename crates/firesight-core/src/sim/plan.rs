@@ -256,6 +256,8 @@ pub(crate) struct ItemPlan {
     pub start: Sched,
     pub end: Sched,
     pub owner: Option<usize>,
+    /// A rent line that follows the path's rent market (`rent_growth: market`).
+    pub market_rent: bool,
 }
 
 /// A property slot: `profile.properties` first, then one per `buy_home` event.
@@ -414,6 +416,8 @@ pub struct Plan {
     pub(crate) streams: Vec<StreamPlan>,
     pub(crate) items: Vec<ItemPlan>,
     pub(crate) props: Vec<PropPlan>,
+    /// Which opt-in housing realism options are on.
+    pub(crate) hx: super::housing_ext::HxPlan,
     pub(crate) debts: Vec<DebtPlan>,
     pub(crate) events: Vec<EventPlan>,
     pub(crate) stresses: Vec<StressPlan>,
@@ -788,15 +792,22 @@ impl Plan {
                     RetirementChange::Factor { factor } => monthly * factor,
                     RetirementChange::Amount { amount } => amount * per_month,
                 };
+                let market_rent = item.category == Category::Rent
+                    && item.rent_growth == crate::model::RentGrowth::Market;
                 ItemPlan {
                     category: item.category,
                     essential: item.essential,
                     monthly,
                     monthly_retired,
-                    growth: item.effective_real_growth(),
+                    growth: if market_rent {
+                        0.0
+                    } else {
+                        item.effective_real_growth()
+                    },
                     start: Sched::start(item.start.as_ref(), &ctx),
                     end: Sched::end(item.end.as_ref(), &ctx),
                     owner: item.owner,
+                    market_rent,
                 }
             })
             .collect();
@@ -1243,6 +1254,8 @@ impl Plan {
         let rent_growth: Vec<f64> = growth_table(Category::Rent.default_real_growth()).collect();
         let service_growth: Vec<f64> = growth_table(CHILD_SERVICE_REAL_GROWTH).collect();
 
+        let hx = super::housing_ext::HxPlan::compile(profile, &props);
+
         Ok(Plan {
             profile: profile.clone(),
             start,
@@ -1257,6 +1270,7 @@ impl Plan {
             streams,
             items,
             props,
+            hx,
             debts,
             events,
             stresses,

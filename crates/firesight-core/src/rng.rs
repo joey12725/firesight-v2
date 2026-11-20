@@ -69,6 +69,14 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Major-repair timing of one property (lumpy maintenance), per property slot.
+    Maintenance(usize),
+    /// Insurance premium drift and jumps of one property slot.
+    InsuranceDrift(usize),
+    /// The path's local rent market (market-rent budget lines).
+    RentMarket,
+    /// Time to close and discount of home sales (realistic housing liquidity).
+    Liquidity,
 }
 
 impl Stream {
@@ -85,6 +93,10 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::RentMarket => 1300,
+            Stream::Liquidity => 1301,
+            Stream::Maintenance(i) => 0x1300_0000 + i as u64,
+            Stream::InsuranceDrift(i) => 0x1380_0000 + i as u64,
         }
     }
 }

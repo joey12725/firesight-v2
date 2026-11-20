@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Category, Property, PropertyUse, When};
+use super::{
+    Assessment, Category, InsuranceGrowth, MaintenanceModel, MortgageKind, Property, PropertyUse,
+    When,
+};
 
 /// Something that happens once at a point in the plan: a purchase, a move, a windfall,
 /// a change in income or spending.
@@ -149,6 +152,21 @@ pub struct BuyHome {
     pub appreciation_vs_national: f64,
     /// Annual volatility of this property's value around the national index.
     pub idiosyncratic_volatility: f64,
+    /// Whether maintenance is a smooth charge or arrives as random major repairs
+    /// with the same expected cost.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub maintenance: MaintenanceModel,
+    /// How the property-tax assessed value follows the market value. The assessed
+    /// value starts at the purchase price.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub assessment: Assessment,
+    /// Whether the insurance premium drifts above inflation with occasional jumps.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub insurance_real_growth: InsuranceGrowth,
+    /// Fixed-rate (the default) or adjustable-rate mortgage. For an adjustable rate
+    /// without `rate`, the starting rate is the simulated market rate less 0.75 points.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub mortgage_kind: MortgageKind,
 }
 
 impl Default for BuyHome {
@@ -168,6 +186,10 @@ impl Default for BuyHome {
             hoa_monthly: 0.0,
             appreciation_vs_national: 0.0,
             idiosyncratic_volatility: Property::DEFAULT_IDIOSYNCRATIC_VOLATILITY,
+            maintenance: MaintenanceModel::default(),
+            assessment: Assessment::default(),
+            insurance_real_growth: InsuranceGrowth::default(),
+            mortgage_kind: MortgageKind::default(),
         }
     }
 }

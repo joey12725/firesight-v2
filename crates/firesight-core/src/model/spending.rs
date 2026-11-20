@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{RentGrowth, When};
 
 /// The household budget and the rules that shape spending over time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -155,6 +155,10 @@ pub struct BudgetItem {
     /// If the line belongs to one person (0 or 1) it stops when that person dies and
     /// does not start before they join the household. Leave empty for shared spending.
     pub owner: Option<usize>,
+    /// "fixed" (default): inflation plus `real_growth`. "market": a rent line follows
+    /// the path's simulated local rent market instead (rent category only).
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub rent_growth: RentGrowth,
 }
 
 impl Default for BudgetItem {
@@ -171,6 +175,7 @@ impl Default for BudgetItem {
             end: None,
             in_retirement: RetirementChange::Same,
             owner: None,
+            rent_growth: RentGrowth::Fixed,
         }
     }
 }

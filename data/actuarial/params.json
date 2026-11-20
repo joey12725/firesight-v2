@@ -2097,6 +2097,73 @@
       "mortgage refinancing decisions (separate module)"
     ]
   },
+  "housing_realism": {
+    "summary": "Parameters of the opt-in housing realism options: lumpy maintenance, insurance drift, market rents, slow home sales and adjustable-rate mortgages (assessment caps are a rule, not a parameter). Each number is either sourced or marked as a judgement; code constants are kept equal to this section by a unit test (sim/housing_ext_tests.rs).",
+    "maintenance": {
+      "capital_share": {
+        "value": 0.5,
+        "judgement": true,
+        "confidence": "low. The housing.maintenance_pct_of_value entry has 1% routine plus 0.5% capital replacement (a third); half is used so the lumps are visible at the default 1% rate."
+      },
+      "weibull_shape": {
+        "value": 3,
+        "judgement": true,
+        "confidence": "low (gives a coefficient of variation of about 0.36 for a component's lifetime)"
+      },
+      "initial_age_span": {
+        "value": 1.13,
+        "judgement": true,
+        "confidence": "medium (a uniform draw on [0, 1.13 L] has the mean age of a stationary renewal process with shape 3)"
+      },
+      "components": {
+        "roof": {"life_years": 25.0, "budget_share": 0.30},
+        "heating and cooling": {"life_years": 17.0, "budget_share": 0.25},
+        "water heater": {"life_years": 11.0, "budget_share": 0.05},
+        "exterior paint and siding": {"life_years": 12.0, "budget_share": 0.20},
+        "appliances and flooring": {"life_years": 13.0, "budget_share": 0.20},
+        "source": "Mean lives: NAHB and Bank of America Home Equity, Study of Life Expectancy of Home Components (February 2007), as reported by secondary sources: asphalt-shingle roofs 20 to 30 years, furnaces 15 to 20, tank water heaters 8 to 12 (the original table was not re-read). Budget shares are a judgement.",
+        "confidence": "medium for lives (secondary reports of a 2007 study), low for shares"
+      }
+    },
+    "insurance_drift": {
+      "evidence": "Urban Institute, Housing Finance at a Glance (September 2026), quoted in housing.homeowners_insurance_pct_of_value: average premium on newly originated agency mortgages rose from $1,270 (2018) to $1,856 (2024), +46%, about 6.5% a year against CPI near 4%.",
+      "mu": {"value": 0.005, "judgement": true, "confidence": "low. Long-run mean of the persistent real growth rate; below the 2018-2024 pace because repricing cannot continue for decades."},
+      "rho": {"value": 0.97, "judgement": true, "confidence": "low (monthly persistence, about 0.7 a year)"},
+      "sigma": {"value": 0.01, "judgement": true, "confidence": "low"},
+      "jump_rate": {"value": 0.08, "judgement": true, "confidence": "low (repricing events a year)"},
+      "jump_log_median": {"value": -2.2, "judgement": true, "confidence": "low (median jump 11%)"},
+      "jump_log_sd": {"value": 0.5, "judgement": true, "confidence": "low"}
+    },
+    "rent_market": {
+      "evidence": "housing.rent_growth: CPI rent of primary residence has grown 0.5 to 1.0 points faster than CPI-U since the mid-1980s; real rent growth sd about 2% a year; local rents co-move with the local price factor. Those figures are themselves marked medium confidence and quoted from memory.",
+      "real_trend": {"value": 0.005, "source": "equal to the engine's default real growth of a rent line (model::Category::Rent)", "confidence": "medium"},
+      "hpi_passthrough": {"value": 0.15, "judgement": true, "confidence": "low"},
+      "hpi_real_trend": {"value": 0.01, "judgement": true, "confidence": "low (real home prices rose about 1% a year since the 1970s)"},
+      "local_persistence": {"value": 0.985, "judgement": true, "confidence": "low (half-life about 4 years)"},
+      "local_sd": {"value": 0.05, "judgement": true, "confidence": "low"},
+      "renewal_pass_through": {"value": 0.75, "judgement": true, "confidence": "low"},
+      "forced_move_probability": {"value": 0.06, "judgement": true, "confidence": "low"},
+      "new_lease_premium": {"value": 0.04, "judgement": true, "confidence": "low"}
+    },
+    "liquidity": {
+      "evidence": "NAR (2012 analysis of existing-home sales): median time on market of non-distressed sellers peaked at 10 weeks in 2009 (10.0 months of supply, median price down 12.9%); 6 to 7 weeks is a balanced market. Campbell, Giglio and Pathak, Forced Sales and House Prices, American Economic Review 101(5), 2011 (NBER w14866): forced sales close 3 to 7% below comparable homes (death 5 to 7%, bankruptcy 3%); foreclosures about 27%.",
+      "base_close_months": {"value": 2, "judgement": true, "confidence": "low (3 to 4 weeks on market plus 30 to 45 days to close)"},
+      "base_extra_months": {"value": 0.5, "judgement": true, "confidence": "low"},
+      "stress_extra_months": {"value": 3.0, "judgement": true, "confidence": "low. Gives a mean of about 5.5 months at full stress."},
+      "full_stress_discount": {"value": 0.06, "source": "Campbell, Giglio and Pathak (2011): forced sales 3 to 7% below comparable homes", "confidence": "medium for a forced sale; a household that merely sells into a weak market may lose less"},
+      "full_stress_price_fall": {"value": 0.10, "judgement": true, "confidence": "low (2008 saw falls of 10 to 12% over twelve months)"}
+    },
+    "arm": {
+      "evidence": "Fannie Mae Selling Guide B2-1.4-02 and its ARM plan notices: 5/1 hybrids with 2/2/5 and 5/2/5 caps were accepted, margins of 2.25 to 3 points over the index, and the rate may never fall below the margin. The index is the 30-day average SOFR in current plans; the engine uses the simulated Treasury bill yield as the index.",
+      "initial_discount_to_fixed": {"value": 0.0075, "judgement": true, "confidence": "low. 5/1 ARMs were typically 0.5 to 1 point below the 30-year fixed rate in 2010 to 2019 (recalled); the spread was negative in 2023."}
+    },
+    "left_out": [
+      "metro-level rent and price indices",
+      "interest-only and negative-amortisation ARMs; ARMs with an initial cap different from the periodic cap",
+      "price negotiation during a sale; the buyer's financing falling through",
+      "rent control and eviction law"
+    ]
+  },
   "equity_compensation": {
     "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
     "private_company": {

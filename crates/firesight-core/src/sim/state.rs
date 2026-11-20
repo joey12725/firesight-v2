@@ -103,6 +103,8 @@ pub(crate) struct State {
     pub rng_health: [Rng; MAX_PEOPLE],
     pub rng_shocks: Rng,
     pub rng_housing: Vec<Rng>,
+    /// Opt-in housing realism: rent market, slow sales, extra property streams.
+    pub hx: super::housing_ext::HxState,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -304,6 +306,7 @@ impl State {
             rng_health: [rng.clone(), rng.clone()],
             rng_shocks: rng.clone(),
             rng_housing: vec![rng.clone(); plan.props.len()],
+            hx: super::housing_ext::HxState::new(plan),
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -540,6 +543,7 @@ impl State {
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }
+        self.hx.reset(plan, seed, path);
 
         // Retirement date when the trigger fixes it.
         self.retired = false;

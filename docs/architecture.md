@@ -30,7 +30,9 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, Maintenance(property), InsuranceDrift(property),
+  RentMarket, Liquidity}` (the last four are the opt-in housing realism options and
+  are drawn only when an option is on). Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -123,7 +125,8 @@ BudgetItem { id, name, category: Category, amount, frequency: Monthly|Annual|Wee
              essential: bool, real_growth: Option<f64> (default by category),
              start: Option<When>, end: Option<When>,
              in_retirement: Same | Stops | Factor{x} | Amount{x},
-             owner: Option<usize> }
+             owner: Option<usize>,
+             rent_growth: Fixed | Market (Fixed) }  // Market: rent category only, follows the path's local rent index
 Category = Rent | Utilities | Groceries | Dining | Transport | Healthcare | Insurance | Childcare
          | Education | Travel | Entertainment | Personal | Giving | Other
 
@@ -144,9 +147,15 @@ Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 
 Property { id, name, use: Primary | Rental{..RentalTerms} | Vacation,
-           value, basis: Option<f64>, mortgage: Option<Mortgage{ balance, rate, remaining_months, payment: Option }>,
+           value, basis: Option<f64>,
+           mortgage: Option<Mortgage{ balance, rate, remaining_months, payment: Option, kind: MortgageKind }>,
            property_tax_rate: Option<f64> (default from state), insurance_rate, maintenance_rate, hoa_monthly,
-           appreciation_vs_national: f64, idiosyncratic_volatility: f64 }
+           appreciation_vs_national: f64, idiosyncratic_volatility: f64,
+           maintenance: Smooth | Lumpy (Smooth),                      // Lumpy: routine half + random major repairs
+           assessment: Market | Capped{ annual_cap, assessed_value: Option } (Market),
+           insurance_real_growth: Fixed | Stochastic (Fixed) }       // Stochastic: persistent real drift + repricing jumps
+MortgageKind = Fixed | Arm{ fixed_months, adjust_every_months, margin, periodic_cap, lifetime_cap }
+               // resets to the simulated bill yield + margin within caps, payment re-amortised over the months left
 RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_fraction }
 
 Debt { id, name, kind: Student|Auto|CreditCard|Personal|Other, balance, rate,
@@ -157,7 +166,8 @@ DebtPolicy { strategy: Minimum | Avalanche | Snowball, extra_monthly: f64,
 LifeEvent { id, name, when: When, probability: f64 (1.0), timing_uncertainty_years: f64 (0), kind }
 EventKind =
   BuyHome { price, down_payment_fraction, rate: Option<f64> (None = simulated market rate), term_years,
-            replaces_rent: bool, closing_cost_fraction, ..property params }
+            replaces_rent: bool, closing_cost_fraction, ..property params,
+            maintenance, assessment, insurance_real_growth, mortgage_kind: MortgageKind }
   SellProperty { property: id, selling_cost_fraction, then_rent_monthly: Option<f64> }
   Relocate { state, city, country, moving_cost, cost_of_living: Unchanged | Factor{overall} | ByCategory{map} }
   Windfall { amount, taxable: bool }
@@ -195,6 +205,7 @@ Assumptions {
                     social_security_haircut: Option<{ from_year, factor }> },
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
+  housing_liquidity: Instant | Realistic (Instant),  // Realistic: sales take months and may close at a discount
 }
 SimulationSettings { paths: u32 (10_000), seed: u64, end_age: u32 (100) }
 ```

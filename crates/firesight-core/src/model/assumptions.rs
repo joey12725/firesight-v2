@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{HousingLiquidity, When};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -21,6 +21,11 @@ pub struct Assumptions {
     /// Simulate random medical costs and long-term care. Turning this off uses average
     /// costs every year.
     pub health_risk: bool,
+    /// "instant" (default): selling a home closes the month it is decided at market
+    /// value. "realistic": a sale takes months and may close at a discount in bad
+    /// markets.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub housing_liquidity: HousingLiquidity,
 }
 
 impl Default for Assumptions {
@@ -31,6 +36,7 @@ impl Default for Assumptions {
             longevity: Longevity::default(),
             career_risk: true,
             health_risk: true,
+            housing_liquidity: HousingLiquidity::Instant,
         }
     }
 }

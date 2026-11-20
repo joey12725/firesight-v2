@@ -126,6 +126,9 @@ impl State {
         {
             replan = true;
         }
+        if plan.hx.any {
+            self.hx_month_start(plan, econ, t);
+        }
         // 2. Events due this month (before planning, so the plan sees them).
         if ti >= self.next_event {
             self.run_events(plan, econ, t);
@@ -516,12 +519,20 @@ impl State {
             let rental = matches!(st.usage, PropertyUse::Rental(_));
             let value_before = st.value;
             let balance = st.mortgage_balance();
+            let rate_before = if plan.hx.props {
+                self.hx_prepare(plan, econ, t, i, price)
+            } else {
+                0.0
+            };
             let hm = plan.props[i].model.step(
                 &mut self.props[i],
                 home_national,
                 price,
                 &mut self.rng_housing[i],
             );
+            if plan.hx.props {
+                self.hx_after_step(plan, t, i, rate_before);
+            }
             if !owned {
                 continue;
             }
@@ -553,6 +564,9 @@ impl State {
             }
         }
         self.home_index *= 1.0 + home_national;
+        if plan.hx.liquidity {
+            self.hx_close_sales(plan, price, t);
+        }
 
         // 8. Debts: required payments, then the extra payment by strategy.
         self.pay_debts(plan, t, price);
@@ -1078,6 +1092,9 @@ impl State {
             if amount == 0.0 {
                 continue;
             }
+            if item.market_rent {
+                amount *= self.hx.rent.paid;
+            }
             if item.growth != 0.0 {
                 amount *= if (years as usize) < plan.growth_years {
                     plan.item_growth[i * plan.growth_years + years as usize]
@@ -1267,7 +1284,7 @@ impl State {
         // has to be found now is only what would make it grow.
         let overdraft = (-self.cash_start).max(0.0);
         let mut essentials_cut = false;
-        if -self.acc.cash - overdraft > DUST {
+        if -self.acc.cash - overdraft > DUST && !self.hx_bridged(plan) {
             // Nothing liquid is left to sell. Spending is cut to what there is: what
             // can be postponed first; then property is sold if the plan allows it;
             // then the essentials. Obligations that cannot be cut
@@ -1293,7 +1310,7 @@ impl State {
                     release = false;
                     self.release_home_equity(plan, t, price, missing);
                     missing = -self.acc.cash - overdraft;
-                    if missing <= DUST {
+                    if missing <= DUST || self.hx_bridged(plan) {
                         break;
                     }
                 }
@@ -1308,12 +1325,15 @@ impl State {
         // Housing costs, debt service and tax cannot be cut: if they alone are more
         // than there is, property goes too.
         if -self.acc.cash - overdraft > DUST
+            && !self.hx_bridged(plan)
             && plan.profile.retirement.home_equity == HomeEquity::LastResort
             && self.props.iter().any(|p| p.owned)
         {
             self.release_home_equity(plan, t, price, -self.acc.cash - overdraft);
         }
-        let depleted = essentials_cut || -self.acc.cash - overdraft > DUST;
+        // A home listed as a last resort bridges the months to closing.
+        let depleted =
+            essentials_cut || (-self.acc.cash - overdraft > DUST && !self.hx_bridged(plan));
         if depleted {
             self.depleted_year = true;
             if !self.ever_depleted {

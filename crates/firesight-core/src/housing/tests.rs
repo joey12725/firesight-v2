@@ -35,6 +35,7 @@ fn loan(balance: f64, rate: f64, remaining_months: u32) -> Option<Mortgage> {
         rate,
         remaining_months,
         payment: None,
+        ..Mortgage::default()
     })
 }
 

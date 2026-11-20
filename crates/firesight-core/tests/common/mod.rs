@@ -109,6 +109,7 @@ pub fn quiet(people: Vec<Person>, die_at: f64) -> Profile {
             longevity: Longevity::FixedAge { age: die_at },
             career_risk: false,
             health_risk: false,
+            ..Assumptions::default()
         },
         ..Profile::default()
     }

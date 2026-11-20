@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::{Assessment, InsuranceGrowth, MaintenanceModel, MortgageKind};
+
 /// A home, rental or vacation property owned today. Future purchases are events.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -39,6 +41,16 @@ pub struct Property {
     /// index, as a decimal. Individual homes are far more volatile than the index;
     /// 0.08 is typical.
     pub idiosyncratic_volatility: f64,
+    /// Whether maintenance is a smooth charge or arrives as random major repairs
+    /// with the same expected cost.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub maintenance: MaintenanceModel,
+    /// How the property-tax assessed value follows the market value.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub assessment: Assessment,
+    /// Whether the insurance premium drifts above inflation with occasional jumps.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub insurance_real_growth: InsuranceGrowth,
 }
 
 impl Default for Property {
@@ -56,6 +68,9 @@ impl Default for Property {
             hoa_monthly: 0.0,
             appreciation_vs_national: 0.0,
             idiosyncratic_volatility: Self::DEFAULT_IDIOSYNCRATIC_VOLATILITY,
+            maintenance: MaintenanceModel::default(),
+            assessment: Assessment::default(),
+            insurance_real_growth: InsuranceGrowth::default(),
         }
     }
 }
@@ -116,7 +131,7 @@ impl Default for RentalTerms {
     }
 }
 
-/// A fixed-rate mortgage.
+/// A mortgage, fixed-rate unless `kind` says otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Mortgage {
@@ -129,6 +144,9 @@ pub struct Mortgage {
     /// Monthly principal-and-interest payment in dollars, excluding tax and insurance.
     /// Leave empty to compute it from the balance, rate and remaining term.
     pub payment: Option<f64>,
+    /// Fixed rate (the default) or adjustable rate.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub kind: MortgageKind,
 }
 
 impl Default for Mortgage {
@@ -138,6 +156,7 @@ impl Default for Mortgage {
             rate: 0.065,
             remaining_months: 360,
             payment: None,
+            kind: MortgageKind::Fixed,
         }
     }
 }

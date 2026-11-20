@@ -453,6 +453,58 @@ rule (76.3%).
 Other debts are amortised with their payments; extra payments follow the avalanche
 or snowball order.
 
+### 8.1 Housing realism options (all opt-in)
+
+Every option below defaults to the earlier behaviour; a profile that does not
+mention them simulates bit for bit as before and serialises without the new keys.
+Their numbers are in `data/actuarial/params.json` under `housing_realism`, each
+marked sourced or a judgement. Effects were measured on the side-hustle landlord
+example (one option at a time, 2,000 paths, seed 7, success rate; baseline 92.1%).
+
+**Lumpy maintenance** (`maintenance: lumpy`). Half of `maintenance_rate` stays a
+smooth routine charge. The other half arrives as major repairs of five components
+(roof, heating and cooling, water heater, exterior, appliances) whose hazard rises
+with years since replacement (Weibull shape 3; mean lives from the NAHB and Bank of
+America 2007 component-life study as reported secondhand; budget shares are a
+judgement). Expected cost equals the smooth rate. Measured: success 92.2%, median
+terminal net worth +$11,000, a few more paths with spikes. Not modelled: repairs
+tied to the actual age of the house beyond a random starting age, or to hurricanes.
+
+**Assessment cap and insurance drift** (`assessment: {type: capped, annual_cap}`,
+`insurance_real_growth: stochastic`). The assessed value rises by at most the cap
+and never above market, and resets to the price on a purchase; tax is charged on
+it. Insurance adds a persistent real drift plus occasional 10 to 20% repricing
+jumps, shared across properties of the path (Urban Institute premium growth
+2018 to 2024; the process parameters are judgements). Measured: capped at 2% 91.9%
+(lower property tax, but the earlier-financial-independence effect shows in
+spending), stochastic insurance 90.0% with p10 terminal net worth falling to $0.
+Not modelled: Proposition 19 transfers, supplemental assessments, state-specific
+homestead rules, insurance availability.
+
+**Market rents** (`rent_growth: market` on a rent line). The path's rent index
+follows national real price growth with a lag, persistent local noise, a yearly
+lease renewal that passes most of the gap to market through, and an occasional
+forced move to a new-lease premium. Measured: 91.8%, an Overspending cause appears
+on 0.6% of paths. Not modelled: metro-level indices, rent control.
+
+**Slow home sales** (`assumptions.housing_liquidity: realistic`). A sale takes a
+random number of months to close (about two plus a stress-dependent tail), longer
+and at up to a 6% discount (Campbell, Giglio and Pathak 2011, forced sales 3 to 7%
+below comparable homes) when the path is in recession or national prices are
+falling; carrying costs run until closing and a last-resort sale bridges the wait
+from cash. Measured: 92.1% (few paths of this example sell). Not modelled: price
+negotiation, financing falling through.
+
+**Adjustable-rate mortgages** (`mortgage.kind` or `buy_home.mortgage_kind`:
+`arm`). After the fixed months the rate resets every period to the simulated bill
+yield plus margin, limited by the periodic and lifetime caps and never below the
+margin; the payment is re-amortised over the months left (Fannie Mae ARM plan
+terms for the structure). Without a stated rate a purchased ARM starts 0.75 points
+below the market rate (a judgement). A refinance of an ARM turns it into a fixed
+loan over the remaining term. Measured with a 1/1 reset, 2.75 margin, 2/5 caps:
+92.5%, with a fatter bad tail of resets in high-rate paths. Not modelled:
+interest-only and negative-amortisation loans, a separate initial cap.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus

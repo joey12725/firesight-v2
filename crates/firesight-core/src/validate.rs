@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod housing_realism;
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -186,6 +188,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.accounts_and_portfolio();
     c.properties_and_debts();
     c.events();
+    c.housing_realism();
     c.retirement();
     c.assumptions();
     if c.r.errors.is_empty() {
