@@ -11,7 +11,8 @@
 
 use crate::health::HealthMonth;
 use crate::health_states::{HealthChain, HealthLevel, HealthStateParams, MAX_YEARS};
-use crate::model::{HealthModelKind, Profile};
+use crate::longevity_links::CoupleModel;
+use crate::model::{CoupleDependence, HealthModelKind, Longevity, Profile};
 use crate::rng::{Rng, Stream};
 use crate::stats::TraceEventKind;
 use crate::MAX_PEOPLE;
@@ -29,6 +30,9 @@ pub(crate) struct CarePlan {
     /// True when the state scales costs and care incidence (states on and
     /// `health_risk` on: with health risk off costs are averages).
     pub state_costs: bool,
+    /// Linked lifespans of the first two people (`couple_dependence: linked` with
+    /// two adults and stochastic lifespans).
+    pub couple: Option<CoupleModel>,
 }
 
 impl CarePlan {
@@ -55,7 +59,22 @@ impl CarePlan {
                 .collect();
             care.state_costs = profile.assumptions.health_risk;
         }
-        care.active = !care.chains.is_empty();
+        if let Longevity::Stochastic {
+            couple_dependence: CoupleDependence::Linked,
+            ..
+        } = profile.assumptions.longevity
+        {
+            if people.len() >= 2 {
+                care.couple = Some(CoupleModel::new(
+                    [
+                        people[0].mortality.survival_table(),
+                        people[1].mortality.survival_table(),
+                    ],
+                    data,
+                ));
+            }
+        }
+        care.active = !care.chains.is_empty() || care.couple.is_some();
         care
     }
 }
@@ -68,6 +87,9 @@ pub(crate) struct CareState {
     /// Multiplier on each person's care-episode probability, from the state they
     /// die in.
     pub ltc_scale: [f64; MAX_PEOPLE],
+    /// True for a person whose death was drawn as following the partner's within
+    /// the bereavement window (linked lifespans).
+    pub bereaved: [bool; MAX_PEOPLE],
 }
 
 impl Default for CareState {
@@ -75,6 +97,7 @@ impl Default for CareState {
         CareState {
             level: [[0; MAX_YEARS]; MAX_PEOPLE],
             ltc_scale: [1.0; MAX_PEOPLE],
+            bereaved: [false; MAX_PEOPLE],
         }
     }
 }
@@ -86,6 +109,24 @@ impl State {
         let care = &plan.care;
         for i in 0..MAX_PEOPLE {
             self.care.ltc_scale[i] = 1.0;
+            self.care.bereaved[i] = false;
+        }
+        if let Some(couple) = &care.couple {
+            // The same first uniform of each person's longevity stream that the
+            // independent draw used, and two uniforms of the couple stream.
+            let u = [0, 1].map(|i| Rng::stream(seed, path, Stream::Longevity(i)).uniform());
+            let mut rng = Rng::stream(seed, path, Stream::CoupleLongevity);
+            let (pick, delay) = (rng.uniform(), rng.uniform());
+            let curves = [
+                plan.people[0].mortality.survival_table(),
+                plan.people[1].mortality.survival_table(),
+            ];
+            let (months, follower) = couple.draw(curves, u, pick, delay);
+            self.death_month[0] = months[0];
+            self.death_month[1] = months[1];
+            if let Some(j) = follower {
+                self.care.bereaved[j] = true;
+            }
         }
         for (i, chain) in care.chains.iter().enumerate() {
             let mut rng = Rng::stream(seed, path, Stream::HealthStates(i));
@@ -100,6 +141,15 @@ impl State {
     /// out-of-pocket cost by their health state.
     pub(crate) fn care_month(&mut self, plan: &Plan, i: usize, t: usize, hm: &mut HealthMonth) {
         let care = &plan.care;
+        if self.detail && self.care.bereaved[i] && t + 1 == self.death_month[i] as usize {
+            let now = plan.start + t as i32;
+            self.event(now, TraceEventKind::Bereavement, None, || {
+                format!(
+                    "Person {} dies within six months of being widowed (bereavement effect)",
+                    i + 1
+                )
+            });
+        }
         if let Some(chain) = care.chains.get(i) {
             let k = t / 12;
             let level = self.care.level[i][k.min(MAX_YEARS - 1)];

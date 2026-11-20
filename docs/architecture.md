@@ -193,7 +193,11 @@ Assumptions {
          | Stagflation{ start: When, years, inflation },
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
                     social_security_haircut: Option<{ from_year, factor }> },
-  longevity: Stochastic{ improvement: bool } | FixedAge{ age },
+  longevity: Stochastic{ improvement: bool,
+                         couple_dependence: Independent (default) | Linked,  // Frank copula + bereavement; Stream::CoupleLongevity
+                         income_gradient: bool (false),                     // Chetty et al. 2016 multiplier on mortality
+                         income_percentile: Option<f64> }                   // 1-100, overrides the ranked income
+           | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
   health_model: Independent (default) | States,   // yearly healthy/chronic/frail chain scaling OOP, care and mortality; Stream::HealthStates(person)
 }

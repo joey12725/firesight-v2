@@ -528,7 +528,7 @@ Each adult's age at death is drawn from the SSA 2023 period life table, improved
 along the cohort diagonal with the Trustees' rates (life expectancy at 65: 19.2
 years for men, 21.7 for women, matching the published cohort tables), with a
 mortality multiplier for health (default "good" = 0.85, which adds about 1.4 years
-at 65). Deaths of partners are independent. For a couple of 65 at the default
+at 65). Deaths of partners are independent unless linked lifespans are switched on (below). For a couple of 65 at the default
 setting, the chance that at least one is alive is 66% at 90, 38% at 95 and 14% at
 100. A fixed lifespan can be set instead.
 
@@ -536,6 +536,46 @@ When a partner dies: their jobs end, accounts pass to the survivor with a step-u
 of taxable basis, the return is joint for that year and single after, shared
 spending falls by the survivor factor, and the survivor keeps the higher Social
 Security benefit.
+
+### Linked lifespans (opt-in)
+
+With `longevity.couple_dependence: linked` the two partners' ages at death are
+drawn together. Two parts, both leaving each person's own survival curve exactly
+as above:
+
+* **Shared frailty.** A Frank copula on the two longevity uniforms with
+  association 7.065, the estimate of Dufresne, Hashorva, Ratovomirija and
+  Toukourou (2018, Table 4.1, IFM, no age-difference term) on the joint-and-last-
+  survivor annuity data of a large Canadian insurer analysed by Frees, Carriere
+  and Valdez (1996). Kendall's tau 0.56; the Pearson correlation of the two
+  simulated death ages of a couple of 66 and 64 is about 0.75.
+* **Bereavement.** The survivor's risk of dying in the six months after the
+  partner's death is raised by the relative risk 1.41 of the Moon, Kondo, Glymour
+  and Subramanian (2011) meta-analysis of 15 cohorts. It is a mixture component
+  whose joint mass is the independent chance of each such pair times 0.41, and
+  the copula's residual curves have that mass taken out, so the margins stay
+  exact (a unit test checks them to 1e-12, including a 28-year age gap). The
+  lasting excess after six months (RR 1.14) is taken to be part of the shared
+  frailty and is not added. A death drawn this way is logged ("bereavement").
+
+Draws: the first uniform of each person's longevity stream (the one the
+independent draw uses) and two uniforms of the new `Stream::CoupleLongevity`,
+whatever the household does.
+
+Measured: for a couple of 66 and 64 (4,000 paths) mean death ages are unchanged
+within noise, the average gap between the two deaths falls from 10.9 to 6.0
+years and the last survivor's expected death age from 92.1 to 89.4. On the
+dual-income example (4,000 paired paths) success moves 91.5% to 91.1% (within
+noise), depletion 8.5% to 8.8% (within noise), and reaching retirement 99.5% to
+98.6% (both partners dying young together is more likely); median lifetime tax
+falls by $36k.
+
+Not modelled: the dependence of the association on the age difference (the
+paper's alpha(d)); dependence for unmarried partners or a partner who joins
+later (it applies to the first two adults from the start); bereavement effects on
+spending, work or health costs; the copula was fitted on insured annuitants,
+whose dependence may differ from the population's, and combining it with the
+bereavement term may overstate short-term dependence a little.
 
 ## 11. When retirement happens
 

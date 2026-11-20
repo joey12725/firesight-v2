@@ -233,7 +233,7 @@ impl MortalityModel {
                 s.push(0.0);
                 s
             }
-            Longevity::Stochastic { improvement } => {
+            Longevity::Stochastic { improvement, .. } => {
                 Self::cohort_curve(age0, sex, health, start, improvement, data)
             }
         };
@@ -1257,7 +1257,7 @@ mod tests {
             sex,
             health,
             start,
-            &Longevity::Stochastic { improvement },
+            &Longevity::stochastic(improvement),
             data(),
         )
     }
@@ -1457,7 +1457,7 @@ mod tests {
             Sex::Male,
             HealthStatus::Average,
             YearMonth::ym(2026, 11),
-            &Longevity::Stochastic { improvement: true },
+            &Longevity::stochastic(true),
             data(),
         );
         assert_eq!(odd.age_months_at_start(), 65 * 12 + 4);

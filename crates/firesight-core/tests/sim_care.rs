@@ -136,3 +136,144 @@ fn health_states_off_is_the_default_bit_for_bit() {
         );
     }
 }
+
+/// A retired couple of 66 and 64 with a portfolio that supports them for about 30
+/// years at their spending.
+fn couple(dependence: CoupleDependence) -> Profile {
+    let mut a = person("al", 66, Sex::Male);
+    let mut b = person("bea", 64, Sex::Female);
+    for (who, pia) in [(&mut a, 2_000.0), (&mut b, 1_400.0)] {
+        who.social_security.basis = SocialSecurityBasis::KnownBenefit {
+            monthly_at_fra: pia,
+        };
+        who.social_security.claim_age = 67.0;
+    }
+    let mut p = quiet(vec![a, b], 100.0);
+    p.assumptions.longevity = Longevity::Stochastic {
+        improvement: true,
+        couple_dependence: dependence,
+        income_gradient: false,
+        income_percentile: None,
+    };
+    p.spending.items = vec![item("living", Category::Other, 6_000.0, true)];
+    p.accounts = vec![account("brokerage", 0, AccountKind::Taxable, 900_000.0)];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    p.retirement.spending_rule = SpendingRule::ConstantReal;
+    p
+}
+
+fn stats(x: &[f64]) -> (f64, f64) {
+    let m = mean(x);
+    let v = x.iter().map(|a| (a - m).powi(2)).sum::<f64>() / x.len() as f64;
+    (m, v.sqrt())
+}
+
+#[test]
+fn linked_lifespans_keep_each_life_and_link_the_two() {
+    let (plan_i, plan_l) = (
+        compile(&couple(CoupleDependence::Independent)),
+        compile(&couple(CoupleDependence::Linked)),
+    );
+    let n = 4_000;
+    let (a, b) = (run(&plan_i, 7, 0..n), run(&plan_l, 7, 0..n));
+    let ages = |acc: &Accumulator, s: PathScalar| -> Vec<f64> {
+        column(acc, s).iter().map(|&v| f64::from(v)).collect()
+    };
+    let (i0, i1) = (
+        ages(&a, PathScalar::DeathAge0),
+        ages(&a, PathScalar::DeathAge1),
+    );
+    let (l0, l1) = (
+        ages(&b, PathScalar::DeathAge0),
+        ages(&b, PathScalar::DeathAge1),
+    );
+    // Each person's life expectancy is kept (sampling noise is about 0.15 years).
+    for (x, y) in [(&i0, &l0), (&i1, &l1)] {
+        let (mx, sx) = stats(x);
+        let (my, _) = stats(y);
+        assert!(
+            (mx - my).abs() < 4.0 * sx / (n as f64).sqrt(),
+            "{mx} vs {my}"
+        );
+    }
+    let corr = |x: &[f64], y: &[f64]| {
+        let ((mx, sx), (my, sy)) = (stats(x), stats(y));
+        x.iter()
+            .zip(y)
+            .map(|(a, b)| (a - mx) * (b - my))
+            .sum::<f64>()
+            / (x.len() as f64 * sx * sy)
+    };
+    let (ci, cl) = (corr(&i0, &i1), corr(&l0, &l1));
+    assert!(ci.abs() < 0.05, "independent: {ci}");
+    assert!(cl > 0.45 && cl < 0.8, "linked: {cl}");
+    // The last survivor's life is shorter (lives end closer together), so the
+    // couple needs its money for less long: depletion does not rise, and the
+    // years spent widowed fall by roughly a third or more.
+    let last = |x: &[f64], y: &[f64]| -> f64 {
+        mean(&x.iter().zip(y).map(|(a, b)| a.max(*b)).collect::<Vec<_>>())
+    };
+    let widowed = |x: &[f64], y: &[f64]| -> f64 {
+        // Ages differ by two years at the start.
+        mean(
+            &x.iter()
+                .zip(y)
+                .map(|(a, b)| ((a - 2.0) - b).abs())
+                .collect::<Vec<_>>(),
+        )
+    };
+    let (wi, wl) = (widowed(&i0, &i1), widowed(&l0, &l1));
+    assert!(last(&l0, &l1) < last(&i0, &i1) - 0.5);
+    assert!(
+        wl < 0.75 * wi && wl > 0.2 * wi,
+        "years widowed {wi} -> {wl}"
+    );
+    let depleted = |acc: &Accumulator| {
+        column(acc, PathScalar::DepletionAge)
+            .iter()
+            .filter(|v| !v.is_nan())
+            .count()
+    };
+    assert!(
+        depleted(&b) <= depleted(&a),
+        "{} -> {}",
+        depleted(&a),
+        depleted(&b)
+    );
+}
+
+#[test]
+fn linked_lifespans_are_bit_identical_when_off_and_traced_when_on() {
+    let off = couple(CoupleDependence::Independent);
+    let mut implicit = off.clone();
+    implicit.assumptions.longevity = Longevity::default();
+    let json = serde_json::to_value(&implicit.assumptions.longevity).unwrap();
+    assert!(json.get("couple_dependence").is_none());
+    assert_eq!(
+        run(&compile(&off), 4, 0..300).to_bytes(),
+        run(&compile(&implicit), 4, 0..300).to_bytes()
+    );
+    // A single person: linked does nothing.
+    let mut single = retiree_70(Sex::Female);
+    let base = run(&compile(&single), 4, 0..300).to_bytes();
+    single.assumptions.longevity = Longevity::Stochastic {
+        improvement: true,
+        couple_dependence: CoupleDependence::Linked,
+        income_gradient: false,
+        income_percentile: None,
+    };
+    assert_eq!(run(&compile(&single), 4, 0..300).to_bytes(), base);
+    // Some paths show a death soon after the partner's, with the event logged.
+    let plan = compile(&couple(CoupleDependence::Linked));
+    let logged = (0..400)
+        .filter(|&path| {
+            sim::trace_path(&plan, 4, path)
+                .events
+                .iter()
+                .any(|e| e.kind == firesight_core::stats::TraceEventKind::Bereavement)
+        })
+        .count();
+    // w is about 0.5% per partner of 66 and 64 (two components), minus paths cut
+    // at the horizon: a handful in 400.
+    assert!((1..=15).contains(&logged), "{logged}");
+}

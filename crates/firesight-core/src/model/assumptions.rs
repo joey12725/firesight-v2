@@ -268,6 +268,28 @@ pub enum Longevity {
         /// or two of life expectancy for younger people.
         #[serde(default = "d_true")]
         improvement: bool,
+        /// Whether the two partners' lifespans are linked. "independent" (the
+        /// default): each age at death is drawn on its own. "linked": couples tend
+        /// to live similarly long (shared lifestyle and circumstances, as measured on
+        /// joint annuity contracts), and the survivor's risk of dying rises for six
+        /// months after the partner's death. Each person's own life expectancy is
+        /// unchanged; only how the two lifespans move together changes.
+        #[serde(default, skip_serializing_if = "CoupleDependence::is_independent")]
+        couple_dependence: CoupleDependence,
+        /// Scale mortality by the household's income rank: in US data people with
+        /// higher household incomes live longer (about 15 years more at the top 1%
+        /// than at the bottom 1% for men, 10 for women; Chetty et al. 2016). This is
+        /// an association, not a claim that income itself causes longer lives. The
+        /// rank comes from the gross incomes running at the start unless
+        /// `income_percentile` is given. Off by default.
+        #[serde(default, skip_serializing_if = "is_false")]
+        income_gradient: bool,
+        /// The household's percentile (1 to 100) in the national income
+        /// distribution, used by `income_gradient` instead of ranking the incomes
+        /// in the profile. Use it when current income is not a fair picture of
+        /// lifetime income (for example early in a career or in retirement).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        income_percentile: Option<f64>,
     },
     /// Everyone lives to exactly this age. Simple, but hides the risk of living longer.
     FixedAge {
@@ -280,9 +302,45 @@ fn d_true() -> bool {
     true
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// How the partners' lifespans relate (`longevity.couple_dependence`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CoupleDependence {
+    /// The two ages at death are drawn independently. The default.
+    #[default]
+    Independent,
+    /// Shared frailty (a Frank copula fitted to joint-life annuity data) and a
+    /// raised risk for the survivor in the six months after bereavement (relative
+    /// risk 1.41). Has no effect for a single person.
+    Linked,
+}
+
+impl CoupleDependence {
+    /// True for the default (left out when a profile is written).
+    pub fn is_independent(&self) -> bool {
+        *self == CoupleDependence::Independent
+    }
+}
+
+impl Longevity {
+    /// Stochastic lifespans with every option at its default except `improvement`.
+    pub fn stochastic(improvement: bool) -> Longevity {
+        Longevity::Stochastic {
+            improvement,
+            couple_dependence: CoupleDependence::Independent,
+            income_gradient: false,
+            income_percentile: None,
+        }
+    }
+}
+
 impl Default for Longevity {
     fn default() -> Self {
-        Longevity::Stochastic { improvement: true }
+        Longevity::stochastic(true)
     }
 }
 

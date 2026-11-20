@@ -6,7 +6,21 @@ use crate::model::*;
 
 impl Checker<'_> {
     /// Errors: values the features are not defined for.
-    pub(super) fn care_errors(&mut self) {}
+    pub(super) fn care_errors(&mut self) {
+        if let Longevity::Stochastic {
+            income_percentile: Some(pct),
+            ..
+        } = self.p.assumptions.longevity
+        {
+            self.r.range(
+                "/assumptions/longevity/income_percentile",
+                "Income percentile",
+                pct,
+                1.0,
+                100.0,
+            );
+        }
+    }
 
     /// Warnings: combinations that run but probably do not mean what was intended.
     pub(super) fn care_warnings(&mut self) {
@@ -17,6 +31,28 @@ impl Checker<'_> {
                 "/assumptions/health_model",
                 "Health states are on but health_risk is off, so costs are averages: the states still shape who needs care late in life only through mortality, not costs. Turn health_risk on for the states to change costs.",
             );
+        }
+        if let Longevity::Stochastic {
+            couple_dependence,
+            income_gradient,
+            income_percentile,
+            ..
+        } = p.assumptions.longevity
+        {
+            if couple_dependence == CoupleDependence::Linked && p.household.people.len() < 2 {
+                self.r.warn(
+                    "linked_lifespans_single",
+                    "/assumptions/longevity/couple_dependence",
+                    "Linked lifespans only affect a couple; this household has one adult, so the setting does nothing.",
+                );
+            }
+            if income_percentile.is_some() && !income_gradient {
+                self.r.warn(
+                    "income_percentile_unused",
+                    "/assumptions/longevity/income_percentile",
+                    "income_percentile is set but income_gradient is off, so it is ignored.",
+                );
+            }
         }
     }
 }
@@ -50,5 +86,31 @@ mod tests {
         )]);
         assert!(e.is_empty());
         assert!(!w.contains(&"health_states_without_risk".to_string()));
+    }
+
+    #[test]
+    fn longevity_options_are_checked() {
+        let stochastic = |extra: serde_json::Value| {
+            let mut v = json!({"type": "stochastic", "improvement": true});
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            PatchOp::set("/assumptions/longevity", v)
+        };
+        let (e, _) = codes(&[stochastic(
+            json!({"income_gradient": true, "income_percentile": 0.0}),
+        )]);
+        assert!(e.contains(&"out_of_range".to_string()), "{e:?}");
+        let (e, w) = codes(&[stochastic(
+            json!({"income_gradient": true, "income_percentile": 90.0}),
+        )]);
+        assert!(e.is_empty() && !w.contains(&"income_percentile_unused".to_string()));
+        let (_, w) = codes(&[stochastic(json!({"income_percentile": 90.0}))]);
+        assert!(w.contains(&"income_percentile_unused".to_string()));
+        // The default example is a single adult.
+        let (e, w) = codes(&[stochastic(json!({"couple_dependence": {"type": "linked"}}))]);
+        assert!(e.is_empty(), "{e:?}");
+        let single = crate::model::Profile::example().household.people.len() < 2;
+        assert_eq!(w.contains(&"linked_lifespans_single".to_string()), single);
     }
 }

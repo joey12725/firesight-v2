@@ -701,6 +701,9 @@ keyed_enum! {
         Other => "other",
         /// A person's health state changed (`health_model: states`).
         HealthState => "health_state",
+        /// A person's death followed the partner's within the bereavement window
+        /// (`couple_dependence: linked`).
+        Bereavement => "bereavement",
     }
 }
 
