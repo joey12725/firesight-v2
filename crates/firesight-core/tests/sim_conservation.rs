@@ -171,6 +171,7 @@ pub fn kitchen_sink() -> Profile {
                 state: Some("CA".into()),
                 ..Location::default()
             },
+            ..Household::default()
         },
         incomes: vec![job_a, job_b, side, pension, annuity, support],
         spending: Spending {
@@ -541,5 +542,15 @@ fn traces_conserve_money_and_show_the_events() {
             seen.contains(kind),
             "no {kind} event in 40 traced paths: {seen:?}"
         );
+    }
+}
+
+#[test]
+fn household_dynamics_conserve_money() {
+    let profile = household_dynamics();
+    for kind in MARKETS {
+        let plan = compile(&with_market(profile.clone(), kind));
+        let acc = run_checked(&plan, 9, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
     }
 }

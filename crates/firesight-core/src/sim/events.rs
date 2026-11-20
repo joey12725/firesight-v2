@@ -413,6 +413,14 @@ impl State {
                 }
                 self.event(now, TraceEventKind::LifeEvent, None, || ev.name.clone());
             }
+            EvKind::Divorce(terms) => {
+                let terms = *terms;
+                if !self.divorce(plan, &terms, &ev.name, price, t) {
+                    self.event(now, TraceEventKind::LifeEvent, None, || {
+                        format!("{}: no partner in the household", ev.name)
+                    });
+                }
+            }
         }
         true
     }

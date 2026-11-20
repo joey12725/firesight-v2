@@ -486,6 +486,49 @@ of taxable basis, the return is joint for that year and single after, shared
 spending falls by the survivor factor, and the survivor keeps the higher Social
 Security benefit.
 
+### Divorce
+
+Opt-in, two ways: a `divorce` life event (a date, a probability, timing
+uncertainty, like any event) or `household.divorce_risk: typical`, which draws a
+divorce date on each path from its own random stream. The hazard reproduces the
+NCHS figures for first marriages, 20% ended by separation or divorce within 5
+years, 33% within 10 and 43% within 15 (Bramlett and Mosher 2001), with a
+constant hazard inside each band; after 15 years it is 1% a year while the first
+person is under 65 (Brown and Lin 2012 report 10 divorces per 1,000 married people
+over 50 in 2010; applying it to younger long marriages is a judgement) and 0.6%
+from 65 (NCFMR, Carlson 2021: 5.6 per 1,000 at 65 and over in 2019). The marriage
+date `household.married` sets where on that curve the couple starts.
+
+At the divorce the second person leaves with `asset_split` (default half) of the
+net worth, taken out of cash and invested accounts in proportion, with basis
+carried over (a transfer incident to divorce is not taxed); if the first person
+keeps the home (`keeps_home`, the default) the partner's share of its equity
+comes out of savings, otherwise the home is sold and the household rents. The
+partner's jobs, pensions, own budget lines and health costs stop being the
+household's; shared lines are multiplied by `spending_factor` (default 0.7, between
+the OECD square-root and modified equivalence scales, so two households cost 1.4
+times one); legal costs ($11,300 by default, the average attorney fees with a
+full-scope lawyer in the 2019 Martindale-Nolo survey) are paid; support is paid
+(essential spending) or received (untaxed) for its term. The year of separation
+is filed jointly and the following years single or head of household. After a
+marriage of ten years or more the first person keeps the spousal benefit on the
+former partner's frozen record and the survivor benefit when the former partner
+dies; after a shorter one both are lost. The path ends when the first person
+dies.
+
+Measured on the dual-income example (married in June 2019, 4,000 paired paths):
+success falls from 91.5% to 84.0%, the FI rate from 96.4% to 81.5%, the median
+terminal net worth from $1.73 million to $1.25 million. Setting only the marriage
+date changes nothing.
+
+Not modelled: remarriage, the departing partner's later life (they are no longer
+followed), custody arrangements (children stay with the first person), alimony
+indexation, the exact divorced-spouse rules (benefits on the former partner's
+record need them to have claimed; their record is frozen at the divorce, which
+understates it), the partner's income after the separation on that year's joint
+return, and the fact that divorce risk differs with age at marriage, education and
+previous marriages.
+
 ## 11. When retirement happens
 
 Triggers: at an age, at a date, already retired, when a fixed number is reached, or

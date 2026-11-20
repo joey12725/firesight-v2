@@ -2435,6 +2435,14 @@
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
+    },
+    "divorce_late_rate_under_65": {
+      "note": "Annual divorce hazard after fifteen years of marriage while the first person is under 65 (model::LATE_DIVORCE_RATE_UNDER_65): Brown and Lin (2012) report 10.05 divorces per 1,000 married persons aged 50 and older in 2010, quoted from memory; applying it to couples under 50 married fifteen years or more is a judgement.",
+      "value": 0.01
+    },
+    "divorce_spending_factor": {
+      "note": "Default share of shared spending one adult keeps after a divorce (model::DIVORCE_SPENDING_FACTOR): a judgement within the OECD square-root (0.71) and OECD-modified (0.67) equivalence scales.",
+      "value": 0.7
     }
   },
   "long_run_assumptions": {

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{Category, Property, PropertyUse, When};
+use super::{Category, DivorceTerms, Property, PropertyUse, When};
 
 /// Something that happens once at a point in the plan: a purchase, a move, a windfall,
 /// a change in income or spending.
@@ -100,6 +100,9 @@ pub enum EventKind {
         /// New share of salary contributed (0.15 = 15%).
         employee_fraction: f64,
     },
+    /// The couple divorces: the second person leaves the household with their share
+    /// of the assets and their own income, and the plan continues for the first.
+    Divorce(DivorceTerms),
 }
 
 impl Default for EventKind {

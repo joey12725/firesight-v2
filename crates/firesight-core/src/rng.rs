@@ -69,6 +69,8 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// When a couple with `divorce_risk` on divorces.
+    Divorce,
 }
 
 impl Stream {
@@ -81,6 +83,7 @@ impl Stream {
             Stream::EquityComp => 3,
             Stream::Shocks => 4,
             Stream::Events => 5,
+            Stream::Divorce => 2000,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -475,6 +478,7 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::Divorce,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

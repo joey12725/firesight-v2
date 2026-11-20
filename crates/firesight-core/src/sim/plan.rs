@@ -340,6 +340,7 @@ pub(crate) enum EvKind {
         job: Option<usize>,
         fraction: f64,
     },
+    Divorce(crate::model::DivorceTerms),
 }
 
 /// A compiled life event.
@@ -479,6 +480,8 @@ pub struct Plan {
     pub(crate) eq12_months: u32,
     /// Household earned-income rate at the start, today's dollars per year.
     pub(crate) income_rate0: f64,
+    /// Household dynamics: divorce, parents, caregiving, life insurance.
+    pub(crate) family: super::family::FamilyPlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -1050,6 +1053,7 @@ impl Plan {
                     }),
                     fraction: employee_fraction.clamp(0.0, 1.0),
                 },
+                EventKind::Divorce(terms) => EvKind::Divorce(*terms),
             };
             events.push(EventPlan {
                 name: if event.name.is_empty() {
@@ -1299,6 +1303,7 @@ impl Plan {
             plain_mix: !matches!(policy.rebalance, Rebalance::Never),
             eq12_months,
             income_rate0,
+            family: super::family::FamilyPlan::compile(profile, data, start, n),
         })
     }
 

@@ -44,4 +44,12 @@ fn constants_quoted_from_memory_match_the_data_file() {
         health::GOOD_HEALTH_MULTIPLIER,
         num(&section["good_health_mortality_multiplier"]["value"])
     );
+    assert_eq!(
+        firesight_core::model::LATE_DIVORCE_RATE_UNDER_65,
+        num(&section["divorce_late_rate_under_65"]["value"])
+    );
+    assert_eq!(
+        firesight_core::model::DIVORCE_SPENDING_FACTOR,
+        num(&section["divorce_spending_factor"]["value"])
+    );
 }

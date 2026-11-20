@@ -165,3 +165,40 @@ pub const MARKETS: [MarketKind; 4] = [
     MarketKind::Lognormal,
     MarketKind::Historical,
 ];
+
+/// The dual-income demo with every household-dynamics feature switched on
+/// (divorce risk and a divorce event, parents with estates and care, spousal
+/// caregiving, life insurance), for the conservation and finite-value tests.
+pub fn household_dynamics() -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    p.household.married = Some(START - 48);
+    p.household.divorce_risk = DivorceRisk::Typical(DivorceTerms {
+        keeps_home: false,
+        support: Support {
+            annual: 9_000.0,
+            years: 4.0,
+            direction: SupportDirection::Receives,
+        },
+        ..DivorceTerms::default()
+    });
+    p.events.push(LifeEvent {
+        id: "divorce".into(),
+        name: "Divorce".into(),
+        when: When::date(START + 200),
+        probability: 0.3,
+        kind: EventKind::Divorce(DivorceTerms {
+            support: Support {
+                annual: 15_000.0,
+                years: 6.0,
+                direction: SupportDirection::Pays,
+            },
+            ..DivorceTerms::default()
+        }),
+        ..LifeEvent::default()
+    });
+    p
+}

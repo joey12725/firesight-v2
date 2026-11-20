@@ -289,6 +289,8 @@ pub(crate) struct State {
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    // Household dynamics (`sim/family`).
+    pub fam: super::family::FamilyState,
 }
 
 impl State {
@@ -472,6 +474,7 @@ impl State {
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
             tax_details: Vec::new(),
+            fam: super::family::FamilyState::default(),
         }
     }
 
@@ -784,6 +787,7 @@ impl State {
         // the funded test before the first annual plan, and would otherwise read
         // whatever the previous path in this workspace left behind.
         self.init_first_year(plan);
+        self.begin_family(plan, seed, path);
     }
 
     /// Applies one stress overlay if its date is known. `at_retirement` is true when

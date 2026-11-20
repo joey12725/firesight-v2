@@ -73,9 +73,17 @@ impl State {
                 replan = true;
             }
         }
-        if self.n == 2 && self.alive[1] && !self.present[1] && ti >= plan.people[1].joins {
+        if self.n == 2
+            && self.alive[1]
+            && !self.present[1]
+            && ti >= plan.people[1].joins
+            && !self.fam.left[1]
+        {
             self.join(plan, econ.price_level[t], t);
             replan = true;
+        }
+        if plan.family.active {
+            replan |= self.family_month(plan, econ.price_level[t], t);
         }
         if !self.retired && ti >= self.retire_month {
             self.begin_retirement(plan, econ, t);
@@ -1048,11 +1056,11 @@ impl State {
         let mut ess = 0.0;
         let mut disc = 0.0;
         let mut next = i32::MAX;
-        let survivor_factor = if self.survivor {
+        let survivor_factor = (if self.survivor {
             plan.profile.spending.survivor_factor
         } else {
             1.0
-        };
+        }) * self.fam.shared_factor;
         for (i, item) in plan.items.iter().enumerate() {
             let start = item.start.month(retire_month);
             let end = item.end.month(retire_month);

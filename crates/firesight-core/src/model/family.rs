@@ -1,0 +1,128 @@
+//! Household dynamics: divorce, the household's parents, caregiving and life
+//! insurance. Every field here defaults to "off", so a profile that does not
+//! mention them simulates exactly as before.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+/// Average attorney fees of a divorce with a full-scope lawyer: Martindale-Nolo
+/// Research survey (2019), $11,300 (median $7,000; $10,400 when settled out of
+/// court, $17,700 when a dispute went to trial). Taken as today's dollars.
+pub const DIVORCE_LEGAL_COSTS: f64 = 11_300.0;
+
+/// Default share of the couple's shared spending that the person who stays spends
+/// alone after a divorce. Between the two usual equivalence scales: the OECD
+/// square-root scale gives one adult `1 / sqrt(2) = 0.71` of what two spend, the
+/// OECD-modified scale `1 / 1.5 = 0.67` (OECD, "What are equivalence scales?").
+/// The choice of 0.7 within that range is a judgement, registered in
+/// `data/actuarial/params.json` under `unverified_from_memory`.
+/// Two households of 0.7 each cost 1.4 times the one they replace.
+pub const DIVORCE_SPENDING_FACTOR: f64 = 0.7;
+
+/// Cumulative probability that a first marriage has ended in separation or divorce
+/// by 5, 10 and 15 years: 20%, 33% and 43% (Bramlett and Mosher 2001, "First
+/// marriage dissolution, divorce, and remarriage: United States", NCHS Advance Data
+/// 323, from the 1995 National Survey of Family Growth).
+pub const DISSOLUTION_BY_DURATION: [(f64, f64); 3] = [(5.0, 0.20), (10.0, 0.33), (15.0, 0.43)];
+
+/// Annual divorce rate of married people aged 50 to 64 after the first fifteen
+/// years of marriage: 10.05 divorces per 1,000 married persons aged 50 and older
+/// in 2010 (Brown and Lin 2012, "The gray divorce revolution", Journals of
+/// Gerontology Series B 67(6)), the rate of the age group that has since been
+/// stable. Applied to younger couples married fifteen years or more too. The figure
+/// is quoted from memory and its use below 50 is a judgement: registered in
+/// `data/actuarial/params.json` under `unverified_from_memory`.
+pub const LATE_DIVORCE_RATE_UNDER_65: f64 = 0.010;
+
+/// Annual divorce rate at 65 and older: 6 per 1,000 married persons in 2019
+/// (Carlson, "Age variation in the divorce rate, 1990 & 2019", NCFMR Family
+/// Profile FP-21-16, Bowling Green State University).
+pub const LATE_DIVORCE_RATE_65_PLUS: f64 = 0.006;
+
+/// What happens when the couple divorces.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DivorceTerms {
+    /// Share of the household's net worth (savings and home equity less debts) that
+    /// the departing partner (the second person) takes, from 0 to 1. 0.5 is an even
+    /// split. It is paid out of savings and retirement accounts in proportion to
+    /// their size; transfers between spouses in a divorce are not taxed.
+    pub asset_split: f64,
+    /// Alimony or child support paid or received after the divorce.
+    pub support: Support,
+    /// True: the person who stays keeps the home and its mortgage, and the departing
+    /// partner's share of its equity comes out of savings. False: the home is sold
+    /// (6% selling costs) and the proceeds are split with everything else.
+    pub keeps_home: bool,
+    /// Rent the person who stays pays after a sale (`keeps_home` false), today's
+    /// dollars a month. Leave empty to rent at 4% of the sale price a year.
+    pub then_rent_monthly: Option<f64>,
+    /// Legal and filing costs paid by the household, today's dollars. Default
+    /// $11,300, the average attorney fees of a divorce with a full-scope lawyer
+    /// (Martindale-Nolo 2019; median $7,000). Much less when uncontested.
+    pub legal_costs: f64,
+    /// Shared budget lines are multiplied by this factor after the divorce: one
+    /// adult living alone spends about 0.7 of what the couple did (economies of
+    /// scale are lost, so two households cost more than one).
+    pub spending_factor: f64,
+}
+
+impl Default for DivorceTerms {
+    fn default() -> Self {
+        Self {
+            asset_split: 0.5,
+            support: Support::default(),
+            keeps_home: true,
+            then_rent_monthly: None,
+            legal_costs: DIVORCE_LEGAL_COSTS,
+            spending_factor: DIVORCE_SPENDING_FACTOR,
+        }
+    }
+}
+
+/// Alimony or child support after a divorce. Under current federal law (divorces
+/// from 2019 on) neither is deductible for the payer nor taxable for the recipient.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Support {
+    /// Amount per year in today's dollars, fixed in dollars at the divorce date
+    /// (court orders are rarely indexed). 0 for none.
+    pub annual: f64,
+    /// Number of years it is paid.
+    pub years: f64,
+    /// Whether the person who stays pays it or receives it.
+    pub direction: SupportDirection,
+}
+
+/// Who pays support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportDirection {
+    /// The household (the person who stays) pays it: essential spending.
+    #[default]
+    Pays,
+    /// The household receives it: untaxed other income.
+    Receives,
+}
+
+/// Whether the plan includes the risk that the couple divorces.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DivorceRisk {
+    /// No divorce unless a `divorce` event says so.
+    #[default]
+    Off,
+    /// Divorce at US rates by length of marriage and age: about 20% of first
+    /// marriages end within 5 years, 33% within 10 and 43% within 15 (NCHS,
+    /// Bramlett and Mosher 2001), then about 1% a year to 65 and 0.6% after. Needs
+    /// `household.married`. These rates include separations and are for first
+    /// marriages; a long, stable marriage may be at lower risk.
+    Typical(DivorceTerms),
+}
+
+impl DivorceRisk {
+    /// True when no divorce hazard is modelled.
+    pub fn is_off(&self) -> bool {
+        matches!(self, DivorceRisk::Off)
+    }
+}
