@@ -308,7 +308,7 @@ impl State {
             };
             let years = self.se_years(plan, k, t);
             let disabled_factor = if plan.rz.any {
-                self.rz_se_factor(p)
+                self.rz_se_factor(plan, k, p, t, recession != 0)
             } else {
                 1.0
             };
@@ -353,6 +353,9 @@ impl State {
                     self.led[YearSeries::SaveTraditional.index()] += d.employee_pretax;
                     self.ty.pretax_deferrals[p] += d.employee_pretax;
                 }
+            }
+            if plan.rz.any {
+                self.rz_se_fallback(plan, k, p, price);
             }
         }
 

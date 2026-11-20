@@ -459,6 +459,60 @@ pub struct SelfEmployment {
     /// Share of net profit contributed to a solo 401(k) or SEP, pre-tax (0.10 = 10%).
     /// Capped at the IRS limit.
     pub solo_401k_fraction: f64,
+    /// Whether the business has cycles and can fail. Off by default (profit then
+    /// follows only `volatility`). When on, profit also moves with a persistent
+    /// good-or-bad regime and falls in recessions, and each month the business may
+    /// fail at rates that fall with its age (about 20% in the first year, 34% still
+    /// open after ten); a failed business pays nothing for good. "high" is a riskier
+    /// business: bigger swings and a failure hazard 1.5 times higher. Needs
+    /// `assumptions.career_risk` on.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub business_risk: BusinessRisk,
+    /// Years the business had already been running when the plan starts. Sets its
+    /// place on the failure curve; ignored for work that starts later (age 0 then).
+    /// Only used with `business_risk` on. 0 means it is brand new.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub years_operating: f64,
+    /// Paid work the person takes after the business fails, if any. Needs
+    /// `business_risk` on. Leave empty for no income after a failure.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub fallback_wage: Option<FallbackWage>,
+}
+
+/// The job a person takes when their business fails.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct FallbackWage {
+    /// Gross wage per year in today's dollars, paid until the person retires.
+    pub annual: f64,
+    /// Months between the failure and the first pay (the job search).
+    pub search_months: u32,
+}
+
+impl Default for FallbackWage {
+    fn default() -> Self {
+        Self {
+            annual: 40_000.0,
+            search_months: 4,
+        }
+    }
+}
+
+/// Whether a self-employment income has cycles and can fail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BusinessRisk {
+    /// Profit varies only by `volatility` and the business never fails (the default).
+    #[default]
+    Off,
+    /// Persistent good and bad years, lower profit in recessions, and failure at the
+    /// rates of US business establishments (BLS: 79.6% survive the first year, about
+    /// 35% reach ten).
+    Typical,
+    /// A riskier business: larger swings, bigger recession losses and failure 1.5
+    /// times as likely as for a typical establishment (for example a sole
+    /// proprietorship or a young venture).
+    High,
 }
 
 impl Default for SelfEmployment {
@@ -469,6 +523,9 @@ impl Default for SelfEmployment {
             real_growth: 0.0,
             ends_at_retirement: true,
             solo_401k_fraction: 0.0,
+            business_risk: BusinessRisk::Off,
+            years_operating: 0.0,
+            fallback_wage: None,
         }
     }
 }

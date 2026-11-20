@@ -839,3 +839,180 @@ fn f19_profile_conserves_money_and_stays_finite() {
     p.household.people[0].disability_risk = DisabilityRisk::Typical;
     conserves_and_is_finite(&p, 200);
 }
+
+// ---------------------------------------------------------------------------
+// F20: self-employment cycles and business failure
+// ---------------------------------------------------------------------------
+
+/// A 40-year-old running a business of `profit` a year, retiring at 60.
+fn owner(profit: f64) -> Profile {
+    let mut who = person("o", 40, Sex::Unspecified);
+    who.social_security.basis = SocialSecurityBasis::None;
+    let mut p = quiet(vec![who], 95.0);
+    p.assumptions.career_risk = true;
+    p.incomes = vec![Income {
+        id: "shop".into(),
+        name: "Shop".into(),
+        owner: 0,
+        kind: IncomeKind::SelfEmployment(SelfEmployment {
+            net_annual: profit,
+            volatility: 0.2,
+            ..SelfEmployment::default()
+        }),
+        ..Income::default()
+    }];
+    p.spending.items = vec![item("living", Category::Other, 2_000.0, true)];
+    p.accounts = vec![account("cash", 0, AccountKind::Cash, 50_000.0)];
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 60.0,
+    };
+    p
+}
+
+fn business(p: &mut Profile, risk: BusinessRisk, fallback: Option<FallbackWage>, years: f64) {
+    if let IncomeKind::SelfEmployment(se) = &mut p.incomes[0].kind {
+        se.business_risk = risk;
+        se.fallback_wage = fallback;
+        se.years_operating = years;
+    }
+}
+
+fn profit(p: &Profile, path: u64) -> Vec<f64> {
+    column(p, path, "income_self_employment")
+}
+
+#[test]
+fn f20_off_is_identical_and_not_serialised() {
+    let base = owner(60_000.0);
+    let mut off = base.clone();
+    business(&mut off, BusinessRisk::Off, None, 0.0);
+    for path in 0..10 {
+        assert_eq!(profit(&base, path), profit(&off, path));
+    }
+    let json = serde_json::to_string(&base).unwrap();
+    assert!(!json.contains("business_risk") && !json.contains("fallback_wage"));
+    // Without career_risk the feature is inert.
+    let mut on = base.clone();
+    business(&mut on, BusinessRisk::High, None, 0.0);
+    on.assumptions.career_risk = false;
+    let mut reference = base.clone();
+    reference.assumptions.career_risk = false;
+    assert_eq!(profit(&on, 3), profit(&reference, 3));
+}
+
+#[test]
+fn f20_first_year_failure_matches_the_bls_rate_and_stops_income() {
+    let off = owner(60_000.0);
+    let mut on = off.clone();
+    business(&mut on, BusinessRisk::Typical, None, 0.0);
+    let (mut failed_in_year, mut n) = (0, 0);
+    for path in 0..800 {
+        n += 1;
+        let months = event_months(&on, path, "Business failed");
+        assert!(months.len() <= 1, "fails at most once");
+        if let Some(m) = months.first() {
+            if *m < 12 {
+                failed_in_year += 1;
+            }
+            let pr = profit(&on, path);
+            assert!(
+                pr[*m as usize..].iter().all(|x| *x == 0.0),
+                "profit after failure, path {path}"
+            );
+            assert!(pr[..*m as usize].iter().any(|x| *x > 0.0) || *m < 2);
+        }
+    }
+    // BLS: 20.4% close in the first year; recessions on some paths push it up a bit.
+    let share = f64::from(failed_in_year) / f64::from(n);
+    assert!(
+        (0.15..0.28).contains(&share),
+        "first-year failure share {share}"
+    );
+}
+
+#[test]
+fn f20_fallback_wage_starts_after_the_search_spell() {
+    let mut p = owner(60_000.0);
+    business(
+        &mut p,
+        BusinessRisk::High,
+        Some(FallbackWage {
+            annual: 36_000.0,
+            search_months: 5,
+        }),
+        0.0,
+    );
+    let mut checked = 0;
+    for path in 0..200 {
+        let Some(m) = event_months(&p, path, "Business failed").first().copied() else {
+            continue;
+        };
+        let m = m as usize;
+        if m + 8 >= 240 {
+            continue;
+        }
+        let w = column(&p, path, "income_wages");
+        assert!(
+            w[m..m + 5].iter().all(|x| *x == 0.0),
+            "search spell, path {path}"
+        );
+        // 36,000 a year in today's dollars is 3,000 a month before inflation; the
+        // trace is in today's dollars.
+        assert!(
+            (w[m + 5] - 3_000.0).abs() < 1.0,
+            "path {path}: {}",
+            w[m + 5]
+        );
+        assert!((w[m + 7] - 3_000.0).abs() < 1.0);
+        checked += 1;
+    }
+    assert!(checked > 30, "{checked} failures checked");
+}
+
+#[test]
+fn f20_lowers_lifetime_profit_in_the_expected_direction() {
+    let off = owner(60_000.0);
+    let mut typical = off.clone();
+    business(&mut typical, BusinessRisk::Typical, None, 0.0);
+    let mut high = off.clone();
+    business(&mut high, BusinessRisk::High, None, 0.0);
+    let (mut a, mut b, mut c) = (0.0, 0.0, 0.0);
+    for path in 0..300 {
+        a += profit(&off, path).iter().sum::<f64>();
+        b += profit(&typical, path).iter().sum::<f64>();
+        c += profit(&high, path).iter().sum::<f64>();
+    }
+    // Twenty years of the hazard table alone average to a 61% loss of profit (mean
+    // survival over the years, worked out by hand from FAIL_HAZARD_BY_YEAR); the
+    // recession drop and the recession and regime hazards add a few points.
+    let (lt, lh) = (1.0 - b / a, 1.0 - c / a);
+    assert!((0.58..0.72).contains(&lt), "typical loss {lt}");
+    assert!(lh > lt + 0.03, "high {lh} vs typical {lt}");
+    // An established business (ten years old) fails far less.
+    let mut old = off.clone();
+    business(&mut old, BusinessRisk::Typical, None, 10.0);
+    let mut d = 0.0;
+    for path in 0..300 {
+        d += profit(&old, path).iter().sum::<f64>();
+    }
+    assert!(1.0 - d / a < lt - 0.1, "established loss {}", 1.0 - d / a);
+}
+
+#[test]
+fn f20_profile_conserves_money_and_stays_finite() {
+    let mut p = owner(60_000.0);
+    business(
+        &mut p,
+        BusinessRisk::High,
+        Some(FallbackWage {
+            annual: 40_000.0,
+            search_months: 3,
+        }),
+        1.0,
+    );
+    if let IncomeKind::SelfEmployment(se) = &mut p.incomes[0].kind {
+        se.solo_401k_fraction = 0.1;
+    }
+    conserves_and_is_finite(&p, 200);
+}

@@ -496,6 +496,12 @@ impl Checker<'_> {
             match &inc.kind {
                 IncomeKind::Job(job) => self.job(&k, job),
                 IncomeKind::SelfEmployment(se) => {
+                    crate::career_realism::validate::self_employment(
+                        &mut self.r,
+                        &k,
+                        se,
+                        p.assumptions.career_risk,
+                    );
                     self.r.money(
                         &format!("{k}/net_annual"),
                         "Net self-employment income",

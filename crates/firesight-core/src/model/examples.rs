@@ -614,6 +614,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             real_growth: 0.01,
             ends_at_retirement: true,
             solo_401k_fraction: 0.0,
+            ..SelfEmployment::default()
         }),
         start: Some(When::date(move_month)),
         ..Income::default()

@@ -1,7 +1,10 @@
 //! Profile checks for the career-realism fields. Called from `validate.rs` with one
 //! line per kind of income or person; the findings are pushed onto the same report.
 
-use crate::model::{DisabilityRisk, Job, JobMobility, LateCareer, Person, RecessionPay, RiskLevel};
+use crate::model::{
+    BusinessRisk, DisabilityRisk, Job, JobMobility, LateCareer, Person, RecessionPay, RiskLevel,
+    SelfEmployment,
+};
 use crate::validate::{Issue, Report};
 
 fn issue(code: &str, path: String, message: &str) -> Issue {
@@ -93,6 +96,63 @@ pub fn person(r: &mut Report, path: &str, person: &Person, works: bool) {
                     "LTD end age is {}; it must be between 40 and 80 (65 is typical).",
                     l.to_age
                 ),
+            ));
+        }
+    }
+}
+
+/// Checks the business-risk fields of a self-employment income. `k` is the path of the
+/// income's `kind`; `career_risk` is `assumptions.career_risk`.
+pub fn self_employment(r: &mut Report, k: &str, se: &SelfEmployment, career_risk: bool) {
+    if se.business_risk == BusinessRisk::Off {
+        if se.fallback_wage.is_some() || se.years_operating != 0.0 {
+            r.warnings.push(issue(
+                "business_fields_inert",
+                format!("{k}/business_risk"),
+                "years_operating and fallback_wage matter only when business_risk is \
+                 typical or high; set business_risk or remove them.",
+            ));
+        }
+        return;
+    }
+    if !career_risk {
+        r.warnings.push(issue(
+            "business_risk_inert",
+            format!("{k}/business_risk"),
+            "Business cycles and failure are part of career risk and do nothing while \
+             assumptions.career_risk is off. Switch career_risk on or set business_risk \
+             to off.",
+        ));
+    }
+    if !se.years_operating.is_finite() || !(0.0..=60.0).contains(&se.years_operating) {
+        r.errors.push(issue(
+            "out_of_range",
+            format!("{k}/years_operating"),
+            &format!(
+                "Years operating is {}; it must be between 0 and 60.",
+                se.years_operating
+            ),
+        ));
+    }
+    if let Some(f) = &se.fallback_wage {
+        if !f.annual.is_finite() || f.annual < 0.0 {
+            r.errors.push(issue(
+                "out_of_range",
+                format!("{k}/fallback_wage/annual"),
+                "The fallback wage must be zero or more dollars a year.",
+            ));
+        } else if f.annual > 1_000_000.0 {
+            r.warnings.push(issue(
+                "fallback_wage_high",
+                format!("{k}/fallback_wage/annual"),
+                "A fallback wage over $1,000,000 a year is implausible. Check the figure.",
+            ));
+        }
+        if f.search_months > 60 {
+            r.warnings.push(issue(
+                "fallback_search_long",
+                format!("{k}/fallback_wage/search_months"),
+                "A search spell over five years is implausible. Check the figure.",
             ));
         }
     }

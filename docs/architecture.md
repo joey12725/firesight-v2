@@ -105,7 +105,10 @@ IncomeKind =
         equity: Vec<EquityGrant>,
         plan: Option<EmployerPlan>, hsa_contribution: f64, hsa_employer: f64,
         ends_at_retirement: bool (true) }
-  SelfEmployment { net_annual, volatility, real_growth, ends_at_retirement, solo_401k_fraction }
+  SelfEmployment { net_annual, volatility, real_growth, ends_at_retirement, solo_401k_fraction,
+                   business_risk: Off|Typical|High,         // opt-in cycles and failure (methodology 6.5)
+                   years_operating,                         // age of the business at the start (failure curve)
+                   fallback_wage: Option<FallbackWage{ annual, search_months }> }
   Pension  { annual, cola: Full|None|Partial{rate}, survivor_fraction }
   Annuity  { annual, real: bool }
   Other    { annual, taxable: bool, real_growth, ends_at_retirement }

@@ -170,18 +170,6 @@ impl State {
         }
     }
 
-    /// 1 for a working person, 0 while disabled: scales self-employment profit.
-    #[inline]
-    pub(super) fn rz_se_factor(&self, p: usize) -> f64 {
-        if self.rz.dis.get(p).is_some_and(|d| d.disabled)
-            || self.rz.never.get(p).copied().unwrap_or(false)
-        {
-            0.0
-        } else {
-            1.0
-        }
-    }
-
     /// Whether person `p`'s Social Security record is frozen at the disability PIA.
     #[inline]
     pub(super) fn rz_record_frozen(&self, p: usize) -> bool {

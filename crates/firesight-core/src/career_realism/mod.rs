@@ -5,6 +5,8 @@
 //! | Voluntary job changes with pay jumps | `risk.job_mobility` | [`mobility`] |
 //! | Recession pay freezes, hours cuts, smaller bonuses | `risk.recession_pay` | [`recession_pay`] |
 //! | Long-term disability, SSDI and LTD | `people[].disability_risk` | [`disability`] |
+//! | Older workers, involuntary retirement | `risk.late_career` | [`late_career`] |
+//! | Business cycles and failure | `business_risk` on self-employment | [`business`] |
 //!
 //! (Later features register here as they land.)
 //!
@@ -26,6 +28,7 @@
 //! The simulation-side hooks live in `sim/realism.rs` (they need the path state); this
 //! module holds the pure mechanisms, which are unit-tested on their own.
 
+pub mod business;
 pub mod disability;
 pub mod late_career;
 pub mod mobility;
@@ -36,6 +39,7 @@ use crate::data::Data;
 use crate::model::{IncomeKind, JobMobility, LateCareer, Profile, RecessionPay, RiskLevel};
 use crate::rng::{Rng, Stream};
 
+use business::{BusinessModel, BusinessState};
 use disability::{DisabilityModel, DisabilityState};
 use late_career::LateCareerModel;
 use mobility::MobilityModel;
@@ -55,6 +59,9 @@ pub const JOB_WORDS: usize = 6;
 pub const KIND_JOB: u8 = 0;
 /// `Stream::CareerExt` kind: one stream per person (index into the plan's people).
 pub const KIND_PERSON: u8 = 1;
+/// `Stream::CareerExt` kind: one stream per self-employment income (index into the
+/// plan's self-employment incomes).
+pub const KIND_SE: u8 = 2;
 
 /// Compiled realism settings of one job.
 #[derive(Clone, Debug, Default)]
@@ -83,6 +90,8 @@ pub struct RealismPlan {
     pub jobs: Vec<JobRealism>,
     /// One entry per person: the disability model when switched on.
     pub people: Vec<Option<DisabilityModel>>,
+    /// One entry per self-employment income: the business model when switched on.
+    pub selfemp: Vec<Option<BusinessModel>>,
 }
 
 impl RealismPlan {
@@ -116,6 +125,21 @@ impl RealismPlan {
                 }
                 plan.any |= jr.any();
                 plan.jobs.push(jr);
+            }
+        }
+        for income in &profile.incomes {
+            if let IncomeKind::SelfEmployment(se) = &income.kind {
+                let model = if risk_on {
+                    BusinessModel::new(
+                        se.business_risk,
+                        se.fallback_wage.map(|f| (f.annual, f.search_months)),
+                        se.years_operating.max(0.0),
+                    )
+                } else {
+                    None
+                };
+                plan.any |= model.is_some();
+                plan.selfemp.push(model);
             }
         }
         for person in &profile.household.people {
@@ -156,6 +180,15 @@ pub struct PersonDraw {
     pub u_recover: f64,
 }
 
+/// The variates one business draws in one month.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BusinessDraw {
+    /// Uniform: does the business fail.
+    pub u_fail: f64,
+    /// Standard normal: the January regime innovation.
+    pub z: f64,
+}
+
 /// Per-path realism state.
 #[derive(Clone, Debug, Default)]
 pub struct RealismState {
@@ -175,6 +208,12 @@ pub struct RealismState {
     pub dis: Vec<DisabilityState>,
     /// True once a person has been laid off and will never work again (F19).
     pub never: Vec<bool>,
+    /// One generator per self-employment income (empty when no feature is on).
+    pub se_rng: Vec<Rng>,
+    /// This month's variates per self-employment income.
+    pub se_draw: Vec<BusinessDraw>,
+    /// Business state per self-employment income.
+    pub biz: Vec<BusinessState>,
 }
 
 impl RealismState {
@@ -182,6 +221,7 @@ impl RealismState {
     pub fn new(plan: &RealismPlan) -> RealismState {
         let n = if plan.any { plan.jobs.len() } else { 0 };
         let np = if plan.any { plan.people.len() } else { 0 };
+        let ns = if plan.any { plan.selfemp.len() } else { 0 };
         RealismState {
             job_rng: vec![Rng::from_seed(0); n],
             job_draw: vec![JobDraw::default(); n],
@@ -191,6 +231,9 @@ impl RealismState {
             person_draw: vec![PersonDraw::default(); np],
             dis: vec![DisabilityState::default(); np],
             never: vec![false; np],
+            se_rng: vec![Rng::from_seed(0); ns],
+            se_draw: vec![BusinessDraw::default(); ns],
+            biz: vec![BusinessState::default(); ns],
         }
     }
 
@@ -210,6 +253,12 @@ impl RealismState {
         }
         self.dis.fill(DisabilityState::default());
         self.never.fill(false);
+        for (k, rng) in self.se_rng.iter_mut().enumerate() {
+            if plan.selfemp[k].is_some() {
+                *rng = Rng::stream(seed, path, Stream::CareerExt(KIND_SE, k));
+            }
+        }
+        self.biz.fill(BusinessState::default());
     }
 
     /// Draws this month's variates for every job that uses a feature: always
@@ -229,6 +278,18 @@ impl RealismState {
                 u_size: rng.uniform(),
                 u_never: rng.uniform(),
             };
+        }
+        // Two draws per business-enabled self-employment income, whatever happens.
+        for (k, model) in plan.selfemp.iter().enumerate() {
+            if model.is_some() {
+                let rng = &mut self.se_rng[k];
+                let u_fail = rng.uniform();
+                let u = rng.uniform_open();
+                self.se_draw[k] = BusinessDraw {
+                    u_fail,
+                    z: crate::rng::inverse_normal_cdf(u),
+                };
+            }
         }
         // Two words per disability-enabled person, whatever happens.
         for (i, model) in plan.people.iter().enumerate() {

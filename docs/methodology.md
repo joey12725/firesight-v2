@@ -514,6 +514,52 @@ hazard itself with age beyond the career model's, partial retirement or bridge j
 after a layoff, employer retirement incentives and buyouts, and the age at which UI
 runs out differing by state.
 
+### 6.5 Self-employment cycles and business failure (opt-in: `business_risk`)
+
+Off by default; needs `assumptions.career_risk` on. The base self-employment model
+already redraws a unit-mean log-normal profit factor each January, half persistent and
+correlated with the last year's stock return, which gives some co-movement with the
+economy. `typical` and `high` add, on top of that, three things:
+
+* **A persistent regime**: a standardised state redrawn each January,
+  `z <- 0.7 z + sqrt(0.51) e`, which scales profit by `exp(sd z - sd^2 Var[z] / 2)`
+  (unit mean; sd 0.20 typical, 0.35 high), so good and bad years come in runs.
+* **Recession months** cut profit by 10% (typical) or 20% (high), using the path's
+  recession flag. This is not mean-preserving, on purpose: the base model has no
+  recession effect.
+* **Failure**: a monthly hazard from a yearly rate by business age: 20.4%, 15%, 12%,
+  10%, 9% in years 1 to 5 and 7% after. It is 1.3 times higher in a recession month,
+  multiplied by `exp(-0.25 z)` (bad regimes fail more) and, for `high`, by 1.5 (capped at
+  95% a year). A business started in the future has age 0 at its start; one already
+  running has `years_operating` plus the time since the plan began (so set it, or a
+  decades-old practice is treated as a start-up). A failed business pays nothing for
+  good and counts as ended for the retirement planner and trigger. With `fallback_wage`
+  the person, after `search_months`, earns that wage (today's dollars) as ordinary wages
+  with payroll tax until they retire; no retirement-plan contributions. A "Business
+  failed" event is logged.
+
+*Sources.* Verified: BLS Business Employment Dynamics: 79.6% of the March 1994 cohort of
+establishments open after one year (TED 2018), 20.4 points of the 2013 cohort closed in
+its first year and 34.7% was open after ten (TED 2024). Hazards for years 2 to 5 and 6
+onward are judgements fitted to that ten-year figure (the BLS two- and five-year rates
+could not be retrieved); regime, recession and hazard sensitivities are judgements.
+Constants are in `career_realism/business.rs` and `params.json`
+(`unverified_from_memory.career_realism.business`). BED counts establishments, most with
+employees: sole proprietors fail more, which is what `high` is for.
+
+*Measured* (side-hustle-landlord, the consulting income only, `typical`, fallback wage
+$50,000 after four months, 3,000 paths, seed 1): success rate 92.2% off, 91.9% on; median
+terminal net worth $988k off, $983k on; 10th percentile $158k off, $157k on. The effect is
+small because the consulting income starts in 2031 and the household retires at about 47
+in most paths, so the business runs only a few years. The test for a 20-year business
+shows 66% less lifetime profit than with the feature off (61% from the hazard table
+alone, worked out by hand), and a ten-year-old business loses over ten points less.
+
+*Not modelled:* firm size or sector, a partner or employees, selling the business or
+winding it down with proceeds, debt or a personal guarantee, restarting a business, a
+fallback that is itself self-employment, a retirement plan on the fallback job, and the
+retirement planner counting on the fallback wage before a failure.
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own
