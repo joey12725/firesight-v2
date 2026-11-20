@@ -77,6 +77,10 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         kitchen_sink_lite(),
         2.0,
     )));
+    profiles.push(common::with_housing_decisions_hecm(common::overspending(
+        kitchen_sink_lite(),
+        2.0,
+    )));
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

@@ -63,3 +63,56 @@ fn heloc_defaults_match_the_data_file() {
         value(&h["housing_slump_drawdown"])
     );
 }
+
+#[test]
+fn hecm_constants_match_the_data_file() {
+    use firesight_core::model::ReverseMortgage;
+    let h = &section()["hecm"];
+    assert_eq!(home_equity::HECM_UPFRONT_MIP, value(&h["upfront_mip"]));
+    assert_eq!(home_equity::HECM_ANNUAL_MIP, value(&h["annual_mip"]));
+    assert_eq!(
+        home_equity::HECM_MAX_CLAIM_2026,
+        value(&h["max_claim_2026"])
+    );
+    assert_eq!(home_equity::HECM_MIN_AGE, value(&h["min_age"]));
+    assert_eq!(
+        home_equity::HECM_EXPECTED_RATE_FLOOR,
+        value(&h["expected_rate_floor"])
+    );
+    assert_eq!(
+        home_equity::HECM_FIRST_YEAR_SHARE,
+        value(&h["first_year_share"])
+    );
+    let fee: Vec<f64> = h["origination_fee"]["value"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    assert_eq!(
+        fee,
+        vec![
+            home_equity::HECM_ORIGINATION_MIN,
+            home_equity::HECM_ORIGINATION_MAX,
+            home_equity::HECM_ORIGINATION_TIER
+        ]
+    );
+    let plf = &h["principal_limit_factors"];
+    for (i, row) in plf["value"].as_array().unwrap().iter().enumerate() {
+        for (j, v) in row.as_array().unwrap().iter().enumerate() {
+            assert_eq!(home_equity::PLF_TABLE[i][j], v.as_f64().unwrap(), "{i} {j}");
+        }
+    }
+    for (i, a) in plf["ages"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(home_equity::PLF_AGES[i], a.as_f64().unwrap());
+    }
+    for (j, r) in plf["expected_rates"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(home_equity::PLF_RATES[j], r.as_f64().unwrap());
+    }
+    let d = ReverseMortgage::default();
+    assert_eq!(d.lender_margin, value(&h["default_lender_margin"]));
+    assert_eq!(
+        d.other_closing_costs,
+        value(&h["default_other_closing_costs"])
+    );
+}

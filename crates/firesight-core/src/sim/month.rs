@@ -554,7 +554,7 @@ impl State {
         }
         self.home_index *= 1.0 + home_national;
         if plan.hx.monthly {
-            self.hx_month(plan, econ, t);
+            self.hx_month(plan, econ, t, price);
         }
 
         // 8. Debts: required payments, then the extra payment by strategy.

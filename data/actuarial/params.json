@@ -2125,6 +2125,60 @@
         "source": "Judgement: lenders tightened existing lines when collateral values fell (SLOOS April 2008); a 10% fall of national prices from their peak marks a slump outside a recession.",
         "confidence": "judgement"
       }
+    },
+    "hecm": {
+      "upfront_mip": {
+        "value": 0.02,
+        "source": "HUD Mortgagee Letter 2017-12 (case numbers from 2 October 2017): upfront mortgage insurance premium 2.00% of the maximum claim amount for all loans.",
+        "confidence": "high"
+      },
+      "annual_mip": {
+        "value": 0.005,
+        "source": "HUD Mortgagee Letter 2017-12: annual mortgage insurance premium 0.50% of the loan balance.",
+        "confidence": "high"
+      },
+      "max_claim_2026": {
+        "value": 1249125.0,
+        "source": "HUD Mortgagee Letter 2025-22 (11 December 2025): 2026 nationwide HECM maximum claim amount $1,249,125 (2025: $1,209,750); indexed on a path with national home prices.",
+        "confidence": "high"
+      },
+      "min_age": {
+        "value": 62.0,
+        "source": "24 CFR 206.33: the youngest borrower must be at least 62.",
+        "confidence": "high"
+      },
+      "expected_rate_floor": {
+        "value": 0.03,
+        "source": "HUD principal limit factor tables from October 2017 start at an expected rate of 3.0% (NRMLA, Barnes, New HECM Math, 2017).",
+        "confidence": "medium"
+      },
+      "first_year_share": {
+        "value": 0.6,
+        "source": "HUD Mortgagee Letter 2013-27: at most 60% of the principal limit in the first 12 months, or mandatory obligations plus 10% of the principal limit if more.",
+        "confidence": "high"
+      },
+      "origination_fee": {
+        "value": [2500.0, 6000.0, 200000.0],
+        "source": "24 CFR 206.31: the greater of $2,500 or 2% of the first $200,000 of the maximum claim amount plus 1% above it, capped at $6,000.",
+        "confidence": "high"
+      },
+      "principal_limit_factors": {
+        "value": [[0.524, 0.47, 0.41, 0.357, 0.312, 0.272], [0.588, 0.524, 0.467, 0.416, 0.372, 0.332], [0.658, 0.605, 0.556, 0.511, 0.471, 0.434], [0.75, 0.715, 0.682, 0.65, 0.62, 0.592]],
+        "ages": [62, 72, 82, 92],
+        "expected_rates": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08],
+        "source": "HUD, HECM Program: Selected Principal Limit Factors, effective 10/2/2017 (slides published with ML 2017-12, August 2017). Interpolated linearly between the grid points; the full HUD table is by whole age and eighth of a point.",
+        "confidence": "medium"
+      },
+      "default_lender_margin": {
+        "value": 0.02,
+        "source": "Judgement, not verified against a survey: adjustable HECM lender margins taken as 1.5 to 3 points over the index; 2 points is mid-range.",
+        "confidence": "judgement"
+      },
+      "default_other_closing_costs": {
+        "value": 3000.0,
+        "source": "Judgement, not verified against a survey: appraisal, title, counselling and recording fees taken as a few thousand dollars.",
+        "confidence": "judgement"
+      }
     }
   },
   "equity_compensation": {

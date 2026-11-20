@@ -551,6 +551,7 @@ fn housing_decisions_conserve_money() {
     let profiles = [
         with_housing_decisions(overspending(kitchen_sink(), 2.5)),
         with_housing_decisions(kitchen_sink()),
+        with_housing_decisions_hecm(overspending(kitchen_sink(), 2.5)),
     ];
     for profile in profiles {
         for kind in MARKETS {
@@ -560,7 +561,15 @@ fn housing_decisions_conserve_money() {
         }
     }
     for example in Profile::examples(START) {
-        let plan = compile(&with_housing_decisions(overspending(example.profile, 1.6)));
+        let plan = compile(&with_housing_decisions(overspending(
+            example.profile.clone(),
+            1.6,
+        )));
+        run_checked(&plan, 9, 0..paths());
+        let plan = compile(&with_housing_decisions_hecm(overspending(
+            example.profile,
+            1.6,
+        )));
         run_checked(&plan, 9, 0..paths());
     }
 }

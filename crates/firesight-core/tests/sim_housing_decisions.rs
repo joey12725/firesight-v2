@@ -231,3 +231,137 @@ fn heloc_is_drawn_while_still_working() {
     eprintln!("mean depletion age: never frozen {open:.1}, always frozen {shut:.1}");
     assert!(shut < open - 1.0, "{shut} vs {open}");
 }
+
+// ---------------------------------------------------------------------------------
+// F27: reverse mortgage.
+
+fn reverse(open_when: ReverseMortgageOpen) -> HomeEquityBorrowing {
+    HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+        open_when,
+        ..ReverseMortgage::default()
+    })
+}
+
+#[test]
+fn reverse_mortgage_unused_changes_nothing() {
+    let mut rich = house_rich_retiree();
+    rich.accounts[0].balance = 3_000_000.0;
+    rich.accounts[0].cost_basis = Some(3_000_000.0);
+    let base = run(&compile(&rich), SEED, 0..200);
+    rich.retirement.home_equity_borrowing = reverse(ReverseMortgageOpen::LastResort);
+    assert_eq!(
+        base.to_bytes(),
+        run(&compile(&rich), SEED, 0..200).to_bytes()
+    );
+}
+
+#[test]
+fn reverse_mortgage_delays_depletion_and_is_non_recourse() {
+    let base_p = house_rich_retiree();
+    let base = run(&compile(&base_p), SEED, 0..PATHS);
+    let b = col(&base, PathScalar::DepletionAge);
+    let mut last = base_p.clone();
+    last.retirement.home_equity_borrowing = reverse(ReverseMortgageOpen::LastResort);
+    let last_plan = compile(&last);
+    let l = col(
+        &run_checked(&last_plan, SEED, 0..PATHS),
+        PathScalar::DepletionAge,
+    );
+    let mut standby = base_p.clone();
+    standby.retirement.home_equity_borrowing =
+        reverse(ReverseMortgageOpen::SavingsBelow { years: 5.0 });
+    let s = col(
+        &run_checked(&compile(&standby), SEED, 0..PATHS),
+        PathScalar::DepletionAge,
+    );
+    for (x, y) in b.iter().zip(&l) {
+        if !x.is_finite() {
+            assert!(!y.is_finite(), "depleted at {y} only with the loan");
+        } else {
+            assert!(!y.is_finite() || *y >= *x - 1e-3, "earlier: {y} < {x}");
+        }
+    }
+    let (sb, sl, ss) = (share_finite(&b), share_finite(&l), share_finite(&s));
+    eprintln!("depleted: without {sb:.3}, last-resort HECM {sl:.3}, standby HECM {ss:.3}");
+    // A 66-year-old's line on a $600,000 house is about $250,000 once costs are
+    // paid, growing at the loan rate: it buys years.
+    assert!(sl < sb - 0.1, "{sl} vs {sb}");
+    // The standby line helps as much, give or take: it is sized at a younger age and
+    // pays its costs years earlier, while the unused line grows at the loan rate.
+    // Here home values grow almost as fast as the line, so the two end up close
+    // (measured 0.868 against 0.853), and the standby line does not win. The
+    // literature's advantage for it comes from drawing on the line after market
+    // falls, which this rule does not do.
+    assert!(ss < sb - 0.1, "{ss} vs {sb}");
+    assert!((ss - sl).abs() < 0.05, "{ss} vs {sl}");
+    // Non-recourse: what is owed is never booked above the home's value.
+    let mut seen = false;
+    for path in 0..40 {
+        let trace = sim::trace_path(&last_plan, SEED, path);
+        seen |= trace
+            .events
+            .iter()
+            .any(|e| e.label.starts_with("Took a reverse mortgage"));
+        let column = |s: YearSeries| {
+            trace
+                .annual
+                .columns
+                .iter()
+                .find(|c| c.key == s.key())
+                .unwrap()
+                .values
+                .clone()
+        };
+        let (owed, value) = (
+            column(YearSeries::Mortgage),
+            column(YearSeries::PropertyValue),
+        );
+        for (o, v) in owed.iter().zip(&value) {
+            assert!(*o <= *v + 1.0, "owes {o} on a home worth {v}");
+        }
+    }
+    assert!(seen);
+}
+
+#[test]
+fn reverse_mortgage_waits_for_62_and_repays_the_mortgage() {
+    // A 55-year-old retiree with an $80,000 mortgage who runs short at once: nothing
+    // is borrowed before 62; then the reverse mortgage repays the mortgage, whose
+    // payments stop.
+    let mut p = house_rich_retiree();
+    p.household.people[0].birth = START - 55 * 12;
+    p.household.people[0].social_security.claim_age = 67.0;
+    p.accounts[0].balance = 20_000.0;
+    p.accounts[0].cost_basis = Some(20_000.0);
+    p.properties[0].mortgage = Some(Mortgage {
+        balance: 80_000.0,
+        rate: 0.05,
+        remaining_months: 240,
+        ..Mortgage::default()
+    });
+    p.retirement.home_equity_borrowing = reverse(ReverseMortgageOpen::LastResort);
+    let plan = compile(&p);
+    let acc = run_checked(&plan, SEED, 0..50);
+    let years = acc.years as usize;
+    let i = YearSeries::PropertySale.index() * years;
+    assert_eq!(
+        acc.sums[i..i + 6].iter().sum::<i64>(),
+        0,
+        "borrowed before 62"
+    );
+    assert!(
+        acc.sums[i + 7..i + 12].iter().sum::<i64>() > 0,
+        "never borrowed at 62"
+    );
+    let trace = sim::trace_path(&plan, SEED, 0);
+    let opened = trace
+        .events
+        .iter()
+        .find(|e| e.label.starts_with("Took a reverse mortgage"))
+        .expect("a reverse mortgage");
+    assert!(
+        opened.month.year() >= START.year() + 7,
+        "{:?}",
+        opened.month
+    );
+}

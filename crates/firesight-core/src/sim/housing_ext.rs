@@ -8,8 +8,9 @@
 //! # Where the hooks sit in the month
 //!
 //! * step 7 (housing), after every property has stepped: [`State::hx_month`] pays
-//!   the interest and repayments of open lines and updates the lenders' freeze
-//!   state;
+//!   the interest and repayments of open home-equity lines and updates the lenders'
+//!   freeze state; reverse mortgages accrue, and a standby reverse mortgage is opened
+//!   when savings fall below its threshold;
 //! * step 9 (settlement), when liquid savings cannot pay the month: before property
 //!   is sold or an essential is cut, [`State::hx_borrow`] draws on a line;
 //! * step 9, when there is a surplus to invest: [`State::hx_surplus`] first repays
@@ -24,10 +25,16 @@
 //! `spend_housing`, like mortgage payments. Balances are part of the `mortgage`
 //! series (liabilities secured by property). For the conservation check every change
 //! of a line's liability is booked as a mortgage flow ([`State::hx_book`]).
+//!
+//! A reverse mortgage costs no cash while the household lives in the home: its
+//! financed closing costs, interest and insurance are added to the balance, so they
+//! show as a rising `mortgage` (and lower net worth), not as spending. Its liability
+//! is never booked above the home's value (the loan is non-recourse), so the shortfall
+//! of an underwater loan is the FHA insurer's loss, not the estate's.
 
 use crate::economy::EconomyPath;
 use crate::home_equity::{self, EquityLine, HelocTerms, LineKind, HOUSING_SLUMP_DRAWDOWN};
-use crate::model::{HomeEquityBorrowing, Profile, PropertyUse};
+use crate::model::{HomeEquityBorrowing, Profile, PropertyUse, ReverseMortgageOpen};
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEventKind, YearSeries};
 
@@ -39,6 +46,19 @@ use super::state::State;
 pub(crate) enum Borrow {
     None,
     Heloc(HelocTerms),
+    Hecm(HecmTerms),
+}
+
+/// Compiled reverse-mortgage terms.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HecmTerms {
+    /// Lender's margin over the Treasury rate.
+    pub margin: f64,
+    /// Other closing costs, today's dollars.
+    pub other_costs_real: f64,
+    /// Open early (the standby line) when savings fall below this many years of
+    /// planned spending; `None` opens only as a last resort.
+    pub standby_years: Option<f64>,
 }
 
 /// The housing decisions of a profile, compiled.
@@ -63,6 +83,14 @@ impl HxPlan {
                 draw_months: (h.draw_years.max(0.0) * 12.0).round() as u32,
                 repay_months: (h.repay_years.max(0.0) * 12.0).round().max(1.0) as u32,
                 freeze_probability: h.freeze_probability.clamp(0.0, 1.0),
+            }),
+            HomeEquityBorrowing::ReverseMortgage(r) => Borrow::Hecm(HecmTerms {
+                margin: r.lender_margin,
+                other_costs_real: r.other_closing_costs.max(0.0),
+                standby_years: match r.open_when {
+                    ReverseMortgageOpen::LastResort => None,
+                    ReverseMortgageOpen::SavingsBelow { years } => Some(years),
+                },
             }),
         };
         let lines = !matches!(borrow, Borrow::None);
@@ -94,6 +122,7 @@ pub(crate) struct HxState {
     pub home_peak: f64,
     /// Rates of the current month, kept for the settlement step.
     pub tbill: f64,
+    pub long_yield: f64,
 }
 
 impl HxState {
@@ -107,6 +136,7 @@ impl HxState {
             downturn: false,
             home_peak: 1.0,
             tbill: 0.0,
+            long_yield: 0.0,
         }
     }
 
@@ -119,6 +149,7 @@ impl HxState {
         self.downturn = false;
         self.home_peak = 1.0;
         self.tbill = 0.0;
+        self.long_yield = 0.0;
         if let Borrow::Heloc(_) = plan.hx.borrow {
             self.rng = Rng::stream(seed, path, Stream::HomeEquityCredit);
         }
@@ -156,10 +187,13 @@ impl State {
 
     /// Step 7 hook: lenders' freeze state, then interest and repayments on every open
     /// line. Draws exactly one uniform from the lenders' stream each month while a
-    /// home-equity line is part of the plan, whatever the household does.
-    pub(crate) fn hx_month(&mut self, plan: &Plan, econ: &EconomyPath, t: usize) {
+    /// home-equity line is part of the plan, whatever the household does. A reverse
+    /// mortgage accrues, its non-recourse liability is rebooked against the home's new
+    /// value, and a standby line is opened when savings fall low enough.
+    pub(crate) fn hx_month(&mut self, plan: &Plan, econ: &EconomyPath, t: usize, price: f64) {
         let now = plan.start + t as i32;
         self.hx.tbill = econ.tbill[t];
+        self.hx.long_yield = econ.long_yield[t];
         if let Borrow::Heloc(terms) = plan.hx.borrow {
             let u = self.hx.rng.uniform();
             if self.home_index > self.hx.home_peak {
@@ -196,6 +230,91 @@ impl State {
                 self.hx_book(slot);
             }
         }
+        if let Borrow::Hecm(terms) = plan.hx.borrow {
+            for slot in 0..self.hx.lines.len() {
+                if self.hx.lines[slot].kind != LineKind::Hecm {
+                    continue;
+                }
+                home_equity::hecm_month(&mut self.hx.lines[slot], self.hx.tbill, terms.margin);
+                self.hx_book(slot);
+            }
+            if let Some(years) = terms.standby_years {
+                let annual = (self.ess_real + self.disc_real) * 12.0 * price;
+                if self.acc.investable() < years * annual
+                    && !self.hx.lines.iter().any(EquityLine::is_open)
+                {
+                    for slot in 0..self.props.len() {
+                        if self.hx_open_hecm(plan, &terms, t, price, slot) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Age of the youngest adult present, or `None` if nobody is.
+    fn hx_youngest_age(&self, plan: &Plan, t: usize) -> Option<f64> {
+        let mut youngest: Option<f64> = None;
+        for i in 0..self.n {
+            if self.present[i] && self.alive[i] {
+                let a = self.age(plan, i, t);
+                youngest = Some(youngest.map_or(a, |y| y.min(a)));
+            }
+        }
+        youngest
+    }
+
+    /// Opens a reverse mortgage on property `slot` if it is the owned main home, has
+    /// no line yet, the youngest adult is at least 62 and the principal limit covers
+    /// the costs and any mortgage (which it repays). Returns true if one was opened.
+    fn hx_open_hecm(
+        &mut self,
+        plan: &Plan,
+        terms: &HecmTerms,
+        t: usize,
+        price: f64,
+        slot: usize,
+    ) -> bool {
+        let st = &self.props[slot];
+        if !st.owned || !matches!(st.usage, PropertyUse::Primary) || self.hx.lines[slot].is_open() {
+            return false;
+        }
+        let Some(age) = self.hx_youngest_age(plan, t) else {
+            return false;
+        };
+        // The FHA limit moves with house prices (HUD indexes it to the FHFA index).
+        let limit = home_equity::HECM_MAX_CLAIM_2026 * self.home_index;
+        let Some(o) = home_equity::open_hecm(
+            age,
+            st.value,
+            st.mortgage_balance(),
+            limit,
+            self.hx.long_yield,
+            terms.margin,
+            terms.other_costs_real * price,
+        ) else {
+            return false;
+        };
+        if o.mortgage_payoff > 0.0 {
+            // The reverse mortgage repays the old loan: that debt moves onto the line.
+            if self.check {
+                self.chk_mort_flow -= o.mortgage_payoff;
+            }
+            self.props[slot].mortgage = None;
+        }
+        self.hx.lines[slot] = o.line;
+        self.hx_book(slot);
+        self.req_dirty = true;
+        self.budget_dirty = true;
+        let now = plan.start + t as i32;
+        self.event(
+            now,
+            TraceEventKind::LifeEvent,
+            Some(o.line.limit / price),
+            || format!("Took a reverse mortgage on {}", plan.props[slot].name),
+        );
+        true
     }
 
     /// Step 9 hook: savings cannot pay the month and `missing` dollars are short.
@@ -238,6 +357,14 @@ impl State {
                     terms
                         .available(line, value, mortgage, self.hx.frozen)
                         .min(missing - raised)
+                }
+                Borrow::Hecm(terms) => {
+                    if !self.hx.lines[slot].is_open()
+                        && !self.hx_open_hecm(plan, &terms, t, price, slot)
+                    {
+                        continue;
+                    }
+                    home_equity::hecm_available(&self.hx.lines[slot]).min(missing - raised)
                 }
             };
             if take > 0.0 {

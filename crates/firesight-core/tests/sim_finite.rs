@@ -152,8 +152,13 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
 #[test]
 fn housing_decisions_are_finite_under_every_market_model() {
     for example in Profile::examples(START) {
-        for factor in [1.0, 1.6] {
-            let profile = with_housing_decisions(overspending(example.profile.clone(), factor));
+        for (factor, reverse_mortgage) in [(1.0, false), (1.6, false), (1.6, true)] {
+            let spent = overspending(example.profile.clone(), factor);
+            let profile = if reverse_mortgage {
+                with_housing_decisions_hecm(spent)
+            } else {
+                with_housing_decisions(spent)
+            };
             for kind in MARKETS {
                 let plan = compile(&with_market(profile.clone(), kind));
                 let mut ws = Workspace::new(&plan);

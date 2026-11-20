@@ -184,6 +184,8 @@ RetirementPlan {
   home_equity_borrowing: None (default)         // borrow against the main home before selling it or cutting essentials
     | Heloc{ max_combined_ltv (0.80), spread (0.035 over bills), draw_years (10), repay_years (20),
              freeze_probability (0.3, per downturn) },
+    | ReverseMortgage{ open_when: LastResort (default) | SavingsBelow{ years },   // HECM from 62
+                       lender_margin (0.02), other_closing_costs (3000, today's $) },
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

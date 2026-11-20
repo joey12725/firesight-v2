@@ -1,7 +1,7 @@
 //! Checks of the housing decisions (`model::housing_choices`): borrowing against the
 //! home, downsizing, cash-out refinancing, prepayment and rental dynamics.
 
-use crate::model::{HomeEquityBorrowing, PropertyUse};
+use crate::model::{HomeEquityBorrowing, PropertyUse, ReverseMortgageOpen};
 
 use super::Checker;
 
@@ -64,14 +64,55 @@ impl Checker<'_> {
                         "A home-equity line usually costs 3 to 5 points above the Treasury bill rate (the prime rate plus a margin).",
                     );
                 }
-                if !has_home {
+            }
+            HomeEquityBorrowing::ReverseMortgage(r) => {
+                self.r.range(
+                    &format!("{path}/lender_margin"),
+                    "Lender margin",
+                    r.lender_margin,
+                    -0.05,
+                    0.2,
+                );
+                self.r.range(
+                    &format!("{path}/other_closing_costs"),
+                    "Other closing costs",
+                    r.other_closing_costs,
+                    0.0,
+                    1e6,
+                );
+                if r.lender_margin.is_finite() && !(0.01..=0.04).contains(&r.lender_margin) {
                     self.r.warn(
-                        "borrowing_without_home",
-                        path,
-                        "Borrowing against a home is set, but the household owns no main home and buys none.",
+                        "hecm_margin_unusual",
+                        &format!("{path}/lender_margin"),
+                        "Reverse-mortgage lenders' margins are usually 1.5 to 3 points over the Treasury rate.",
                     );
                 }
+                if r.other_closing_costs > 20_000.0 {
+                    self.r.warn(
+                        "hecm_costs_high",
+                        &format!("{path}/other_closing_costs"),
+                        "Closing costs other than insurance and the origination fee are usually a few thousand dollars.",
+                    );
+                }
+                if let ReverseMortgageOpen::SavingsBelow { years } = r.open_when {
+                    let at = format!("{path}/open_when/years");
+                    self.r.range(&at, "Years of spending", years, 0.0, 100.0);
+                    if years > 25.0 {
+                        self.r.warn(
+                            "hecm_standby_early",
+                            &at,
+                            "The line opens while savings still cover more than 25 years of spending.",
+                        );
+                    }
+                }
             }
+        }
+        if !p.retirement.home_equity_borrowing.is_none() && !has_home {
+            self.r.warn(
+                "borrowing_without_home",
+                path,
+                "Borrowing against a home is set, but the household owns no main home and buys none.",
+            );
         }
     }
 }
@@ -144,6 +185,62 @@ mod tests {
         p.events.clear();
         let (_, warnings) = codes(&p);
         assert!(has(&warnings, "borrowing_without_home", base));
+    }
+
+    #[test]
+    fn reverse_mortgage_terms_are_checked() {
+        let mut p = Profile::example();
+        let base = "/retirement/home_equity_borrowing";
+        p.retirement.home_equity_borrowing =
+            HomeEquityBorrowing::ReverseMortgage(ReverseMortgage::default());
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!warnings.iter().any(|(c, _)| c.starts_with("hecm")));
+        p.retirement.home_equity_borrowing =
+            HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+                open_when: ReverseMortgageOpen::SavingsBelow { years: -1.0 },
+                other_closing_costs: -5.0,
+                ..ReverseMortgage::default()
+            });
+        let (errors, _) = codes(&p);
+        assert!(has(
+            &errors,
+            "out_of_range",
+            &format!("{base}/open_when/years")
+        ));
+        assert!(has(
+            &errors,
+            "out_of_range",
+            &format!("{base}/other_closing_costs")
+        ));
+        p.retirement.home_equity_borrowing =
+            HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+                open_when: ReverseMortgageOpen::SavingsBelow { years: 40.0 },
+                lender_margin: 0.06,
+                other_closing_costs: 50_000.0,
+            });
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(has(
+            &warnings,
+            "hecm_standby_early",
+            &format!("{base}/open_when/years")
+        ));
+        assert!(has(
+            &warnings,
+            "hecm_margin_unusual",
+            &format!("{base}/lender_margin")
+        ));
+        assert!(has(
+            &warnings,
+            "hecm_costs_high",
+            &format!("{base}/other_closing_costs")
+        ));
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains(r#""type":"reverse_mortgage""#));
+        assert!(json.contains(r#""open_when":{"type":"savings_below","years":40.0}"#));
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
     }
 
     #[test]

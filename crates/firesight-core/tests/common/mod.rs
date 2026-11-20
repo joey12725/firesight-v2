@@ -174,6 +174,17 @@ pub fn with_housing_decisions(mut p: Profile) -> Profile {
     p
 }
 
+/// The same with a reverse mortgage (a standby line opened when savings fall below
+/// five years of spending) in place of the home-equity line.
+pub fn with_housing_decisions_hecm(p: Profile) -> Profile {
+    let mut p = with_housing_decisions(p);
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+        open_when: ReverseMortgageOpen::SavingsBelow { years: 5.0 },
+        ..ReverseMortgage::default()
+    });
+    p
+}
+
 /// Every budget line `factor` times larger, so that savings run out on many paths.
 pub fn overspending(mut p: Profile, factor: f64) -> Profile {
     for item in &mut p.spending.items {

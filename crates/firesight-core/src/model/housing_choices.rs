@@ -20,6 +20,12 @@ pub enum HomeEquityBorrowing {
     /// time it is needed, drawn on when savings are gone, repaid from later surpluses
     /// or when the home is sold.
     Heloc(Heloc),
+    /// A reverse mortgage (FHA Home Equity Conversion Mortgage) on the main home, once
+    /// the youngest adult is 62: a line of credit sized by age and interest rates that
+    /// grows while unused, nothing to repay while living in the home (property tax
+    /// and insurance must still be paid), the balance repaid when the home is sold or
+    /// the last borrower dies, never more than the home fetches.
+    ReverseMortgage(ReverseMortgage),
 }
 
 impl HomeEquityBorrowing {

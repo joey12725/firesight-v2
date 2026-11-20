@@ -484,6 +484,41 @@ modelled: closing and annual fees (commonly waived), the lender's income test,
 interest deductibility (only for home improvements since 2018), lines on second homes
 or rentals, and fixed-rate conversion options.
 
+**Reverse mortgage** (opt-in, `retirement.home_equity_borrowing: {type:
+reverse_mortgage}`; same files). An FHA Home Equity Conversion Mortgage line of credit
+on the main home, opened once the youngest adult present is 62 (24 CFR 206.33):
+either as a last resort, when savings cannot pay the month (`open_when: last_resort`,
+the default), or as a standby line as soon as liquid savings fall below `years` of
+planned spending (`open_when: {type: savings_below, years}`). The maximum claim amount
+is the lesser of the home's value and the FHA limit ($1,249,125 for 2026, HUD
+Mortgagee Letter 2025-22, indexed on the path with national home prices). The principal
+limit is the principal limit factor at the borrower's age and the expected rate (the
+simulated 10-year Treasury yield plus `lender_margin`, at least 3%) times that amount;
+the factors are HUD's published excerpt of the October 2017 table (ages 62, 72, 82, 92;
+rates 3% to 8%; ML 2017-12), interpolated linearly. At closing the 2% upfront mortgage
+insurance premium, the origination fee (the greater of $2,500 or 2% of the first
+$200,000 plus 1% above, at most $6,000; 24 CFR 206.31), `other_closing_costs`
+($3,000, a judgement) and any existing mortgage are financed out of the principal
+limit; if they do not fit, no loan is made. In the first 12 months at most 60% of the
+principal limit (or the mandatory obligations plus 10%) can be disbursed (ML 2013-27).
+Each month the balance and the unused line both grow at the bill yield plus the margin
+(default 2 points, a judgement) plus the 0.5% annual insurance premium. Nothing is
+repaid while the household lives in the home; property tax, insurance and upkeep go on
+as before. The loan is non-recourse: the liability booked in the `mortgage` series is
+never more than the home is worth, and a sale repays at most the proceeds. A draw is
+cash from property (`property_sale`), the financed costs and accrued interest raise the
+balance (and lower net worth) rather than spending. Measured on the family example
+(4,000 paired paths): with `home_equity: last_resort` success is unchanged (91.5% to
+91.3%, within noise; 35 paths rescued, 41 harmed) and the 10th percentile of terminal
+net worth rises from $104,000 to $132,000; a standby line opened below five years of
+spending gives 91.4% and $105,000. With `home_equity: never` the reverse mortgage lifts
+success from 76.3% to 87.6%. Not modelled: non-borrowing spouses (the borrower is
+the youngest adult present, and the loan continues for the survivor), the HECM-for-
+purchase, tenure or term payment plans, the eighth-of-a-point rounding and full
+whole-age table of the principal limit factors, the financial assessment and
+set-asides for property charges, the deduction of interest when it is finally paid,
+and default when property taxes go unpaid.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus
