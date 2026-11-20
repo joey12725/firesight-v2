@@ -2437,6 +2437,27 @@
         "bonus_factor": 0.7,
         "bonus_slack_months": 12,
         "evidence": "No source gives these sizes: they are judgements. Direction only: Daly, Hobijn and Lucking (FRBSF Economic Letter 2012-10) and an FRBSF letter of July 2013 report that the share of workers with a frozen (unchanged) annual wage reached a record high after the Great Recession; an administrative study of Washington State hourly stayers (2020 AEA conference paper) found 15-20% with no change in a year even in normal times. Exact percentages were not retrieved."
+      },
+      "late_career": {
+        "from_age": 55,
+        "spell_multiplier_by_age_band": [1.3, 1.6, 1.8],
+        "scar_multiplier": 1.3,
+        "never_probability_at_55": 0.15,
+        "never_probability_per_year": 0.04,
+        "never_probability_max": 0.6,
+        "spell_cap_months": 48,
+        "evidence": "All sizes are judgements. Direction and rough scale: Johnson and Gosselin (Urban Institute, 2018), reported by ProPublica ('Forced Out'): in the Health and Retirement Study 56% of workers over 50 in long-term full-time jobs were pushed out before they chose to retire, and only about one in ten of them ever again earned as much as before (thresholds: six months of unemployment or a 50% earnings drop; includes exits for poor health). Not a per-layoff probability, so the rising never-again probability is shaped to be consistent with it rather than estimated from it. These multipliers apply on top of the career model's own age_multiplier_on_median 1.4 (55+) and age_50_plus_multiplier 1.5."
+      },
+      "disability": {
+        "band_from_age": [20, 30, 35, 40, 45, 50, 55, 60],
+        "incidence_per_1000_by_age_band": [1.0, 1.6, 2.2, 3.6, 5.5, 8.0, 12.0, 14.0],
+        "annual_recovery": 0.03,
+        "return_scar": 0.10,
+        "ssdi_wait_months": 5,
+        "ltd_wait_months": 3,
+        "min_insured_years": 5,
+        "min_onset_age": 20,
+        "evidence": "The age profile, recovery rate, scar, LTD wait and insured-history rule are judgements. Verified: SSA Trustees Report 2025 age-sex-adjusted ultimate disabled-worker incidence 4.6 awards per 1,000 exposed a year (Alternative II; 4.8 in 2023, 4.5 in 2024); SSA Annual Statistical Report on the SSDI Program 2025: 15.8% of disabled-worker awards at ages 55-59 and 12.9% at 50-54; SSDI waiting period of five full months; computation years for disability AIME: elapsed years after age 21, one dropout year per five elapsed years up to five, minimum two (SSA POMS RS 00605.016). The OACT age-specific incidence tables could not be retrieved."
       }
     },
     "irs_single_life_table": {

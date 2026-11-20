@@ -77,7 +77,9 @@ Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Locatio
 Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             health: Excellent|Good|Average|Poor,     // scales mortality; default Good (0.85x)
             joins: Option<YearMonth>,               // future partner: not in household before this
-            social_security: SocialSecurity }
+            social_security: SocialSecurity,
+            disability_risk: Off|Typical,           // opt-in long-term disability: ends work, pays SSDI (methodology 6.3)
+            ltd_insurance: Option<LtdInsurance{ replacement (0..=1, default 0.6), to_age (default 65) }> }
 SocialSecurity { claim_age: f64 (62..=70, default 67),
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $
@@ -96,7 +98,8 @@ IncomeKind =
   Job { salary, growth: Flat{real_raise} | Lifecycle{profile: Flat|Typical|Steep, extra},
         risk: CareerRisk { level: None|Low|Typical|High,   // wage shocks + layoff hazard
                            job_mobility: Off|Typical|High,    // opt-in voluntary job changes with pay jumps (methodology 6.1)
-                           recession_pay: Off|Typical },      // opt-in freezes, cuts, smaller bonuses in recessions (6.2)
+                           recession_pay: Off|Typical,        // opt-in freezes, cuts, smaller bonuses in recessions (6.2)
+                           late_career: Off|Realistic },      // opt-in older-worker layoffs: longer spells, bigger scars, may never work again (6.4)
         bonus: Option<Bonus{ target_fraction, volatility }>,
         commission: Option<Commission{ expected_annual, volatility }>,
         equity: Vec<EquityGrant>,

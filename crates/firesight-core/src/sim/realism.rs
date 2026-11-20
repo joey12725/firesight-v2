@@ -79,6 +79,23 @@ impl State {
             }
         }
 
+        // Older workers laid off this month (F19).
+        if let (Some(late), true) = (&jr.late_career, jm.laid_off) {
+            let st = &mut self.jobs[j].st;
+            if let Some(o) = late.adjust(
+                climate.age,
+                st.spell_months_left,
+                st.pending_scar,
+                draw.u_never,
+            ) {
+                st.spell_months_left = o.spell_months;
+                st.pending_scar = o.scar;
+                if o.never {
+                    self.rz_never_works_again(plan, j, t, climate.age);
+                }
+            }
+        }
+
         // Voluntary job change (F16).
         if let Some(mob) = &jr.mobility {
             let st = &mut self.jobs[j].st;

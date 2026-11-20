@@ -46,6 +46,55 @@ pub struct Person {
     /// Social Security claiming plan and how the benefit is estimated.
     #[serde(default)]
     pub social_security: SocialSecurity,
+    /// Whether a long-term disability can end this person's work before retirement.
+    /// Off by default. When on, each month a worker below full retirement age faces
+    /// an age-dependent chance of a disability that ends all wage and
+    /// self-employment income. It pays Social Security Disability Insurance after a
+    /// five-month wait (the person's benefit as of onset, converting to the
+    /// retirement benefit at full retirement age) and any `ltd_insurance`, and ends
+    /// with a small yearly chance of recovery.
+    #[serde(default, skip_serializing_if = "crate::career_realism::is_default")]
+    pub disability_risk: DisabilityRisk,
+    /// Employer or private long-term disability insurance. Needs `disability_risk`
+    /// on. Leave empty for none.
+    #[serde(default, skip_serializing_if = "crate::career_realism::is_default")]
+    pub ltd_insurance: Option<LtdInsurance>,
+}
+
+/// Whether a long-term work-limiting disability is simulated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DisabilityRisk {
+    /// No disability: the person works until the plan says otherwise (the default).
+    #[default]
+    Off,
+    /// Disability onset at rates shaped like Social Security's disabled-worker award
+    /// incidence (about 4.6 per 1,000 insured a year on average, rising steeply with
+    /// age; the age profile is a judgement), a 3% yearly chance of recovery.
+    Typical,
+}
+
+/// Long-term disability insurance paid after the first three months of a disability.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct LtdInsurance {
+    /// Share of base salary at the time of onset that the policy replaces before
+    /// offsets, 0 to 1. Typical group policies replace 0.6. The benefit is reduced by
+    /// the Social Security Disability Insurance the person receives (the usual
+    /// offset), and is taxable (employer-paid premiums).
+    pub replacement: f64,
+    /// Age at which the benefit stops, for example 65. Typical policies pay to 65 or
+    /// to full retirement age.
+    pub to_age: f64,
+}
+
+impl Default for LtdInsurance {
+    fn default() -> Self {
+        Self {
+            replacement: 0.6,
+            to_age: 65.0,
+        }
+    }
 }
 
 impl Default for Person {
@@ -58,6 +107,8 @@ impl Default for Person {
             health: HealthStatus::default(),
             joins: None,
             social_security: SocialSecurity::default(),
+            disability_risk: DisabilityRisk::default(),
+            ltd_insurance: None,
         }
     }
 }

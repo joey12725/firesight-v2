@@ -419,6 +419,101 @@ path, never higher afterwards, and lifetime pay is 0.2% to 6% lower.
 inflation term, work sharing and furlough programmes, sector differences (a freeze is
 equally likely for every job), cuts and freezes for the self-employed (see 6.5).
 
+### 6.3 Long-term disability (opt-in: `people[].disability_risk`, `ltd_insurance`)
+
+Off by default. Each month a person who has not retired and is below full retirement
+age faces an onset hazard that rises steeply with age (yearly rates per 1,000 working
+people: 1.0 at 20, 1.6 at 30, 2.2 at 35, 3.6 at 40, 5.5 at 45, 8 at 50, 12 at 55, 14 at
+60). Onset ends all of the person's wage and self-employment income and forfeits
+unvested equity. The household then receives:
+
+* **SSDI** after SSA's five-month wait: the person's disability PIA, constant in real
+  terms (benefits rise with prices) until full retirement age. The PIA follows SSA's
+  disability rule: computation years are the years after the 21st birthday up to the
+  year before onset, less one dropout year per five elapsed years (at most five), never
+  fewer than two; AIME is the best of those years' indexed earnings over their months
+  (SSA POMS RS 00605.016). This is why a 30-year-old with eight years of earnings gets a
+  full-earner-sized benefit rather than one divided by 35 years. The claimant's record
+  is frozen at that PIA while disabled (later years without earnings do not lower it),
+  and at full retirement age the claim age is set to full retirement age so the existing
+  retirement code pays exactly that PIA (the SSDI-to-retirement conversion). Not
+  insured (basis `none`, under five years of earnings on record, already claiming
+  retirement) means no SSDI. Paid through the Social Security income series and taxed
+  with it.
+* **LTD insurance**, if set: after a three-month elimination period,
+  `replacement x base salary at onset`, fixed in nominal dollars (as most policies are),
+  less the SSDI received (the usual offset), until `to_age`. Taxable (employer-paid
+  premiums assumed; no premium is charged). Paid through the other-income series.
+* **Recovery** with 3% a year: jobs resume with a 10% pay scar and the record is
+  released. A disabled person's jobs sit in an open-ended idle state, so layoffs,
+  unemployment insurance and mobility draws cannot occur; the idle months are not
+  counted as unemployment in the summary.
+
+*Sources.* Verified: the Trustees' age-sex-adjusted ultimate disabled-worker incidence
+of 4.6 awards per 1,000 exposed a year (2025 Trustees Report, Alternative II; 4.8 in 2023
+and 4.5 in 2024); in the SSA Annual Statistical Report on the SSDI Program 2025, 15.8%
+of awards went to ages 55 to 59 and 12.9% to 50 to 54; the five-month wait; the
+computation-year rule. The age-specific incidence tables (OACT) could not be retrieved
+(the SSA site refused automated access), so the age profile above is a judgement shaped
+to those facts, as are the recovery rate, scar, LTD wait and the insured-history rule
+(5 recorded years standing in for 20 quarters in 40). All are named constants in
+`career_realism/disability.rs` and in `params.json` (`unverified_from_memory`). The
+hazard is an SSDI award hazard, so it covers the severe end of work limitation only.
+
+*Measured* (dual-income-family, 3,000 paths, seed 1, both people on `typical`): success
+rate 91.8% off, 91.4% on, 91.8% with 60% LTD for both; financially independent on 96.4%
+of paths off, 94.6% on; retirement age p90 60.9 off, 62.4 on; terminal net worth p10
+$125k off, $111k on, $131k with LTD. The median terminal net worth *rises* ($1.73m to
+$1.75m): the household usually reaches independence in its early fifties anyway, and a
+person disabled before that loses a few years of wages but draws a full-size SSDI
+benefit for up to two decades before the age at which the baseline would claim, which
+helps more than the lost wages hurt in the middle of the distribution. The tails move
+the intuitive way for the low end (p10, success rate).
+
+*Not modelled:* medical costs and care needs of the disabled, higher mortality of
+beneficiaries, Medicare entry after 24 months of SSDI, the denial of claims (the hazard
+is awards), partial or short-term disability, the SSDI family benefits for children,
+the SSDI earnings-record effect on a spouse's benefits beyond the existing spousal
+logic, the planner's knowledge of a disability (the annual plan sees SSDI and LTD
+only as they arrive), a cap on LTD, and disability after retirement.
+
+### 6.4 Older workers and involuntary retirement (opt-in: `risk.late_career`)
+
+Off by default; `realistic` needs `assumptions.career_risk` on and a layoff `level`
+other than none. The career model already lengthens spells (median 1.4 times from 55)
+and deepens re-employment pay losses (1.5 times from 50). For a layoff from 55 on this
+adds, on top: a spell 1.3 times longer at 55 to 59, 1.6 times at 60 to 64, 1.8 times from
+65 (capped at 48 months), a pay loss 1.3 times larger (only a loss is deepened; the
+random part of the career model's scar can be a gain, which is left as drawn), and a
+probability of never working again of 15% at 55, rising 4 points a year to at most 60%
+(35% at 60, 51% at 64). Such a worker is retired on the spot with an "Involuntary
+retirement" event; if nobody else in the household is still working the household
+retires the next month on what it has, otherwise the partner keeps working under the
+plan. How often layoffs happen is still set by `level`; this changes what follows one.
+It uses one extra uniform per job per month from the feature's own stream, whatever
+happens.
+
+*Sources.* All the numbers are judgements (named constants in
+`career_realism/late_career.rs`, listed in `params.json` under
+`unverified_from_memory.career_realism.late_career`). Direction and scale: Johnson and
+Gosselin (Urban Institute 2018) as reported by ProPublica ("Forced Out"): in the Health
+and Retirement Study 56% of workers over 50 in long-term full-time jobs were pushed out
+before they chose to retire and about one in ten of them ever again earned as much as
+before. Those figures include exits for poor health and use a six-month or 50%-drop
+threshold, so they do not give a per-layoff probability.
+
+*Measured* (dual-income-family with the two adults born in 1969 and 1970, 3,000 paths,
+seed 1, both jobs on `late_career: realistic`): success rate 80.9% off, 74.3% on; median
+terminal net worth $658k off, $525k on; 10th percentile $0 either way; share of retired
+paths with a year below 90% of planned spending 38.2% off, 45.5% on. (This couple is
+under-saved for its age; it works to 67 in both runs, so the effect is the lost pay and
+the unemployment spells, and a pushed-out person's contributions and wages stop.)
+
+*Not modelled:* health as the cause of the exit (disability is 6.3), a rise in the layoff
+hazard itself with age beyond the career model's, partial retirement or bridge jobs
+after a layoff, employer retirement incentives and buyouts, and the age at which UI
+runs out differing by state.
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own

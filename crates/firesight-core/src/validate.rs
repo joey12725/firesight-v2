@@ -366,6 +366,15 @@ impl Checker<'_> {
                     );
                 }
             }
+            crate::career_realism::validate::person(
+                &mut self.r,
+                &path,
+                person,
+                p.incomes.iter().any(|inc| {
+                    inc.owner == i
+                        && matches!(inc.kind, IncomeKind::Job(_) | IncomeKind::SelfEmployment(_))
+                }),
+            );
             if let Some(joins) = person.joins {
                 if i == 0 {
                     self.r.error("joins_first_person", &format!("{path}/joins"), "Only the second person can join later; the first person is in the household from the start.");

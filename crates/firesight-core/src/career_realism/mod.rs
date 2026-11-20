@@ -4,6 +4,7 @@
 //! |---|---|---|
 //! | Voluntary job changes with pay jumps | `risk.job_mobility` | [`mobility`] |
 //! | Recession pay freezes, hours cuts, smaller bonuses | `risk.recession_pay` | [`recession_pay`] |
+//! | Long-term disability, SSDI and LTD | `people[].disability_risk` | [`disability`] |
 //!
 //! (Later features register here as they land.)
 //!
@@ -25,14 +26,18 @@
 //! The simulation-side hooks live in `sim/realism.rs` (they need the path state); this
 //! module holds the pure mechanisms, which are unit-tested on their own.
 
+pub mod disability;
+pub mod late_career;
 pub mod mobility;
 pub mod recession_pay;
 pub mod validate;
 
 use crate::data::Data;
-use crate::model::{IncomeKind, JobMobility, Profile, RecessionPay, RiskLevel};
+use crate::model::{IncomeKind, JobMobility, LateCareer, Profile, RecessionPay, RiskLevel};
 use crate::rng::{Rng, Stream};
 
+use disability::{DisabilityModel, DisabilityState};
+use late_career::LateCareerModel;
 use mobility::MobilityModel;
 use recession_pay::{RecessionPayModel, RecessionPayState};
 
@@ -48,6 +53,8 @@ pub const JOB_WORDS: usize = 6;
 
 /// `Stream::CareerExt` kind: one stream per job income (index into the plan's jobs).
 pub const KIND_JOB: u8 = 0;
+/// `Stream::CareerExt` kind: one stream per person (index into the plan's people).
+pub const KIND_PERSON: u8 = 1;
 
 /// Compiled realism settings of one job.
 #[derive(Clone, Debug, Default)]
@@ -56,12 +63,14 @@ pub struct JobRealism {
     pub mobility: Option<MobilityModel>,
     /// Recession pay freezes, cuts and smaller bonuses, when switched on.
     pub recession_pay: Option<RecessionPayModel>,
+    /// Older-worker layoff outcomes, when switched on.
+    pub late_career: Option<LateCareerModel>,
 }
 
 impl JobRealism {
     /// True if any feature is on for this job (it then draws every month).
     pub fn any(&self) -> bool {
-        self.mobility.is_some() || self.recession_pay.is_some()
+        self.mobility.is_some() || self.recession_pay.is_some() || self.late_career.is_some()
     }
 }
 
@@ -72,6 +81,8 @@ pub struct RealismPlan {
     pub any: bool,
     /// One entry per job in the plan's job order.
     pub jobs: Vec<JobRealism>,
+    /// One entry per person: the disability model when switched on.
+    pub people: Vec<Option<DisabilityModel>>,
 }
 
 impl RealismPlan {
@@ -97,9 +108,23 @@ impl RealismPlan {
                 if risk_on && job.risk.recession_pay == RecessionPay::Typical {
                     jr.recession_pay = Some(RecessionPayModel::new());
                 }
+                if risk_on
+                    && job.risk.level != RiskLevel::None
+                    && job.risk.late_career == LateCareer::Realistic
+                {
+                    jr.late_career = Some(LateCareerModel);
+                }
                 plan.any |= jr.any();
                 plan.jobs.push(jr);
             }
+        }
+        for person in &profile.household.people {
+            let model =
+                (person.disability_risk == crate::model::DisabilityRisk::Typical).then(|| {
+                    DisabilityModel::new(person.ltd_insurance.map(|l| (l.replacement, l.to_age)))
+                });
+            plan.any |= model.is_some();
+            plan.people.push(model);
         }
         plan
     }
@@ -118,8 +143,17 @@ pub struct JobDraw {
     pub u_cut: f64,
     /// Uniform: the size of a pay cut.
     pub u_size: f64,
-    /// Reserved for a later feature (see the module table).
+    /// Uniform: does a laid-off older worker never work again.
     pub u_never: f64,
+}
+
+/// The variates one person draws in one month.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PersonDraw {
+    /// Uniform: does a disability begin.
+    pub u_onset: f64,
+    /// Uniform: does a disabled person recover.
+    pub u_recover: f64,
 }
 
 /// Per-path realism state.
@@ -133,17 +167,30 @@ pub struct RealismState {
     pub moves: Vec<u32>,
     /// Recession pay state per job.
     pub pay: Vec<RecessionPayState>,
+    /// One generator per person (empty when no feature is on).
+    pub person_rng: Vec<Rng>,
+    /// This month's variates per person.
+    pub person_draw: Vec<PersonDraw>,
+    /// Disability state per person.
+    pub dis: Vec<DisabilityState>,
+    /// True once a person has been laid off and will never work again (F19).
+    pub never: Vec<bool>,
 }
 
 impl RealismState {
     /// Buffers sized for a plan.
     pub fn new(plan: &RealismPlan) -> RealismState {
         let n = if plan.any { plan.jobs.len() } else { 0 };
+        let np = if plan.any { plan.people.len() } else { 0 };
         RealismState {
             job_rng: vec![Rng::from_seed(0); n],
             job_draw: vec![JobDraw::default(); n],
             moves: vec![0; n],
             pay: vec![RecessionPayState::default(); n],
+            person_rng: vec![Rng::from_seed(0); np],
+            person_draw: vec![PersonDraw::default(); np],
+            dis: vec![DisabilityState::default(); np],
+            never: vec![false; np],
         }
     }
 
@@ -156,6 +203,13 @@ impl RealismState {
         }
         self.moves.fill(0);
         self.pay.fill(RecessionPayState::default());
+        for (i, rng) in self.person_rng.iter_mut().enumerate() {
+            if plan.people[i].is_some() {
+                *rng = Rng::stream(seed, path, Stream::CareerExt(KIND_PERSON, i));
+            }
+        }
+        self.dis.fill(DisabilityState::default());
+        self.never.fill(false);
     }
 
     /// Draws this month's variates for every job that uses a feature: always
@@ -175,6 +229,16 @@ impl RealismState {
                 u_size: rng.uniform(),
                 u_never: rng.uniform(),
             };
+        }
+        // Two words per disability-enabled person, whatever happens.
+        for (i, model) in plan.people.iter().enumerate() {
+            if model.is_some() {
+                let rng = &mut self.person_rng[i];
+                self.person_draw[i] = PersonDraw {
+                    u_onset: rng.uniform(),
+                    u_recover: rng.uniform(),
+                };
+            }
         }
     }
 }

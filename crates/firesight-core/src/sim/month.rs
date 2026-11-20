@@ -66,6 +66,7 @@ impl State {
         }
         if plan.rz.any {
             self.rz_month_start(plan);
+            self.rz_disability_step(plan, econ, t);
         }
 
         // 1. Calendar: deaths, a partner joining, retirement dates, the annual plan.
@@ -173,6 +174,7 @@ impl State {
                 &mut self.rng_equity,
             );
             if plan.rz.any {
+                self.rz_disability_job(plan, j, &mut jm);
                 self.rz_after_job_step(plan, econ, j, t, &climate, &mut jm);
             }
             if !self.present[p] {
@@ -305,11 +307,17 @@ impl State {
                 equity_return_12m: self.eq12,
             };
             let years = self.se_years(plan, k, t);
+            let disabled_factor = if plan.rz.any {
+                self.rz_se_factor(p)
+            } else {
+                1.0
+            };
             let rt = &mut self.selfemp[k];
             let profit = sp
                 .model
                 .step(&mut rt.st, years, &climate, &mut self.rng_career[p])
-                * rt.scale;
+                * rt.scale
+                * disabled_factor;
             let rm = self.retire_month;
             let active = self.present[p]
                 && !rt.ended
@@ -350,6 +358,9 @@ impl State {
 
         // 4. Other income: pensions, annuities, other streams, Social Security.
         self.pay_streams(plan, t, price);
+        if plan.rz.any {
+            self.rz_disability_income(plan, t, price);
+        }
         if t >= self.ss_from {
             // Benefits in real terms change only in January (earnings test, payable
             // fraction), at an age threshold, or when someone dies or joins; in
@@ -717,7 +728,7 @@ impl State {
     }
 
     /// Person `p` stops working: their jobs that end at retirement end now.
-    fn retire_person(&mut self, plan: &Plan, p: usize, t: usize) {
+    pub(super) fn retire_person(&mut self, plan: &Plan, p: usize, t: usize) {
         self.person_retired[p] = true;
         if self.stopped_work[p] == i32::MAX {
             self.stopped_work[p] = t as i32;

@@ -307,6 +307,455 @@ fn f17_recession_pay_does_not_depend_on_other_career_draws() {
 }
 
 // ---------------------------------------------------------------------------
+// F18: long-term disability, SSDI and LTD
+// ---------------------------------------------------------------------------
+
+/// A worker with a Social Security record built from earnings, earning a flat $90,000
+/// (no career risk, so only the disability feature can interrupt the pay).
+fn disability_worker(age: i32, retire_at: f64) -> Profile {
+    let mut p = worker(age, 90_000.0, RiskLevel::None, retire_at);
+    p.household.people[0].social_security.basis = SocialSecurityBasis::FromEarnings {
+        career_start_age: 22.0,
+    };
+    p.assumptions.career_risk = false;
+    p
+}
+
+fn disabled(p: &mut Profile, ltd: Option<LtdInsurance>) {
+    p.household.people[0].disability_risk = DisabilityRisk::Typical;
+    p.household.people[0].ltd_insurance = ltd;
+}
+
+/// A monthly series of one traced path (today's dollars, whole dollars); an all-zero
+/// series is not stored by the trace, so it comes back as zeros.
+fn column(profile: &Profile, path: u64, name: &str) -> Vec<f64> {
+    let plan = compile(profile);
+    let trace = sim::trace_path(&plan, SEED, path);
+    let n = trace.column("income_wages").map_or(0, <[f64]>::len);
+    trace
+        .column(name)
+        .map_or_else(|| vec![0.0; n], <[f64]>::to_vec)
+}
+
+/// Month index (from the start) of the person's first disability on a path, and
+/// whether they ever recover.
+fn onset_month(profile: &Profile, path: u64) -> Option<(usize, bool)> {
+    let plan = compile(profile);
+    let trace = sim::trace_path(&plan, SEED, path);
+    let first = trace
+        .events
+        .iter()
+        .find(|e| e.label.contains("becomes disabled"))?;
+    let recovered = trace.events.iter().any(|e| e.label.contains("recovers"));
+    Some(((first.month - plan.start()) as usize, recovered))
+}
+
+#[test]
+fn f18_off_is_identical_and_not_serialised() {
+    let base = disability_worker(40, 62.0);
+    let mut off = base.clone();
+    off.household.people[0].disability_risk = DisabilityRisk::Off;
+    for path in 0..6 {
+        assert_eq!(wages(&base, path), wages(&off, path));
+    }
+    let json = serde_json::to_string(&base).unwrap();
+    assert!(!json.contains("disability_risk") && !json.contains("ltd_insurance"));
+    let back: Profile = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, base);
+}
+
+#[test]
+fn f18_onset_frequency_matches_the_hazard_table() {
+    // Age 35 to 60 (retirement at 60): the yearly incidences sum to
+    // 5 * (2.2 + 3.6 + 5.5 + 8.0 + 12.0) = 156.5 per 1,000, so about 14.5% of workers
+    // have an onset (1 - exp(-0.1565) = 0.145), a little fewer after deaths.
+    let mut p = disability_worker(35, 60.0);
+    disabled(&mut p, None);
+    let paths = 600;
+    let hit = (0..paths).filter(|k| onset_month(&p, *k).is_some()).count();
+    let share = hit as f64 / paths as f64;
+    assert!((0.10..0.19).contains(&share), "share with an onset {share}");
+}
+
+#[test]
+fn f18_disability_ends_wages_and_pays_ssdi_frozen_then_converts_at_full_retirement_age() {
+    // Aged 45 at the start; full retirement age 67 is month 264.
+    let base = disability_worker(45, 62.0);
+    let mut on = base.clone();
+    disabled(&mut on, None);
+    let mut checked = 0;
+    for path in 0..800 {
+        let Some((m, recovered)) = onset_month(&on, path) else {
+            continue;
+        };
+        if recovered || !(24..=150).contains(&m) {
+            continue;
+        }
+        let w_on = column(&on, path, "income_wages");
+        let w_off = column(&base, path, "income_wages");
+        let ss = column(&on, path, "income_social_security");
+        // Pay is the baseline's until the onset month, nothing from then on.
+        assert_eq!(w_on[..m], w_off[..m], "path {path}");
+        assert!(w_on[m..].iter().all(|w| *w == 0.0), "path {path}");
+        assert!(w_off[m] > 5_000.0);
+        // SSDI: nothing during the five-month wait, then a constant real amount (the
+        // record is frozen, later years without earnings do not lower it) up to full
+        // retirement age, and the same amount as the retirement benefit after it.
+        assert!(ss[..m + 5].iter().all(|x| *x == 0.0), "path {path}");
+        let level = ss[m + 5];
+        assert!(level > 800.0 && level < 5_000.0, "path {path}: {level}");
+        let held = ss[m + 5..ss.len().min(300)].iter().enumerate();
+        for (k, x) in held {
+            assert!(
+                (x - level).abs() <= 0.002 * level + 2.0,
+                "path {path} month {}: {x} vs {level}",
+                m + 5 + k
+            );
+        }
+        checked += 1;
+        if checked == 5 {
+            break;
+        }
+    }
+    assert!(checked >= 3, "only {checked} suitable paths");
+}
+
+#[test]
+fn f18_ssdi_uses_the_disability_computation_years_not_thirty_five() {
+    // A 30-year-old with eight years of work behind them on $90,000: the retirement
+    // formula divides the best 35 years by 35 and would give about a third of the
+    // benefit (AIME about 1,700, PIA about 1,100 a month); the disability rule
+    // divides by the computation years (elapsed years less dropouts), so the PIA is
+    // that of a full-time earner of $90,000, about 3,000 a month.
+    let base = disability_worker(30, 60.0);
+    let mut on = base.clone();
+    disabled(&mut on, None);
+    let mut seen = 0;
+    for path in 0..2000 {
+        let Some((m, recovered)) = onset_month(&on, path) else {
+            continue;
+        };
+        if recovered || m > 150 {
+            continue;
+        }
+        let ss = column(&on, path, "income_social_security");
+        let level = ss[m + 6];
+        assert!(level > 2_000.0 && level < 4_500.0, "path {path}: {level}");
+        seen += 1;
+        if seen == 3 {
+            break;
+        }
+    }
+    assert!(seen >= 1);
+}
+
+#[test]
+fn f18_ltd_adds_income_offset_by_ssdi() {
+    let mut no_ltd = disability_worker(45, 62.0);
+    disabled(&mut no_ltd, None);
+    let mut ltd = disability_worker(45, 62.0);
+    disabled(
+        &mut ltd,
+        Some(LtdInsurance {
+            replacement: 0.6,
+            to_age: 65.0,
+        }),
+    );
+    let mut checked = 0;
+    for path in 0..800 {
+        let Some((m, recovered)) = onset_month(&ltd, path) else {
+            continue;
+        };
+        if recovered || !(24..=150).contains(&m) {
+            continue;
+        }
+        let other_with = column(&ltd, path, "income_other");
+        let other_without = column(&no_ltd, path, "income_other");
+        let ss = column(&ltd, path, "income_social_security");
+        let pay_before = column(&ltd, path, "income_wages")[m - 1];
+        // The policy pays nothing before the three-month elimination period ends.
+        assert_eq!(other_with[..m + 3], other_without[..m + 3]);
+        assert!(other_with[m + 3] > other_without[m + 3] + 1.0);
+        // The first LTD month: 60% of the pay before (a little under if prices
+        // rose since the onset, LTD being fixed in nominal dollars).
+        let first = other_with[m + 3] - other_without[m + 3];
+        assert!(
+            first > 0.55 * pay_before && first < 0.62 * pay_before,
+            "path {path}: ltd {first} vs pay {pay_before}"
+        );
+        // When SSDI starts two months later, LTD falls by about the SSDI amount, so
+        // that the two together stay near the same replacement.
+        assert!(ss[m + 5] > 800.0);
+        let together = other_with[m + 5] - other_without[m + 5] + ss[m + 5];
+        assert!(
+            together > 0.9 * first && together < 1.05 * first,
+            "path {path}: ltd+ssdi {together} vs first LTD {first}"
+        );
+        assert!(other_with[m + 5] - other_without[m + 5] < 0.8 * first);
+        // Benefits stop at 65 (month 240).
+        assert_eq!(other_with[250], other_without[250]);
+        checked += 1;
+        if checked == 4 {
+            break;
+        }
+    }
+    assert!(checked >= 2, "only {checked} suitable paths");
+}
+
+#[test]
+fn f18_recovery_returns_to_work_with_a_scar_and_releases_the_record() {
+    let base = disability_worker(30, 62.0);
+    let mut on = base.clone();
+    disabled(&mut on, None);
+    let mut seen = 0;
+    for path in 0..6000 {
+        let plan = compile(&on);
+        let trace = sim::trace_path(&plan, SEED, path);
+        let Some(down) = trace
+            .events
+            .iter()
+            .find(|e| e.label.contains("becomes disabled"))
+        else {
+            continue;
+        };
+        let Some(up) = trace.events.iter().find(|e| e.label.contains("recovers")) else {
+            continue;
+        };
+        let (d, u) = (
+            (down.month - plan.start()) as usize,
+            (up.month - plan.start()) as usize,
+        );
+        if u + 12 >= 12 * 30 || u < d + 8 {
+            continue;
+        }
+        let w = column(&on, path, "income_wages");
+        let before = w[d - 1];
+        assert!(w[d..u].iter().all(|x| *x == 0.0), "path {path}");
+        // Back at work after the idle spell; pay is the baseline's less the 10% scar
+        // (about 9.5% in levels) within the noise of the other draws.
+        let back = w[u + 2];
+        assert!(back > 0.0, "path {path}");
+        let off = column(&base, path, "income_wages");
+        let ratio = back / off[u + 2];
+        assert!((0.88..0.93).contains(&ratio), "path {path}: {ratio}");
+        assert!(before > 0.0);
+        // SSDI stops on recovery.
+        let ss = column(&on, path, "income_social_security");
+        assert!(ss[u + 2] == 0.0, "path {path}");
+        seen += 1;
+        if seen == 3 {
+            break;
+        }
+    }
+    assert!(seen >= 1, "no recovering path found");
+}
+
+#[test]
+fn f18_lowers_outcomes_in_the_expected_direction() {
+    let off = disability_worker(40, 62.0);
+    let mut on = off.clone();
+    disabled(&mut on, None);
+    let (mut off_total, mut on_total, mut worse, mut better) = (0.0, 0.0, 0, 0);
+    for path in 0..300 {
+        let a: f64 = wages(&off, path).iter().sum();
+        let b: f64 = wages(&on, path).iter().sum();
+        off_total += a;
+        on_total += b;
+        worse += usize::from(b < a - 1.0);
+        better += usize::from(b > a + 1.0);
+    }
+    assert_eq!(better, 0);
+    assert!(worse > 10, "{worse} paths with lost pay");
+    let loss = 1.0 - on_total / off_total;
+    // About a 10% chance of an onset over 22 years, losing around half the remaining
+    // career each: lifetime pay down by a few percent.
+    assert!((0.01..0.12).contains(&loss), "lifetime pay loss {loss}");
+}
+
+#[test]
+fn f18_validation_rejects_bad_ltd_and_warns_about_inert_settings() {
+    let mut p = disability_worker(40, 62.0);
+    disabled(
+        &mut p,
+        Some(LtdInsurance {
+            replacement: 1.5,
+            to_age: 65.0,
+        }),
+    );
+    let report = firesight_core::validate::validate(&p);
+    assert!(report
+        .errors
+        .iter()
+        .any(|e| e.path.ends_with("ltd_insurance/replacement")));
+    let mut q = disability_worker(40, 62.0);
+    q.household.people[0].ltd_insurance = Some(LtdInsurance::default());
+    let report = firesight_core::validate::validate(&q);
+    assert!(report.warnings.iter().any(|w| w.code == "ltd_inert"));
+}
+
+// ---------------------------------------------------------------------------
+// F19: older workers and involuntary retirement
+// ---------------------------------------------------------------------------
+
+fn late(p: &mut Profile, on: LateCareer) {
+    job_risk(p).late_career = on;
+}
+
+/// A 56-year-old with a high layoff risk, due to retire at 66.
+fn older_worker() -> Profile {
+    worker(56, 90_000.0, RiskLevel::High, 66.0)
+}
+
+fn event_months(profile: &Profile, path: u64, text: &str) -> Vec<i32> {
+    let plan = compile(profile);
+    sim::trace_path(&plan, SEED, path)
+        .events
+        .iter()
+        .filter(|e| e.label.contains(text))
+        .map(|e| e.month - plan.start())
+        .collect()
+}
+
+#[test]
+fn f19_off_is_identical_and_not_serialised() {
+    let base = older_worker();
+    let mut off = base.clone();
+    late(&mut off, LateCareer::Off);
+    for path in 0..10 {
+        assert_eq!(wages(&base, path), wages(&off, path));
+    }
+    assert!(!serde_json::to_string(&base)
+        .unwrap()
+        .contains("late_career"));
+}
+
+#[test]
+fn f19_is_inert_without_career_risk_and_before_55() {
+    let mut none = worker(56, 90_000.0, RiskLevel::None, 66.0);
+    let reference = wages(&none, 2);
+    late(&mut none, LateCareer::Realistic);
+    assert_eq!(wages(&none, 2), reference);
+    // Retiring before 55: the feature never has a layoff to act on.
+    let young = worker(40, 90_000.0, RiskLevel::High, 54.0);
+    let mut on = young.clone();
+    late(&mut on, LateCareer::Realistic);
+    for path in 0..60 {
+        assert_eq!(wages(&young, path), wages(&on, path), "path {path}");
+    }
+}
+
+#[test]
+fn f19_layoffs_are_the_same_and_a_share_end_in_retirement_that_rises_with_age() {
+    let off = older_worker();
+    let mut on = off.clone();
+    late(&mut on, LateCareer::Realistic);
+    let (mut layoffs, mut never) = (0, 0);
+    let (mut spell_off, mut spell_on, mut compared) = (0.0, 0.0, 0);
+    let mut age_sum_never = 0.0;
+    let mut age_sum_all = 0.0;
+    for path in 0..500 {
+        let l_off = event_months(&off, path, "Laid off");
+        let l_on = event_months(&on, path, "Laid off");
+        // The first layoff is in the same month; later ones need not match (a longer
+        // spell shifts exposure, and a retired person is no longer exposed).
+        assert_eq!(l_off.first(), l_on.first(), "path {path}");
+        let retired = event_months(&on, path, "Involuntary retirement");
+        // Every layoff on the feature's path is one trial of the never-again draw.
+        for m in &l_on {
+            layoffs += 1;
+            let age = 56.0 + f64::from(*m) / 12.0;
+            age_sum_all += age;
+            if retired.contains(m) {
+                never += 1;
+                age_sum_never += age;
+            }
+        }
+        if let Some(r) = retired.first() {
+            // The single-person household retires the next month (or on its plan date).
+            assert_eq!(event_months(&on, path, "Retired"), vec![*r + 1]);
+            // No pay again.
+            let w = wages(&on, path);
+            // (An all-zero column is omitted from the trace, hence the `get`.)
+            let after = w.get(*r as usize + 1..).unwrap_or(&[]);
+            assert!(after.iter().all(|x| *x == 0.0), "path {path}");
+        } else if l_off.len() == 1 {
+            // A layoff that was survived: the idle months are longer with the feature.
+            let first = l_off[0];
+            let idle = |p: &Profile| {
+                column(p, path, "income_wages")[first as usize..120]
+                    .iter()
+                    .take_while(|w| **w == 0.0)
+                    .count() as f64
+            };
+            spell_off += idle(&off);
+            spell_on += idle(&on);
+            compared += 1;
+        }
+    }
+    assert!(layoffs > 100, "{layoffs} paths with a layoff");
+    // Probability of never working again averages the age profile (about 15% to 50%).
+    let share = f64::from(never) / f64::from(layoffs);
+    assert!((0.15..0.5).contains(&share), "never-again share {share}");
+    // Those who never work again were laid off later (older) than the rest.
+    let mean_never = age_sum_never / f64::from(never);
+    let mean_all = age_sum_all / f64::from(layoffs);
+    assert!(mean_never > mean_all, "{mean_never} vs {mean_all}");
+    assert!(compared > 20, "{compared} surviving spells compared");
+    assert!(
+        spell_on > 1.15 * spell_off,
+        "idle months with the feature {spell_on} vs {spell_off}"
+    );
+}
+
+#[test]
+fn f19_lowers_lifetime_pay_in_the_expected_direction() {
+    let off = older_worker();
+    let mut on = off.clone();
+    late(&mut on, LateCareer::Realistic);
+    let (mut a_total, mut b_total, mut better) = (0.0, 0.0, 0);
+    for path in 0..300 {
+        let a: f64 = wages(&off, path).iter().sum();
+        let b: f64 = wages(&on, path).iter().sum();
+        a_total += a;
+        b_total += b;
+        better += usize::from(b > a + 1.0);
+    }
+    // A longer spell can skip a later layoff (the worker is still idle when the
+    // hazard would have struck), so a few paths end up ahead; they are rare.
+    assert!(better * 40 < 300, "{better} of 300 paths paid more");
+    let loss = 1.0 - b_total / a_total;
+    assert!((0.005..0.25).contains(&loss), "lifetime pay loss {loss}");
+}
+
+#[test]
+fn f19_a_couple_keeps_working_when_one_partner_is_pushed_out() {
+    let mut p = older_worker();
+    let mut b = person("b", 50, Sex::Unspecified);
+    b.social_security.basis = SocialSecurityBasis::None;
+    p.household.people.push(b);
+    p.incomes.push(job("job_b", 1, 60_000.0));
+    p.accounts
+        .push(account("cash_b", 1, AccountKind::Cash, 0.0));
+    late(&mut p, LateCareer::Realistic);
+    let mut found = 0;
+    for path in 0..600 {
+        let pushed = event_months(&p, path, "Involuntary retirement");
+        let Some(first) = pushed.first() else {
+            continue;
+        };
+        // The household does not retire in the next month while the partner works
+        // (partner is 50, due to retire with the household later).
+        let retired = event_months(&p, path, "Retired");
+        assert!(retired.iter().all(|m| *m != first + 1), "path {path}");
+        found += 1;
+        if found == 3 {
+            break;
+        }
+    }
+    assert!(found >= 1);
+}
+
+// ---------------------------------------------------------------------------
 // Conservation and finite values (every feature-enabled profile goes through here)
 // ---------------------------------------------------------------------------
 
@@ -361,4 +810,32 @@ fn f17_profile_conserves_money_and_stays_finite() {
         j.plan = Some(EmployerPlan::default());
     }
     conserves_and_is_finite(&p, 150);
+}
+
+#[test]
+fn f18_profile_conserves_money_and_stays_finite() {
+    let mut p = disability_worker(40, 65.0);
+    disabled(
+        &mut p,
+        Some(LtdInsurance {
+            replacement: 0.6,
+            to_age: 65.0,
+        }),
+    );
+    if let IncomeKind::Job(j) = &mut p.incomes[0].kind {
+        j.risk.level = RiskLevel::High;
+        j.plan = Some(EmployerPlan::default());
+    }
+    p.assumptions.career_risk = true;
+    conserves_and_is_finite(&p, 200);
+}
+
+#[test]
+fn f19_profile_conserves_money_and_stays_finite() {
+    let mut p = older_worker();
+    late(&mut p, LateCareer::Realistic);
+    job_risk(&mut p).recession_pay = RecessionPay::Typical;
+    job_risk(&mut p).job_mobility = JobMobility::Typical;
+    p.household.people[0].disability_risk = DisabilityRisk::Typical;
+    conserves_and_is_finite(&p, 200);
 }

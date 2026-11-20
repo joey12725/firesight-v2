@@ -3,7 +3,7 @@
 //! reviewer can find them in one place (same convention as `unverified_constants.rs`).
 //! This test keeps the code and that list equal.
 
-use firesight_core::career_realism::{mobility, recession_pay};
+use firesight_core::career_realism::{disability, late_career, mobility, recession_pay};
 use firesight_core::data::Data;
 
 fn numbers(v: &serde_json::Value) -> Vec<f64> {
@@ -78,4 +78,52 @@ fn recession_pay_constants_match_the_data_file() {
         f64::from(recession_pay::BONUS_SLACK_MONTHS),
         num("bonus_slack_months")
     );
+}
+
+#[test]
+fn disability_constants_match_the_data_file() {
+    let m = &section()["disability"];
+    let num = |k: &str| m[k].as_f64().unwrap();
+    assert_eq!(
+        disability::BAND_FROM_AGE.to_vec(),
+        numbers(&m["band_from_age"])
+    );
+    assert_eq!(
+        disability::INCIDENCE_PER_1000.to_vec(),
+        numbers(&m["incidence_per_1000_by_age_band"])
+    );
+    assert_eq!(disability::ANNUAL_RECOVERY, num("annual_recovery"));
+    assert_eq!(disability::RETURN_SCAR, num("return_scar"));
+    assert_eq!(
+        f64::from(disability::SSDI_WAIT_MONTHS),
+        num("ssdi_wait_months")
+    );
+    assert_eq!(
+        f64::from(disability::LTD_WAIT_MONTHS),
+        num("ltd_wait_months")
+    );
+    assert_eq!(
+        disability::MIN_INSURED_YEARS as f64,
+        num("min_insured_years")
+    );
+    assert_eq!(disability::MIN_ONSET_AGE, num("min_onset_age"));
+}
+
+#[test]
+fn late_career_constants_match_the_data_file() {
+    let m = &section()["late_career"];
+    let num = |k: &str| m[k].as_f64().unwrap();
+    assert_eq!(late_career::FROM_AGE, num("from_age"));
+    assert_eq!(
+        late_career::SPELL_MULTIPLIER.to_vec(),
+        numbers(&m["spell_multiplier_by_age_band"])
+    );
+    assert_eq!(late_career::SCAR_MULTIPLIER, num("scar_multiplier"));
+    assert_eq!(late_career::NEVER_AT_55, num("never_probability_at_55"));
+    assert_eq!(
+        late_career::NEVER_PER_YEAR,
+        num("never_probability_per_year")
+    );
+    assert_eq!(late_career::NEVER_MAX, num("never_probability_max"));
+    assert_eq!(late_career::SPELL_CAP_MONTHS, num("spell_cap_months"));
 }

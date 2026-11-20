@@ -171,6 +171,29 @@ pub struct CareerRisk {
     /// `assumptions.career_risk` on.
     #[serde(skip_serializing_if = "crate::career_realism::is_default")]
     pub recession_pay: RecessionPay,
+    /// What happens to workers laid off from 55 on. Off by default (the career model
+    /// then already has longer spells from 55 and larger pay losses from 50). When
+    /// "realistic", a layoff from 55 brings a spell up to 1.8 times longer and a pay
+    /// loss 1.3 times larger on top of those, and with a probability that rises with
+    /// age (15% at 55, 35% at 60, 51% at 64) the worker never works again: they retire
+    /// involuntarily, and the household retires on what it has if nobody else is
+    /// still working. How often layoffs happen is still set by `level`. Needs
+    /// `level` other than none and `assumptions.career_risk` on.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub late_career: LateCareer,
+}
+
+/// How hard a layoff hits older workers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LateCareer {
+    /// Only the career model's own age adjustments apply (the default).
+    #[default]
+    Off,
+    /// Longer spells, larger pay losses and a rising chance of never working again
+    /// after a layoff at 55 or older, shaped by Health and Retirement Study evidence
+    /// of forced early retirement (the numbers are judgements).
+    Realistic,
 }
 
 /// Whether workers who keep their job still lose pay in a recession.
