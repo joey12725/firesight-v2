@@ -2435,6 +2435,18 @@
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
+    },
+    "policy_risk_defaults": {
+      "note": "Defaults and window of assumptions.taxes.policy_risk (policy::DEFAULT_* and POLICY_WINDOW_YEARS). All judgements, not forecasts. window_years: the year a change begins is drawn uniformly from this many years from earliest_year. ss_haircut_probability: even odds that a depletion is closed with a benefit cut. tax_increase_probability and tax_increase_points: some chance of a two-point rise in every ordinary rate. The sourced defaults (factor 0.77 and earliest year 2033) are the 2025 Social Security Trustees Report's OASI depletion year and payable share, https://www.ssa.gov/OACT/TR/2025/II_A_highlights.html and https://www.ssa.gov/OACT/TRSUM/2025/index.html.",
+      "window_years": 15,
+      "ss_haircut_probability": 0.5,
+      "tax_increase_probability": 0.25,
+      "tax_increase_points": 0.02
+    },
+    "tax_loss_harvesting": {
+      "note": "Thresholds of portfolio.tax_loss_harvesting (sim::realism::TLH_LOSS_THRESHOLD, TLH_MIN_LOSS_REAL). Judgements: a holding is harvested when it stands this fraction below its cost basis and the loss is at least min_loss_real in today's dollars. Automated harvesting services act on losses of a few percent; the minimum keeps the household from trading for trivial amounts. Wash sales are assumed avoided by buying a similar but not identical fund of the same asset class; no trading cost or tracking difference is charged.",
+      "loss_threshold": 0.05,
+      "min_loss_real": 1000.0
     }
   },
   "long_run_assumptions": {

@@ -693,6 +693,15 @@ keyed_enum! {
         PartnerJoined => "partner_joined",
         /// A person died.
         Died => "died",
+        /// Capital losses were realised and the holding bought back (tax-loss
+        /// harvesting).
+        TaxLossHarvest => "tax_loss_harvest",
+        /// Giving was paid straight from an IRA as a qualified charitable
+        /// distribution.
+        QualifiedCharitableDistribution => "qualified_charitable_distribution",
+        /// A policy change from `policy_risk` took effect on this path (Social
+        /// Security cut, ordinary tax rates raised).
+        PolicyChange => "policy_change",
         /// A market move worth annotating (crash, recovery, stress overlay).
         Market => "market",
         /// A profile life event not covered above.

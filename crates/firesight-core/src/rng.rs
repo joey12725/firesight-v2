@@ -69,6 +69,9 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Which policy changes (a Social Security cut, a tax increase) happen on a path,
+    /// and from when: four uniforms per path, drawn only when `policy_risk` is set.
+    PolicyRisk,
 }
 
 impl Stream {
@@ -81,6 +84,7 @@ impl Stream {
             Stream::EquityComp => 3,
             Stream::Shocks => 4,
             Stream::Events => 5,
+            Stream::PolicyRisk => 1500,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,

@@ -246,6 +246,7 @@ impl State {
             refresh,
         );
         self.params.foreign_tax_rate = self.foreign_rate;
+        self.policy_rates(1 << status.index());
         self.law_ready = 1 << status.index();
         self.law_state = self.tax_state;
     }
@@ -261,6 +262,7 @@ impl State {
                 &mut self.params,
                 status.index(),
             );
+            self.policy_rates(bit);
             self.law_ready |= bit;
         }
     }
@@ -534,6 +536,7 @@ impl State {
         if new_year || first {
             self.price_jan = price;
             self.index = self.indexation(plan, year, price);
+            self.realism_year_start(now);
         }
         let (status, adults, young, other) = self.household_for_tax(plan, year);
         // The law is re-indexed each January and rebuilt when the residence changes.
@@ -641,7 +644,7 @@ impl State {
         }
         self.ss_dirty = true;
         if t >= self.ss_from {
-            let b = plan.ss.monthly(now, &self.claimants, price);
+            let b = self.policy_benefits(now, plan.ss.monthly(now, &self.claimants, price));
             for i in 0..self.n {
                 if self.present[i] {
                     benefits[i] = b.paid[i] * m_left;
@@ -850,6 +853,10 @@ impl State {
                 self.sepp[i] = 0.0;
             }
         }
+        self.rz.qcd_expected = 0.0;
+        if plan.profile.retirement.qcd {
+            self.qcd_plan(plan, t, price, m_left, &mut rmd);
+        }
         self.pinputs = PlanInputs {
             ages: ages_now,
             ..PlanInputs::default()
@@ -874,7 +881,8 @@ impl State {
                 } else {
                     0.0
                 };
-                let net_need = spend_month * m_left + tax_rest_base - income_rest + due;
+                let net_need =
+                    spend_month * m_left + tax_rest_base - income_rest + due - self.rz.qcd_expected;
                 self.pinputs = PlanInputs {
                     // The plan works at the tax year's scale: amounts for the months
                     // still to come, annualised when the year started part-way.

@@ -478,6 +478,35 @@ fn every_feature_at_once_conserves_money() {
     }
 }
 
+/// Policy risk, tax-loss harvesting, qualified charitable distributions and full
+/// state detail all on, on top of everything else.
+pub fn with_realism_options(mut p: Profile) -> Profile {
+    p.assumptions.taxes.policy_risk = Some(PolicyRisk {
+        ss_haircut_probability: 0.7,
+        tax_increase_probability: 0.7,
+        ..PolicyRisk::default()
+    });
+    p.assumptions.taxes.chained_cpi = true;
+    p.assumptions.taxes.state_detail = StateDetail::Full;
+    p.portfolio.tax_loss_harvesting = true;
+    p.retirement.qcd = true;
+    p
+}
+
+#[test]
+fn tax_and_policy_realism_options_conserve_money() {
+    let profile = with_realism_options(kitchen_sink());
+    for kind in MARKETS {
+        let plan = compile(&with_market(profile.clone(), kind));
+        let acc = run_checked(&plan, 5, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
+    }
+    for example in Profile::examples(START) {
+        let plan = compile(&with_realism_options(example.profile));
+        run_checked(&plan, 11, 0..paths());
+    }
+}
+
 #[test]
 fn traces_conserve_money_and_show_the_events() {
     let plan = compile(&kitchen_sink());

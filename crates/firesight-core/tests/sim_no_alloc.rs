@@ -72,6 +72,16 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    // The tax and policy realism options on, too.
+    let mut realism = kitchen_sink_lite();
+    realism.assumptions.taxes.policy_risk = Some(firesight_core::model::PolicyRisk {
+        ss_haircut_probability: 0.7,
+        tax_increase_probability: 0.7,
+        ..Default::default()
+    });
+    realism.portfolio.tax_loss_harvesting = true;
+    realism.retirement.qcd = true;
+    profiles.push(realism);
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

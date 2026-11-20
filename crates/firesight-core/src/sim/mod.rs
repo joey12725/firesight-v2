@@ -59,6 +59,7 @@ mod events;
 mod month;
 mod plan;
 mod preview;
+mod realism;
 mod record;
 mod state;
 mod trigger;

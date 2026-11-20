@@ -367,6 +367,76 @@ $1.327m (-1.4%, the credit once both are on benefits). Not modelled: other state
 recapture or phase-out rules (Connecticut's), New Jersey and other disability or
 family-leave payroll taxes, Washington's payroll programmes, Oregon's.
 
+### Policy risk (`assumptions.taxes.policy_risk`, absent by default)
+
+`social_security_haircut` is a switch: every path gets the same cut. `policy_risk`
+makes policy a distribution. Once per path, from its own random stream
+(`Stream::PolicyRisk`, four uniforms whatever the settings, so scenarios stay paired),
+the path draws: whether Social Security benefits are cut (probability
+`ss_haircut_probability`), and from which calendar year (uniform over the fifteen years
+from `earliest_year`); and the same two things for a rise of `tax_increase_points`
+in every federal ordinary-income bracket rate. Capital gains, payroll and state tax do
+not change. The household does not foresee the change: planning uses the law of the
+year as it stands when the year starts. The cut multiplies the scheduled benefit
+(and stacks on `social_security_haircut` if both are set; validation warns).
+
+Sources: the default factor 0.77 and `earliest_year` 2033 are the OASI trust fund's
+depletion year and payable share in the 2025 Social Security Trustees Report (SSA,
+2025; the combined funds are 81% in 2034). Everything else is a judgement, registered
+in `data/actuarial/params.json` under `unverified_from_memory.policy_risk_defaults`:
+probability of a cut 0.5, probability of a tax rise 0.25, two points, a 15-year window.
+
+Measured on 2,000 paths of the dual-income example, defaults on against off: success
+92.5% to 88.8%, median terminal net worth $1.755m to $1.478m, median lifetime tax
+$971k to $983k. Not modelled: a cut that spares current retirees, a rise in the
+payroll-tax cap or the retirement age instead of a cut, rate changes that differ by
+bracket, changes to capital-gains or estate tax, and any link between policy and
+the economy on the same path.
+
+### Tax-loss harvesting (`portfolio.tax_loss_harvesting`, off by default)
+
+Once a month after returns, any taxable holding that stands at least 5% below its cost
+basis (and by at least $1,000 in today's dollars) is sold and a similar fund of the
+same asset class bought, so the portfolio is unchanged and the wash-sale rule is
+assumed avoided. Its basis resets to its value and the loss is added to the year's
+long-term gains, so the tax return nets it against gains, takes up to $3,000 of the
+rest against ordinary income and carries the remainder forward (the existing loss
+machinery). Held single stock (employer stock the household is keeping) is not
+harvested. A trace event records each harvest.
+
+It defers tax; it does not remove it. The lower basis becomes a larger gain when the
+holding is finally sold, and the benefit comes from the delay, from losses used against
+ordinary income at a higher rate than the later gain, and from a step-up at death that
+erases the deferred gain. The 5% and $1,000 thresholds are judgements (registered under
+`unverified_from_memory.tax_loss_harvesting`); no trading cost or tracking difference
+is charged.
+
+Measured on 2,000 paths, on against off (medians): dual-income lifetime tax $971.3k to
+$970.1k (-0.1%), early-career-saver $879.2k to $882.4k (+0.4%), side-hustle-landlord
+$600.5k to $599.9k; median terminal net worth moves -0.2%, +0.8% and +1.4%
+respectively. The effect is small because most of these
+households hold little in a taxable account that falls below basis. Not modelled: trading
+costs, tracking difference against the replaced fund, wash sales through the household's
+other accounts or a spouse, harvesting individual lots rather than whole asset classes.
+
+### Qualified charitable distributions (`retirement.qcd`, off by default)
+
+From age 70 and a half, the budget's Giving lines are paid straight from the person's
+traditional account up to the annual limit per person: $111,000 for 2026 (IRS Notice
+2025-67, the SECURE 2.0 Act indexed amount, $108,000 in 2025), then indexed with prices
+and rounded to $1,000 (the rounding is an assumption). The money never enters taxable
+income, so it lowers the taxable share of Social Security, the Medicare income-related
+surcharge (IRMAA) and state tax, and it counts toward the required distribution, which
+the annual plan reduces by what it expects to give. The giving itself, its amounts and
+timing, is the budget line unchanged; what changes is where the money comes from. With
+no Giving line or no traditional account nothing happens (validation warns).
+
+Measured on 2,000 paths, on against off: dual-income lifetime tax (median) $971.3k to
+$956.3k (-1.5%), median terminal net worth $1.755m to $1.772m; the other two examples
+have no giving and do not change. Not modelled: the one-time $55,000 split-interest
+gift allowance, QCDs to donor-advised funds (not allowed), giving above the Giving
+lines, and a spouse's separate limit pooled across two IRAs (each person gives from their own).
+
 ## 6. Income and careers
 
 A job pays its entered salary (today's dollars) and follows either a flat real

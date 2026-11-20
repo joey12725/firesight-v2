@@ -189,6 +189,13 @@ pub struct TaxModel {
     /// It changes nothing for households in other states.
     #[serde(skip_serializing_if = "is_basic")]
     pub state_detail: StateDetail,
+    /// Policy risk: on each simulated path, with the stated probabilities, Social
+    /// Security benefits are cut from a random year at or after the trust-fund date
+    /// and/or ordinary income tax rates rise from a random year. Makes policy a
+    /// distribution instead of a switch (`social_security_haircut` is the switch).
+    /// Leave empty for no policy change. Cuts stack on `social_security_haircut`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_risk: Option<PolicyRisk>,
 }
 
 impl Default for TaxModel {
@@ -199,6 +206,7 @@ impl Default for TaxModel {
             social_security_haircut: None,
             chained_cpi: false,
             state_detail: StateDetail::Basic,
+            policy_risk: None,
         }
     }
 }
@@ -260,6 +268,44 @@ impl Default for SocialSecurityHaircut {
         Self {
             from_year: 2033,
             factor: 0.79,
+        }
+    }
+}
+
+/// Random future changes in policy, drawn once per path.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PolicyRisk {
+    /// Chance, on each path, that Social Security benefits are cut at some point at
+    /// or after `earliest_year`. 0 for never, 1 for always. A judgement, not a
+    /// forecast: 0.5 says the shortfall is as likely to be paid for with other
+    /// changes (taxes, retirement age) as to fall on benefits.
+    pub ss_haircut_probability: f64,
+    /// Share of scheduled benefits still paid once the cut has happened (0.77 = a 23%
+    /// cut: the 2025 Trustees Report says 77% of scheduled benefits are payable from
+    /// the OASI depletion date in 2033, 81% for the combined funds in 2034).
+    pub ss_haircut_factor: f64,
+    /// First calendar year in which a change can begin. The year is then drawn
+    /// uniformly from the following fifteen years (this year included). The Trustees
+    /// project the OASI trust fund to run short in 2033.
+    pub earliest_year: i32,
+    /// Chance, on each path, that federal ordinary income tax rates are raised at
+    /// some point at or after `earliest_year`.
+    pub tax_increase_probability: f64,
+    /// Points added to every federal ordinary income bracket rate once the increase
+    /// has happened, as a decimal (0.02 turns a 22% rate into 24%). Capital gains,
+    /// payroll and state taxes are unchanged.
+    pub tax_increase_points: f64,
+}
+
+impl Default for PolicyRisk {
+    fn default() -> Self {
+        Self {
+            ss_haircut_probability: crate::policy::DEFAULT_SS_HAIRCUT_PROBABILITY,
+            ss_haircut_factor: crate::policy::DEFAULT_SS_HAIRCUT_FACTOR,
+            earliest_year: crate::policy::DEFAULT_EARLIEST_YEAR,
+            tax_increase_probability: crate::policy::DEFAULT_TAX_INCREASE_PROBABILITY,
+            tax_increase_points: crate::policy::DEFAULT_TAX_INCREASE_POINTS,
         }
     }
 }

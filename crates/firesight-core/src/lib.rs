@@ -32,6 +32,7 @@ pub mod legacy;
 pub mod math;
 pub mod model;
 pub mod patch;
+pub mod policy;
 pub mod rng;
 pub mod scenario;
 pub mod sim;

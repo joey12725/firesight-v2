@@ -25,6 +25,19 @@ pub struct RetirementPlan {
     pub bequest_target: f64,
     /// What happens to property when savings run out.
     pub home_equity: HomeEquity,
+    /// Pay the budget's Giving lines directly from the traditional IRA as qualified
+    /// charitable distributions once a person is 70 and a half, up to the annual limit
+    /// per person ($111,000 in 2026, indexed with prices). The money never enters
+    /// taxable income, so it lowers taxable Social Security, Medicare surcharges and
+    /// state tax, and it counts toward the required minimum distribution. The giving
+    /// itself is the budget's Giving lines, unchanged; with no Giving lines nothing
+    /// happens. Off by default.
+    #[serde(skip_serializing_if = "is_false")]
+    pub qcd: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Whether property is sold when every account is empty.
@@ -54,6 +67,7 @@ impl Default for RetirementPlan {
             early_access: EarlyAccess::Auto,
             bequest_target: 0.0,
             home_equity: HomeEquity::LastResort,
+            qcd: false,
         }
     }
 }
