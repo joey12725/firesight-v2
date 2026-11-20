@@ -1,6 +1,7 @@
 //! Every demo household under every market model: nothing a recorder is handed is
 //! ever NaN or infinite, in the aggregate or in a trace.
 
+mod behavior_profiles;
 mod common;
 
 use common::*;
@@ -145,6 +146,38 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
             let json = serde_json::to_string(&trace).unwrap();
             assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
             assert!(trace.tax_returns.len() >= 2);
+        }
+    }
+}
+
+#[test]
+fn household_behaviour_features_keep_every_number_finite() {
+    for profile in behavior_profiles::behavior_profiles() {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let mut ws = Workspace::new(&plan);
+            let mut rec = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 0,
+            };
+            for i in 0..300 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut rec);
+            }
+            let summary = plan.summarize(&rec.inner);
+            let json = serde_json::to_string(&summary).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{}",
+                profile.name
+            );
+            let trace = sim::trace_path(&plan, 19, 1);
+            let json = serde_json::to_string(&trace).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{}",
+                profile.name
+            );
         }
     }
 }

@@ -113,7 +113,7 @@ const SPELL_MAX_MONTHS: f64 = 36.0;
 /// Recession durations and wage losses apply to spells that start in a recession or
 /// within this many months after one (params.json,
 /// `unemployment.recession_shift.duration_regime`).
-const SLACK_MONTHS_AFTER_RECESSION: u32 = 12;
+pub(crate) const SLACK_MONTHS_AFTER_RECESSION: u32 = 12;
 /// Scar add-on: +0.01 to the mean log wage loss per month of spell beyond 6, capped at
 /// +0.10 (params.json, `unemployment.reemployment_wage_loss.long_spell_addon`).
 const SCAR_LONG_SPELL_PER_MONTH: f64 = 0.01;

@@ -69,6 +69,9 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// How long a retired person's search for work lasts
+    /// (`retirement.return_to_work`), one per person.
+    ReturnToWork(usize),
 }
 
 impl Stream {
@@ -85,6 +88,7 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::ReturnToWork(i) => 0x1900_0000 + i as u64,
         }
     }
 }

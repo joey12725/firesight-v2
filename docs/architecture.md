@@ -181,6 +181,9 @@ RetirementPlan {
   early_access: Auto | PayPenalty,               // Auto: taxable, Roth basis, seasoned conversions, 72(t)
   bequest_target: f64,
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
+  return_to_work: Option<{ funded_ratio_below (0.8), until_age (70), pay_fraction (0.5),
+                           former_annual_pay: Option<f64>,
+                           search: Typical | Fixed{months} }>,  // off by default; sim/behavior/work.rs
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

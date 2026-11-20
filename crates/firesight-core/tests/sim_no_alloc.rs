@@ -3,6 +3,7 @@
 //! This lives in its own test binary because it replaces the global allocator with
 //! one that counts allocations made by the current thread.
 
+mod behavior_profiles;
 mod common;
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -72,6 +73,7 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    profiles.extend(behavior_profiles::behavior_profiles());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

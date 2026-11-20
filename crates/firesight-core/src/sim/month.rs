@@ -342,6 +342,10 @@ impl State {
             }
         }
 
+        if plan.beh.any {
+            self.behavior_income(plan, econ, t);
+        }
+
         // 4. Other income: pensions, annuities, other streams, Social Security.
         self.pay_streams(plan, t, price);
         if t >= self.ss_from {

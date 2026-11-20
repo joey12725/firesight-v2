@@ -289,6 +289,8 @@ pub(crate) struct State {
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// Behaviour features (`sim/behavior`).
+    pub beh: super::behavior::BehaviorState,
 }
 
 impl State {
@@ -472,6 +474,7 @@ impl State {
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
             tax_details: Vec::new(),
+            beh: super::behavior::BehaviorState::default(),
         }
     }
 
@@ -537,6 +540,7 @@ impl State {
         );
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
+        self.beh.begin(&plan.beh, seed, path);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }

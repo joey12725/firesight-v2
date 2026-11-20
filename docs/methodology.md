@@ -542,6 +542,40 @@ A partner can stop work later (`partner_offset_years`). Coast-FI (the age at whi
 today's savings, with no more saving, would meet the test at the planned
 retirement age) is reported too.
 
+### Going back to work (opt-in)
+
+`retirement.return_to_work` (off by default) lets a retired household look for
+paid work again when its savings fall behind. Each January the funded test above
+is run on the retired household as it now stands; its funded ratio is wealth over
+the requirement (never below zero). Below `funded_ratio_below` (default 0.8),
+every adult who has stopped working and is younger than `until_age` (70) starts a
+search. Its length is drawn from the engine's own unemployment-duration model
+(lognormal, median 2.2 months, 4 in a recession or the year after one, sigma 1,
+times 1.4 from 55; section 6), times a further 1.1 from 65: the ratio of mean
+unemployment durations at 65+ and 55 to 64 in the BLS Current Population Survey
+(2024 annual averages, table 31: 28.9 against 26.2 weeks). That multiplier is a
+judgement as much as a measurement, because the medians go the other way (10.9
+against 12.0 weeks). The search can also be fixed at a number of months. The job
+then pays `pay_fraction` (0.5: half time, or full time at half the pay) of the
+person's real pay when they retired, or of `former_annual_pay` for a household
+retired from the start. The wages are taxed, pay employee FICA, count toward the
+Social Security earnings record and the earnings test, and appear as wages in the
+year series and as a "back at work" event in a trace. Work stops in the first
+January the ratio is 1 or more again, or at `until_age`. Random numbers come from
+their own stream, one draw per person per month whatever happens.
+
+Measured with the CLI (`firesight compare`, 3,000 paired paths, default settings):
+`early-career-saver` (retires at a median 39 on a 3.5% rule) goes from 15.8% to
+0.9% of paths depleted, with median lifetime tax up $332,000 as the wages are
+taxed; `dual-income-family` from 8.2% to 6.3%; `side-hustle-landlord` from 7.8%
+to 6.2%. The young retiree gains most because it has thirty years in which it can
+go back.
+
+Not modelled: the job has no wage growth, shocks or layoffs, brings no employer
+health cover, workplace plan or HSA; the search does not depend on how long the
+person has been retired; the household's spending does not change while it
+works; there is no age discrimination beyond the longer search.
+
 ## 12. Spending in retirement
 
 Six rules decide each January how much to spend:

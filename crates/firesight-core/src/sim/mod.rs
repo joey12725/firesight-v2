@@ -55,6 +55,7 @@ use std::ops::Range;
 use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
+mod behavior;
 mod events;
 mod month;
 mod plan;
