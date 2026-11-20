@@ -21,5 +21,28 @@ pub fn variants(base: &Profile) -> Vec<(String, Profile)> {
         p.assumptions.market.valuation = Some(Valuation::default());
         out.push((format!("valuation {kind:?}"), p));
     }
+    for (i, episode) in [
+        Episode::GreatDepression1929,
+        Episode::Stagflation1966,
+        Episode::DotCom2000,
+        Episode::Financial2008,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut p = base.clone();
+        // Spread the start dates so episodes land before and after retirement.
+        p.assumptions.market.stress.push(Stress::HistoricalEpisode {
+            start: When::date(YearMonth::ym(2029 + 7 * i as i32, 1)),
+            episode,
+        });
+        out.push((format!("episode {episode:?}"), p));
+    }
+    let mut p = base.clone();
+    p.assumptions.market.stress.push(Stress::LostGeneration {
+        start: When::retirement(0.0),
+        years: 20.0,
+    });
+    out.push(("lost generation".to_string(), p));
     out
 }

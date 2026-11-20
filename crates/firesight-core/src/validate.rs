@@ -1630,6 +1630,11 @@ impl Checker<'_> {
                         0.5,
                     );
                 }
+                Stress::HistoricalEpisode { start, .. } => self.when(&format!("{sp}/start"), start),
+                Stress::LostGeneration { start, years } => {
+                    self.when(&format!("{sp}/start"), start);
+                    market_realism::lost_generation_years(&sp, *years, &mut self.r);
+                }
             }
         }
         market_realism::check(&a.market, &mut self.r);

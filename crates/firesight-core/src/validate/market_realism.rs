@@ -17,6 +17,18 @@ pub(super) fn check(m: &MarketModel, r: &mut Report) {
     }
 }
 
+/// Checks the length of a `LostGeneration` stress at `sp`.
+pub(super) fn lost_generation_years(sp: &str, years: f64, r: &mut Report) {
+    let path = format!("{sp}/years");
+    if r.range(&path, "Duration", years, 0.0, 80.0) && years > 40.0 {
+        r.warn(
+            "lost_generation_long",
+            &path,
+            "Japan's stagnation lasted about two decades; a lost generation of more than 40 years is far beyond any national record.",
+        );
+    }
+}
+
 fn valuation(m: &MarketModel, v: &Valuation, r: &mut Report) {
     const P: &str = "/assumptions/market/valuation";
     let start = r.range(
@@ -104,5 +116,25 @@ mod tests {
         p.assumptions.market.valuation = Some(Valuation::default());
         p.assumptions.market.kind = MarketKind::Historical;
         assert!(codes(&p).contains(&"valuation_ignored".to_string()));
+    }
+
+    #[test]
+    fn lost_generation_years_are_checked() {
+        use crate::model::{Stress, When};
+        let mut p = Profile::example();
+        p.assumptions.market.stress = vec![Stress::LostGeneration {
+            start: When::retirement(0.0),
+            years: 50.0,
+        }];
+        assert!(codes(&p).contains(&"lost_generation_long".to_string()));
+        assert!(validate(&p).errors.is_empty());
+        p.assumptions.market.stress = vec![Stress::LostGeneration {
+            start: When::retirement(0.0),
+            years: -1.0,
+        }];
+        assert!(validate(&p)
+            .errors
+            .iter()
+            .any(|i| i.path == "/assumptions/market/stress/0/years"));
     }
 }

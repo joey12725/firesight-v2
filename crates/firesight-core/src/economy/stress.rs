@@ -1,7 +1,7 @@
 //! Stress overlays: deterministic rewrites of a generated path from a start month on.
 
 use crate::math;
-use crate::model::{AssetClass, N_ASSETS};
+use crate::model::{AssetClass, Episode, N_ASSETS};
 
 use super::{EconomyModel, EconomyPath};
 
@@ -67,6 +67,10 @@ pub enum ResolvedStress {
         months: usize,
         inflation: f64,
     },
+    /// The record's months of `episode` from `from_month` (`economy::episodes`).
+    HistoricalEpisode { from_month: usize, episode: Episode },
+    /// `months` of Japan-style stagnation from `from_month` (`economy::episodes`).
+    LostGeneration { from_month: usize, months: usize },
 }
 
 /// `r + beta * delta`, never below a total loss. A return of exactly -1.0 marks a
@@ -98,6 +102,13 @@ impl EconomyModel {
                 months,
                 inflation,
             } => self.apply_stagflation(out, from_month, months, inflation),
+            ResolvedStress::HistoricalEpisode {
+                from_month,
+                episode,
+            } => self.apply_episode(out, from_month, episode),
+            ResolvedStress::LostGeneration { from_month, months } => {
+                self.apply_lost_generation(out, from_month, months)
+            }
         }
     }
 

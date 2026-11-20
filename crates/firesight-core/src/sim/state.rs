@@ -832,6 +832,14 @@ impl State {
                 months,
                 inflation,
             }),
+            StressPlan::HistoricalEpisode { start, episode } => {
+                resolve(start).map(|from_month| ResolvedStress::HistoricalEpisode {
+                    from_month,
+                    episode,
+                })
+            }
+            StressPlan::LostGeneration { start, months } => resolve(start)
+                .map(|from_month| ResolvedStress::LostGeneration { from_month, months }),
         };
         if let Some(r) = resolved {
             plan.econ.apply_stress(&r, econ);

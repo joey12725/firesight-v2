@@ -69,3 +69,54 @@ impl Default for Valuation {
         }
     }
 }
+
+/// A historical market episode a [`Stress::HistoricalEpisode`](super::Stress)
+/// replays. Each runs from the first month after the US stock market's peak to the
+/// month its real value regained the peak, except the 1966-82 stagflation, which
+/// has no such clean end in the total-market record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Episode {
+    /// September 1929 to February 1945 (186 months): stocks fell 79% after
+    /// inflation by June 1932 and took until 1945 to recover, with deflation in the
+    /// early years.
+    GreatDepression1929,
+    /// January 1966 to July 1982 (199 months): inflation averaged 7% a year, stocks
+    /// lost about 19% and 10-year bonds about 36% after inflation, and the 10-year yield rose
+    /// from 4.7% to 13.7%.
+    Stagflation1966,
+    /// April 2000 to February 2013 (155 months): the dot-com bust and the 2008 crisis
+    /// back to back; stocks returned nothing after inflation over the 13 years while
+    /// bonds did well and yields fell from 6% to 1.9%.
+    DotCom2000,
+    /// November 2007 to January 2013 (63 months): stocks fell 51% after inflation by
+    /// February 2009 and recovered by early 2013; bill rates went to zero.
+    Financial2008,
+}
+
+/// Default of `Stress::LostGeneration::years`: Japan's stagnation is usually dated
+/// from the 1990 crash into the early 2010s. Judgement: 20 years, the "two lost
+/// decades".
+pub const DEFAULT_LOST_GENERATION_YEARS: f64 = 20.0;
+/// Annual real total return of stocks over a lost generation. Judgement informed by
+/// Japan: TOPIX fell from 2,881 at the end of 1989 to 1,086 at the end of 1998
+/// (Cabinet Office of Japan, Annual Report on the Japanese Economy 2002), about -10%
+/// a year in price, and from the end of 1990 to August 2013 it returned -1.96% a year
+/// in price (CFA Institute, Enterprising Investor, 2013), with dividends of about 1%
+/// and inflation near zero. -2% sits between the post-crash and peak-dated readings.
+pub const LOST_GENERATION_EQUITY_REAL: f64 = -0.02;
+/// Annual inflation over a lost generation: Japan's consumer prices fell 0.28% a
+/// year on average over 1999-2012 (World Bank, consumer price inflation for Japan,
+/// via FRED series FPCPITOTLZGJPN). Rounded to -0.3%.
+pub const LOST_GENERATION_INFLATION: f64 = -0.003;
+/// 10-year yield the path's yield glides down to: Japan's 10-year government bond
+/// yield averaged 1.0% in 2003 and 0.7 to 1.7% a year in 1998-2013 (OECD via FRED,
+/// IRLTLT01JPA156N).
+pub const LOST_GENERATION_LONG_YIELD: f64 = 0.01;
+/// Years for the yield to glide from the path's level to the floor: Japan's 10-year
+/// yield fell from 7.0% in 1990 to 1.5% in 1998 (same source).
+pub const LOST_GENERATION_GLIDE_YEARS: f64 = 8.0;
+/// Bill yield the path's bill yield glides down to. Judgement: the Bank of Japan's
+/// call rate was at or near zero from 1999 (zero-interest-rate policy); 0.1% stands
+/// in for "near zero" in a model whose bills cannot go negative.
+pub const LOST_GENERATION_BILL_YIELD: f64 = 0.001;

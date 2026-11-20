@@ -193,6 +193,8 @@ Assumptions {
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
+         | HistoricalEpisode{ start: When, episode: GreatDepression1929 | Stagflation1966 | DotCom2000 | Financial2008 }  // the record's months, all series
+         | LostGeneration{ start: When, years (20) },  // Japan-style: stocks -2% real a year, -0.3% inflation, yields glide to 1%
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
                     social_security_haircut: Option<{ from_year, factor }> },
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },

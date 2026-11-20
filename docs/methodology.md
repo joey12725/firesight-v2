@@ -290,6 +290,58 @@ Applied to every path on top of the random draws.
 A token or company that has collapsed (a return of exactly -100%) stays collapsed
 through a stress overlay.
 
+#### Historical episodes and a lost generation (opt-in stresses)
+
+* **Historical episode** (`historical_episode { start, episode }`): from the start
+  date the path lives through a real episode again. US stocks, 10-year bonds, bills,
+  inflation, home prices and the recession flag are the record's months, as they
+  were (no equity-premium or inflation adjustment); international stocks and gold
+  too where the record has them (from 1975 and 1968), otherwise they, listed real
+  estate, crypto, the single stock and the custom asset move by their equity beta
+  times the change imposed on US stocks. The 10-year yield and the mortgage rate
+  move by the record's monthly changes from the path's level, so a path does not
+  jump to 1929's rates overnight. The windows, computed from `data/history` (CRSP
+  total market deflated by CPI-U) as the month after the real peak to the month the
+  real index regained it: Great Depression 1929-09 to 1945-02 (186 months, -79% at
+  the 1932 trough); dot-com 2000-04 to 2013-02 (155 months, which includes 2008;
+  stocks +0.2% after inflation over the whole window, bonds +4.1% a year); 2008
+  2007-11 to 2013-01 (63 months, -51% at the trough). The 1966 window, January 1966
+  to July 1982, is a judgement: the total market regained its 1966 real level
+  briefly in 1967, so it is set by the Dow's 1966 peak and the August 1982 low
+  (inflation 7.0% a year, stocks -1.3% and bonds -2.6% a year after inflation, the
+  yield from 4.7% to 13.7%). It ends at the low, so none of the 1980s recovery is
+  included.
+* **Lost generation** (`lost_generation { start, years }`, default 20 years):
+  Japan after 1989. Over the window inflation is scaled to average -0.3% a year
+  (Japan 1999-2012, World Bank via FRED), US and international stocks to a real
+  total return of -2% a year (a judgement: TOPIX fell from 2,881 at the end of 1989
+  to 1,086 at the end of 1998, Cabinet Office of Japan 2002, and returned -1.96% a
+  year in price from the end of 1990 to 2013, CFA Institute 2013), each month's
+  gross return times one constant so volatility is kept. The bill and 10-year
+  yields glide in a straight line over eight years from the path's level to 0.1%
+  and 1.0% (JGB 10-year yield 7.0% in 1990, 1.5% in 1998, 1.0% in 2003, OECD via
+  FRED) with the path's own monthly moves kept, and bonds are priced from that
+  yield. Home prices keep their real change.
+
+After either window, the shift imposed on the rate levels fades at 1/120 a month
+(the bootstrap's pull to the mean) instead of snapping back, with the carry and
+price change of the fading shift added to bond returns. A trace's event log
+announces the episode in the month it starts.
+
+Measured (`firesight compare`, early-career example, 4,000 paired paths, each
+stress starting at retirement): success 83.7% at baseline, Great Depression 19.1%,
+1966 42.4%, dot-com 41.4%, 2008 77.6%, lost generation 29.8%. On a 60/40 retiree
+spending 4% from a taxable account with `equity_premium_adjustment: 0` (1,500
+paths): 94.5% at baseline, 1966 0.8%, 2008 92.2%, 1929 81.7%, 2000 69.4%, lost
+generation 42.1%. The 1966 figure is far below Bengen's 1966 retiree, who survived
+30 years: that retiree had the 1982-2000 boom after the window, while here the path
+after July 1982 is an ordinary draw, and here bonds are 10-year Treasuries
+(-2.6% a year real), not intermediate ones.
+
+Not modelled: the episodes' unemployment and wage paths (layoff risk still follows
+the recession flag only), the Japanese land-price collapse in a lost generation,
+and episodes outside the US record.
+
 ## 3. Inflation and what follows it
 
 Inflation is CPI-U as generated above; `inflation_adjustment` adds a constant.

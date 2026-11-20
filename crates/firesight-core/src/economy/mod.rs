@@ -81,6 +81,7 @@
 //! See [`EconomyModel::apply_stress`].
 
 mod bonds;
+mod episodes;
 mod fit;
 #[cfg(test)]
 mod realism_tests;
@@ -106,6 +107,7 @@ use crate::rng::Rng;
 use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
+pub use episodes::{episode_first_month, episode_months};
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
@@ -521,6 +523,8 @@ pub struct EconomyModel {
     bonds_from_yield: bool,
     /// `market.valuation`, compiled; `None` when off or for the historical replay.
     valuation: Option<valuation::ValuationTilt>,
+    /// The record's months of the historical episodes, when a stress replays one.
+    episodes: Option<Arc<episodes::EpisodeTables>>,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -1140,8 +1144,16 @@ impl EconomyModel {
             bonds_from_yield: matches!(market.kind, MarketKind::Bootstrap { .. })
                 && market.bond_pricing == BondPricing::FromYield,
             valuation: None,
+            episodes: None,
         };
         let mut model = model.with_asset_params(&SingleStock::default(), &CustomAsset::default());
+        if market
+            .stress
+            .iter()
+            .any(|s| matches!(s, crate::model::Stress::HistoricalEpisode { .. }))
+        {
+            model.episodes = Some(Arc::new(episodes::EpisodeTables::new(h)));
+        }
         if let Some(v) = &market.valuation {
             let embedded = std::ptr::eq(data, Data::embedded());
             model.valuation = model

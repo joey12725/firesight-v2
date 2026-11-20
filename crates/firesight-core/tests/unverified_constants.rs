@@ -69,4 +69,14 @@ fn market_realism_constants_match_the_data_file() {
         model::DEFAULT_VALUATION_HALF_LIFE_YEARS,
         num(&v["half_life_years"])
     );
+    let l = &section["lost_generation"];
+    assert_eq!(model::DEFAULT_LOST_GENERATION_YEARS, num(&l["years"]));
+    assert_eq!(
+        model::LOST_GENERATION_EQUITY_REAL,
+        num(&l["equity_real_return"])
+    );
+    assert_eq!(model::LOST_GENERATION_INFLATION, num(&l["inflation"]));
+    assert_eq!(model::LOST_GENERATION_LONG_YIELD, num(&l["long_yield"]));
+    assert_eq!(model::LOST_GENERATION_GLIDE_YEARS, num(&l["glide_years"]));
+    assert_eq!(model::LOST_GENERATION_BILL_YIELD, num(&l["bill_yield"]));
 }

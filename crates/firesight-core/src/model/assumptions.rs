@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{BondPricing, Valuation, When};
+use super::{BondPricing, Episode, Valuation, When};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -159,6 +159,26 @@ pub enum Stress {
         #[serde(default = "d_stag_inflation")]
         inflation: f64,
     },
+    /// Live through a real market episode again: from the start date, every market
+    /// series (stocks, bonds, bills, inflation, home prices, rate moves and
+    /// recessions) follows what actually happened from the episode's first month,
+    /// for as long as the episode lasted.
+    HistoricalEpisode {
+        /// When the episode starts on the plan's timeline.
+        start: When,
+        /// Which episode to replay.
+        episode: Episode,
+    },
+    /// A Japan-1990-style lost generation: stocks go nowhere after inflation for
+    /// decades, prices drift slightly down and interest rates sink toward zero.
+    LostGeneration {
+        /// When it starts.
+        start: When,
+        /// How long it lasts, in years. Japan's stagnation ran from 1990 into the
+        /// 2010s.
+        #[serde(default = "d_lost_generation_years")]
+        years: f64,
+    },
 }
 
 fn d_drawdown() -> f64 {
@@ -172,6 +192,9 @@ fn d_stag_years() -> f64 {
 }
 fn d_stag_inflation() -> f64 {
     0.08
+}
+fn d_lost_generation_years() -> f64 {
+    super::DEFAULT_LOST_GENERATION_YEARS
 }
 
 /// Tax assumptions.

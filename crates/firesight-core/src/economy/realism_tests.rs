@@ -7,6 +7,7 @@
 use super::*;
 use crate::rng::Stream;
 
+mod episodes;
 mod valuation;
 
 const SEED: u64 = 0x5EED_1800;

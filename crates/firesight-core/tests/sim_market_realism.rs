@@ -147,3 +147,88 @@ fn a_traced_path_says_where_valuations_start() {
         .iter()
         .any(|e| e.kind == TraceEventKind::Market));
 }
+
+// ---------------------------------------------------------------------------------
+// F38: historical-episode and lost-generation stresses.
+// ---------------------------------------------------------------------------------
+
+fn retiree_with(stress: Option<Stress>) -> Profile {
+    let mut p = retiree(1_000_000.0, 0.6, 40_000.0, 30.0);
+    p.assumptions.market.kind = bootstrap();
+    p.assumptions.market.equity_premium_adjustment = 0.0;
+    p.assumptions.market.stress = stress.into_iter().collect();
+    p
+}
+
+fn episode_now(episode: Episode) -> Stress {
+    Stress::HistoricalEpisode {
+        start: When::date(START),
+        episode,
+    }
+}
+
+/// An episode dated after the plan ends changes nothing, bit for bit.
+#[test]
+fn an_episode_beyond_the_horizon_is_the_baseline_bit_for_bit() {
+    let base = example("dual-income-family");
+    let mut late = base.clone();
+    late.assumptions
+        .market
+        .stress
+        .push(Stress::HistoricalEpisode {
+            start: When::date(YearMonth::ym(2200, 1)),
+            episode: Episode::Stagflation1966,
+        });
+    late.assumptions.market.stress.push(Stress::LostGeneration {
+        start: When::date(YearMonth::ym(2200, 1)),
+        years: 20.0,
+    });
+    assert_eq!(digest_json(&base, 300), digest_json(&late, 300));
+}
+
+/// A 60/40 retiree at a 4% withdrawal who retires into 1966 is Bengen's worst case:
+/// success falls hard. 2008 hurts less (a deep fall but a five-year recovery with
+/// bonds rallying), and a Japan-style lost generation hurts a great deal.
+#[test]
+fn retiring_into_history_lowers_success_in_the_expected_order() {
+    let n = 1500;
+    let base = summary(&retiree_with(None), SEED, n)
+        .headline
+        .success_rate
+        .value;
+    let rate = |s: Stress| {
+        summary(&retiree_with(Some(s)), SEED, n)
+            .headline
+            .success_rate
+            .value
+    };
+    let stag = rate(episode_now(Episode::Stagflation1966));
+    let gfc = rate(episode_now(Episode::Financial2008));
+    let dep = rate(episode_now(Episode::GreatDepression1929));
+    let dot = rate(episode_now(Episode::DotCom2000));
+    let lost = rate(Stress::LostGeneration {
+        start: When::date(START),
+        years: 20.0,
+    });
+    eprintln!(
+        "60/40 retiree at 4%: base {base:.3}, 1966 {stag:.3}, 2008 {gfc:.3}, 1929 {dep:.3}, 2000 {dot:.3}, lost generation {lost:.3}"
+    );
+    assert!(stag < base - 0.25, "{base} {stag}");
+    assert!(gfc < base && gfc > stag, "{gfc}");
+    assert!(dot < base, "{dot}");
+    assert!(dep < base, "{dep}");
+    assert!(lost < base - 0.25, "{base} {lost}");
+}
+
+#[test]
+fn a_traced_path_announces_the_episode() {
+    let p = retiree_with(Some(episode_now(Episode::GreatDepression1929)));
+    let trace = sim::trace_path(&compile(&p), SEED, 1);
+    let note = trace
+        .events
+        .iter()
+        .find(|e| e.kind == TraceEventKind::Market)
+        .expect("a market note");
+    assert_eq!(note.month, START);
+    assert!(note.label.contains("Great Depression"), "{}", note.label);
+}

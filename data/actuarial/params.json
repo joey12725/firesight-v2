@@ -2455,6 +2455,24 @@
       "half_life_years": 15.0,
       "source": "starting_cape: Shiller CAPE of the S&P 500, 38 to 42 through 2026 (YCharts 39.8 February 2026; Financer 38.2 March 2026; multpl.com about 40.5), rounded. fair_cape: mean of Shiller's CAPE since 1881, about 17.3 (Shiller's online data as summarised by multpl.com and Financer). half_life_years: Campbell and Shiller (1998, 'Valuation Ratios and the Long-Run Stock Market Outlook', Journal of Portfolio Management 24(2); 2001 update, NBER w8221) find that valuation ratios forecast ten-year price changes and revert mostly through prices, without pinning down the speed.",
       "confidence": "starting_cape sourced (update it with the published value); fair_cape sourced as a statistic, but reverting all the way to it is the bearish reading; half_life_years judgement"
+    },
+    "historical_episodes": {
+      "great_depression_1929": "1929-09 to 1945-02, 186 months",
+      "stagflation_1966": "1966-01 to 1982-07, 199 months",
+      "dot_com_2000": "2000-04 to 2013-02, 155 months",
+      "financial_2008": "2007-11 to 2013-01, 63 months",
+      "source": "Computed from data/history/monthly.csv (CRSP total market deflated by CPI-U): each window runs from the month after the real peak (1929-08, 2000-03, 2007-10) to the month the real index regained it. 1966: the Dow Jones Industrial Average peaked in January 1966 and the secular bear market ended at the August 1982 low; the total-market real index regained its January 1966 level briefly in 1967, so this window is set by those dates, not by the rule.",
+      "confidence": "1929, 2000 and 2008 computed from the embedded record; the 1966 end date is a judgement (it ends at the 1982 low, so it includes none of the recovery)"
+    },
+    "lost_generation": {
+      "years": 20.0,
+      "equity_real_return": -0.02,
+      "inflation": -0.003,
+      "long_yield": 0.01,
+      "glide_years": 8.0,
+      "bill_yield": 0.001,
+      "source": "Japan after 1989. TOPIX 2,881 at the end of 1989 and 1,086 at the end of 1998 (Cabinet Office of Japan, Annual Report on the Japanese Economy and Public Finance 2002); TOPIX -1.96% a year in price from the end of 1990 to August 2013 (CFA Institute, Enterprising Investor, 2013). Consumer price inflation averaged -0.28% a year over 1999-2012 (World Bank via FRED, FPCPITOTLZGJPN). 10-year government bond yield 6.96% in 1990, 1.54% in 1998, 1.00% in 2003 and 0.7 to 1.7% through 2013 (OECD via FRED, IRLTLT01JPA156N).",
+      "confidence": "inflation, long_yield and glide_years sourced (rounded); equity_real_return a judgement between the post-1990 (about -1%) and peak-dated (about -5%) readings; years a judgement (the 'two lost decades'); bill_yield a judgement for 'near zero'"
     }
   }
 }
