@@ -61,7 +61,7 @@ fn mean(v: &[f64]) -> f64 {
 
 fn sd(v: &[f64]) -> f64 {
     let m = mean(v);
-    (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
+    (v.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / v.len() as f64).sqrt()
 }
 
 fn count_events(profile: &Profile, path: u64, text: &str) -> usize {
@@ -217,6 +217,96 @@ fn f16_a_move_forfeits_unvested_equity() {
 }
 
 // ---------------------------------------------------------------------------
+// F17: recession pay freezes, hours cuts, smaller bonuses
+// ---------------------------------------------------------------------------
+
+fn set_recession_pay(p: &mut Profile, on: RecessionPay) {
+    job_risk(p).recession_pay = on;
+}
+
+/// First recession month within the first `months` months of path `path`.
+fn first_recession_month(profile: &Profile, path: u64, months: usize) -> Option<usize> {
+    let plan = compile(profile);
+    let mut ws = sim::Workspace::new(&plan);
+    let mut acc = plan.new_accumulator();
+    sim::run_path(&plan, SEED, path, &mut ws, &mut acc);
+    ws.economy.recession[..months].iter().position(|r| *r != 0)
+}
+
+#[test]
+fn f17_off_is_identical_to_the_baseline() {
+    let base = worker(35, 90_000.0, RiskLevel::Typical, 55.0);
+    let mut off = base.clone();
+    set_recession_pay(&mut off, RecessionPay::Off);
+    for path in 0..10 {
+        assert_eq!(wages(&base, path), wages(&off, path));
+    }
+    assert!(!serde_json::to_string(&base)
+        .unwrap()
+        .contains("recession_pay"));
+}
+
+#[test]
+fn f17_nothing_changes_before_the_first_recession_and_pay_never_rises() {
+    let mut base = worker(35, 90_000.0, RiskLevel::Typical, 55.0);
+    if let IncomeKind::Job(j) = &mut base.incomes[0].kind {
+        j.bonus = Some(Bonus {
+            target_fraction: 0.10,
+            volatility: 0.0,
+            month: 3,
+        });
+    }
+    let mut on = base.clone();
+    set_recession_pay(&mut on, RecessionPay::Typical);
+    let (mut off_total, mut on_total) = (0.0, 0.0);
+    let mut late_first = 0;
+    for path in 0..300 {
+        let a = wages(&base, path);
+        let b = wages(&on, path);
+        assert_eq!(a.len(), b.len());
+        let first = first_recession_month(&base, path, 240).unwrap_or(240);
+        // The feature cannot act before a recession month: identical pay until then.
+        assert_eq!(a[..first], b[..first], "path {path}");
+        if first >= 36 {
+            late_first += 1;
+        }
+        for (x, y) in a.iter().zip(&b) {
+            // Whole-dollar rounding in the trace.
+            assert!(*y <= *x + 1.0, "path {path}: {y} > {x}");
+        }
+        off_total += a.iter().sum::<f64>();
+        on_total += b.iter().sum::<f64>();
+    }
+    assert!(late_first > 30, "{late_first} paths start calm");
+    // Lifetime pay falls by a few tenths of a percent to a few percent: a 25% chance
+    // of losing a ~4% raise and a 15% chance of a ~12% cut for nine months in each
+    // recession year, with recessions in about 13% of months, plus bonuses.
+    let loss = 1.0 - on_total / off_total;
+    assert!((0.002..0.06).contains(&loss), "loss over all paths {loss}");
+}
+
+#[test]
+fn f17_recession_pay_does_not_depend_on_other_career_draws() {
+    // A freeze or cut changes pay but never the layoff timing: the same months are
+    // laid off with the feature on and off (it draws from its own stream).
+    let base = worker(35, 90_000.0, RiskLevel::High, 55.0);
+    let mut on = base.clone();
+    set_recession_pay(&mut on, RecessionPay::Typical);
+    for path in 0..40 {
+        let laid = |p: &Profile| -> Vec<i32> {
+            let plan = compile(p);
+            sim::trace_path(&plan, SEED, path)
+                .events
+                .iter()
+                .filter(|e| e.label.starts_with("Laid off"))
+                .map(|e| e.month - plan.start())
+                .collect()
+        };
+        assert_eq!(laid(&base), laid(&on), "path {path}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Conservation and finite values (every feature-enabled profile goes through here)
 // ---------------------------------------------------------------------------
 
@@ -253,6 +343,21 @@ fn f16_profile_conserves_money_and_stays_finite() {
             sell_on_vest: false,
             ..EquityGrant::default()
         }];
+        j.plan = Some(EmployerPlan::default());
+    }
+    conserves_and_is_finite(&p, 150);
+}
+
+#[test]
+fn f17_profile_conserves_money_and_stays_finite() {
+    let mut p = worker(35, 150_000.0, RiskLevel::High, 55.0);
+    if let IncomeKind::Job(j) = &mut p.incomes[0].kind {
+        j.risk.recession_pay = RecessionPay::Typical;
+        j.bonus = Some(Bonus::default());
+        j.commission = Some(Commission {
+            expected_annual: 12_000.0,
+            volatility: 0.4,
+        });
         j.plan = Some(EmployerPlan::default());
     }
     conserves_and_is_finite(&p, 150);

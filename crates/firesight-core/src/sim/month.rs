@@ -173,7 +173,7 @@ impl State {
                 &mut self.rng_equity,
             );
             if plan.rz.any {
-                self.rz_after_job_step(plan, j, t, &climate, &mut jm);
+                self.rz_after_job_step(plan, econ, j, t, &climate, &mut jm);
             }
             if !self.present[p] {
                 continue;

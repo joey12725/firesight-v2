@@ -2426,6 +2426,17 @@
         "recession_jump_penalty": 0.04,
         "jump_sd": 0.12,
         "evidence": "Fallick and Fleischman (Federal Reserve Board FEDS 2004-34): 2.6% of employed people change employers each month, falling with age and in recessions. FRBSF Economic Letter 2016-30 (SIPP): 1.7-1.9% a month at ages 40-44. BLS NLSY79 job counts (from memory: about 12 jobs from 18 to 52). Topel and Ward (QJE 1992): job changes are about a third of early-career wage growth. Atlanta Fed Wage Growth Tracker: switchers out-earn stayers by one to three points in expansions (8.4% vs 5.6% in August 2022) and the premium turns negative in and after recessions."
+      },
+      "recession_pay": {
+        "annual_freeze_probability": 0.25,
+        "annual_cut_probability": 0.15,
+        "cut_min": 0.05,
+        "cut_max": 0.20,
+        "cut_months": 9,
+        "freeze_cooldown_months": 12,
+        "bonus_factor": 0.7,
+        "bonus_slack_months": 12,
+        "evidence": "No source gives these sizes: they are judgements. Direction only: Daly, Hobijn and Lucking (FRBSF Economic Letter 2012-10) and an FRBSF letter of July 2013 report that the share of workers with a frozen (unchanged) annual wage reached a record high after the Great Recession; an administrative study of Washington State hourly stayers (2020 AEA conference paper) found 15-20% with no change in a year even in normal times. Exact percentages were not retrieved."
       }
     },
     "irs_single_life_table": {

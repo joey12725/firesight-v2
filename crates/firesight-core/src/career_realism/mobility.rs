@@ -185,7 +185,7 @@ mod tests {
     fn monthly_hazard_matches_the_annual_probability() {
         let m = MobilityModel::new(JobMobility::Typical);
         for b in 0..BANDS {
-            let annual = 1.0 - (1.0 - m.hazard[0][b]).powi(12);
+            let annual = 1.0 - math::powi(1.0 - m.hazard[0][b], 12);
             assert!(
                 (annual - ANNUAL_MOVE_PROBABILITY[b]).abs() < 1e-12,
                 "band {b}"
@@ -209,8 +209,8 @@ mod tests {
         let t = MobilityModel::new(JobMobility::Typical);
         let h = MobilityModel::new(JobMobility::High);
         // High scales the yearly rate: -ln(0.8) * 1.6, so 1 - 0.8^1.6 a year.
-        let annual_high = 1.0 - (1.0 - h.hazard[0][1]).powi(12);
-        assert!((annual_high - (1.0 - 0.8f64.powf(1.6))).abs() < 1e-12);
+        let annual_high = 1.0 - math::powi(1.0 - h.hazard[0][1], 12);
+        assert!((annual_high - (1.0 - math::pow(0.8, 1.6))).abs() < 1e-12);
         assert!(h.hazard[0][1] > t.hazard[0][1]);
     }
 
@@ -220,7 +220,7 @@ mod tests {
         for rec in 0..2 {
             for b in 0..BANDS {
                 let h = m.hazard[rec][b];
-                let gain = (m.mean_log_jump[rec][b] + 0.5 * JUMP_SD * JUMP_SD).exp();
+                let gain = math::exp(m.mean_log_jump[rec][b] + 0.5 * JUMP_SD * JUMP_SD);
                 let mean =
                     h * gain * m.stayer_deflator[rec][b] + (1.0 - h) * m.stayer_deflator[rec][b];
                 assert!((mean - 1.0).abs() < 1e-12, "cell {rec},{b}: {mean}");
@@ -241,10 +241,10 @@ mod tests {
         // The median word gives z = 0, so the jump is exp(mu).
         let go = m.step(30.0, false, h - 1e-9, 1u64 << 63);
         assert!(go.moved);
-        assert!((go.factor - 0.08f64.exp()).abs() < 1e-9);
+        assert!((go.factor - math::exp(0.08)).abs() < 1e-9);
         // In a recession the mean jump is lower by the penalty.
         let go_rec = m.step(30.0, true, 0.0, 1u64 << 63);
-        assert!((go_rec.factor - 0.04f64.exp()).abs() < 1e-9);
+        assert!((go_rec.factor - math::exp(0.04)).abs() < 1e-9);
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         for i in 0..n {
             let q = (i as f64 + 0.5) / n as f64; // evenly spaced quantiles
             let bits = ((q * (1u64 << 53) as f64) as u64) << 11;
-            let l = m.step(30.0, false, 0.0, bits).factor.ln();
+            let l = math::ln(m.step(30.0, false, 0.0, bits).factor);
             sum += l;
             sum_sq += l * l;
         }

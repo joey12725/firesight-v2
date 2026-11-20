@@ -162,6 +162,28 @@ pub struct CareerRisk {
     /// move. Needs `risk.level` other than none and `assumptions.career_risk` on.
     #[serde(skip_serializing_if = "crate::career_realism::is_default")]
     pub job_mobility: JobMobility,
+    /// Pay freezes, temporary pay or hours cuts and smaller bonuses for workers who
+    /// keep their job in a recession. Off by default. When on, employed workers in a
+    /// recession month (the path's recession flag) face a chance of a freeze (the
+    /// raise they would have had is lost for good), a nine-month cut of 5 to 20% that
+    /// then recovers, and bonuses 30% smaller until a year after the recession ends.
+    /// Layoffs in recessions are separate and already part of `level`. Needs
+    /// `assumptions.career_risk` on.
+    #[serde(skip_serializing_if = "crate::career_realism::is_default")]
+    pub recession_pay: RecessionPay,
+}
+
+/// Whether workers who keep their job still lose pay in a recession.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecessionPay {
+    /// Pay is unaffected by recessions except through layoffs (the default).
+    #[default]
+    Off,
+    /// A 25% chance per recession year of a pay freeze, a 15% chance of a temporary
+    /// cut of 5 to 20% for nine months, and bonuses at 70% for the recession and the
+    /// following year. The sizes are judgements, not estimates.
+    Typical,
 }
 
 /// How often a person changes employers voluntarily and what it pays.

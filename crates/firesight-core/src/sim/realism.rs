@@ -5,6 +5,8 @@
 use crate::career::{CareerClimate, Employment, JobMonth};
 use crate::stats::TraceEventKind;
 
+use crate::economy::EconomyPath;
+
 use super::plan::Plan;
 use super::state::State;
 
@@ -21,6 +23,7 @@ impl State {
     pub(super) fn rz_after_job_step(
         &mut self,
         plan: &Plan,
+        econ: &EconomyPath,
         j: usize,
         t: usize,
         climate: &CareerClimate,
@@ -33,6 +36,48 @@ impl State {
         let jp = &plan.jobs[j];
         let draw = self.rz.job_draw[j];
         let now = plan.start + t as i32;
+
+        // Recession pay freezes, cuts and bonuses (F17).
+        if let Some(rp) = &jr.recession_pay {
+            let recession = climate.recession != 0;
+            let employed = self.jobs[j].st.employment == Employment::Employed;
+            // The raise a freeze withholds: the curve's real growth over the next
+            // year plus the path's inflation over the last twelve months. Worked out
+            // only in the month a freeze can start.
+            let mut forgone = 0.0;
+            if recession && employed && draw.u_freeze < rp.freeze_monthly {
+                let growth = jp.model.curve_factor(climate.age + 1.0)
+                    / jp.model.curve_factor(climate.age).max(f64::MIN_POSITIVE)
+                    - 1.0;
+                let inflation = econ.price_level[t] / econ.price_level[t.saturating_sub(12)] - 1.0;
+                forgone = growth.max(0.0) + inflation.max(0.0);
+            }
+            let f = rp.step(
+                &mut self.rz.pay[j],
+                employed,
+                recession,
+                forgone,
+                (draw.u_freeze, draw.u_cut, draw.u_size),
+            );
+            jm.wages *= f.wage;
+            jm.commission *= f.wage;
+            jm.bonus *= f.bonus;
+            if f.froze {
+                self.event(now, TraceEventKind::LifeEvent, None, || {
+                    format!("Pay freeze at {}: no raise this year", jp.name)
+                });
+            }
+            if f.cut {
+                let cut = self.rz.pay[j].cut_fraction;
+                self.event(now, TraceEventKind::LifeEvent, None, || {
+                    format!(
+                        "Pay cut of {:.0}% at {} for nine months",
+                        cut * 100.0,
+                        jp.name
+                    )
+                });
+            }
+        }
 
         // Voluntary job change (F16).
         if let Some(mob) = &jr.mobility {

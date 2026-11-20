@@ -3,6 +3,7 @@
 //! | Feature | Switch | Module |
 //! |---|---|---|
 //! | Voluntary job changes with pay jumps | `risk.job_mobility` | [`mobility`] |
+//! | Recession pay freezes, hours cuts, smaller bonuses | `risk.recession_pay` | [`recession_pay`] |
 //!
 //! (Later features register here as they land.)
 //!
@@ -25,13 +26,15 @@
 //! module holds the pure mechanisms, which are unit-tested on their own.
 
 pub mod mobility;
+pub mod recession_pay;
 pub mod validate;
 
 use crate::data::Data;
-use crate::model::{IncomeKind, JobMobility, Profile, RiskLevel};
+use crate::model::{IncomeKind, JobMobility, Profile, RecessionPay, RiskLevel};
 use crate::rng::{Rng, Stream};
 
 use mobility::MobilityModel;
+use recession_pay::{RecessionPayModel, RecessionPayState};
 
 /// Serde helper: the opt-in fields of this module are left out of serialised
 /// profiles while they hold their default (off), so profiles written before the
@@ -51,12 +54,14 @@ pub const KIND_JOB: u8 = 0;
 pub struct JobRealism {
     /// Voluntary job changes, when switched on.
     pub mobility: Option<MobilityModel>,
+    /// Recession pay freezes, cuts and smaller bonuses, when switched on.
+    pub recession_pay: Option<RecessionPayModel>,
 }
 
 impl JobRealism {
     /// True if any feature is on for this job (it then draws every month).
     pub fn any(&self) -> bool {
-        self.mobility.is_some()
+        self.mobility.is_some() || self.recession_pay.is_some()
     }
 }
 
@@ -87,6 +92,11 @@ impl RealismPlan {
                         level => Some(MobilityModel::new(level)),
                     };
                 }
+                // Recession pay follows the path's recession flag; it is switched off
+                // with the other random elements of pay by `career_risk`.
+                if risk_on && job.risk.recession_pay == RecessionPay::Typical {
+                    jr.recession_pay = Some(RecessionPayModel::new());
+                }
                 plan.any |= jr.any();
                 plan.jobs.push(jr);
             }
@@ -102,14 +112,14 @@ pub struct JobDraw {
     pub u_move: f64,
     /// Raw word: the size of the pay jump (a normal if a move happens).
     pub r_jump: u64,
-    /// Reserved for later features (see the module table).
-    pub u_a: f64,
-    /// Reserved.
-    pub u_b: f64,
-    /// Reserved.
-    pub u_c: f64,
-    /// Reserved.
-    pub u_d: f64,
+    /// Uniform: does a recession pay freeze start.
+    pub u_freeze: f64,
+    /// Uniform: does a recession pay cut start.
+    pub u_cut: f64,
+    /// Uniform: the size of a pay cut.
+    pub u_size: f64,
+    /// Reserved for a later feature (see the module table).
+    pub u_never: f64,
 }
 
 /// Per-path realism state.
@@ -121,6 +131,8 @@ pub struct RealismState {
     pub job_draw: Vec<JobDraw>,
     /// Voluntary job changes so far on this path, per job.
     pub moves: Vec<u32>,
+    /// Recession pay state per job.
+    pub pay: Vec<RecessionPayState>,
 }
 
 impl RealismState {
@@ -131,6 +143,7 @@ impl RealismState {
             job_rng: vec![Rng::from_seed(0); n],
             job_draw: vec![JobDraw::default(); n],
             moves: vec![0; n],
+            pay: vec![RecessionPayState::default(); n],
         }
     }
 
@@ -142,6 +155,7 @@ impl RealismState {
             }
         }
         self.moves.fill(0);
+        self.pay.fill(RecessionPayState::default());
     }
 
     /// Draws this month's variates for every job that uses a feature: always
@@ -156,10 +170,10 @@ impl RealismState {
             self.job_draw[j] = JobDraw {
                 u_move: rng.uniform(),
                 r_jump: rng.next_u64(),
-                u_a: rng.uniform(),
-                u_b: rng.uniform(),
-                u_c: rng.uniform(),
-                u_d: rng.uniform(),
+                u_freeze: rng.uniform(),
+                u_cut: rng.uniform(),
+                u_size: rng.uniform(),
+                u_never: rng.uniform(),
             };
         }
     }

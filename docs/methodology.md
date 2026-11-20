@@ -382,6 +382,43 @@ of workers with two or fewer.
 relocation, employer-specific benefits (plans, health cover) differing across
 employers, moves by people on a career break or in an unemployment spell.
 
+### 6.2 Recession pay freezes and hours cuts (opt-in: `risk.recession_pay`)
+
+Off by default; `typical` needs `assumptions.career_risk` on. The career model already
+makes layoffs likelier and longer in recessions; this adds what happens to people who
+keep their job, using the path's recession flag. In each recession month an employed
+worker may (independently) get a *pay freeze* (25% a year: the raise the job would have
+had, the lifecycle curve's real growth at that age plus the path's last-12-month
+inflation, is lost for good, at most one a year) or start a *temporary cut* (15% a
+year: pay down 5 to 20% for nine months, then restored). Bonuses are 30% smaller in a
+recession and for twelve months after it, and carry the freeze, being a share of pay.
+Commission follows the pay factor.
+
+*Sources.* The direction is documented (the share of workers with an unchanged annual
+wage reached a record in and after the Great Recession: Daly, Hobijn and Lucking, FRBSF
+Economic Letter 2012-10; an FRBSF letter of July 2013; an administrative study of
+Washington State hourly stayers found 15 to 20% with no change in a year even in normal
+times). The sizes are judgements: no source was found for per-recession probabilities
+of a freeze or cut, or their depth, for salaried workers, and the percentages in those
+papers were not retrieved. All are named constants in `career_realism/recession_pay.rs`
+and listed in `params.json` under `unverified_from_memory.career_realism`.
+
+The lifecycle curve is an average over business cycles and so already contains some
+recession effect of unknown size; this feature is not mean-preserving and slightly
+overstates the loss for that reason. Freezes are permanent level losses (no catch-up,
+a judgement); cuts recover fully.
+
+*Measured* (dual-income-family, 4,000 paths, seed 1, both jobs on `typical`): success
+rate 91.5% off, 91.0% on; median retirement age 53.4 off, 53.8 on (90th percentile
+61.2 off, 62.1 on); median terminal net worth $1.73m off, $1.72m on; 10th percentile
+$104k off, $75k on. In the integration test (a 35-year-old on $90,000 with a bonus,
+300 paths) pay is identical to the baseline until the first recession month on every
+path, never higher afterwards, and lifetime pay is 0.2% to 6% lower.
+
+*Not modelled:* a freeze's effect on the nominal-versus-real distinction beyond the
+inflation term, work sharing and furlough programmes, sector differences (a freeze is
+equally likely for every job), cuts and freezes for the self-employed (see 6.5).
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own

@@ -3,7 +3,7 @@
 //! reviewer can find them in one place (same convention as `unverified_constants.rs`).
 //! This test keeps the code and that list equal.
 
-use firesight_core::career_realism::mobility;
+use firesight_core::career_realism::{mobility, recession_pay};
 use firesight_core::data::Data;
 
 fn numbers(v: &serde_json::Value) -> Vec<f64> {
@@ -52,4 +52,30 @@ fn job_mobility_constants_match_the_data_file() {
         num("recession_jump_penalty")
     );
     assert_eq!(mobility::JUMP_SD, num("jump_sd"));
+}
+
+#[test]
+fn recession_pay_constants_match_the_data_file() {
+    let m = &section()["recession_pay"];
+    let num = |k: &str| m[k].as_f64().unwrap();
+    assert_eq!(
+        recession_pay::ANNUAL_FREEZE_PROBABILITY,
+        num("annual_freeze_probability")
+    );
+    assert_eq!(
+        recession_pay::ANNUAL_CUT_PROBABILITY,
+        num("annual_cut_probability")
+    );
+    assert_eq!(recession_pay::CUT_MIN, num("cut_min"));
+    assert_eq!(recession_pay::CUT_MAX, num("cut_max"));
+    assert_eq!(f64::from(recession_pay::CUT_MONTHS), num("cut_months"));
+    assert_eq!(
+        f64::from(recession_pay::FREEZE_COOLDOWN_MONTHS),
+        num("freeze_cooldown_months")
+    );
+    assert_eq!(recession_pay::BONUS_FACTOR, num("bonus_factor"));
+    assert_eq!(
+        f64::from(recession_pay::BONUS_SLACK_MONTHS),
+        num("bonus_slack_months")
+    );
 }
