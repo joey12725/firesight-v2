@@ -139,7 +139,10 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   emergency_months: f64 (6),          // of current spending, recomputed every year
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
                   custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
-                  single_stock: SingleStock{ volatility, beta } }
+                  single_stock: SingleStock{ volatility, beta },
+                  behavior: Disciplined (default)             // sim/behavior/panic.rs
+                          | PanicProne{ drawdown_trigger (0.25), probability (0.08), share (0.5),
+                                        reentry: { recovered_within (0.05), max_months (36) } } }
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 

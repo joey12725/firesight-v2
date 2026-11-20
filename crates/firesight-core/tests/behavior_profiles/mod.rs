@@ -48,6 +48,10 @@ pub fn with_behaviors(mut p: Profile) -> Profile {
         funded_ratio_below: 0.9,
         ..ReturnToWork::default()
     });
+    p.portfolio.behavior = InvestorBehavior::PanicProne(PanicSelling {
+        probability: 0.5,
+        ..PanicSelling::default()
+    });
     p
 }
 

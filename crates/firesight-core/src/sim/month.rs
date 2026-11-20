@@ -621,6 +621,9 @@ impl State {
                 self.rebalance(plan);
             }
         }
+        if plan.beh.any {
+            self.behavior_after_returns(plan, econ, t);
+        }
 
         // 11. Financial independence and the retirement trigger.
         if !self.retired {

@@ -1,11 +1,12 @@
 //! Checks of the household-behaviour settings (`sim/behavior`).
 
 use super::Checker;
-use crate::model::JobSearch;
+use crate::model::{InvestorBehavior, JobSearch};
 
 impl Checker<'_> {
     /// Errors for impossible behaviour settings, warnings for implausible ones.
     pub(super) fn behavior(&mut self) {
+        self.panic_selling();
         if let Some(r) = self.p.retirement.return_to_work {
             let base = "/retirement/return_to_work";
             self.r.range(
@@ -63,6 +64,62 @@ impl Checker<'_> {
                     "Fewer than one in ten Americans over 75 work for pay; finding a job after 75 is unlikely.",
                 );
             }
+        }
+    }
+
+    fn panic_selling(&mut self) {
+        let InvestorBehavior::PanicProne(p) = self.p.portfolio.behavior else {
+            return;
+        };
+        let base = "/portfolio/behavior";
+        self.r.range(
+            &format!("{base}/drawdown_trigger"),
+            "The stock-market fall that can set off a panic sale",
+            p.drawdown_trigger,
+            0.01,
+            0.95,
+        );
+        self.r.range(
+            &format!("{base}/probability"),
+            "The chance of a panic sale in a fall",
+            p.probability,
+            0.0,
+            1.0,
+        );
+        self.r.range(
+            &format!("{base}/share"),
+            "The share of stocks sold in a panic",
+            p.share,
+            0.0,
+            1.0,
+        );
+        self.r.range(
+            &format!("{base}/reentry/recovered_within"),
+            "How close to their peak stocks must be before buying back",
+            p.reentry.recovered_within,
+            0.0,
+            0.95,
+        );
+        if p.reentry.max_months == 0 {
+            self.r.error(
+                "panic_reentry_months",
+                &format!("{base}/reentry/max_months"),
+                "A household that buys back in the month it sells has not sold: use at least 1 month.",
+            );
+        }
+        if p.reentry.recovered_within >= p.drawdown_trigger {
+            self.r.warn(
+                "panic_reentry_immediate",
+                &format!("{base}/reentry/recovered_within"),
+                "The buy-back level is at or below the fall that triggers the sale, so the household buys back the next month: use a smaller value than drawdown_trigger.",
+            );
+        }
+        if p.probability > 0.5 {
+            self.r.warn(
+                "panic_probability_high",
+                &format!("{base}/probability"),
+                "In 2008 about 2% of Vanguard plan savers sold all their stocks and 16% traded at all; a panic chance above one half is far beyond what was observed.",
+            );
         }
     }
 }

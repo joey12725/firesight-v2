@@ -9,6 +9,8 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::behavior::InvestorBehavior;
+
 /// Number of asset classes. Balances and returns are `[f64; N_ASSETS]` indexed by
 /// [`AssetClass::index`].
 pub const N_ASSETS: usize = 9;
@@ -289,6 +291,10 @@ pub struct PortfolioPolicy {
     pub custom_asset: Option<CustomAsset>,
     /// Risk of the "single_stock" asset class (employer stock or a concentrated holding).
     pub single_stock: SingleStock,
+    /// How the household reacts to a stock-market crash: disciplined (the default)
+    /// or prone to selling stocks after a deep fall.
+    #[serde(skip_serializing_if = "InvestorBehavior::is_disciplined")]
+    pub behavior: InvestorBehavior,
 }
 
 impl Default for PortfolioPolicy {
@@ -304,6 +310,7 @@ impl Default for PortfolioPolicy {
             retirement_cash_years: 0.0,
             custom_asset: None,
             single_stock: SingleStock::default(),
+            behavior: InvestorBehavior::Disciplined,
         }
     }
 }

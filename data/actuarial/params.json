@@ -1957,6 +1957,17 @@
         "model": "A household that went back to work stops again in the first January its funded ratio is at least this.",
         "confidence": "judgement (the plan is fully funded again)"
       }
+    },
+    "panic_selling": {
+      "code": "model::PanicSelling::default()",
+      "drawdown_trigger": 0.25,
+      "probability": 0.08,
+      "share": 0.5,
+      "reentry_recovered_within": 0.05,
+      "reentry_max_months": 36,
+      "evidence": "Vanguard, How America Saves 2009: in 2008 16% of defined-contribution participants traded, 2% abandoned equities entirely, and on net traders shifted 4% of assets from equities to fixed income. probability x share = 0.08 x 0.5 = 4% of stocks sold per fall of 25% or more. Morningstar, Mind the Gap 2024: investor returns trailed fund total returns by about 1.1 points a year over the ten years to 2023 (all US funds; timing of purchases and sales).",
+      "source": "Vanguard How America Saves 2009 (as reported by PLANSPONSOR, 2009); https://www.morningstar.com/lp/mind-the-gap",
+      "confidence": "low (a behavioural assumption: plan savers are inert; the re-entry rule and the trigger depth are judgements)"
     }
   },
   "housing": {

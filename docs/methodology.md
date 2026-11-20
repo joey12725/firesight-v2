@@ -255,6 +255,46 @@ holding moves it by half.)
 While working, cash above the emergency fund (default six months of spending) is
 invested each month.
 
+### Panic selling (opt-in, a behavioural assumption)
+
+`portfolio.behavior: panic_prone` (the default is `disciplined`) lets the household
+sell stocks after a crash. The engine follows the US stock index and its running
+peak; a fall of at least `drawdown_trigger` (default 25%) from the peak is one fall,
+and in its first month the household decides once, with probability `probability`
+(default 8%), whether to panic. If it does, `share` (default half) of its US and
+international stock weight moves to cash in its target mix and it trades to that
+mix at once through the ordinary rebalance, so taxable sales realise their gain or
+loss at average cost; new savings buy the panic mix. It buys back at the plan's own
+target when the index is back within `reentry.recovered_within` (5%) of the old
+peak, or after `reentry.max_months` (36) in any case. A fall ends at a new high;
+only then can the next one trigger a decision. One draw a month from its own stream.
+
+The defaults are calibrated to how US retirement-plan savers behaved in 2008:
+Vanguard (How America Saves 2009) reports that 16% of participants traded, 2%
+abandoned equities entirely, and on net traders moved 4% of assets from equities to
+fixed income. An 8% chance of selling half makes the expected share of stocks sold
+in a fall 4%. Morningstar's Mind the Gap (2024) puts the cost of investors' timing
+at about 1.1 points a year across all US funds over the ten years to 2023, which
+covers much more than panic selling and is an order-of-magnitude check only. The
+re-entry rule is a judgement. Plan savers are among the most inert investors; a
+retail investor may well be more panic-prone, which is why the probability is the
+user's to set.
+
+Measured with the CLI (3,000 paired paths): at the defaults the effect is within
+sampling noise for `dual-income-family` (success 91.8% both ways, median terminal
+net worth +$10,000) and `early-career-saver` (84.2% -> 84.4%, -$11,000). With
+`probability: 1` (panics in every fall) `dual-income-family` loses 0.6 points of
+success and $35,000 at the 10th percentile of terminal net worth, and
+`early-career-saver` loses $204,000 of median terminal net worth with success
+unchanged within noise: selling after a fall misses most of the recovery, but on
+some paths it also escapes a deeper fall.
+
+Not modelled: only US and international stocks are sold (not REITs, crypto,
+employer stock or the custom asset); a household protecting the marketplace
+premium credit trades only inside its sheltered accounts, as its rebalances do; the
+chance does not depend on age, wealth, experience or the speed of the fall; a
+household never panics twice in one fall.
+
 ## 5. Taxes
 
 US federal law for 2026 as enacted, every state and DC, and the larger local

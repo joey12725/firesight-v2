@@ -1,5 +1,6 @@
 //! Household behaviour and decisions that are not mechanical rules: going back to
-//! work when retirement savings fall short (`work.rs`).
+//! work when retirement savings fall short (`work.rs`) and panic selling in a crash
+//! (`panic.rs`).
 //!
 //! Every feature here is opt-in through a profile field whose default leaves it off.
 //! With every feature off, [`BehaviorPlan::any`] is false, nothing in this module
@@ -7,18 +8,21 @@
 //! without the module.
 //!
 //! Random numbers come only from the module's own streams
-//! ([`crate::rng::Stream::ReturnToWork`]) and are drawn at a fixed rate (one word
-//! per person per month while a feature is on), whatever the household decides, so
-//! two scenarios that differ in a decision stay paired.
+//! ([`crate::rng::Stream::ReturnToWork`], [`crate::rng::Stream::PanicSelling`]) and
+//! are drawn at a fixed rate (one draw per person, or per household, per month while
+//! a feature is on), whatever the household decides, so two scenarios that differ in
+//! a decision stay paired.
 
 use crate::career::CareerParams;
 use crate::data::Data;
-use crate::model::{JobSearch, Profile};
+use crate::model::{InvestorBehavior, JobSearch, Profile};
 use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
+pub(crate) mod panic;
 pub(crate) mod work;
 
+pub(crate) use panic::{PanicPlan, PanicState};
 pub(crate) use work::{RtwPlan, RtwState};
 
 /// The compiled behaviour settings of a profile.
@@ -28,6 +32,8 @@ pub(crate) struct BehaviorPlan {
     pub any: bool,
     /// `retirement.return_to_work`.
     pub rtw: Option<RtwPlan>,
+    /// `portfolio.behavior: panic_prone`.
+    pub panic: Option<PanicPlan>,
 }
 
 impl BehaviorPlan {
@@ -43,7 +49,7 @@ impl BehaviorPlan {
             RtwPlan {
                 ratio_below: r.funded_ratio_below,
                 until_month,
-                pay_fraction: r.pay_fraction.clamp(0.0, 1.0),
+                pay_fraction: r.pay_fraction.clamp(0.0, 1.5),
                 former_pay: r.former_annual_pay.map(|x| x.max(0.0)),
                 fixed_months: match r.search {
                     JobSearch::Typical => None,
@@ -54,18 +60,36 @@ impl BehaviorPlan {
                 spell_age_multiplier: params.spell_age_multiplier,
             }
         });
+        let panic = match &profile.portfolio.behavior {
+            InvestorBehavior::Disciplined => None,
+            InvestorBehavior::PanicProne(p) => Some(PanicPlan::compile(p)),
+        };
         BehaviorPlan {
-            any: rtw.is_some(),
+            any: rtw.is_some() || panic.is_some(),
             rtw,
+            panic,
         }
     }
 }
 
 /// The behaviour state of one path.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct BehaviorState {
     /// Return to work, per person.
     pub rtw: [RtwState; MAX_PEOPLE],
+    /// Panic selling.
+    pub panic: PanicState,
+    pub panic_rng: Rng,
+}
+
+impl Default for BehaviorState {
+    fn default() -> Self {
+        Self {
+            rtw: Default::default(),
+            panic: PanicState::default(),
+            panic_rng: Rng::from_seed(0),
+        }
+    }
 }
 
 impl BehaviorState {
@@ -81,6 +105,10 @@ impl BehaviorState {
                 s.rng = Rng::stream(seed, path, Stream::ReturnToWork(i));
             }
         }
+        self.panic = PanicState::default();
+        if plan.panic.is_some() {
+            self.panic_rng = Rng::stream(seed, path, Stream::PanicSelling);
+        }
     }
 }
 
@@ -95,6 +123,18 @@ impl super::state::State {
     ) {
         if plan.beh.rtw.is_some() {
             self.return_to_work_month(plan, econ, t);
+        }
+    }
+
+    /// Behaviour after the month's returns (step 10), only when some feature is on.
+    pub(crate) fn behavior_after_returns(
+        &mut self,
+        plan: &super::plan::Plan,
+        econ: &crate::economy::EconomyPath,
+        t: usize,
+    ) {
+        if plan.beh.panic.is_some() {
+            self.panic_month(plan, t, econ.price_level[t + 1]);
         }
     }
 }

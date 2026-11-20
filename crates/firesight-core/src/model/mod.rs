@@ -16,6 +16,7 @@
 
 mod accounts;
 mod assumptions;
+mod behavior;
 mod debt;
 mod events;
 mod examples;
@@ -30,6 +31,7 @@ mod time;
 
 pub use accounts::*;
 pub use assumptions::*;
+pub use behavior::*;
 pub use debt::*;
 pub use events::*;
 pub use examples::{Example, EXAMPLE_START};
