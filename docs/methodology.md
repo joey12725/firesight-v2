@@ -415,6 +415,57 @@ as a failure cause means private-pay care exhausted the portfolio. A care episod
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
 
+### Health states (opt-in)
+
+By default medical costs, care and the age at death are drawn independently.
+With `assumptions.health_model: states` each adult moves once a year between
+three states: healthy, chronic (two or more chronic conditions) and frail (the
+Fried phenotype). From age 50 the yearly chance of becoming chronic is
+`logistic(-4.155 + 0.050 (age - 50))` (1.5% at 50, 4.1% at 70); chronic to frail
+is `logistic(-2.743 + 0.061 (age - 80))` (3.4% at 70, 6.0% at 80, 10.6% at 90);
+healthy to frail directly a quarter of that; a frail person recovers to chronic
+with 10% a year; chronic is permanent. The four coefficients were fitted so that
+the chain, run from 18 on the 2023 period table, reproduces US prevalence: two or
+more chronic conditions in 6.9% / 30.5% / 67.1% of adults at 18-44 / 45-64 / 65+
+(NHIS 2018, Boersma et al. 2020: 6.7 / 33.0 / 63.7) and frailty in 8.3% at 65-69,
+17.0% at 65+ and 34.7% at 90+ (NHATS 2011, Bandeen-Roche et al. 2015: 9 / 15 /
+38). The direct healthy-to-frail share and the recovery rate are judgements.
+
+The state multiplies three things, each normalised so that the population
+average is unchanged:
+
+* **Mortality**: hazard ratios 1.73 for chronic (Nunes et al. 2016 meta-analysis,
+  two or more morbidities) and 2.79 for frail (NHANES, frail against robust),
+  relative to healthy at the same age, scaled every year so that the hazard
+  averaged over the survivors' states equals the person's own life-table rate
+  exactly. Deaths are therefore not redrawn: the age at death comes from the
+  person's longevity draw as before, and the health path is drawn *given* it
+  (forward filtering, backward sampling; exact for the joint model). Life
+  expectancy is unchanged to the bit and a frail year is far more likely just
+  before death.
+* **Out-of-pocket costs**: 1.91 times for chronic (AHRQ MEPS Statistical Brief
+  498, elderly with supplemental coverage: $1,685 against $883) and 2.79 for
+  frail (that ratio times the severe-disability ratio of Park and Stimpson 2024,
+  a judgement), divided by their average among the living of that age.
+* **Paid long-term care**: the episode probability is multiplied by 0.5 / 1 / 2
+  for the state at death (a judgement), divided by its average over the states
+  of the people dying at that age, so the ASPE incidence targets still hold.
+
+Measured (unit and simulation tests): every death age is identical with the
+feature on; the share of 70-year-old women using paid care and its mean cost move
+by less than sampling noise; for a 70-year-old man, health spending in the last
+two years of life rises by about $26 a month (premiums included) and by $1 a month
+before. On the dual-income example (4,000 paired paths): success 91.5% against
+91.4%, depletion 8.5% against 8.6%, both within noise; median terminal net worth
++$16k. The feature redistributes cost toward the end of life rather than adding
+it.
+
+Not modelled: states before 18 or a state reported by the user (the starting
+state is drawn from the prevalence at the person's age, whatever the
+self-assessed `health`, which still scales mortality as before); health affecting
+work, earnings or the spending budget; a correlation of the two partners' states;
+the year's planned spending uses the average out-of-pocket cost, not the state's.
+
 ## 8. Housing and debt
 
 A property has a value that follows the national index times a local random walk

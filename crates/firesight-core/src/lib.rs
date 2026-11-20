@@ -27,6 +27,7 @@ pub mod data;
 pub mod decumulation;
 pub mod economy;
 pub mod health;
+pub mod health_states;
 pub mod housing;
 pub mod legacy;
 pub mod math;

@@ -1,6 +1,8 @@
 //! Shared builders for the simulation integration tests.
 #![allow(dead_code)]
 
+pub mod care;
+
 use firesight_core::data::Data;
 use firesight_core::model::*;
 use firesight_core::sim::{self, Plan, Workspace};
@@ -109,6 +111,7 @@ pub fn quiet(people: Vec<Person>, die_at: f64) -> Profile {
             longevity: Longevity::FixedAge { age: die_at },
             career_risk: false,
             health_risk: false,
+            ..Assumptions::default()
         },
         ..Profile::default()
     }

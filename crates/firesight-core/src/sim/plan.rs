@@ -479,6 +479,8 @@ pub struct Plan {
     pub(crate) eq12_months: u32,
     /// Household earned-income rate at the start, today's dollars per year.
     pub(crate) income_rate0: f64,
+    /// The opt-in health, longevity and care features (`sim/care.rs`).
+    pub(crate) care: super::care::CarePlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -773,6 +775,7 @@ impl Plan {
             });
         }
         let income_rate0: f64 = earnings.iter().sum();
+        let care = super::care::CarePlan::compile(profile, &people, data);
 
         // Budget.
         let items: Vec<ItemPlan> = profile
@@ -1299,6 +1302,7 @@ impl Plan {
             plain_mix: !matches!(policy.rebalance, Rebalance::Never),
             eq12_months,
             income_rate0,
+            care,
         })
     }
 

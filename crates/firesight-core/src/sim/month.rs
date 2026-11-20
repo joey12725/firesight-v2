@@ -438,11 +438,14 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             };
-            let hm = plan
+            let mut hm = plan
                 .health
                 .step(&mut self.health[i], &ctx, &mut self.rng_health[i]);
             if !self.present[i] {
                 continue;
+            }
+            if plan.care.active {
+                self.care_month(plan, i, t, &mut hm);
             }
             health_cost += hm.premium + hm.out_of_pocket;
             match hm.phase {

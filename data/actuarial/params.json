@@ -1374,6 +1374,92 @@
     ],
     "confidence": "medium-high for incidence and cost; medium for care-type mix and the offset"
   },
+  "health_mortality_care": {
+    "summary": "Opt-in extensions: health states that drive costs and mortality (assumptions.health_model: states), linked lifespans of partners (longevity.couple_dependence: linked), the income gradient of mortality (longevity.income_gradient), Medicaid for long-term care (spending.healthcare.medicaid) and long-term-care insurance (person.ltc_insurance). Judgement constants used by these features are listed in unverified_from_memory.health_mortality_care_judgements.",
+    "health_states": {
+      "states": ["healthy", "chronic", "frail"],
+      "definition": "chronic = two or more of the ten NHIS chronic conditions and not frail; frail = Fried frailty phenotype (3 or more of 5 criteria).",
+      "prevalence_targets": {
+        "multiple_chronic_conditions": {
+          "18-44": 0.067,
+          "45-64": 0.330,
+          "65+": 0.637,
+          "source": "Boersma, Black and Ward, Prevalence of Multiple Chronic Conditions Among US Adults, 2018. Preventing Chronic Disease 2020;17:200130 (NHIS 2018), table by age group. https://www.cdc.gov/pcd/issues/2020/20_0130.htm"
+        },
+        "frail": {
+          "65-69": 0.09,
+          "65+": 0.15,
+          "90+": 0.38,
+          "source": "Bandeen-Roche et al., Frailty in older adults: a nationally representative profile in the United States, J Gerontol A 2015;70(11):1427-1434 (NHATS 2011, community-dwelling). Fried et al. 2001 (Cardiovascular Health Study) report 6.9% overall, 16.3% at 80-84 and 25.7% at 85-89."
+        }
+      },
+      "transitions": {
+        "form": "Annual, by age a at the start of the year: P(healthy->chronic) = logistic(onset_intercept + onset_slope * (a - 50)); P(chronic->frail) = logistic(frailty_intercept + frailty_slope * (a - 80)); P(healthy->frail) = healthy_to_frail_share * P(chronic->frail); P(frail->chronic) = frail_recovery; chronic does not return to healthy.",
+        "onset_intercept": -4.1549,
+        "onset_slope": 0.05006,
+        "frailty_intercept": -2.7433,
+        "frailty_slope": 0.06057,
+        "calibration": "Fitted (Nelder-Mead, least squares on relative errors) so that the chain run from age 18 on the SSA 2023 period table, with the hazard ratios below and the marginal mortality of the table kept exactly, reproduces the six prevalence targets (averaged over the two sexes, weighted by survivors). Fitted: 6.9% / 30.5% / 67.1% with two or more conditions at 18-44 / 45-64 / 65+ (targets 6.7 / 33.0 / 63.7); frail 8.3% at 65-69, 17.0% at 65+, 34.7% at 90+ (targets 9 / 15 / 38). healthy_to_frail_share and frail_recovery are judgements.",
+        "confidence": "medium: the prevalences are sourced, the functional form and the two judgement constants are not"
+      },
+      "mortality_hazard_ratio": {
+        "healthy": 1.0,
+        "chronic": 1.73,
+        "frail": 2.79,
+        "source": "chronic: Nunes et al., Multimorbidity and mortality in older adults: a systematic review and meta-analysis, Arch Gerontol Geriatr 2016;67:130-138 (pooled HR 1.73 for two or more morbidities). frail: NHANES frail vs robust, adjusted HR 2.79 (95% CI 2.35-3.30), as reported in the frailty literature (NHATS estimates 2.7 to 4.0). Applied relative to healthy at the same age; normalised every year so that the person's mortality, averaged over the states of the survivors, equals the life table exactly.",
+        "confidence": "medium"
+      },
+      "out_of_pocket_multiplier": {
+        "healthy": 1.0,
+        "chronic": 1.91,
+        "frail": 2.79,
+        "source": "chronic: AHRQ MEPS Statistical Brief #498 (Soni 2017, 2014 data): elderly adults with Medicare and private supplemental coverage, mean out-of-pocket $1,685 with multiple chronic conditions vs $883 with one or none (ratio 1.91). frail: the chronic ratio times the severe/no functional disability ratio of Park and Stimpson, JAMA Netw Open 2024;7(6):e2417300 ($2,137 vs $1,468, ratio 1.46): a judgement combining the two. Normalised every year so the mean among the living at each age is unchanged.",
+        "confidence": "medium for chronic, low for frail"
+      }
+    },
+    "couple_dependence": {
+      "frank_alpha": 7.065,
+      "frank_source": "Frank copula association fitted to the joint-life data of a large Canadian insurer analysed by Frees, Carriere and Valdez (Annuity valuation with dependent mortality, J Risk Insur 1996). Value: Dufresne, Hashorva, Ratovomirija and Toukourou, On age difference in joint lifetime modelling with life insurance annuity applications, Annals of Actuarial Science 2018 (arXiv:1601.04351), Table 4.1, overall IFM estimate 7.065.",
+      "bereavement_relative_risk": 1.41,
+      "bereavement_months": 6,
+      "bereavement_source": "Moon, Kondo, Glymour and Subramanian, Widowhood and mortality: a meta-analysis, PLoS ONE 2011;6(8):e23465: pooled relative risk 1.41 (1.26-1.57) in the first six months after bereavement, 1.14 after. Only the first-six-months excess is added here; the lasting excess is taken to be shared frailty, already in the copula.",
+      "confidence": "medium: the copula is fitted on insured annuitants and includes some short-term dependence, so the two together may overstate dependence a little"
+    },
+    "income_gradient": {
+      "measure": "Race-adjusted period life expectancy at 40 by percentile of household income (within sex and age), US 2001-2014, and the mean household income of each percentile in 2012 dollars.",
+      "source": "Chetty, Stepner, Abraham et al., The Association Between Income and Life Expectancy in the United States, 2001-2014. JAMA 2016;315(16):1750-1766. Health Inequality Project online Table 1 (https://healthinequality.org/dl/health_ineq_online_table_1.csv), columns hh_inc and le_raceadj.",
+      "cpi_2012_to_2026_09": 1.4676,
+      "cpi_note": "CPI-U growth from the 2012 average to September 2026, computed from data/history/monthly.csv; converts the 2012-dollar incomes to today's dollars.",
+      "method": "A person's mortality is multiplied by the factor m(p) that moves the SSA 2023 period life expectancy at 40 (by sex) by le40(p) minus the mean of le40 over the 100 percentiles: a proportional shift of the whole curve, as in the Gompertz fits of the paper. An association, not a causal effect of income.",
+      "female": {
+        "hh_income_2012": [433, 1919, 3718, 5467, 7089, 8570, 9891, 11142, 12368, 13526, 14617, 15692, 16747, 17778, 18788, 19787, 20779, 21765, 22748, 23728, 24707, 25686, 26667, 27652, 28641, 29635, 30635, 31640, 32651, 33670, 34699, 35739, 36793, 37859, 38942, 40037, 41146, 42273, 43414, 44571, 45744, 46933, 48135, 49352, 50587, 51835, 53100, 54385, 55688, 57013, 58356, 59723, 61112, 62521, 63953, 65410, 66884, 68384, 69904, 71455, 73028, 74629, 76260, 77924, 79623, 81360, 83142, 84964, 86832, 88754, 90727, 92764, 94866, 97040, 99293, 101634, 104071, 106625, 109306, 112141, 115151, 118363, 121808, 125521, 129572, 133992, 138843, 144239, 150285, 157146, 165094, 174413, 185647, 199593, 217631, 242346, 279176, 341872, 477421, 1923274],
+        "le40_race_adjusted": [78.78, 80.46, 81.17, 81.53, 81.63, 81.67, 81.7, 81.79, 81.75, 81.75, 82.01, 82.16, 82.35, 82.33, 82.46, 82.69, 82.62, 82.7, 82.94, 82.93, 83.0, 83.06, 83.12, 83.27, 83.35, 83.37, 83.43, 83.54, 83.72, 83.83, 83.78, 83.83, 84.0, 84.07, 84.1, 84.15, 84.28, 84.29, 84.28, 84.45, 84.52, 84.46, 84.62, 84.81, 84.72, 84.77, 85.0, 84.99, 84.99, 85.02, 84.99, 85.19, 85.14, 85.27, 85.34, 85.28, 85.54, 85.5, 85.67, 85.55, 85.51, 85.83, 85.85, 85.84, 86.01, 86.03, 85.89, 86.05, 86.08, 86.08, 86.26, 86.25, 86.33, 86.42, 86.37, 86.43, 86.63, 86.56, 86.67, 86.69, 86.7, 86.94, 87.03, 87.07, 87.12, 87.35, 87.43, 87.38, 87.5, 87.46, 87.79, 87.83, 88.03, 88.04, 88.3, 88.41, 88.53, 88.46, 88.61, 88.87]
+      },
+      "male": {
+        "hh_income_2012": [356, 1603, 3222, 4905, 6551, 8128, 9651, 11103, 12531, 13934, 15275, 16572, 17838, 19076, 20295, 21496, 22683, 23858, 25023, 26177, 27328, 28473, 29616, 30758, 31896, 33034, 34173, 35315, 36460, 37609, 38765, 39928, 41097, 42275, 43462, 44658, 45862, 47077, 48302, 49538, 50782, 52038, 53305, 54582, 55874, 57182, 58505, 59841, 61197, 62567, 63958, 65363, 66788, 68230, 69692, 71172, 72675, 74199, 75745, 77316, 78913, 80537, 82191, 83879, 85602, 87363, 89165, 91008, 92901, 94847, 96849, 98913, 101043, 103248, 105535, 107918, 110409, 113024, 115779, 118699, 121804, 125121, 128690, 132562, 136757, 141343, 146402, 152024, 158353, 165601, 173990, 183889, 195871, 210824, 230267, 257052, 297207, 365424, 511692, 1982300],
+        "le40_race_adjusted": [72.74, 74.5, 75.45, 75.84, 76.03, 76.18, 76.28, 76.19, 76.35, 76.39, 76.47, 76.56, 76.75, 76.84, 77.0, 77.11, 77.36, 77.42, 77.63, 77.7, 77.93, 78.14, 78.25, 78.41, 78.48, 78.59, 78.77, 78.98, 79.09, 79.18, 79.32, 79.52, 79.61, 79.81, 80.05, 80.13, 80.25, 80.4, 80.45, 80.73, 80.83, 80.77, 80.98, 81.07, 81.05, 81.31, 81.27, 81.45, 81.52, 81.69, 81.7, 81.86, 81.82, 81.87, 82.0, 82.19, 82.29, 82.26, 82.52, 82.57, 82.47, 82.71, 82.83, 82.82, 82.94, 82.94, 83.06, 83.32, 83.28, 83.37, 83.58, 83.64, 83.76, 83.64, 83.79, 84.03, 84.0, 84.01, 84.15, 84.18, 84.27, 84.38, 84.47, 84.64, 84.64, 85.08, 84.98, 85.05, 85.24, 85.41, 85.62, 85.83, 85.92, 86.17, 86.15, 86.32, 86.52, 86.77, 86.91, 87.34]
+      },
+      "check": "p1 / p50 / p100 life expectancy at 40: men 72.74 / 81.69 / 87.34, women 78.78 / 85.02 / 88.87 (the paper's 14.6- and 10.1-year top-to-bottom gaps are for the top and bottom 1%).",
+      "confidence": "high for the table; medium for using current earnings as the lifetime-income rank"
+    },
+    "medicaid": {
+      "asset_limit_individual": 2000,
+      "asset_limit_note": "SSI resource limit used by most states for nursing-home Medicaid; fixed in dollars by statute since 1989, so not indexed. A few states differ (NY, IL, CA).",
+      "csra_min_2026": 32532,
+      "csra_max_2026": 162660,
+      "mmmna_min_2026": 2643.75,
+      "home_equity_limit_2026": 752000,
+      "special_income_level_2026": 2982,
+      "personal_needs_allowance_federal_minimum": 30,
+      "source": "CMS, 2026 SSI and Spousal Impoverishment Standards (CMCS informational bulletin, revised April 2026); summarised by medicaidplanningassistance.org (Medicaid eligibility 2026): CSRA $32,532-$162,660, MMMNA minimum $2,643.75 until July 2026, home equity limit $752,000 in most states, special income level 300% of the $994 SSI federal benefit rate = $2,982. Personal needs allowance minimum $30 a month: 42 U.S.C. 1396a(q). Estate recovery after the death of the recipient and any surviving spouse: 42 U.S.C. 1396p(b).",
+      "confidence": "high for the federal figures; state rules vary (the national defaults are used)"
+    },
+    "ltc_insurance": {
+      "rate_increase_evidence": "Average cumulative increase since 2001: about 31% on policies sold under the NAIC rate-stability rules and 55% on older policies (LTC Shop data reported by InvestmentNews, 2018). Requested increases averaged 47% (2021) and 56% (2024) per filing in Milliman's surveys (SOA LTC newsletter 2022 and 2025); approved increases are smaller (Maryland's 2025 approvals averaged 14.6%).",
+      "tax": "Benefits of a tax-qualified policy within the per-diem limit are not income (IRC 7702B); treated as untaxed here.",
+      "confidence": "low for the size and frequency of increases (judgement calibrated to the 31% figure)"
+    }
+  },
   "expense_shocks": {
     "summary": "Irregular lumpy household expenses (car repair or replacement beyond plan, home repair, legal, family emergencies, uncovered dental/vet) as a compound Poisson process scaled to the household's annual spending. Medical shocks are excluded here (healthcare module).",
     "model": {
@@ -2431,6 +2517,17 @@
         22.9,
         18.8
       ]
+    },
+    "health_mortality_care_judgements": {
+      "note": "Judgements of the opt-in health, longevity and care features (health_mortality_care), not data: health_states::HEALTHY_TO_FRAIL_SHARE, FRAIL_RECOVERY, LTC_STATE_FACTOR; medicaid::PERSONAL_NEEDS_ALLOWANCE (most states set more than the $30 federal minimum); ltc_insurance::RATE_INCREASE_PROBABILITY, RATE_INCREASE_MIN, RATE_INCREASE_MAX (chosen so a policy bought today sees about 30% of increases in 17 years, the post-2001 record), LAPSE_INCOME_SHARE.",
+      "healthy_to_frail_share": 0.25,
+      "frail_recovery": 0.1,
+      "ltc_state_factor": [0.5, 1.0, 2.0],
+      "personal_needs_allowance": 60,
+      "rate_increase_probability": 0.08,
+      "rate_increase_min": 0.1,
+      "rate_increase_max": 0.3,
+      "lapse_income_share": 0.1
     },
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",

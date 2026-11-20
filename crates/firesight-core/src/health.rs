@@ -1022,6 +1022,21 @@ impl HealthModel {
         months_to_death: u32,
         rng: &mut Rng,
     ) -> HealthState {
+        self.initial_state_scaled(sex, age_months_at_start, months_to_death, rng, 1.0)
+    }
+
+    /// [`HealthModel::initial_state`] with the probability of a care episode
+    /// multiplied by `ltc_scale` (capped at the model's maximum probability): the
+    /// health-state model's factor for the state the person dies in. A scale of
+    /// exactly 1 is the unscaled model, bit for bit.
+    pub fn initial_state_scaled(
+        &self,
+        sex: Sex,
+        age_months_at_start: u32,
+        months_to_death: u32,
+        rng: &mut Rng,
+        ltc_scale: f64,
+    ) -> HealthState {
         let u_occurs = open_uniform(rng);
         let u_duration = open_uniform(rng);
         let u_type = open_uniform(rng);
@@ -1042,6 +1057,11 @@ impl HealthModel {
             return state;
         }
         let p = self.ltc_probability(sex, f64::from(death_age_months) / 12.0);
+        let p = if ltc_scale == 1.0 {
+            p
+        } else {
+            (p * ltc_scale).min(self.ltc_max_probability)
+        };
         let per_sex = &self.ltc_sex[sex_index(sex)];
         let (years, monthly_cost, care) = if self.risk {
             if u_occurs >= p {

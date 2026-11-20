@@ -69,6 +69,13 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Yearly health-state path of one person (`assumptions.health_model: states`).
+    HealthStates(usize),
+    /// Which member of a couple dies first in the linked-lifespan model, and the
+    /// timing of a death after bereavement (`couple_dependence: linked`).
+    CoupleLongevity,
+    /// Class-wide premium increases of long-term-care insurance.
+    LtcPremiumRates,
 }
 
 impl Stream {
@@ -85,6 +92,9 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::CoupleLongevity => 1700,
+            Stream::LtcPremiumRates => 1701,
+            Stream::HealthStates(i) => 0x1700_0000 + i as u64,
         }
     }
 }
@@ -475,6 +485,10 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::HealthStates(0),
+            Stream::HealthStates(1),
+            Stream::CoupleLongevity,
+            Stream::LtcPremiumRates,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

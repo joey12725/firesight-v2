@@ -699,6 +699,8 @@ keyed_enum! {
         LifeEvent => "life_event",
         /// Anything else.
         Other => "other",
+        /// A person's health state changed (`health_model: states`).
+        HealthState => "health_state",
     }
 }
 

@@ -479,6 +479,28 @@ fn every_feature_at_once_conserves_money() {
 }
 
 #[test]
+fn care_features_conserve_money() {
+    // The opt-in health, longevity and care features on the demo households and on
+    // everything at once.
+    for example in Profile::examples(START) {
+        let plan = compile(&care::all_care(example.profile.clone()));
+        let acc = run_checked(&plan, 13, 0..paths());
+        assert_eq!(acc.paths, paths(), "{}", example.slug);
+    }
+    for kind in MARKETS {
+        let plan = compile(&with_market(care::all_care(kitchen_sink()), kind));
+        let acc = run_checked(&plan, 5, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
+    }
+    let plan = compile(&care::all_care(kitchen_sink()));
+    let mut ws = Workspace::new(&plan);
+    ws.set_check(true);
+    for path in 0..20 {
+        sim::trace_path_in(&plan, 5, path, &mut ws);
+    }
+}
+
+#[test]
 fn traces_conserve_money_and_show_the_events() {
     let plan = compile(&kitchen_sink());
     let mut ws = Workspace::new(&plan);

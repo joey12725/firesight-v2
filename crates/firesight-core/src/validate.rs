@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod care;
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -188,9 +190,11 @@ pub fn validate(profile: &Profile) -> Report {
     c.events();
     c.retirement();
     c.assumptions();
+    c.care_errors();
     if c.r.errors.is_empty() {
         // Lints read the profile as a whole and assume it is structurally sound.
         c.plausibility();
+        c.care_warnings();
     }
     c.r
 }

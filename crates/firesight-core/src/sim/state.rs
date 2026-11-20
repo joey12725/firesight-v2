@@ -289,6 +289,8 @@ pub(crate) struct State {
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// The opt-in health, longevity and care features (`care.rs`).
+    pub care: super::care::CareState,
 }
 
 impl State {
@@ -472,6 +474,7 @@ impl State {
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
             tax_details: Vec::new(),
+            care: super::care::CareState::default(),
         }
     }
 
@@ -513,13 +516,22 @@ impl State {
             last = last.max(d);
             self.alive[i] = true;
             self.present[i] = person.joins <= 0;
-            self.health[i] = plan.health.initial_state(
+            self.records[i] = person.record0;
+        }
+        if plan.care.active {
+            self.care_begin(plan, seed, path);
+            last = self.death_month[..plan.people.len()]
+                .iter()
+                .fold(1, |a, &d| a.max(d));
+        }
+        for (i, person) in plan.people.iter().enumerate() {
+            self.health[i] = plan.health.initial_state_scaled(
                 person.sex,
                 person.age0.max(0) as u32,
-                d,
+                self.death_month[i],
                 &mut self.rng_health[i],
+                self.care.ltc_scale[i],
             );
-            self.records[i] = person.record0;
         }
         self.months = last.min(plan.horizon_months).max(1) as usize;
         let months = self.months;

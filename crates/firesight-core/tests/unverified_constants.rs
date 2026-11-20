@@ -5,7 +5,7 @@
 
 use firesight_core::data::Data;
 use firesight_core::model::AssetClass;
-use firesight_core::{decumulation, economy, health};
+use firesight_core::{decumulation, economy, health, health_states};
 
 #[test]
 fn constants_quoted_from_memory_match_the_data_file() {
@@ -44,4 +44,17 @@ fn constants_quoted_from_memory_match_the_data_file() {
         health::GOOD_HEALTH_MULTIPLIER,
         num(&section["good_health_mortality_multiplier"]["value"])
     );
+    let care = &section["health_mortality_care_judgements"];
+    assert_eq!(
+        health_states::HEALTHY_TO_FRAIL_SHARE,
+        num(&care["healthy_to_frail_share"])
+    );
+    assert_eq!(health_states::FRAIL_RECOVERY, num(&care["frail_recovery"]));
+    let factors: Vec<f64> = care["ltc_state_factor"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(num)
+        .collect();
+    assert_eq!(health_states::LTC_STATE_FACTOR.to_vec(), factors);
 }

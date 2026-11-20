@@ -21,6 +21,14 @@ pub struct Assumptions {
     /// Simulate random medical costs and long-term care. Turning this off uses average
     /// costs every year.
     pub health_risk: bool,
+    /// How each adult's health evolves. "independent" (the default): medical costs,
+    /// long-term care and mortality are drawn separately from each other.
+    /// "states": each adult moves year by year between healthy, chronic conditions
+    /// and frail; a sicker state raises out-of-pocket costs, the chance of
+    /// long-term care and the risk of dying, so expensive years come before death.
+    /// Life expectancy and average costs are kept the same as with "independent".
+    #[serde(skip_serializing_if = "HealthModelKind::is_independent")]
+    pub health_model: HealthModelKind,
 }
 
 impl Default for Assumptions {
@@ -31,7 +39,33 @@ impl Default for Assumptions {
             longevity: Longevity::default(),
             career_risk: true,
             health_risk: true,
+            health_model: HealthModelKind::Independent,
         }
+    }
+}
+
+/// How health, costs and mortality relate (`assumptions.health_model`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HealthModelKind {
+    /// Medical costs, long-term care and the age at death are drawn independently
+    /// of each other. The default.
+    #[default]
+    Independent,
+    /// A yearly Markov chain of health states (healthy, two or more chronic
+    /// conditions, frail) calibrated to US prevalence data. The state multiplies
+    /// out-of-pocket costs (about 1.9 times for chronic and 2.8 times for frail
+    /// relative to healthy), the chance that the end of life needs paid care, and the
+    /// mortality hazard (1.73 and 2.79 times), all normalised so that life
+    /// expectancy and average costs are unchanged.
+    States,
+}
+
+impl HealthModelKind {
+    /// True for the default (left out when a profile is written, so profiles saved
+    /// before the option existed read and write back unchanged).
+    pub fn is_independent(&self) -> bool {
+        *self == HealthModelKind::Independent
     }
 }
 

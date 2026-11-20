@@ -195,6 +195,7 @@ Assumptions {
                     social_security_haircut: Option<{ from_year, factor }> },
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
+  health_model: Independent (default) | States,   // yearly healthy/chronic/frail chain scaling OOP, care and mortality; Stream::HealthStates(person)
 }
 SimulationSettings { paths: u32 (10_000), seed: u64, end_age: u32 (100) }
 ```
