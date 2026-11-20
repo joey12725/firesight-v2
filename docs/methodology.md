@@ -577,6 +577,47 @@ spending, work or health costs; the copula was fitted on insured annuitants,
 whose dependence may differ from the population's, and combining it with the
 bereavement term may overstate short-term dependence a little.
 
+### Longevity and income (opt-in)
+
+With `longevity.income_gradient: true` each person's mortality is multiplied by a
+factor set by the household's rank in the national income distribution. The data
+are Chetty, Stepner, Abraham et al. (2016, JAMA), online table 1: race-adjusted
+period life expectancy at 40 by percentile of household income, by sex, US
+2001-2014 (men 72.7 / 81.7 / 87.3 years at the 1st / 50th / 100th percentile,
+women 78.8 / 85.0 / 88.9). The factor is the constant multiplier on the SSA 2023
+period table that moves its life expectancy at 40 by the percentile's gap from
+the average over the percentiles (found by bisection), applied on top of the
+`health` multiplier through the same mortality curve, so every later draw, the
+health states and the linked lifespans see it. It is an association: higher income
+goes with longer lives for many reasons (health, education, work, place), and the
+model does not claim income causes them.
+
+The rank comes from `income_percentile` (1 to 100) when given; otherwise from the
+gross pay of the jobs and the net self-employment income running at the start,
+converted to 2012 dollars with CPI-U (1.4676, the project's own CPI series) and
+placed between the percentile means of the table. With no earnings at the start
+(a retired household) the 50th percentile is used and validation warns: the paper
+ranks people past 61 by their income at 61 to 63, which a profile of retirees does
+not hold, so `income_percentile` should be set. With the option off the
+multiplier is exactly 1 and nothing changes.
+
+Measured: for a woman of 70 (3,000 paths) the 95th percentile moves the mean age
+at death up by between one and four years and the 5th down by a similar amount
+(a simulation test); each paired death moves only later at the 95th percentile.
+On the dual-income example (4,000 paired paths) the earnings rank the household
+near the 90th percentile (the result is within noise of `income_percentile: 90`):
+success falls from 91.5% to 89.8% (95% interval of the change -2.3 to -1.0
+points) and depletion rises from 8.5% to 10.2%, because longer lives must be
+paid for; median terminal net worth falls by $166k. At the 10th percentile success
+rises to 93.7%.
+
+Not modelled: ranking by lifetime rather than current earnings (a high earner
+early in a career or a low earner by choice is misranked; set the percentile),
+the paper's differences by place and over time (life expectancy at the top rose
+faster in 2001-2014), the gradient's narrowing at old ages beyond what a
+proportional shift gives, and any link between income and the health states'
+prevalence.
+
 ## 11. When retirement happens
 
 Triggers: at an age, at a date, already retired, when a fixed number is reached, or

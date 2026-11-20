@@ -46,6 +46,16 @@ impl Checker<'_> {
                     "Linked lifespans only affect a couple; this household has one adult, so the setting does nothing.",
                 );
             }
+            if income_gradient
+                && income_percentile.is_none()
+                && crate::longevity_links::household_income(p).is_none()
+            {
+                self.r.warn(
+                    "income_gradient_no_earnings",
+                    "/assumptions/longevity/income_percentile",
+                    "The income gradient is on but no earnings run at the start, so the household is placed at the 50th income percentile. Set income_percentile to the household's rank during its working years.",
+                );
+            }
             if income_percentile.is_some() && !income_gradient {
                 self.r.warn(
                     "income_percentile_unused",

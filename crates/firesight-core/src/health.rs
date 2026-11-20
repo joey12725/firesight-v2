@@ -224,6 +224,21 @@ impl MortalityModel {
         longevity: &Longevity,
         data: &Data,
     ) -> MortalityModel {
+        Self::new_scaled(birth, sex, health, start, longevity, 1.0, data)
+    }
+
+    /// [`MortalityModel::new`] with the stochastic curve's mortality also
+    /// multiplied by `extra` (the income gradient, `longevity_links`). An `extra`
+    /// of exactly 1 gives the curve of `new` bit for bit.
+    pub fn new_scaled(
+        birth: YearMonth,
+        sex: Sex,
+        health: HealthStatus,
+        start: YearMonth,
+        longevity: &Longevity,
+        extra: f64,
+        data: &Data,
+    ) -> MortalityModel {
         let age0 = birth.age_months_at(start).max(0) as u32;
         let survival = match *longevity {
             Longevity::FixedAge { age } => {
@@ -234,7 +249,7 @@ impl MortalityModel {
                 s
             }
             Longevity::Stochastic { improvement, .. } => {
-                Self::cohort_curve(age0, sex, health, start, improvement, data)
+                Self::cohort_curve(age0, sex, health, start, improvement, extra, data)
             }
         };
         let mut sum = 0.0;
@@ -254,16 +269,20 @@ impl MortalityModel {
         health: HealthStatus,
         start: YearMonth,
         improvement: bool,
+        extra: f64,
         data: &Data,
     ) -> Vec<f64> {
         let mortality = &data.actuarial["mortality"];
         let presets = &mortality["health_multiplier"]["presets"];
-        let multiplier = match health {
+        let mut multiplier = match health {
             HealthStatus::Excellent => num(presets, &["healthy_high_income"]),
             HealthStatus::Good => GOOD_HEALTH_MULTIPLIER,
             HealthStatus::Average => num(presets, &["average"]),
             HealthStatus::Poor => num(presets, &["poor_health"]),
         };
+        if extra != 1.0 {
+            multiplier *= extra;
+        }
         let base_year = num(mortality, &["base_table", "base_year"]) as i32;
         let end_age_months = (data.life_table.max_age() as u32 + 1) * 12;
         let months = end_age_months.saturating_sub(age0).max(1) as usize;

@@ -277,3 +277,83 @@ fn linked_lifespans_are_bit_identical_when_off_and_traced_when_on() {
     // at the horizon: a handful in 400.
     assert!((1..=15).contains(&logged), "{logged}");
 }
+
+fn with_income_rank(mut p: Profile, gradient: bool, percentile: Option<f64>) -> Profile {
+    p.assumptions.longevity = Longevity::Stochastic {
+        improvement: true,
+        couple_dependence: CoupleDependence::Independent,
+        income_gradient: gradient,
+        income_percentile: percentile,
+    };
+    p
+}
+
+#[test]
+fn income_gradient_moves_life_expectancy_by_the_income_rank() {
+    let base = retiree_70(Sex::Female);
+    let n = 3_000;
+    let death = |p: &Profile| -> f64 {
+        let acc = run(&compile(p), 5, 0..n);
+        mean(
+            &column(&acc, PathScalar::DeathAge0)
+                .iter()
+                .map(|&v| f64::from(v))
+                .collect::<Vec<_>>(),
+        )
+    };
+    // Off, with or without a (then ignored) percentile, is the baseline bit for
+    // bit.
+    let off = run(&compile(&base), 5, 0..300).to_bytes();
+    assert_eq!(
+        run(
+            &compile(&with_income_rank(base.clone(), false, Some(90.0))),
+            5,
+            0..300
+        )
+        .to_bytes(),
+        off
+    );
+    let mid = death(&base);
+    let top = death(&with_income_rank(base.clone(), true, Some(95.0)));
+    let bottom = death(&with_income_rank(base.clone(), true, Some(5.0)));
+    // Women at 40: the 95th percentile lives 3.5 years longer than the average of
+    // the percentiles, the 5th 4.5 years shorter (Chetty et al. 2016). At 70 a
+    // proportional shift of mortality moves remaining life by less: between one
+    // and four years each way.
+    assert!(top - mid > 1.0 && top - mid < 4.0, "{mid} -> {top}");
+    assert!(
+        mid - bottom > 1.0 && mid - bottom < 4.5,
+        "{mid} -> {bottom}"
+    );
+    // Paired paths: a lower mortality only ever moves each death later.
+    let (a, b) = (
+        run(&compile(&base), 5, 0..500),
+        run(
+            &compile(&with_income_rank(base.clone(), true, Some(95.0))),
+            5,
+            0..500,
+        ),
+    );
+    let (da, db) = (
+        column(&a, PathScalar::DeathAge0),
+        column(&b, PathScalar::DeathAge0),
+    );
+    assert!(da.iter().zip(&db).all(|(x, y)| y >= x));
+}
+
+#[test]
+fn income_gradient_ranks_the_household_earnings() {
+    // A worker of 45 earning $40k against one earning $400k: the second ranks near
+    // the top and lives longer; the first below the middle.
+    let mk = |salary: f64| {
+        let mut p = quiet(vec![person("w", 45, Sex::Male)], 100.0);
+        p.incomes = vec![job("pay", 0, salary)];
+        with_income_rank(p, true, None)
+    };
+    let le = |p: &Profile| compile(p).life_expectancies()[0];
+    let (low, high) = (le(&mk(40_000.0)), le(&mk(400_000.0)));
+    let mut neutral = mk(40_000.0);
+    neutral.assumptions.longevity = Longevity::default();
+    let avg = le(&neutral);
+    assert!(high > avg + 2.0 && low < avg - 0.5, "{low} {avg} {high}");
+}

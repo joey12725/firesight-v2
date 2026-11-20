@@ -608,13 +608,14 @@ impl Plan {
         let mut growth_pay = [0.0f64; MAX_PEOPLE];
         let mut survival: Vec<Vec<f64>> = Vec::new();
         let mut mortality = Vec::new();
-        for person in &profile.household.people {
-            let m = MortalityModel::new(
+        for (i, person) in profile.household.people.iter().enumerate() {
+            let m = MortalityModel::new_scaled(
                 person.birth,
                 person.sex,
                 person.health,
                 start,
                 &profile.assumptions.longevity,
+                crate::longevity_links::income_multiplier(profile, i, data),
                 data,
             );
             survival.push(m.survival_table().to_vec());

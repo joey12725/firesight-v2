@@ -318,31 +318,34 @@ pub fn le40_gap(percentile: f64, sex_key: &str, data: &Data) -> f64 {
     le[i] * (1.0 - f) + le[i + 1] * f - mean
 }
 
-/// Household income in today's dollars that the gradient ranks: the gross
-/// earnings, pensions, annuities and other income of incomes running at the
-/// start, `None` when there is none.
+/// Household income in today's dollars that the gradient ranks: the gross pay of
+/// the jobs and the net self-employment income running at the start (the paper
+/// ranks pre-tax household earnings; for people past 61 it uses the income they
+/// had at 61 to 63, which a profile of retirees does not hold). `None` when no
+/// earnings run at the start.
 pub fn household_income(profile: &Profile) -> Option<f64> {
+    let ctx = profile.when_context()?;
     let mut total = 0.0;
     for income in &profile.incomes {
-        if income.start.is_some() {
-            if let (Some(ctx), Some(start)) = (profile.when_context(), income.start.as_ref()) {
-                match start.resolve(&ctx) {
-                    Some(at) if at <= ctx.start => {}
-                    _ => continue,
-                }
-            } else {
-                continue;
-            }
+        let started = match &income.start {
+            None => true,
+            Some(w) => w.resolve(&ctx).is_some_and(|at| at <= ctx.start),
+        };
+        let ended = income
+            .end
+            .as_ref()
+            .and_then(|w| w.resolve(&ctx))
+            .is_some_and(|at| at <= ctx.start);
+        if !started || ended {
+            continue;
         }
         total += match &income.kind {
             IncomeKind::Job(j) => {
                 j.salary * (1.0 + j.bonus.as_ref().map_or(0.0, |b| b.target_fraction))
                     + j.commission.as_ref().map_or(0.0, |c| c.expected_annual)
             }
-            IncomeKind::SelfEmployment(s) => s.net_annual,
-            IncomeKind::Pension(p) => p.annual,
-            IncomeKind::Annuity(a) => a.annual,
-            IncomeKind::Other(o) => o.annual,
+            IncomeKind::SelfEmployment(s) => s.net_annual.max(0.0),
+            _ => 0.0,
         };
     }
     (total > 0.0).then_some(total)
@@ -393,6 +396,77 @@ mod tests {
         )
         .survival_table()
         .to_vec()
+    }
+
+    #[test]
+    fn income_gradient_parts_match_hand_values() {
+        let d = Data::embedded();
+        // Chetty et al. table: men p1 72.74, p100 87.34, mean over percentiles
+        // 81.2613; women p1 78.78, p100 88.87, mean 84.9234.
+        assert!((le40_gap(100.0, "male", d) - (87.34 - 81.2613)).abs() < 1e-9);
+        assert!((le40_gap(1.0, "male", d) - (72.74 - 81.2613)).abs() < 1e-9);
+        assert!((le40_gap(1.0, "female", d) - (78.78 - 84.9234)).abs() < 1e-9);
+        // Out of range is clamped.
+        assert_eq!(le40_gap(250.0, "male", d), le40_gap(100.0, "male", d));
+        // Percentile of an income: the 50th percentile's mean (62,567 in 2012
+        // dollars for men) at today's prices is exactly 50.
+        let cpi = 1.4676;
+        assert!((income_percentile(62_567.0 * cpi, "male", d) - 50.0).abs() < 1e-9);
+        assert_eq!(income_percentile(100.0, "male", d), 1.0);
+        assert_eq!(income_percentile(1e9, "male", d), 100.0);
+        // The multiplier moves period e40 by the gap: 1 for no gap, below 1 for a
+        // longer life, and the target is hit.
+        for sex in [Sex::Male, Sex::Female] {
+            assert!((multiplier_for_gap(sex, 0.0, d) - 1.0).abs() < 1e-9);
+            let m = multiplier_for_gap(sex, 3.0, d);
+            assert!(m < 1.0 && m > 0.5, "{m}");
+            assert!((e40(sex, m, d) - e40(sex, 1.0, d) - 3.0).abs() < 1e-6);
+            let m = multiplier_for_gap(sex, -8.0, d);
+            assert!(m > 1.5, "{m}");
+            assert!((e40(sex, m, d) - e40(sex, 1.0, d) + 8.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn income_multiplier_is_exactly_one_when_off_and_ranks_earnings() {
+        let d = Data::embedded();
+        let mut p = Profile::example();
+        assert_eq!(income_multiplier(&p, 0, d), 1.0);
+        let earnings = household_income(&p);
+        p.assumptions.longevity = Longevity::Stochastic {
+            improvement: true,
+            couple_dependence: crate::model::CoupleDependence::Independent,
+            income_gradient: true,
+            income_percentile: None,
+        };
+        let ranked = income_multiplier(&p, 0, d);
+        let key = match p.household.people[0].sex {
+            Sex::Female => "female",
+            _ => "male",
+        };
+        if let Some(x) = earnings {
+            let pct = income_percentile(x, key, d);
+            let want = multiplier_for_gap(p.household.people[0].sex, le40_gap(pct, key, d), d);
+            if p.household.people[0].sex != Sex::Unspecified {
+                assert_eq!(ranked, want);
+            }
+        }
+        // A fixed percentile overrides the ranking: top decile lives longer.
+        if let Longevity::Stochastic {
+            income_percentile, ..
+        } = &mut p.assumptions.longevity
+        {
+            *income_percentile = Some(95.0);
+        }
+        let top = income_multiplier(&p, 0, d);
+        if let Longevity::Stochastic {
+            income_percentile, ..
+        } = &mut p.assumptions.longevity
+        {
+            *income_percentile = Some(5.0);
+        }
+        let bottom = income_multiplier(&p, 0, d);
+        assert!(top < 1.0 && bottom > 1.0, "{top} {bottom}");
     }
 
     #[test]
