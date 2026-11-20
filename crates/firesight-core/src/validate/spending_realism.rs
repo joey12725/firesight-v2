@@ -2,7 +2,7 @@
 //! `spending.unemployment_cut`.
 
 use super::{check_ids, seg, Checker};
-use crate::model::Category;
+use crate::model::{Category, PropertyUse, ShockLevel};
 
 impl Checker<'_> {
     pub(super) fn spending_realism(&mut self) {
@@ -111,6 +111,18 @@ impl Checker<'_> {
                     "Replacing the listed vehicles costs about {annualised:.0} a year on average, more than half of the Transport budget lines ({transport:.0} a year). If those lines include buying or depreciating a car, the cost is counted twice: keep only fuel, insurance and maintenance in them."
                 ),
             );
+        }
+
+        if s.shocks == ShockLevel::Detailed {
+            for (i, prop) in p.properties.iter().enumerate() {
+                if matches!(prop.usage, PropertyUse::Primary) && prop.maintenance_rate > 0.015 {
+                    self.r.warn(
+                        "detailed_shocks_home_maintenance",
+                        &format!("/properties/{}/maintenance_rate", seg(&prop.id, i)),
+                        "Detailed shocks add home repairs (about 0.4% of the home's value a year on average) on top of this maintenance rate. With a rate above 1.5% the total upkeep is above the usual 1% to 2% rule of thumb; consider lowering it.",
+                    );
+                }
+            }
         }
 
         if self.r.range(
@@ -243,6 +255,30 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.code == "unemployment_cut_high"));
+    }
+
+    #[test]
+    fn detailed_shocks_warn_about_double_counted_home_upkeep() {
+        let mut p = Profile::example();
+        p.spending.shocks = crate::model::ShockLevel::Detailed;
+        p.properties = vec![crate::model::Property {
+            id: "home".into(),
+            name: "Home".into(),
+            usage: crate::model::PropertyUse::Primary,
+            value: 400_000.0,
+            maintenance_rate: 0.02,
+            ..crate::model::Property::default()
+        }];
+        let r = validate(&p);
+        assert!(r
+            .warnings
+            .iter()
+            .any(|w| w.code == "detailed_shocks_home_maintenance"));
+        p.properties[0].maintenance_rate = 0.01;
+        assert!(!validate(&p)
+            .warnings
+            .iter()
+            .any(|w| w.code == "detailed_shocks_home_maintenance"));
     }
 
     #[test]

@@ -108,3 +108,14 @@ pub enum CategoryInflation {
     /// sub-indexes. Other categories track CPI.
     Stochastic,
 }
+
+/// Serde helper: leave a field at its default out of the serialised profile, so a profile
+/// that does not use the feature serialises exactly as it did before the feature existed.
+pub(crate) fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
+/// Serde helper: leave a zero out of the serialised profile (see [`is_default`]).
+pub(crate) fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}

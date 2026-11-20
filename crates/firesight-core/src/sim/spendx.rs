@@ -82,7 +82,6 @@ const GROUP_OF: [usize; Category::COUNT] = {
 };
 
 const SHOCK_KINDS: usize = 4;
-const SHOCK_HOME: usize = 0;
 const SHOCK_CAR: usize = 1;
 const SHOCK_LABELS: [&str; SHOCK_KINDS] = [
     "Home repair",
@@ -317,13 +316,9 @@ impl SpendXPlan {
                 decay,
                 jump: n * (1.0 - decay) / total_rate,
             });
-            // Expected annual cost at the start, in today's dollars.
-            let home: f64 = profile
-                .properties
-                .iter()
-                .filter(|p| matches!(p.usage, PropertyUse::Primary))
-                .map(|p| p.value.max(0.0))
-                .sum();
+            // Expected annual cost at the start, in today's dollars. Home repairs are
+            // not netted: the budget never contained owned-home costs (they are computed
+            // from the property), so they are an addition on top of its maintenance_rate.
             let transport: f64 = s
                 .items
                 .iter()
@@ -331,9 +326,8 @@ impl SpendXPlan {
                 .map(|i| i.annual_amount())
                 .sum();
             let car_base = transport + vehicle_annual_cost(&plan.vehicles);
-            let expected = means[SHOCK_HOME] * home
-                + means[SHOCK_CAR] * car_base
-                + (means[2] + means[3]) * start_budget_annual;
+            let expected =
+                means[SHOCK_CAR] * car_base + (means[2] + means[3]) * start_budget_annual;
             if start_budget_annual > 0.0 {
                 mean_fraction = (expected / start_budget_annual).min(0.25);
             }
@@ -688,6 +682,48 @@ mod tests {
         // One sd above the median is a uniform of 0.8413: 6 months.
         let one_sd = ((0.841_344_746_068_543 * (1u64 << 53) as f64) as u64) << 11;
         assert_eq!(jitter_months(one_sd), 6);
+    }
+
+    #[test]
+    fn wedge_step_matches_hand_values_and_the_mean_correction() {
+        let g = WedgeGroup {
+            phi: 0.5,
+            sigma: 0.1,
+        };
+        // First step with z = 1: x = 0.1, Var = 0.01, multiplier exp(0.1 - 0.005).
+        let (x, var, w) = wedge_step(g, 0.0, 0.0, 1.0);
+        assert!((x - 0.1).abs() < 1e-15 && (var - 0.01).abs() < 1e-15);
+        assert!((w - crate::math::exp(0.1f64 - 0.005)).abs() < 1e-15);
+        // Second step with z = -1: x = 0.05 - 0.1, Var = 0.25 x 0.01 + 0.01 = 0.0125.
+        let (x, var, w) = wedge_step(g, x, var, -1.0);
+        assert!((x + 0.05).abs() < 1e-15 && (var - 0.0125).abs() < 1e-15);
+        assert!((w - crate::math::exp(-0.05f64 - 0.00625)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn the_wedge_has_mean_one_at_every_horizon() {
+        // The calibrated utilities wedge (phi 0.923, sigma 0.0305) over 30 years: its
+        // log has variance 0.0062, so without the correction the mean would be 1.0031,
+        // 17 standard errors above 1 with this many draws.
+        let g = WedgeGroup {
+            phi: 0.923,
+            sigma: 0.0305,
+        };
+        let n = 200_000;
+        let mut rng = Rng::stream(1, 0, Stream::CategoryPrices);
+        for steps in [1usize, 5, 30] {
+            let mut sum = 0.0;
+            for _ in 0..n {
+                let (mut x, mut var, mut w) = (0.0, 0.0, 1.0);
+                for _ in 0..steps {
+                    let z = capped_normal(rng.next_u64(), WEDGE_Z_CAP);
+                    (x, var, w) = wedge_step(g, x, var, z);
+                }
+                sum += w;
+            }
+            let mean = sum / n as f64;
+            assert!((mean - 1.0).abs() < 0.0015, "{steps} steps: mean {mean}");
+        }
     }
 
     #[test]

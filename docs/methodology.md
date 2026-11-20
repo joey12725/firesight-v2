@@ -396,6 +396,94 @@ shocks scale car repairs with the vehicles' cost but not their age), buying a ca
 of a loan balance still owed on the old one (a second loan simply adds to the first
 and the payment is recomputed), leasing.
 
+### Seasonal spending
+
+Opt-in through `spending.seasonality = "typical"`. Each category has twelve monthly
+weights, rescaled in code to average exactly 1, so a line's annual amount is unchanged
+and only its timing moves (utilities peak in winter and summer, dining and travel in
+summer, gifts and giving in December, flat categories such as rent stay even). The
+weights are a judgement: they follow the qualitative patterns reported by the EIA for
+household energy use, but no monthly Consumer Expenditure table was fetched (the BLS
+survey publishes annual means), so they are not fitted to data (see
+`spending_realism.seasonality` in `params.json`). Seasonality acts on the monthly
+budget, so it matters for the month a cash shortfall or a withdrawal appears, not for
+the year's spending.
+
+Measured (shipped `dual-income-family`, 1,000 paired paths): success 89.6% to 89.6%,
+no path rescued or harmed, median terminal net worth +$668, median lifetime spending
+-$955. As expected, it is a timing feature.
+
+Not modelled: seasonal income, regional or household-specific patterns, weights that
+vary with age or children.
+
+### Personal inflation by category
+
+Opt-in through `spending.category_inflation = "stochastic"`. Lines in the food, energy
+(utilities and transport), shelter (rent), medical and education groups carry a
+persistent price wedge against CPI: the log of the category's relative price level is an
+AR(1), `x_k = phi x_(k-1) + sigma z_k`, stepped each January from zero today, and the
+multiplier is `exp(x_k - Var(x_k)/2)`, so its expectation is exactly 1 in every year
+(it adds risk, not drift). `phi` and `sigma` are fitted to annual averages 1980 to 2024
+of the BLS CPI-U sub-indexes relative to all items (retrieved from FRED) by
+`tools/calibrate_category_inflation.py`; `phi` is capped at 0.95, a judgement, because
+the medical and education ratios are unit roots in this sample. Each group uses its own
+standard normal draws from a new stream (`CategoryPrices`) with a fixed number of draws
+per year, so paired comparisons stay paired. The category's long-run real growth stays
+separate. Draws are capped at 3.5 sd.
+
+Measured (shipped `dual-income-family`, 1,000 paired paths): success 89.6% to 89.7%
+(within noise), median terminal net worth -$7,300, median lifetime spending +$10,300.
+The median barely moves because the wedge is mean-preserving; what changes is the
+spread of lifetime spending across paths.
+
+Not modelled: correlation of the wedges with each other or with CPI and market returns,
+and a wedge that differs by region.
+
+### Richer irregular expenses
+
+Opt-in through `spending.shocks = "detailed"`. Four independent compound-Poisson shock
+types fire monthly: home repair (scaled with the value of owned primary homes: 0.4 a
+year, median 0.5% of value), car repair (scaled with Transport spending plus the
+vehicles' annual cost: 0.4 a year, median 8%), medical-adjacent (0.16 a year, median 2%
+of annual spending) and family emergency (0.12 a year, median 3%). Sizes are lognormal
+(sigma 0.9 to 1.2, capped at 3.5 sd), so the tail is heavy. A shared excitement term
+rises with every shock and halves every 12 months, so a bad year raises the hazard of
+another (Hawkes-style clustering), scaled so the long-run frequency is unchanged.
+Medical frequency and size are anchored on the JP Morgan Chase Institute (2017) figures
+used for the other levels (16% of families a year, median $1,143); the car repair size on
+the same source ($953 median); home repair, family emergency and the clustering are
+judgements (see `spending_realism.detailed_shocks`). The expected annual cost of the car,
+medical and family types is netted out of the budget as for the other levels; home
+repairs are not, because owned-home costs are computed from the property, so they come
+on top of its `maintenance_rate` (the validator warns above 1.5%).
+
+Measured (shipped `dual-income-family`, 1,000 paired paths, which owns no home, so only
+three of the four types act): success 89.6% to 88.3% (-1.3 points, 95% interval -2.2
+to -0.4), median terminal net worth -$153,000, median lifetime spending +$82,000.
+
+Not modelled: shocks that depend on the age of the home or car, insurance
+reimbursement, and shocks to rental property (landlord repairs use the property's own
+maintenance rate).
+
+### Belt-tightening when unemployed
+
+Opt-in through `spending.unemployment_cut` (0 by default). While an earner is in an
+unemployment spell, discretionary spending is multiplied by `1 - cut`, phasing in
+linearly over three months and unwinding over three months after re-employment (the
+phase length is a judgement, `UNEMPLOYMENT_CUT_PHASE_MONTHS`). Essential spending is
+untouched. Suggested value 0.15: Ganong and Noel (2019, AER) find nondurable spending
+falls about 6% at the onset of unemployment and further when benefits end; with
+discretionary lines about half the budget, 6% to 12% of total spending is 0.1 to 0.25 of
+them. The trace logs when the cut starts and when it lifts.
+
+Measured (shipped `dual-income-family`, cut 0.15, 1,000 paired paths): success 89.6% to
+89.7%, median lifetime spending +$4,600 (the extra is spending avoided in ruin paths),
+terminal net worth unchanged. Spells are short with the typical career risk, so the
+effect is small; it grows with a high layoff risk and a thin cushion.
+
+Not modelled: a cut that deepens when benefits run out, durable goods deferred during
+a spell, and a cut for a partner's spell that differs from the earner's own.
+
 ### Children
 
 USDA expenditure estimates by age band and income tier (2015 dollars brought to

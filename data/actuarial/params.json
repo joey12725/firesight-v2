@@ -1484,15 +1484,14 @@
       "flat_categories": "rent, healthcare, insurance, childcare and other are spent evenly."
     },
     "detailed_shocks": {
-      "model": "Four independent compound-Poisson shock types. Each month, type k fires with probability 1 - exp(-lambda_k (1 - n) (1 + e) / 12) and costs base_k * LogNormal(ln median_k, sigma_k) with the normal draw capped at +-3.5 sd. base_home = market value of owned primary homes; base_car = Transport budget lines plus the replacement price of vehicles spread over their cycle; base_medical and base_family = annual spending. e is a shared excitement that decays by half every 12 months and rises with every shock, so one shock raises the chance of another (Hawkes clustering); lambda is scaled by (1 - n) so the long-run frequency stays lambda. The expected annual cost at the start is netted out of the budget like the typical level.",
-      "confidence": "frequency and median of medical: medium-low (JP Morgan Chase Institute 2017, figures already quoted under expense_shocks.evidence); car repair median: medium-low (same source, $953 against about $12,000 of transport spending); home repair and family emergency: judgement, no source fetched (home repair is anchored on the common rule of thumb that maintenance runs about 1% of home value a year, half of it routine and already in a budget); clustering: judgement.",
+      "model": "Four independent compound-Poisson shock types. Each month, type k fires with probability 1 - exp(-lambda_k (1 - n) (1 + e) / 12) and costs base_k * LogNormal(ln median_k, sigma_k) with the normal draw capped at +-3.5 sd. base_home = market value of owned primary homes; base_car = Transport budget lines plus the replacement price of vehicles spread over their cycle; base_medical and base_family = annual spending. e is a shared excitement that decays by half every 12 months and rises with every shock, so one shock raises the chance of another (Hawkes clustering); lambda is scaled by (1 - n) so the long-run frequency stays lambda. The expected annual cost of the car, medical and family types at the start is netted out of the budget like the typical level; home repairs are not, because owned-home costs are computed from the property (its maintenance_rate, default 1% of value, is routine upkeep and the repairs come on top).",
+      "confidence": "frequency and median of medical: medium-low (JP Morgan Chase Institute 2017, figures already quoted under expense_shocks.evidence); car repair median: medium-low (same source, $953 against about $12,000 of transport spending); home repair and family emergency: judgement, no source fetched (home repair: about 0.4% of home value a year on average, on top of the 1% default maintenance_rate, which keeps total upkeep inside the common 1-2% rule of thumb); clustering: judgement.",
       "types": {
         "home_repair": {"lambda_per_year": 0.4, "median_fraction_of_home_value": 0.005, "sigma": 1.1, "confidence": "judgement"},
         "car_repair": {"lambda_per_year": 0.4, "median_fraction_of_transport_spending": 0.08, "sigma": 0.9, "confidence": "medium-low: median anchored on JPMCI 2017 $953"},
         "medical_adjacent": {"lambda_per_year": 0.16, "median_fraction_of_annual_spending": 0.02, "sigma": 1.0, "confidence": "medium-low: JPMCI 2017, 16% of families a year, median $1,143 about 2% of annual spending"},
         "family_emergency": {"lambda_per_year": 0.12, "median_fraction_of_annual_spending": 0.03, "sigma": 1.2, "confidence": "judgement"}
-      },
-      "high_multiplier": "not used: Detailed has no High variant."
+      }
     }
   },
   "children": {

@@ -1129,7 +1129,7 @@ impl State {
                     })
                 * survivor_factor;
             ess += extra;
-            if let Some(tl) = tally.as_deref_mut() {
+            if let Some(tl) = tally.as_mut() {
                 tl.e[Category::Rent.index()] += extra;
             }
         }

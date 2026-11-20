@@ -24,8 +24,10 @@ pub struct Spending {
     /// random. "typical" averages roughly 3% of annual spending. "detailed" draws
     /// separate shock types (home repair scaling with the value of the home you own,
     /// car repair scaling with transport spending and vehicles, medical-adjacent costs,
-    /// family emergencies) with heavy-tailed sizes, and a bad year makes another
-    /// shock more likely. Its expected total is netted out of the budget like the others.
+    /// family emergencies) with heavy-tailed sizes, and a bad year makes another shock
+    /// more likely. The expected cost of the car, medical and family types is netted out
+    /// of the budget like the other levels; home repairs are not (they come on top of the
+    /// property's own `maintenance_rate`).
     pub shocks: ShockLevel,
     /// How health insurance and medical costs are handled.
     pub healthcare: Healthcare,
@@ -36,21 +38,26 @@ pub struct Spending {
     /// `replace_every_years` (with a small random jitter) instead of a smooth cost.
     /// Leave the purchase and depreciation of these vehicles out of the Transport
     /// budget lines (keep fuel, insurance and maintenance) or they are counted twice.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub vehicles: Vec<Vehicle>,
     /// Spread each budget line's annual amount unevenly over the months (holiday
     /// December, summer travel, winter heating). "off" (the default) spends it evenly.
     /// The annual total does not change.
+    #[serde(skip_serializing_if = "super::spending_ext::is_default")]
     pub seasonality: Seasonality,
     /// Give food, utilities, transport, rent, healthcare and education lines their own
     /// persistent price drift against CPI. "off" (the default) grows every line with CPI.
+    #[serde(skip_serializing_if = "super::spending_ext::is_default")]
     pub category_inflation: CategoryInflation,
     /// Fraction of discretionary (non-essential) spending cut while an earner is in an
     /// unemployment spell, from 0 to 1. The cut phases in over three months and is
     /// restored on re-employment. 0 (the default) changes nothing. Ganong and Noel
-    /// (2019, American Economic Review), using bank-account data, find household
-    /// spending falls about 6% when unemployment begins and about 12% by the end of
-    /// benefits; if discretionary lines are about half of the budget that is a cut of
-    /// roughly 0.1 to 0.25 of them, so 0.15 is a reasonable choice.
+    /// (2019, American Economic Review), using bank-account data, find nondurable
+    /// spending falls about 6% when unemployment begins, holds while benefits last and
+    /// falls further when they run out (an earlier draft put the extra fall at 13%).
+    /// If discretionary lines are about half of the budget, a 6% to 12% fall in total
+    /// spending is a cut of roughly 0.1 to 0.25 of them, so 0.15 is a reasonable choice.
+    #[serde(skip_serializing_if = "super::spending_ext::is_zero")]
     pub unemployment_cut: f64,
 }
 
