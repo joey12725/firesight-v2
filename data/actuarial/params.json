@@ -2179,6 +2179,43 @@
         "source": "Judgement, not verified against a survey: appraisal, title, counselling and recording fees taken as a few thousand dollars.",
         "confidence": "judgement"
       }
+    },
+    "downsize": {
+      "default_to_value_fraction": {
+        "value": 0.6,
+        "source": "Judgement: a move to a home worth about 60% as much; the schema field lets each household set its own.",
+        "confidence": "judgement"
+      },
+      "default_selling_cost_fraction": {
+        "value": 0.06,
+        "source": "The bottom of the seller's cost range in housing.closing_costs.seller_pct_of_price (6 to 10%: commissions of about 5% after the 2024 NAR settlement, transfer taxes, title and concessions), and the default of a sell_property event.",
+        "confidence": "medium"
+      },
+      "default_buying_cost_fraction": {
+        "value": 0.03,
+        "source": "housing.closing_costs.buyer_pct_of_price default (2 to 5%: origination, appraisal, title insurance, recording); no mortgage-related costs when bought for cash.",
+        "confidence": "medium"
+      },
+      "min_down_payment": {
+        "value": 0.2,
+        "source": "Judgement: 20% down is the conventional line below which lenders require mortgage insurance (80% loan-to-value); a household moving down is taken to buy within it, and to rent if its proceeds cannot make it.",
+        "confidence": "judgement"
+      },
+      "loan_months": {
+        "value": 360,
+        "source": "The 30-year fixed-rate mortgage, the benchmark of Freddie Mac's Primary Mortgage Market Survey and the most common US home loan.",
+        "confidence": "medium"
+      },
+      "widowed_delay_months": {
+        "value": 12,
+        "source": "Judgement: the schema's when_widowed moves a year after the first death; planners commonly advise against major decisions in the first year of bereavement.",
+        "confidence": "judgement"
+      },
+      "children_leave_ages": {
+        "value": [18, 22],
+        "source": "Judgement (a convention of the schema): a child leaves home at 18, or at 22 when college is planned.",
+        "confidence": "judgement"
+      }
     }
   },
   "equity_compensation": {

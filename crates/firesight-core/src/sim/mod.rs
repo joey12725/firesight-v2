@@ -55,6 +55,7 @@ use std::ops::Range;
 use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
+mod downsize;
 mod events;
 mod housing_ext;
 mod month;
@@ -70,6 +71,12 @@ pub use plan::{
     PURCHASE_RETRY_MONTHS,
 };
 pub use preview::PlanPreview;
+/// Constants of planned downsizing, for the parameter tests.
+pub mod downsize_constants {
+    pub use super::downsize::{
+        DOWNSIZE_LOAN_MONTHS, DOWNSIZE_MIN_DOWN, LEAVE_AGE, LEAVE_AGE_COLLEGE, WIDOWED_DELAY_MONTHS,
+    };
+}
 
 /// Reusable per-worker buffers: the economy path and the path state. Create one per
 /// thread or worker and pass it to every `run_path` call.

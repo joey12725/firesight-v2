@@ -756,3 +756,32 @@ fn equity_is_value_less_debt() {
     p.owned = false;
     assert_eq!(p.equity(), 0.0);
 }
+
+#[test]
+fn buying_a_replacement_home_into_an_existing_slot() {
+    let d = data();
+    let m = PropertyModel::from_property(&home(600_000.0, None), 0.01, d);
+    let mut s = m.initial_state();
+    m.sell(&mut s, 30, 0.06, 250_000.0);
+    assert!(!s.owned);
+    // A $360,000 home with $10,800 of closing costs and $100,000 borrowed at 6% over
+    // 30 years: payment 599.55, no PMI at 28% loan-to-value.
+    let p = m.buy_at(&mut s, 30, 360_000.0, 10_800.0, 100_000.0, 0.06, 360);
+    close(p.down_payment, 260_000.0, 1e-9);
+    close(p.cash_needed, 270_800.0, 1e-9);
+    close(p.payment, 599.55, 0.01);
+    assert_eq!(p.pmi_monthly, 0.0);
+    assert!(s.owned && s.usage == PropertyUse::Primary);
+    close(s.value, 360_000.0, 1e-9);
+    close(s.basis, 370_800.0, 1e-9);
+    close(s.equity(), 260_000.0, 1e-9);
+    assert_eq!(s.owned_since_month, 30);
+    // Its running costs follow the new value: 1.2% tax a year on 360,000 = 360 a
+    // month (it was 600 on the old home).
+    let out = m.step(&mut s, 0.0, 1.0, &mut rng(1));
+    close(out.property_tax, 360.0, 1e-9);
+    // Bought for cash: no mortgage.
+    m.sell(&mut s, 40, 0.06, 250_000.0);
+    m.buy_at(&mut s, 40, 200_000.0, 0.0, 0.0, 0.06, 360);
+    assert!(s.mortgage.is_none());
+}

@@ -365,3 +365,278 @@ fn reverse_mortgage_waits_for_62_and_repays_the_mortgage() {
         opened.month
     );
 }
+
+// ---------------------------------------------------------------------------------
+// F28: planned downsizing.
+
+fn downsize(when: DownsizeWhen, to_value_fraction: f64) -> Option<Downsize> {
+    Some(Downsize {
+        when,
+        to_value_fraction,
+        ..Downsize::default()
+    })
+}
+
+/// Total of a series in year `y` (0 is the part-year from the start month) over all
+/// paths, whole today's dollars.
+fn in_year(acc: &Accumulator, s: YearSeries, y: usize) -> i64 {
+    acc.sums[s.index() * acc.years as usize + y]
+}
+
+fn first_year(acc: &Accumulator, s: YearSeries) -> i64 {
+    in_year(acc, s, 0)
+}
+
+fn labels(plan: &sim::Plan, path: u64, prefix: &str) -> Vec<YearMonth> {
+    sim::trace_path(plan, SEED, path)
+        .events
+        .iter()
+        .filter(|e| e.label.starts_with(prefix))
+        .map(|e| e.month)
+        .collect()
+}
+
+#[test]
+fn downsize_that_never_fires_changes_nothing() {
+    let base_p = house_rich_retiree();
+    let base = run(&compile(&base_p), SEED, 0..200).to_bytes();
+    let mut p = base_p.clone();
+    // She dies at 95: an age of 110 is never reached.
+    p.retirement.downsize = downsize(
+        DownsizeWhen::AtAge {
+            person: 0,
+            age: 110.0,
+        },
+        0.5,
+    );
+    assert_eq!(base, run(&compile(&p), SEED, 0..200).to_bytes());
+    // A single person is never widowed.
+    p.retirement.downsize = downsize(DownsizeWhen::WhenWidowed, 0.5);
+    assert_eq!(base, run(&compile(&p), SEED, 0..200).to_bytes());
+}
+
+#[test]
+fn downsize_at_66_buys_a_home_half_the_value_and_frees_equity() {
+    let base_p = house_rich_retiree();
+    let mut p = base_p.clone();
+    p.retirement.downsize = downsize(
+        DownsizeWhen::AtAge {
+            person: 0,
+            age: 66.0,
+        },
+        0.5,
+    );
+    let plan = compile(&p);
+    let on = run_checked(&plan, SEED, 0..PATHS);
+    let base = run(&compile(&base_p), SEED, 0..PATHS);
+    // Sold in month 0 for about $600,000 less 6%; the new home costs half the old
+    // one's value, plus 3% buying costs as one-off spending.
+    let n = PATHS as f64;
+    let sale = first_year(&on, YearSeries::PropertySale) as f64 / n;
+    let bought = first_year(&on, YearSeries::PropertyPurchase) as f64 / n;
+    let one_off = (first_year(&on, YearSeries::SpendOneOff)
+        - first_year(&base, YearSeries::SpendOneOff)) as f64
+        / n;
+    eprintln!("mean sale {sale:.0}, purchase {bought:.0}, buying costs {one_off:.0}");
+    assert!((bought - 300_000.0).abs() < 15_000.0, "{bought}");
+    assert!((sale - 564_000.0).abs() < 30_000.0, "{sale}");
+    assert!((one_off - 0.03 * bought).abs() < 2.0, "{one_off}");
+    assert_eq!(
+        labels(&plan, 0, "Downsized: sold home and bought"),
+        vec![START]
+    );
+    // The home is worth half as much from then on (the first full year), and so its
+    // running costs are.
+    let value = |a: &Accumulator| in_year(a, YearSeries::PropertyValue, 1) as f64;
+    let ratio = value(&on) / value(&base);
+    assert!((ratio - 0.5).abs() < 0.03, "{ratio}");
+    let housing = in_year(&on, YearSeries::SpendHousing, 1) as f64
+        / in_year(&base, YearSeries::SpendHousing, 1) as f64;
+    assert!((0.45..0.6).contains(&housing), "{housing}");
+    // The freed equity (about $255,000) delays or prevents depletion on every path.
+    let (b, o) = (
+        col(&base, PathScalar::DepletionAge),
+        col(&on, PathScalar::DepletionAge),
+    );
+    for (x, y) in b.iter().zip(&o) {
+        if !x.is_finite() {
+            assert!(!y.is_finite(), "depleted at {y} only after downsizing");
+        } else {
+            assert!(!y.is_finite() || *y >= *x - 1e-3, "earlier: {y} < {x}");
+        }
+    }
+    let (sb, so) = (share_finite(&b), share_finite(&o));
+    eprintln!("depleted: staying {sb:.3}, downsizing at 66 {so:.3}");
+    assert!(so < sb - 0.15, "{so} vs {sb}");
+}
+
+#[test]
+fn downsizing_gain_is_taxed_above_the_exclusion() {
+    // Bought long ago for $100,000: a gain of about $460,000 after selling costs, of
+    // which $250,000 is excluded for a single owner. At long-term rates (15%, part
+    // at 0%) federal tax (settled the next spring) rises by 5 to 25% of the $210,000
+    // left; without
+    // the exclusion it would rise by more than a third of it.
+    let mut p = house_rich_retiree();
+    p.assumptions.taxes = TaxModel::default();
+    p.retirement.downsize = downsize(
+        DownsizeWhen::AtAge {
+            person: 0,
+            age: 66.0,
+        },
+        0.5,
+    );
+    let paid_up = run(&compile(&p), SEED, 0..100);
+    p.properties[0].basis = Some(100_000.0);
+    let cheap = run(&compile(&p), SEED, 0..100);
+    let tax = |a: &Accumulator| {
+        (0..3)
+            .map(|y| in_year(a, YearSeries::TaxFederal, y))
+            .sum::<i64>()
+    };
+    let extra = (tax(&cheap) - tax(&paid_up)) as f64 / 100.0;
+    eprintln!("extra federal tax in the year of sale: {extra:.0}");
+    assert!(
+        extra > 0.05 * 210_000.0 && extra < 0.25 * 210_000.0,
+        "{extra}"
+    );
+}
+
+#[test]
+fn downsize_renting_pays_four_percent_rent() {
+    let mut p = house_rich_retiree();
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::AtAge {
+            person: 0,
+            age: 66.0,
+        },
+        to_value_fraction: 0.5,
+        rent_instead: true,
+        ..Downsize::default()
+    });
+    let plan = compile(&p);
+    let on = run_checked(&plan, SEED, 0..PATHS);
+    assert_eq!(first_year(&on, YearSeries::PropertyPurchase), 0);
+    assert_eq!(first_year(&on, YearSeries::PropertyValue), 0);
+    assert_eq!(
+        labels(&plan, 3, "Downsized: sold home and rented"),
+        vec![START]
+    );
+    // Rent of 4% of $300,000 a year, $1,000 a month, in the budget from then on.
+    let trace = sim::trace_path(&plan, SEED, 3);
+    let essential = trace
+        .annual
+        .columns
+        .iter()
+        .find(|c| c.key == YearSeries::SpendEssential.key())
+        .unwrap()
+        .values[2];
+    assert!(
+        (essential - 50_000.0 - 12_000.0).abs() < 1_500.0,
+        "{essential}"
+    );
+}
+
+#[test]
+fn downsize_triggers_fire_when_they_should() {
+    // When the children leave: the youngest, 16 and without college, turns 18 in
+    // two years.
+    let mut p = house_rich_retiree();
+    p.household.children = vec![Child {
+        id: "kid".into(),
+        name: "kid".into(),
+        birth: START - 16 * 12,
+        college: College::None,
+        ..Child::default()
+    }];
+    p.accounts[0].balance = 3_000_000.0;
+    p.accounts[0].cost_basis = Some(3_000_000.0);
+    p.retirement.downsize = downsize(DownsizeWhen::WhenChildrenLeave, 0.6);
+    let plan = compile(&p);
+    run_checked(&plan, SEED, 0..20);
+    assert_eq!(labels(&plan, 0, "Downsized"), vec![START + 24]);
+    // A year after the first death: a couple of 70 and 68 who both die at 95.
+    let mut couple = quiet(
+        vec![person("a", 70, Sex::Male), person("b", 68, Sex::Female)],
+        95.0,
+    );
+    couple.spending.items = vec![item("living", Category::Other, 3_000.0, true)];
+    couple.accounts = vec![account("savings", 0, AccountKind::Taxable, 2_000_000.0)];
+    couple.properties = p.properties.clone();
+    couple.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    couple.retirement.downsize = downsize(DownsizeWhen::WhenWidowed, 0.6);
+    let plan = compile(&couple);
+    run_checked(&plan, SEED, 0..20);
+    assert_eq!(labels(&plan, 1, "Downsized"), vec![START + 26 * 12]);
+    // When savings fall behind: only in a January, and it delays depletion.
+    let base_p = house_rich_retiree();
+    let mut p = base_p.clone();
+    p.retirement.downsize = downsize(DownsizeWhen::WhenFundedRatioBelow { ratio: 0.8 }, 0.5);
+    let plan = compile(&p);
+    let on = run_checked(&plan, SEED, 0..PATHS);
+    let mut moved = 0;
+    for path in 0..40 {
+        for m in labels(&plan, path, "Downsized") {
+            assert_eq!(m.month(), 1, "{m:?}");
+            moved += 1;
+        }
+    }
+    assert!(moved > 10, "{moved}");
+    let b = share_finite(&col(
+        &run(&compile(&base_p), SEED, 0..PATHS),
+        PathScalar::DepletionAge,
+    ));
+    let o = share_finite(&col(&on, PathScalar::DepletionAge));
+    eprintln!("depleted: staying {b:.3}, downsizing below 80% funded {o:.3}");
+    assert!(o < b - 0.1, "{o} vs {b}");
+}
+
+#[test]
+fn downsize_with_a_mortgage_finances_what_the_proceeds_do_not_cover() {
+    // $400,000 still owed on the $600,000 house: the sale leaves about $164,000,
+    // which after 3% closing costs on a $480,000 home (to 0.8) is a down payment of
+    // about $150,000, so about $330,000 is borrowed at the market rate.
+    let mut p = house_rich_retiree();
+    p.properties[0].mortgage = Some(Mortgage {
+        balance: 400_000.0,
+        rate: 0.04,
+        remaining_months: 300,
+        ..Mortgage::default()
+    });
+    p.retirement.downsize = downsize(
+        DownsizeWhen::AtAge {
+            person: 0,
+            age: 66.0,
+        },
+        0.8,
+    );
+    let plan = compile(&p);
+    let on = run_checked(&plan, SEED, 0..PATHS);
+    let n = PATHS as f64;
+    let down = first_year(&on, YearSeries::PropertyPurchase) as f64 / n;
+    eprintln!("mean down payment {down:.0}");
+    assert!((down - 150_000.0).abs() < 25_000.0, "{down}");
+    let trace = sim::trace_path(&plan, SEED, 0);
+    assert!(trace.events.iter().any(|e| e
+        .label
+        .starts_with("Downsized: sold home and bought a smaller home with a")));
+    let mortgage = trace
+        .annual
+        .columns
+        .iter()
+        .find(|c| c.key == YearSeries::Mortgage.key())
+        .unwrap()
+        .values[1];
+    assert!((250_000.0..400_000.0).contains(&mortgage), "{mortgage}");
+    // With $500,000 owed the sale leaves about $64,000: after closing costs a 10%
+    // down payment, short of 20%, so she rents.
+    if let Some(m) = &mut p.properties[0].mortgage {
+        m.balance = 500_000.0;
+    }
+    let plan = compile(&p);
+    run_checked(&plan, SEED, 0..20);
+    assert_eq!(
+        labels(&plan, 0, "Downsized: sold home and rented"),
+        vec![START]
+    );
+}

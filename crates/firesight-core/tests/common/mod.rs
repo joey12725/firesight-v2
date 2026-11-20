@@ -171,16 +171,27 @@ pub const MARKETS: [MarketKind; 4] = [
 /// and finite-value tests.
 pub fn with_housing_decisions(mut p: Profile) -> Profile {
     p.retirement.home_equity_borrowing = HomeEquityBorrowing::Heloc(Heloc::default());
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenFundedRatioBelow { ratio: 0.9 },
+        ..Downsize::default()
+    });
     p
 }
 
 /// The same with a reverse mortgage (a standby line opened when savings fall below
-/// five years of spending) in place of the home-equity line.
+/// five years of spending) in place of the home-equity line, and a move to a rental
+/// after the first death in a couple.
 pub fn with_housing_decisions_hecm(p: Profile) -> Profile {
     let mut p = with_housing_decisions(p);
     p.retirement.home_equity_borrowing = HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
         open_when: ReverseMortgageOpen::SavingsBelow { years: 5.0 },
         ..ReverseMortgage::default()
+    });
+    // Widowed couples move to a rental; single people stay.
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenWidowed,
+        rent_instead: true,
+        ..Downsize::default()
     });
     p
 }

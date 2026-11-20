@@ -1,4 +1,5 @@
-//! Housing decisions on a path: borrowing against the home when savings run out.
+//! Housing decisions on a path: borrowing against the home when savings run out, and
+//! a planned move to a cheaper home (`downsize.rs`).
 //!
 //! Everything here is reached only through opt-in profile fields, compiled into
 //! [`HxPlan`]. With all of them off, the month loop calls none of these functions
@@ -10,7 +11,8 @@
 //! * step 7 (housing), after every property has stepped: [`State::hx_month`] pays
 //!   the interest and repayments of open home-equity lines and updates the lenders'
 //!   freeze state; reverse mortgages accrue, and a standby reverse mortgage is opened
-//!   when savings fall below its threshold;
+//!   when savings fall below its threshold; a planned downsizing is checked
+//!   ([`State::hx_downsize`]);
 //! * step 9 (settlement), when liquid savings cannot pay the month: before property
 //!   is sold or an essential is cut, [`State::hx_borrow`] draws on a line;
 //! * step 9, when there is a surplus to invest: [`State::hx_surplus`] first repays
@@ -38,6 +40,7 @@ use crate::model::{HomeEquityBorrowing, Profile, PropertyUse, ReverseMortgageOpe
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEventKind, YearSeries};
 
+use super::downsize::DownsizePlan;
 use super::plan::{Plan, PropPlan};
 use super::state::State;
 
@@ -71,6 +74,8 @@ pub(crate) struct HxPlan {
     pub monthly: bool,
     /// True when [`State::hx_surplus`] has work to do.
     pub surplus: bool,
+    /// A planned downsizing (`retirement.downsize`).
+    pub downsize: Option<DownsizePlan>,
 }
 
 impl HxPlan {
@@ -94,11 +99,17 @@ impl HxPlan {
             }),
         };
         let lines = !matches!(borrow, Borrow::None);
+        let downsize = profile
+            .retirement
+            .downsize
+            .as_ref()
+            .map(|d| DownsizePlan::compile(profile, d));
         HxPlan {
             borrow,
             lines,
-            monthly: lines,
+            monthly: lines || downsize.is_some(),
             surplus: lines,
+            downsize,
         }
     }
 }
@@ -123,6 +134,8 @@ pub(crate) struct HxState {
     /// Rates of the current month, kept for the settlement step.
     pub tbill: f64,
     pub long_yield: f64,
+    /// True once the planned downsizing has happened (or lapsed).
+    pub downsized: bool,
 }
 
 impl HxState {
@@ -137,6 +150,7 @@ impl HxState {
             home_peak: 1.0,
             tbill: 0.0,
             long_yield: 0.0,
+            downsized: false,
         }
     }
 
@@ -150,6 +164,7 @@ impl HxState {
         self.home_peak = 1.0;
         self.tbill = 0.0;
         self.long_yield = 0.0;
+        self.downsized = false;
         if let Borrow::Heloc(_) = plan.hx.borrow {
             self.rng = Rng::stream(seed, path, Stream::HomeEquityCredit);
         }
@@ -250,6 +265,9 @@ impl State {
                     }
                 }
             }
+        }
+        if let Some(d) = &plan.hx.downsize {
+            self.hx_downsize(plan, d, t, price, econ.mortgage_rate[t]);
         }
     }
 

@@ -116,3 +116,29 @@ fn hecm_constants_match_the_data_file() {
         value(&h["default_other_closing_costs"])
     );
 }
+
+#[test]
+fn downsize_constants_match_the_data_file() {
+    use firesight_core::model::Downsize;
+    use firesight_core::sim::downsize_constants as c;
+    let h = &section()["downsize"];
+    let d = Downsize::default();
+    assert_eq!(d.to_value_fraction, value(&h["default_to_value_fraction"]));
+    assert_eq!(
+        d.selling_cost_fraction,
+        value(&h["default_selling_cost_fraction"])
+    );
+    assert_eq!(
+        d.buying_cost_fraction,
+        value(&h["default_buying_cost_fraction"])
+    );
+    assert_eq!(c::DOWNSIZE_MIN_DOWN, value(&h["min_down_payment"]));
+    assert_eq!(f64::from(c::DOWNSIZE_LOAN_MONTHS), value(&h["loan_months"]));
+    assert_eq!(
+        f64::from(c::WIDOWED_DELAY_MONTHS),
+        value(&h["widowed_delay_months"])
+    );
+    let ages = h["children_leave_ages"]["value"].as_array().unwrap();
+    assert_eq!(f64::from(c::LEAVE_AGE), ages[0].as_f64().unwrap());
+    assert_eq!(f64::from(c::LEAVE_AGE_COLLEGE), ages[1].as_f64().unwrap());
+}

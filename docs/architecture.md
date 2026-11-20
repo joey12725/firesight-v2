@@ -183,9 +183,13 @@ RetirementPlan {
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
   home_equity_borrowing: None (default)         // borrow against the main home before selling it or cutting essentials
     | Heloc{ max_combined_ltv (0.80), spread (0.035 over bills), draw_years (10), repay_years (20),
-             freeze_probability (0.3, per downturn) },
+             freeze_probability (0.3, per downturn) }
     | ReverseMortgage{ open_when: LastResort (default) | SavingsBelow{ years },   // HECM from 62
                        lender_margin (0.02), other_closing_costs (3000, today's $) },
+  downsize: Option<{ when: AtAge{ person, age } | WhenChildrenLeave (default) | WhenWidowed
+                          | WhenFundedRatioBelow{ ratio },
+                    to_value_fraction (0.6), rent_instead (false),
+                    selling_cost_fraction (0.06), buying_cost_fraction (0.03) }>,
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

@@ -773,6 +773,59 @@ impl PropertyModel {
         };
         sale
     }
+
+    /// Buys a home into this (empty) slot at `price` with `closing_costs`, borrowing
+    /// `loan` at `rate` over `term_months` (no loan if `loan` is zero): the slot keeps
+    /// its own cost rates and drift. Used when the household moves to another home
+    /// (planned downsizing), where the slot has no purchase terms of its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn buy_at(
+        &self,
+        state: &mut PropertyState,
+        t: usize,
+        price: f64,
+        closing_costs: f64,
+        loan: f64,
+        rate: f64,
+        term_months: u32,
+    ) -> Purchase {
+        let loan = loan.clamp(0.0, price.max(0.0));
+        let payment = amortized_payment(loan, rate, term_months);
+        let ltv = if price > 0.0 { loan / price } else { 0.0 };
+        let pmi_monthly = self.params.pmi_rate(ltv) * loan / 12.0;
+        *state = PropertyState {
+            owned: true,
+            usage: self.usage,
+            value: price,
+            basis: price + closing_costs,
+            depreciation_taken: 0.0,
+            mortgage: (loan > 0.0).then_some(MortgageState {
+                balance: loan,
+                rate,
+                payment,
+                original_value: price,
+                pmi_monthly,
+            }),
+            owned_since_month: t as i32,
+            assessed_value: price,
+            assessment_clock: 0,
+            rent_growth: state.rent_growth,
+            vacant: false,
+            sale_noise: state.sale_noise,
+            rental_year_to_date: state.rental_year_to_date,
+            passive_loss_carryforward: 0.0,
+        };
+        Purchase {
+            price,
+            cash_needed: price - loan + closing_costs,
+            loan,
+            rate,
+            down_payment: price - loan,
+            closing_costs,
+            payment,
+            pmi_monthly,
+        }
+    }
 }
 
 impl PropertyState {

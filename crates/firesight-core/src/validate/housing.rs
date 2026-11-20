@@ -1,7 +1,7 @@
 //! Checks of the housing decisions (`model::housing_choices`): borrowing against the
 //! home, downsizing, cash-out refinancing, prepayment and rental dynamics.
 
-use crate::model::{HomeEquityBorrowing, PropertyUse, ReverseMortgageOpen};
+use crate::model::{Downsize, DownsizeWhen, HomeEquityBorrowing, PropertyUse, ReverseMortgageOpen};
 
 use super::Checker;
 
@@ -112,6 +112,94 @@ impl Checker<'_> {
                 "borrowing_without_home",
                 path,
                 "Borrowing against a home is set, but the household owns no main home and buys none.",
+            );
+        }
+        if let Some(d) = &p.retirement.downsize {
+            self.downsize(d, has_home);
+        }
+    }
+
+    fn downsize(&mut self, d: &Downsize, has_home: bool) {
+        let p = self.p;
+        let path = "/retirement/downsize";
+        let at = |f: &str| format!("{path}/{f}");
+        if self.r.range(
+            &at("to_value_fraction"),
+            "Value of the new home",
+            d.to_value_fraction,
+            0.0,
+            10.0,
+        ) && d.to_value_fraction >= 1.0
+        {
+            self.r.warn(
+                "downsize_not_smaller",
+                &at("to_value_fraction"),
+                "The new home is worth as much as the old one or more: this is a move, not a downsizing.",
+            );
+        }
+        if self.r.range(
+            &at("selling_cost_fraction"),
+            "Selling costs",
+            d.selling_cost_fraction,
+            0.0,
+            0.5,
+        ) && d.selling_cost_fraction > 0.10
+        {
+            self.r.warn(
+                "downsize_selling_costs_high",
+                &at("selling_cost_fraction"),
+                "Selling a home usually costs 5 to 8% of the price.",
+            );
+        }
+        self.r.range(
+            &at("buying_cost_fraction"),
+            "Buying costs",
+            d.buying_cost_fraction,
+            0.0,
+            0.5,
+        );
+        match d.when {
+            DownsizeWhen::AtAge { person, age } => {
+                self.person_ref(&at("when/person"), person);
+                self.r.range(&at("when/age"), "Age", age, 0.0, 120.0);
+            }
+            DownsizeWhen::WhenChildrenLeave => {
+                if p.household.children.is_empty() {
+                    self.r.warn(
+                        "downsize_no_children",
+                        &at("when"),
+                        "The move waits for the children to leave, but the household has none: it never happens.",
+                    );
+                }
+            }
+            DownsizeWhen::WhenWidowed => {
+                if p.household.people.len() < 2 {
+                    self.r.warn(
+                        "downsize_single",
+                        &at("when"),
+                        "The move waits for the first death in a couple, but the household has one adult: it never happens.",
+                    );
+                }
+            }
+            DownsizeWhen::WhenFundedRatioBelow { ratio } => {
+                if self
+                    .r
+                    .range(&at("when/ratio"), "Funded ratio", ratio, 0.0, 10.0)
+                    && ratio > 1.5
+                {
+                    self.r.warn(
+                        "downsize_ratio_high",
+                        &at("when/ratio"),
+                        "The household moves while savings are still more than one and a half times what the plan needs.",
+                    );
+                }
+            }
+        }
+        if !has_home {
+            self.r.warn(
+                "downsize_without_home",
+                path,
+                "A downsizing is planned, but the household owns no main home and buys none.",
             );
         }
     }
@@ -241,6 +329,82 @@ mod tests {
         assert!(json.contains(r#""open_when":{"type":"savings_below","years":40.0}"#));
         let back: Profile = serde_json::from_str(&json).unwrap();
         assert_eq!(back, p);
+    }
+
+    #[test]
+    fn downsize_is_checked_and_round_trips() {
+        let mut p = Profile::example();
+        let base = "/retirement/downsize";
+        p.retirement.downsize = Some(Downsize::default());
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(
+            !warnings.iter().any(|(c, _)| c.starts_with("downsize")),
+            "{warnings:?}"
+        );
+        p.retirement.downsize = Some(Downsize {
+            when: DownsizeWhen::AtAge {
+                person: 5,
+                age: 70.0,
+            },
+            to_value_fraction: -0.1,
+            selling_cost_fraction: 0.7,
+            ..Downsize::default()
+        });
+        let (errors, _) = codes(&p);
+        assert!(has(&errors, "ref_person", &format!("{base}/when/person")));
+        assert!(has(
+            &errors,
+            "out_of_range",
+            &format!("{base}/to_value_fraction")
+        ));
+        assert!(has(
+            &errors,
+            "out_of_range",
+            &format!("{base}/selling_cost_fraction")
+        ));
+        p.retirement.downsize = Some(Downsize {
+            when: DownsizeWhen::WhenFundedRatioBelow { ratio: 2.0 },
+            to_value_fraction: 1.2,
+            selling_cost_fraction: 0.15,
+            ..Downsize::default()
+        });
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(has(
+            &warnings,
+            "downsize_ratio_high",
+            &format!("{base}/when/ratio")
+        ));
+        assert!(has(
+            &warnings,
+            "downsize_not_smaller",
+            &format!("{base}/to_value_fraction")
+        ));
+        assert!(has(
+            &warnings,
+            "downsize_selling_costs_high",
+            &format!("{base}/selling_cost_fraction")
+        ));
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            json.contains(r#""downsize":{"when":{"type":"when_funded_ratio_below","ratio":2.0}"#),
+            "{json}"
+        );
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
+        let mut q = Profile::example();
+        q.household.children.clear();
+        q.retirement.downsize = Some(Downsize::default());
+        let (_, warnings) = codes(&q);
+        assert!(has(
+            &warnings,
+            "downsize_no_children",
+            &format!("{base}/when")
+        ));
+        assert!(!serde_json::to_string(&Profile::example())
+            .unwrap()
+            .contains("downsize"));
     }
 
     #[test]

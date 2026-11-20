@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{HomeEquityBorrowing, YearMonth};
+use super::{Downsize, HomeEquityBorrowing, YearMonth};
 
 /// The retirement plan.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -30,6 +30,11 @@ pub struct RetirementPlan {
     /// mortgage.
     #[serde(skip_serializing_if = "HomeEquityBorrowing::is_none")]
     pub home_equity_borrowing: HomeEquityBorrowing,
+    /// A planned move to a cheaper home (bought or rented) when a condition is met:
+    /// at an age, when the children have left, after being widowed, or when savings
+    /// fall behind the plan. Leave empty to stay put.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downsize: Option<Downsize>,
 }
 
 /// Whether property is sold when every account is empty.
@@ -60,6 +65,7 @@ impl Default for RetirementPlan {
             bequest_target: 0.0,
             home_equity: HomeEquity::LastResort,
             home_equity_borrowing: HomeEquityBorrowing::None,
+            downsize: None,
         }
     }
 }

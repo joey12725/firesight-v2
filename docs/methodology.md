@@ -519,6 +519,36 @@ whole-age table of the principal limit factors, the financial assessment and
 set-asides for property charges, the deduction of interest when it is finally paid,
 and default when property taxes go unpaid.
 
+**Planned downsizing** (opt-in, `retirement.downsize`; code in `sim/downsize.rs`).
+Once, when its condition is met, the household sells its main home and moves to one
+worth `to_value_fraction` of the old home's market value (default 0.6, a judgement).
+Conditions: `at_age` (a person reaches an age), `when_children_leave` (the youngest
+child turns 18, or 22 if a college is planned), `when_widowed` (a year after the first
+death in a couple, a judgement), and `when_funded_ratio_below` (in a January of
+retirement, investable savings less debts fall below `ratio` times the funded test's
+requirement, recomputed then). The sale is an ordinary sale: `selling_cost_fraction`
+(default 6%, the bottom of the 6 to 10% seller's range in `params.json`
+`housing.closing_costs`), the mortgage and any home-equity line repaid, the gain above
+the section 121 exclusion taxed. The new home sits in the same property slot, so its
+property tax, insurance and maintenance follow its lower value; `buying_cost_fraction`
+(3%, the buyer's default there) is one-off spending. The proceeds pay the closing costs
+and as much of the price as they can; the rest is a 30-year mortgage at the month's
+simulated rate, as long as the proceeds make a 20% down payment (a judgement at the
+conventional no-PMI line); otherwise, or with `rent_instead`, the household rents such
+a home at 4% of its price a year, like a household that sold as a last resort. The
+move draws nothing at random. Measured on the family example (4,000 paired paths,
+guardrails spending, `home_equity: last_resort`): downsizing to 0.6 when the children
+leave lowers success from 91.5% to 90.8% (37 paths rescued, 62 harmed) and the median
+terminal net worth by $35,000: 9% of the home's value goes in transaction costs, the
+guardrails spend part of the freed equity, and a household that later runs short has a
+smaller home to sell. Downsizing when savings fall below 80% of the requirement gives
+91.8% (within noise) and raises the 10th percentile of terminal net worth from $104,000
+to $137,000; with `home_equity: never` it lifts success from 76.3% to 84.0%. Not
+modelled: separate moving costs, rescaling of budget lines such as utilities, a new
+home with different tax or insurance rates, HOA or appreciation than the old one, the
+lender's income test, moving to another state, and the choice of when to move by
+anything but these rules.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus

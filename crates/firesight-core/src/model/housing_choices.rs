@@ -117,11 +117,13 @@ pub enum ReverseMortgageOpen {
 pub struct Downsize {
     /// What triggers the move.
     pub when: DownsizeWhen,
-    /// Price of the new home as a share of the sale price of the old one (0.6 = a home
-    /// worth 60% as much). With `rent_instead` the rent is that of such a home.
+    /// Price of the new home as a share of the old home's market value at the time
+    /// (0.6 = a home worth 60% as much). It is bought for cash out of the sale
+    /// proceeds; with `rent_instead`, or if the proceeds do not cover it, the
+    /// household rents such a home instead.
     pub to_value_fraction: f64,
     /// Rent instead of buying: the household pays 4% of the new home's value a year
-    /// in rent.
+    /// in rent, growing like other rents.
     pub rent_instead: bool,
     /// Selling costs as a share of the sale price (agent, transfer tax, concessions).
     pub selling_cost_fraction: f64,
