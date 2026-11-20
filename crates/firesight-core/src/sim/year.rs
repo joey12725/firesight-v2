@@ -311,7 +311,10 @@ impl State {
                 }
             }
         }
-        let mut adults_on = AdultPhases::default();
+        let mut adults_on = AdultPhases {
+            employer,
+            ..AdultPhases::default()
+        };
         for i in 0..self.n {
             if !self.present[i] {
                 continue;

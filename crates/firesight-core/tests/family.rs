@@ -109,14 +109,16 @@ fn covering_children_raises_health_spending_by_a_plausible_amount() {
     let k_on = trace_total(&pon, 9, paths, "spend_children");
     // Hand calculation of the gross health increase, today's dollars (the USDA
     // health share removed from child costs is checked below). A parent has
-    // employer cover for most of the kids' years to age 26 (24 years for k2), so
-    // the family tier adds $475 a month: about $137k over 24 years, plus expected
-    // out-of-pocket of $400 then $800 a year per child (about $27k), all grown by
-    // 1.5% a year of excess medical inflation (about 1.2 times on average), and
-    // ACA child premiums in any years after the parents retire. About $180k.
+    // employer cover for most of the kids' years to age 26 (24 years for k2). The
+    // two adults already pay a single tier each, so the family tier adds
+    // (7,471 - 2 x 1,765) / 12 = $328 a month: about $95k over 24 years, plus
+    // expected out-of-pocket of $400 then $800 a year per child (about $27k), all
+    // grown by 1.5% a year of excess medical inflation (about 1.2 times on average):
+    // about $145k. Person a retires at 60, when k2 is 26, so there are no
+    // marketplace years.
     let delta = h_on - h_off;
     assert!(
-        delta > 100_000.0 && delta < 260_000.0,
+        delta > 115_000.0 && delta < 180_000.0,
         "health delta {delta}"
     );
     // The USDA health share comes out of the child line, so children spending falls.
@@ -400,8 +402,9 @@ fn college_cost_defaults_to_fixed() {
 #[test]
 fn stochastic_duration_raises_cost_by_the_mean_extra_years() {
     // No aid, certain attendance, no price volatility: only the 4, 5 or 6 years
-    // differ. Mean years are 0.55 * 4 + 0.28 * 5 + 0.17 * 6 = 4.62, so the college
-    // bill is 4.62 / 4 = 1.155 times the fixed one.
+    // differ. Mean years are 0.68 * 4 + 0.25 * 5 + 0.07 * 6 = 4.39, so the college
+    // bill is 4.39 / 4 = 1.0975 times the fixed one (a little more: the later years
+    // are dearer in real terms).
     let paths = 300;
     let none = child_spending(&college_household(CollegeCost::Fixed, College::None), paths);
     let fixed = child_spending(
@@ -415,8 +418,8 @@ fn stochastic_duration_raises_cost_by_the_mean_extra_years() {
     let ratio = (stoch - none) / (fixed - none);
     assert!(fixed > none + 50_000.0, "college must cost something");
     assert!(
-        ratio > 1.10 && ratio < 1.21,
-        "ratio {ratio} (expected 1.155)"
+        ratio > 1.06 && ratio < 1.14,
+        "ratio {ratio} (expected 1.10)"
     );
 }
 
@@ -437,13 +440,13 @@ fn not_attending_removes_the_college_bill_and_aid_lowers_it() {
         &college_household(stochastic(1.0, 0.01, 0.0, 1.0), College::PublicInState),
         paths,
     ) - none;
-    // Household income is about $210,000: the schedule gives a mean discount of
-    // 0.36 - (210 - 125) / 125 * 0.26 = 0.18, so the bill falls by about 18%
-    // (income falls on retirement, which comes after college here).
+    // Household income is about $210,000, above the $200,000 at which the schedule
+    // is flat at 0.21, so the bill falls by about 21% (the child's own aid shock has
+    // mean zero; income falls on retirement, which comes after college here).
     let cut = 1.0 - aid / no_aid;
     assert!(
-        cut > 0.10 && cut < 0.30,
-        "aid cut the bill by {cut} (expected 0.18)"
+        cut > 0.17 && cut < 0.25,
+        "aid cut the bill by {cut} (expected 0.21)"
     );
 }
 
@@ -737,4 +740,305 @@ fn parental_leave_validation() {
     p.household.children[0].parental_leave = leave(0, 18, 0.6);
     let r = firesight_core::validate::validate(&p);
     assert!(r.warnings.iter().any(|w| w.code == "leave_long"));
+}
+
+// ---------------------------------------------------------------------------
+// Edges, the features together, and stream discipline
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_couple_with_children_pays_the_family_tier_not_a_single_tier_on_top() {
+    // Month by month while both adults are on the employer plan, the household's
+    // extra health spending for the children is the family tier less the two single
+    // tiers the adults already pay, plus the children's out-of-pocket means:
+    // (7,471 - 2 x 1,765 + 2 x 400) / 12 = $395 a month in today's dollars before
+    // excess medical inflation (1.5% a year: about 2% over the first 30 months).
+    let off = family();
+    let mut on = family();
+    on.spending.healthcare.cover_children = true;
+    let month = |p: &Profile| {
+        let plan = compile(p);
+        let mut ws = Workspace::new(&plan);
+        let t = sim::trace_path_in(&plan, 9, 0, &mut ws);
+        t.column("spend_healthcare").unwrap()[12..24]
+            .iter()
+            .sum::<f64>()
+            / 12.0
+    };
+    let extra = month(&on) - month(&off);
+    assert!(extra > 395.0 && extra < 420.0, "extra {extra} a month");
+}
+
+#[test]
+fn a_custom_early_retirement_amount_already_covers_the_children() {
+    // The household's own figure for early-retirement cover is the whole household's:
+    // switching children's cover on adds nothing while the adult is on it.
+    let mut p = quiet(vec![person("a", 45, Sex::Female)], 70.0);
+    p.spending.healthcare = Healthcare {
+        mode: HealthcareMode::Modeled,
+        early_retirement: EarlyRetirementCoverage::Custom { annual: 9_000.0 },
+        long_term_care: false,
+        ..Healthcare::default()
+    };
+    p.household.children = vec![Child {
+        id: "k".into(),
+        birth: START - 5 * 12,
+        costs: ChildCosts::InBudget,
+        ..Child::default()
+    }];
+    p.spending.items = vec![item("living", Category::Other, 3_000.0, true)];
+    p.accounts = vec![account("cash", 0, AccountKind::Cash, 2_000_000.0)];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    let mut on = p.clone();
+    on.spending.healthcare.cover_children = true;
+    let health = |p: &Profile| {
+        let plan = compile(p);
+        let mut ws = Workspace::new(&plan);
+        let t = sim::trace_path_in(&plan, 1, 0, &mut ws);
+        t.column("spend_healthcare").unwrap()[..120].to_vec()
+    };
+    let (a, b) = (health(&p), health(&on));
+    assert!(
+        a.iter().sum::<f64>() > 50_000.0,
+        "the custom amount is paid"
+    );
+    assert_eq!(a, b);
+}
+
+/// The shipped two-earner family with every family feature switched on (`leave`:
+/// with parental leave too). Its second child is planned for 14 months in.
+fn everything_on(leave: bool) -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .expect("the dual-income example")
+        .profile;
+    p.spending.healthcare.cover_children = true;
+    for (i, c) in p.household.children.iter_mut().enumerate() {
+        c.college_cost = stochastic(0.95, 0.01, 0.012, 1.0);
+        c.adult_support = Some(AdultSupport::default());
+        if i == 1 {
+            c.arrival = Arrival::Uncertain {
+                probability: 0.85,
+                delay_mean_months: 4.0,
+                twins_probability: 0.2,
+            };
+            if leave {
+                c.parental_leave = Some(ParentalLeave::default());
+            }
+        }
+    }
+    p
+}
+
+fn fixed_retirement(mut p: Profile) -> Profile {
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 58.0,
+    };
+    p
+}
+
+#[test]
+fn the_features_together_conserve_money_and_stay_finite() {
+    for kind in MARKETS {
+        let plan = compile(&with_market(everything_on(true), kind));
+        let acc = run_checked(&plan, 12, 0..150);
+        for &s in firesight_core::stats::PathScalar::ALL {
+            for v in acc.scalar_column(s) {
+                assert!(!v.is_infinite(), "{kind:?} {s:?}");
+            }
+        }
+        for v in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+            assert!(v.is_finite(), "{kind:?}");
+        }
+    }
+    // A single parent, already retired, with a planned child and everything on.
+    let mut p = quiet(vec![person("a", 40, Sex::Female)], 85.0);
+    p.spending.healthcare = Healthcare {
+        mode: HealthcareMode::Modeled,
+        cover_children: true,
+        ..Healthcare::default()
+    };
+    p.household.children = vec![Child {
+        id: "k".into(),
+        birth: START + 10,
+        college: College::Private,
+        arrival: Arrival::Uncertain {
+            probability: 0.8,
+            delay_mean_months: 6.0,
+            twins_probability: 0.5,
+        },
+        college_cost: stochastic(0.9, 0.01, 0.02, 1.0),
+        adult_support: Some(AdultSupport::default()),
+        parental_leave: Some(ParentalLeave::default()),
+        ..Child::default()
+    }];
+    p.spending.items = vec![item("living", Category::Other, 3_000.0, true)];
+    p.accounts = vec![account("cash", 0, AccountKind::Cash, 3_000_000.0)];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    let plan = compile(&p);
+    let acc = run_checked(&plan, 13, 0..150);
+    for v in acc.scalar_column(firesight_core::stats::PathScalar::LifetimeSpending) {
+        assert!(v.is_finite());
+    }
+}
+
+#[test]
+fn family_features_leave_markets_careers_health_and_lifespans_untouched() {
+    use firesight_core::stats::{PathScalar, PathTrace, TraceEventKind};
+    let base = fixed_retirement(
+        Profile::examples(START)
+            .into_iter()
+            .find(|e| e.slug == "dual-income-family")
+            .unwrap()
+            .profile,
+    );
+    let scalar = |t: &PathTrace, s: PathScalar| {
+        t.scalars
+            .iter()
+            .find(|x| x.scalar == s)
+            .unwrap()
+            .value
+            .to_bits()
+    };
+    let events = |t: &PathTrace, kinds: &[TraceEventKind]| -> Vec<(YearMonth, TraceEventKind)> {
+        t.events
+            .iter()
+            .filter(|e| kinds.contains(&e.kind))
+            .map(|e| (e.month, e.kind))
+            .collect()
+    };
+    let plan_base = compile(&base);
+    for leave in [false, true] {
+        let plan_on = compile(&fixed_retirement(everything_on(leave)));
+        let mut moved = false;
+        for path in 0..25 {
+            let a = sim::trace_path(&plan_base, 77, path);
+            let b = sim::trace_path(&plan_on, 77, path);
+            assert_eq!(a.months, b.months, "path {path}");
+            for s in [
+                PathScalar::DeathAge0,
+                PathScalar::DeathAge1,
+                PathScalar::Inflation,
+            ] {
+                assert_eq!(scalar(&a, s), scalar(&b, s), "path {path} {s:?}");
+            }
+            for key in [
+                "price_level",
+                "return_us_stocks",
+                "return_intl_stocks",
+                "return_bonds",
+                "return_cash",
+            ] {
+                assert_eq!(a.column(key), b.column(key), "path {path} {key}");
+            }
+            // Health draws: long-term care begins in the same months.
+            let care = [TraceEventKind::LongTermCare];
+            assert_eq!(events(&a, &care), events(&b, &care), "path {path}");
+            if !leave {
+                // Careers: the same layoffs in the same months. (A job cannot be lost
+                // during a leave, so with leave on a layoff may legitimately go.)
+                let career = [TraceEventKind::LaidOff, TraceEventKind::Rehired];
+                assert_eq!(events(&a, &career), events(&b, &career), "path {path}");
+                assert_eq!(
+                    scalar(&a, PathScalar::MonthsUnemployed),
+                    scalar(&b, PathScalar::MonthsUnemployed)
+                );
+            }
+            moved |= a.column("spend_children") != b.column("spend_children");
+        }
+        assert!(moved, "the features must change something");
+    }
+}
+
+#[test]
+fn an_unrelated_decision_leaves_the_family_draws_untouched() {
+    // Spending less changes income, taxes and aid, but not which children arrive
+    // when, whether they attend and for how long, or when they need support.
+    let base = fixed_retirement(everything_on(true));
+    let mut frugal = base.clone();
+    for item in &mut frugal.spending.items {
+        item.amount *= 0.7;
+    }
+    frugal.spending.shocks = ShockLevel::Off;
+    let family_events = |t: &firesight_core::stats::PathTrace| -> Vec<(YearMonth, String)> {
+        t.events
+            .iter()
+            .filter(|e| {
+                [
+                    "born",
+                    "does not arrive",
+                    "college",
+                    "needs support",
+                    "independent again",
+                ]
+                .iter()
+                .any(|k| e.label.contains(k))
+            })
+            // The aid percentage depends on income; the draws do not.
+            .map(|e| (e.month, e.label.split(", aid").next().unwrap().to_string()))
+            .collect()
+    };
+    let (plan_a, plan_b) = (compile(&base), compile(&frugal));
+    let (mut seen, mut differences) = (0, 0);
+    for path in 0..25 {
+        let a = sim::trace_path(&plan_a, 77, path);
+        let b = sim::trace_path(&plan_b, 77, path);
+        let (ea, eb) = (family_events(&a), family_events(&b));
+        assert_eq!(ea, eb, "path {path}");
+        seen += ea.len();
+        if a.column("spend_essential") != b.column("spend_essential") {
+            differences += 1;
+        }
+    }
+    // Two children: a birth or a non-arrival, and a college start or a miss, each.
+    assert!(seen >= 25 * 3, "{seen} family events on 25 paths");
+    assert!(differences > 20, "the decision must change the paths");
+}
+
+#[test]
+fn a_planned_child_who_never_arrives_does_not_hold_back_a_funded_retirement() {
+    // The shipped household retires when funded. Once the planned month has passed
+    // without a birth, the funded test stops setting money aside for that child:
+    // from then on the household is the one that never planned a second child.
+    let example = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    let mut one = example.clone();
+    one.household.children.truncate(1);
+    let mut never = example.clone();
+    never.household.children[1].arrival = Arrival::Uncertain {
+        probability: 0.0,
+        delay_mean_months: 4.0,
+        twins_probability: 0.0,
+    };
+    let (po, pn, pe) = (compile(&one), compile(&never), compile(&example));
+    let (ao, an, ae) = (
+        run(&po, 5, 0..150),
+        run(&pn, 5, 0..150),
+        run(&pe, 5, 0..150),
+    );
+    use firesight_core::stats::PathScalar::*;
+    for s in [RetirementAge, LifetimeSpending, LifetimeTax] {
+        assert_eq!(ao.scalar_column(s), an.scalar_column(s), "{s:?}");
+    }
+    // And the test can fail: the child who does arrive moves the retirement date.
+    assert_ne!(
+        ao.scalar_column(RetirementAge),
+        ae.scalar_column(RetirementAge)
+    );
+}
+
+#[test]
+fn stochastic_college_with_a_reduced_share_warns_about_counting_aid_twice() {
+    let mut p = college_household(stochastic(0.95, 0.01, 0.012, 1.0), College::PublicInState);
+    p.household.children[0].college_share = 0.75;
+    let r = firesight_core::validate::validate(&p);
+    assert!(r.warnings.iter().any(|w| w.code == "college_aid_twice"));
+    p.household.children[0].college_cost = stochastic(0.95, 0.01, 0.012, 0.0);
+    let r = firesight_core::validate::validate(&p);
+    assert!(!r.warnings.iter().any(|w| w.code == "college_aid_twice"));
 }

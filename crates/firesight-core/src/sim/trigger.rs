@@ -239,8 +239,11 @@ impl State {
 
         // Child costs still to come, as a sum to set aside.
         if ti < self.kids_until {
-            for c in &plan.children {
-                let age = (ti - c.birth).max(0);
+            for (k, c) in plan.children.iter().enumerate() {
+                let Some((birth, n)) = self.child_for_funding(plan, k, ti) else {
+                    continue;
+                };
+                let age = (ti - birth).max(0);
                 let mut m = age;
                 // Whole years from the next birthday on, the part-year first.
                 if m < 22 * 12 && m % 12 != 0 {
@@ -251,12 +254,12 @@ impl State {
                         c.college
                     };
                     let months = 12 - m % 12;
-                    lumps += annual * f64::from(months) / 12.0;
+                    lumps += annual * f64::from(months) / 12.0 * n;
                     m += months;
                 }
                 if m < 22 * 12 {
                     for lump in &c.lump_year[(m / 12) as usize..] {
-                        lumps += lump;
+                        lumps += lump * n;
                     }
                 }
             }

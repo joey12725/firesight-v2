@@ -95,10 +95,12 @@ pub enum CollegeCost {
         /// as a fraction. Default 0.012.
         #[serde(default = "default_volatility")]
         tuition_volatility: f64,
-        /// Scale on the aid discount: 1 uses the schedule fitted to net prices
-        /// from NPSAS 2019-20 (as reported by Brookings) (about 60% off the published price below $50,000 of
-        /// household income, 36% at $125,000, 10% from $250,000), 0 means no aid, and
-        /// 0.5 half of the schedule. Default 1.
+        /// Scale on the aid discount: 1 uses the schedule fitted to net prices from
+        /// NPSAS 2019-20 as reported by Brookings (about 57% off the published price
+        /// below $50,000 of household income, 31% at $125,000, 21% from $200,000,
+        /// the average of public and private colleges), 0 means no aid, and 0.5 half
+        /// of the schedule. Use 0 when the college cost entered is already a net
+        /// price, or when `college_share` already allows for aid. Default 1.
         #[serde(default = "one")]
         aid_scale: f64,
     },

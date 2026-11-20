@@ -382,21 +382,29 @@ A child whose birth month is in the future can carry
 exponential with the given mean, default 4) and whether it is twins (default 3%).
 Costs, the child tax credit and dependants, family size in the USDA adjustment, college,
 the age at which a child leaves the health plan and the events in the trace all follow
-the realised birth; a twin birth incurs every per-child cost twice.
+the realised birth; a twin birth incurs every per-child cost twice (parental leave is
+taken once).
 
 Sources: twin births 30.1 per 1,000 births in 2024 (CDC NCHS, Health E-Stat "A Decade of
 Decline in Twin Childbearing in the United States, 2014-2024"). Time to pregnancy:
 reviews of time-to-pregnancy studies find 78 to 92% of couples conceive within a year
 (monthly fecundability about 0.2 below 35, falling toward 0.05 at 40). The default
 arrival probability and mean delay are judgements near those figures, named constants in
-`model/family.rs` and listed under `unverified_from_memory` in `params.json`.
+`model/family.rs` and listed under `unverified_from_memory.family` in `params.json`
+(a unit test in `sim/family.rs` keeps the two equal).
+
+The funded test (the retirement trigger) plans on the stated birth of one child until
+the stated month; from then on it sets money aside for what happened on the path:
+nothing for a child who did not arrive, the later birth, twice for twins.
 
 Measured on `dual-income-family` with the second (planned) child uncertain at the
-defaults (3,000 paired paths, seed 7): success 92.2% to 92.6% (within noise), median
-terminal net worth up $57,000, median lifetime spending down $20,000.
+defaults (3,000 paired paths, seed 7): success 92.2% to 92.5% (within noise), median
+terminal net worth up $60,000, median lifetime spending down $53,000, median retirement
+five months earlier (the 15% of paths with one child are funded sooner).
 
-Not modelled: the funded test and the January plan still plan on the stated birth
-(the household does not know it will be late or fail to arrive); births are independent
+Not modelled: a household that is still waiting for a late child is treated as knowing
+the child will come (the funded test does not allow for the chance that it will not);
+births are independent
 of the parents' ages and health, and a late arrival does not change leave or career
 plans; no adoption, fertility-treatment costs or pregnancy medical costs; higher-order
 multiples.
@@ -418,27 +426,43 @@ is `college cost x college_share x tuition index x (1 - aid discount)`.
   record. One path of 60 standard normals (stream `CollegePrices`, scalar 1200) is
   shared by all children, so siblings face the same prices.
 * **Aid.** A discount on the published price that falls with household income, linearly
-  between 60% at $50,000 or less, 36% at $125,000 and 10% at $250,000 or more (the first
-  two points from the NPSAS 2019-20 net prices reported by Brookings: about $18,000 below
-  $50,000 and $29,000 at $125,000 against a published cost near $45,000; the third a
-  judgement), plus a per-child normal shock with standard deviation 10 points, clamped to
-  0..90%. Income is the household's MAGI two tax years earlier (the FAFSA's
-  prior-prior year), in today's dollars; `aid_scale` multiplies the whole discount.
+  between 57% at $50,000 or less, 31% at $125,000 and 21% at $200,000 or more, plus a
+  per-child normal shock with standard deviation 10 points (judgement), clamped to
+  0..90%. The schedule is the average of the two sectors in Levine, "Ignore the sticker
+  price" (Brookings 2024, NPSAS 2019-20, 2023 dollars): public four-year in-state,
+  published cost of attendance $35,000, net price $18,000 below $50,000 of income (49%
+  off) and at most $29,000, reached at about $125,000 (17% off); private nonprofit,
+  published $72,000, net $25,000 below $50,000 (65% off) and at most $53,000, reached at
+  about $200,000 (26% off). Averaging the sectors and reading the 2023-dollar incomes as
+  today's dollars are judgements. Income is the household's MAGI two tax years earlier
+  (the FAFSA's prior-prior year), in today's dollars; `aid_scale` multiplies the whole
+  discount. The discount is applied after `college_share`: a share below 1 that already
+  stands for aid counts aid twice, and validation warns (set `aid_scale` to 0).
 * **Duration and attendance.** The child attends with probability 0.95 (judgement) and
-  takes 4, 5 or 6 years with probability 0.55, 0.28 and 0.17 among attendees (a judgement
-  anchored to NCES: 64% of first-time bachelor's students finish within six years).
-  Draws come from the child's `ChildCollege` stream (three per path). Dependants, the
-  last month of child costs and the trace follow the realised years.
+  takes 4, 5 or 6 years with probability 0.68, 0.25 and 0.07, the shares among graduates
+  in NCES data (first-time, full-time bachelor's students who started in fall 2010: 41%
+  graduated within four years, 56% within five, 60% within six; Status and Trends in the
+  Education of Racial and Ethnic Groups, indicator 23). The mean is 4.39 years, 10% more
+  than four. Draws come from the child's `ChildCollege` stream (three per path).
+  Dependants, the last month of child costs and the trace follow the realised years.
+
+The mean of the tuition index is not exactly the fixed path: the random part is in logs,
+so the expected price 15 years out is about 0.7% above `(1 + growth)^15`.
 
 Measured on `dual-income-family` with both children stochastic at the defaults (3,000
-paired paths, seed 7): success 92.2% to 93.2%, median terminal net worth up $107,000.
-The direction comes from aid: this household retires early, so its income two years
-before college is low and the schedule gives it a large discount.
+paired paths, seed 7): success 92.2% to 93.3%, median terminal net worth up $114,000.
+The direction comes from aid: this household retires at about 53, before its children
+reach college, so its MAGI two years before each college year is low and the schedule
+gives it a large discount (and the example's 75% parental share is discounted again).
+With `aid_scale: 0` the same run gives success unchanged at 92.2% and median terminal
+net worth down $13,000, the cost of the longer average stay and of price risk.
 
 Not modelled: aid does not depend on assets (the FAFSA and CSS Profile count them, so the
-aid of an early retiree with a large portfolio is overstated), merit aid is only in the
-average, loans and 529 plans are not modelled, and tuition shocks are independent of
-inflation and markets.
+aid of an early retiree with a large portfolio is overstated: use a lower `aid_scale`),
+one schedule serves public and private colleges, merit aid is only in the average,
+students who leave without a degree, loans and 529 plans are not modelled, the funded
+test sets aside the fixed four-year cost, and tuition shocks are independent of inflation
+and markets.
 
 ### Adult children who need support (opt-in)
 
@@ -449,8 +473,10 @@ needs support for one spell. The spell starts at a uniformly random month in the
 after school ends (the realised college years, so it follows stochastic college costs) and
 lasts an exponential number of months with the given mean (default 2 years, a judgement),
 at least one month. Support is `annual` (default $12,000 in today's dollars, a judgement)
-and is added to the child spending of those months, so it flows into the existing
-child-cost ledger category and year series. Three draws per child from stream
+for each child of the birth (twins need it together) and is added to the child spending
+of those months, so it flows into the existing child-cost ledger category and year
+series. The probability, amount, mean length and six-year window are listed under
+`unverified_from_memory.family` in `params.json`. Three draws per child from stream
 `ChildSupport` (0x1210_0000 + i), always taken. The trace shows when a spell starts and
 ends.
 
@@ -460,7 +486,8 @@ small because the household's wealth is large relative to about $14,000 expected
 spending.
 
 Not modelled: support does not depend on the household's wealth or the child's income,
-only one spell per child, and no grandchildren.
+only one spell per child, the funded test does not set money aside for it, and no
+grandchildren.
 
 ### Parental leave (opt-in)
 
@@ -521,11 +548,14 @@ of $177,000 more than was spent on health.
 `children_coverage_end_age`, default 26, the ACA dependent-coverage age) charges
 each child the household's coverage phase. It applies only to `modeled` healthcare.
 
-* **Employer plan** (a parent has employer cover): the worker contribution moves
-  from the single tier to the family tier, $7,471 against $1,765 a year (KFF
-  Employer Health Benefits Survey 2026), a $475 a month increment charged once
-  however many children are covered.
-* **COBRA**: the full family plan over the single plan, $28,303 against $9,804, with
+* **Employer plan** (a parent has employer cover): the household pays the family tier
+  in place of a single tier for each adult, $7,471 against $1,765 a year (KFF
+  Employer Health Benefits Survey 2026). The adults are already charged a single tier
+  each, so the increment is the family tier less those: $475 a month for one adult on
+  the plan, $328 a month for a couple, charged once however many children are covered.
+  A single parent is charged the family tier too (KFF does not publish the cheaper
+  employee-plus-children tier), which overstates their cost.
+* **COBRA**: the same with the full price of the plans, $28,303 against $9,804, with
   the 2% load.
 * **ACA marketplace** (a parent is on it): the benchmark premium at the child's age on
   the CMS age curve (0.765 of the age-21 price to 14, 1.0 at 21), times the metal-tier
@@ -545,8 +575,9 @@ each child the household's coverage phase. It applies only to `modeled` healthca
   the switch is on, so health is not counted twice.
 
 Measured on `dual-income-family` (3,000 paths, seed 7, paired): success 92.2% to
-91.0%, median terminal net worth down $133,000 (the health increase of about $180,000
-over the children's years, less the $62,000 of USDA health share removed).
+91.4%, median terminal net worth down $110,000 (family-tier premiums, out-of-pocket
+costs and marketplace premiums over the children's years to 26, less the USDA health
+share removed from the child costs to 18).
 
 Not modelled: the funded test (the retirement trigger) does not include the children's
 premiums in its health projection; the tax value of pre-tax employer premiums is

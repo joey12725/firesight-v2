@@ -72,7 +72,7 @@ pub enum Stream {
     /// Whether, when and how many: the arrival of one planned child (index into
     /// `household.children`). Three draws per uncertain child per path.
     ChildArrival(usize),
-    /// The path of college prices relative to CPI, shared by all children (61 draws
+    /// The path of college prices relative to CPI, shared by all children (60 draws
     /// when any child has stochastic college costs).
     CollegePrices,
     /// Whether a child attends, for how many years and how much aid: three draws per

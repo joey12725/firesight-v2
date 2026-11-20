@@ -3,13 +3,16 @@
 //! A child has no coverage phase of their own: they are on whatever plan the parents
 //! are on this month. The prices come from the same tables as the adults':
 //!
-//! * **Employer plan**: the worker pays the family tier instead of the single tier,
-//!   once per household however many children (KFF Employer Health Benefits Survey
-//!   2026: $7,471 against $1,765 a year, the two worker contributions in
-//!   `params.json` `healthcare.employer_phase`). The increment is
-//!   `family - single`, charged once while any child is covered.
-//! * **COBRA**: the full price of the family plan over the single plan, plus the 2%
-//!   load ($28,303 against $9,804 a year, same table).
+//! * **Employer plan**: the household pays the family tier instead of a single tier
+//!   for each adult, once per household however many children (KFF Employer Health
+//!   Benefits Survey 2026: $7,471 against $1,765 a year, the two worker contributions
+//!   in `params.json` `healthcare.employer_phase`). The adults are each charged the
+//!   single tier by the adult model, so the increment is
+//!   `family - single x adults on the plan` (never negative), charged once while any
+//!   child is covered: a couple with children pays the family tier in total, not the
+//!   family tier plus a second single tier.
+//! * **COBRA**: the same with the full price of the plans and the 2% load ($28,303
+//!   against $9,804 a year, same table).
 //! * **ACA marketplace**: the benchmark premium at the child's age on the CMS age
 //!   curve (0.765 of the age-21 price up to 14, rising to 1.0 at 21) times the tier
 //!   factor, per child; the rating rule charges at most three children under 21.
@@ -31,10 +34,13 @@ pub const ACA_CHILD_RATING_AGE: f64 = 21.0;
 /// Monthly increments, today's dollars before excess medical inflation.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct ChildCoverage {
-    /// Family-tier worker contribution less single-tier, per month.
-    employer_increment: f64,
-    /// Full family plan cost less single plan cost, with the COBRA load, per month.
-    cobra_increment: f64,
+    /// Worker contribution to the family tier and to the single tier, per month.
+    employer_family: f64,
+    employer_single: f64,
+    /// Full cost of the family plan and of the single plan with the COBRA load, per
+    /// month.
+    cobra_family: f64,
+    cobra_single: f64,
 }
 
 impl ChildCoverage {
@@ -45,12 +51,10 @@ impl ChildCoverage {
                 .unwrap_or_else(|| panic!("embedded data: missing number at {k}"))
         };
         ChildCoverage {
-            employer_increment: (n("worker_contribution_family") - n("worker_contribution_single"))
-                / 12.0,
-            cobra_increment: (n("average_total_premium_family")
-                - n("average_total_premium_single"))
-                * COBRA_PREMIUM_LOAD
-                / 12.0,
+            employer_family: n("worker_contribution_family") / 12.0,
+            employer_single: n("worker_contribution_single") / 12.0,
+            cobra_family: n("average_total_premium_family") * COBRA_PREMIUM_LOAD / 12.0,
+            cobra_single: n("average_total_premium_single") * COBRA_PREMIUM_LOAD / 12.0,
         }
     }
 }
@@ -67,17 +71,24 @@ pub struct ChildMonth {
 }
 
 impl HealthModel {
-    /// Household-level increment per month of moving from single to family coverage
-    /// while at least one child is covered, nominal dollars, `phase` Employer or
-    /// COBRA (zero otherwise). `growth` is `price level * excess medical growth`.
-    pub fn child_family_increment(&self, phase: CoveragePhase, growth: f64) -> f64 {
+    /// Household-level increment per month of moving to family coverage while at
+    /// least one child is covered, nominal dollars, `phase` Employer or COBRA (zero
+    /// otherwise). `adults` is the number of adults on that plan, each already charged
+    /// the single tier by the adult model (counted as at least one: somebody holds the
+    /// plan), so the household's total is the family tier. `growth` is
+    /// `price level * excess medical growth`.
+    pub fn child_family_increment(&self, phase: CoveragePhase, adults: u32, growth: f64) -> f64 {
         if !self.modeled {
             return 0.0;
         }
+        let singles = f64::from(adults.max(1));
+        let c = &self.child;
         growth
             * match phase {
-                CoveragePhase::Employer => self.child.employer_increment,
-                CoveragePhase::Cobra => self.child.cobra_increment,
+                CoveragePhase::Employer => {
+                    (c.employer_family - c.employer_single * singles).max(0.0)
+                }
+                CoveragePhase::Cobra => (c.cobra_family - c.cobra_single * singles).max(0.0),
                 _ => 0.0,
             }
     }
@@ -116,14 +127,22 @@ mod tests {
     #[test]
     fn family_tier_increments_are_hand_computed() {
         let m = model();
-        // (7471 - 1765) / 12
-        let e = m.child_family_increment(CoveragePhase::Employer, 1.0);
+        // One adult on the plan: (7471 - 1765) / 12
+        let e = m.child_family_increment(CoveragePhase::Employer, 1, 1.0);
         assert!((e - 5706.0 / 12.0).abs() < 1e-9, "{e}");
-        // (28303 - 9804) * 1.02 / 12
-        let c = m.child_family_increment(CoveragePhase::Cobra, 1.0);
+        // A couple already pays two single tiers: (7471 - 2 * 1765) / 12, so the
+        // household's total is the family tier.
+        let e2 = m.child_family_increment(CoveragePhase::Employer, 2, 1.0);
+        assert!((e2 - 3941.0 / 12.0).abs() < 1e-9, "{e2}");
+        // Nobody counted on the plan (the worker is on Medicare): as for one.
+        assert_eq!(m.child_family_increment(CoveragePhase::Employer, 0, 1.0), e);
+        // (28303 - 9804) * 1.02 / 12, and (28303 - 2 * 9804) * 1.02 / 12 for a couple.
+        let c = m.child_family_increment(CoveragePhase::Cobra, 1, 1.0);
         assert!((c - 18499.0 * 1.02 / 12.0).abs() < 1e-9, "{c}");
-        assert_eq!(m.child_family_increment(CoveragePhase::Aca, 1.0), 0.0);
-        assert!((m.child_family_increment(CoveragePhase::Employer, 2.0) - 2.0 * e).abs() < 1e-9);
+        let c2 = m.child_family_increment(CoveragePhase::Cobra, 2, 1.0);
+        assert!((c2 - 8695.0 * 1.02 / 12.0).abs() < 1e-9, "{c2}");
+        assert_eq!(m.child_family_increment(CoveragePhase::Aca, 1, 1.0), 0.0);
+        assert!((m.child_family_increment(CoveragePhase::Employer, 1, 2.0) - 2.0 * e).abs() < 1e-9);
     }
 
     #[test]
@@ -160,6 +179,9 @@ mod tests {
             m.child_month(5.0, CoveragePhase::Aca, 1.0),
             ChildMonth::default()
         );
-        assert_eq!(m.child_family_increment(CoveragePhase::Employer, 1.0), 0.0);
+        assert_eq!(
+            m.child_family_increment(CoveragePhase::Employer, 1, 1.0),
+            0.0
+        );
     }
 }

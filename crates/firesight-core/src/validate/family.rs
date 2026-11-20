@@ -157,6 +157,13 @@ impl Checker<'_> {
                 "Stochastic college costs are set but the child has no college plan, so nothing is charged. Choose a college type first.",
             );
         }
+        if aid_scale > 0.0 && child.college_share < 1.0 && child.college != College::None {
+            self.r.warn(
+                "college_aid_twice",
+                &format!("{at}/aid_scale"),
+                "The parents' share of college is below 100% and stochastic costs also take an aid discount off the published price. If the share already allows for aid or scholarships, set aid_scale to 0 so aid is not counted twice.",
+            );
+        }
         if real_tuition_growth > 0.05 {
             self.r.warn(
                 "tuition_growth_high",

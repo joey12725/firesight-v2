@@ -31,19 +31,32 @@ pub(crate) const TUITION_YEARS: usize = 60;
 pub(crate) const TUITION_AR1: f64 = 0.8;
 
 /// Share of students who take 4, 5 and 6 years among those who attend: cumulative
-/// 0.55, 0.83, 1. A judgement anchored to NCES: 64% of first-time bachelor's students
-/// finish at their first institution within six years, fewer in four.
-pub(crate) const DURATION_CDF: [f64; 2] = [0.55, 0.83];
+/// 0.68, 0.93, 1. From NCES (Status and Trends in the Education of Racial and Ethnic
+/// Groups, indicator 23, IPEDS): of first-time, full-time bachelor's students who
+/// started at a four-year institution in fall 2010, 41% graduated within four years,
+/// 56% within five and 60% within six, so among those who finish within six years
+/// 41/60 = 0.68 take four and 56/60 = 0.93 at most five. Applying the shares of
+/// graduates to everyone who attends is a judgement (the 40% who do not finish within
+/// six years mostly leave earlier and cost less, which is not modelled).
+pub(crate) const DURATION_CDF: [f64; 2] = [0.68, 0.93];
 
 /// Points `(household income in today's dollars, mean aid discount on the published
-/// price)` of the aid schedule, interpolated linearly and flat outside. The first two
-/// are read from Brookings' NPSAS 2019-20 net prices (about $18,000 under $50,000 of
-/// income and $29,000 at $125,000 against a published cost near $45,000); the last
-/// (little aid above $250,000, mostly merit aid) is a judgement.
+/// price)` of the aid schedule, interpolated linearly and flat outside. From Levine,
+/// "Ignore the sticker price: How have college prices really changed?" (Brookings,
+/// 2024; NPSAS 2019-20, 2023 dollars). Public four-year in-state: published cost of
+/// attendance $35,000, net price $18,000 below $50,000 of income (49% off) and a
+/// maximum net price of $29,000 from about $125,000 (17% off). Private nonprofit:
+/// published $72,000, net $25,000 below $50,000 (65% off) and a maximum of $53,000
+/// from about $200,000 (26% off; 46% at $125,000 by linear interpolation). The
+/// schedule is the plain average of the two sectors at each point: 0.57, 0.31 (the
+/// mean of 0.17 and 0.46) and 0.21 (rounded down from 0.215). Averaging the sectors,
+/// and reading 2023-dollar incomes as today's dollars, are judgements; `aid_scale`
+/// moves the whole schedule.
 pub(crate) const AID_SCHEDULE: [(f64, f64); 3] =
-    [(50_000.0, 0.60), (125_000.0, 0.36), (250_000.0, 0.10)];
+    [(50_000.0, 0.57), (125_000.0, 0.31), (200_000.0, 0.21)];
 
-/// Standard deviation of the discount around the schedule for a child (a judgement).
+/// Standard deviation of the discount around the schedule for a child (a judgement,
+/// listed in `params.json` `unverified_from_memory.family`).
 pub(crate) const AID_SD: f64 = 0.10;
 
 /// Largest discount: aid does not cover more than 90% of the published price.
@@ -438,17 +451,25 @@ pub(crate) fn drop_usda_health_share(
 pub(crate) struct AdultPhases {
     pub adults: u32,
     pub employer: bool,
+    /// Adults charged the single tier of an employer plan.
+    pub employer_adults: u32,
     pub aca: u32,
     pub cobra: u32,
+    /// Adults on the household's own fixed early-retirement amount.
+    pub custom: u32,
 }
 
 impl AdultPhases {
     pub(crate) fn note(&mut self, phase: CoveragePhase) {
         self.adults += 1;
         match phase {
-            CoveragePhase::Employer => self.employer = true,
+            CoveragePhase::Employer => {
+                self.employer = true;
+                self.employer_adults += 1;
+            }
             CoveragePhase::Aca => self.aca += 1,
             CoveragePhase::Cobra => self.cobra += 1,
+            CoveragePhase::Custom => self.custom += 1,
             _ => {}
         }
     }
@@ -470,9 +491,9 @@ impl State {
     /// Children's health cost in month `t` given the adults' plans. The child's
     /// coverage phase is the household's: the employer plan when anyone has one,
     /// else the marketplace when an adult is on it, else COBRA, else (adults on
-    /// Medicare) an unsubsidised marketplace plan. Households with a custom
-    /// early-retirement amount, outside the US, or with nobody present are not
-    /// charged.
+    /// Medicare) an unsubsidised marketplace plan. Households with an adult on a
+    /// custom early-retirement amount (their own figure for the household), outside
+    /// the US, or with nobody present are not charged.
     pub(crate) fn child_health(
         &self,
         plan: &Plan,
@@ -484,12 +505,14 @@ impl State {
         if adults.adults == 0 {
             return out;
         }
-        let phase = if adults.employer {
-            CoveragePhase::Employer
-        } else if adults.aca > 0 || (adults.cobra == 0 && self.in_us) {
-            CoveragePhase::Aca
+        let (phase, on_plan) = if adults.employer {
+            (CoveragePhase::Employer, adults.employer_adults)
+        } else if adults.aca > 0 {
+            (CoveragePhase::Aca, adults.aca)
         } else if adults.cobra > 0 {
-            CoveragePhase::Cobra
+            (CoveragePhase::Cobra, adults.cobra)
+        } else if adults.custom == 0 && self.in_us {
+            (CoveragePhase::Aca, 0)
         } else {
             return out;
         };
@@ -526,7 +549,7 @@ impl State {
             }
         }
         if covered_any {
-            out.total += plan.health.child_family_increment(phase, growth);
+            out.total += plan.health.child_family_increment(phase, on_plan, growth);
         }
         out
     }
@@ -571,6 +594,25 @@ impl State {
     #[inline]
     pub(crate) fn child_count(&self, k: usize) -> u32 {
         1 + u32::from(self.fam.twin[k])
+    }
+
+    /// What the funded test (the retirement trigger) plans on for child `k` in month
+    /// `ti`: `(birth month, children at that birth)`, or `None` when there is no child
+    /// to set money aside for. Until the stated birth month the household plans on the
+    /// stated birth of one child; from then on it knows what happened on this path (a
+    /// child who did not arrive, a later birth, twins). Without uncertain arrival this
+    /// is always the stated birth of one child.
+    #[inline]
+    pub(crate) fn child_for_funding(&self, plan: &Plan, k: usize, ti: i32) -> Option<(i32, f64)> {
+        let planned = plan.children[k].birth;
+        let birth = self.fam.birth[k];
+        if ti < planned {
+            Some((planned, 1.0))
+        } else if birth >= NEVER {
+            None
+        } else {
+            Some((birth, f64::from(self.child_count(k))))
+        }
     }
 
     /// Years child `k` spends in college on this path.
@@ -622,7 +664,8 @@ impl State {
         for k in 0..plan.children.len() {
             if let Some(sp) = plan.family.support[k] {
                 if ti >= self.fam.support_from[k] && ti < self.fam.support_to[k] {
-                    total += sp.annual;
+                    // Twins need support together.
+                    total += sp.annual * f64::from(self.child_count(k));
                 }
             }
         }
@@ -733,6 +776,34 @@ mod tests {
     };
 
     #[test]
+    fn judgement_constants_match_the_data_file() {
+        use crate::model as m;
+        let section = &Data::embedded().actuarial["unverified_from_memory"]["family"];
+        let listed = [
+            ("arrival_probability", m::DEFAULT_ARRIVAL_PROBABILITY),
+            ("arrival_delay_mean_months", m::DEFAULT_ARRIVAL_DELAY_MONTHS),
+            ("college_attend_probability", m::DEFAULT_ATTEND_PROBABILITY),
+            ("tuition_volatility", m::DEFAULT_TUITION_VOLATILITY),
+            ("tuition_ar1", TUITION_AR1),
+            ("aid_sd", AID_SD),
+            ("aid_max", AID_MAX),
+            ("adult_support_probability", m::DEFAULT_SUPPORT_PROBABILITY),
+            ("adult_support_annual", m::DEFAULT_SUPPORT_ANNUAL),
+            ("adult_support_mean_years", m::DEFAULT_SUPPORT_YEARS),
+            (
+                "adult_support_start_window_months",
+                SUPPORT_START_WINDOW_MONTHS,
+            ),
+            ("leave_pay_fraction", m::DEFAULT_LEAVE_PAY_FRACTION),
+        ];
+        for (key, value) in listed {
+            assert_eq!(section[key].as_f64(), Some(value), "{key}");
+        }
+        // Nothing listed that the code does not use (the note is the only other key).
+        assert_eq!(section.as_object().unwrap().len(), listed.len() + 1);
+    }
+
+    #[test]
     fn arrival_is_hand_computed() {
         // No arrival when the first uniform is at or above the probability.
         assert_eq!(realise_arrival(&A, 14, 0.85, 0.5, 0.0), (NEVER, false));
@@ -770,24 +841,24 @@ mod tests {
 
     #[test]
     fn aid_schedule_is_interpolated() {
-        assert_eq!(aid_mean_discount(20_000.0), 0.60);
-        assert_eq!(aid_mean_discount(50_000.0), 0.60);
-        // Halfway between (50k, 0.60) and (125k, 0.36).
-        assert!((aid_mean_discount(87_500.0) - 0.48).abs() < 1e-12);
-        assert!((aid_mean_discount(125_000.0) - 0.36).abs() < 1e-12);
-        // Halfway between (125k, 0.36) and (250k, 0.10).
-        assert!((aid_mean_discount(187_500.0) - 0.23).abs() < 1e-12);
-        assert_eq!(aid_mean_discount(250_000.0), 0.10);
-        assert_eq!(aid_mean_discount(900_000.0), 0.10);
+        assert_eq!(aid_mean_discount(20_000.0), 0.57);
+        assert_eq!(aid_mean_discount(50_000.0), 0.57);
+        // Halfway between (50k, 0.57) and (125k, 0.31).
+        assert!((aid_mean_discount(87_500.0) - 0.44).abs() < 1e-12);
+        assert!((aid_mean_discount(125_000.0) - 0.31).abs() < 1e-12);
+        // Halfway between (125k, 0.31) and (200k, 0.21).
+        assert!((aid_mean_discount(162_500.0) - 0.26).abs() < 1e-12);
+        assert_eq!(aid_mean_discount(200_000.0), 0.21);
+        assert_eq!(aid_mean_discount(900_000.0), 0.21);
     }
 
     #[test]
     fn duration_follows_the_cdf() {
         assert_eq!(realise_duration(0.95, 0.95, 0.0), 0, "does not attend");
-        assert_eq!(realise_duration(0.95, 0.94, 0.54), 4);
-        assert_eq!(realise_duration(0.95, 0.94, 0.55), 5);
-        assert_eq!(realise_duration(0.95, 0.0, 0.82), 5);
-        assert_eq!(realise_duration(0.95, 0.0, 0.83), 6);
+        assert_eq!(realise_duration(0.95, 0.94, 0.67), 4);
+        assert_eq!(realise_duration(0.95, 0.94, 0.68), 5);
+        assert_eq!(realise_duration(0.95, 0.0, 0.92), 5);
+        assert_eq!(realise_duration(0.95, 0.0, 0.93), 6);
         assert_eq!(realise_duration(0.0, 0.0, 0.0), 0);
     }
 
