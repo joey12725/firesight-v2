@@ -645,10 +645,10 @@ pub(super) const LN_DIM: usize = 7;
 /// The long yield and the mortgage rate are constant at their historical means.
 #[derive(Clone, Debug)]
 pub(super) struct LognormalParams {
-    mu: [f64; LN_DIM],
-    chol: [[f64; LN_DIM]; LN_DIM],
-    long_yield: f64,
-    mortgage: f64,
+    pub(super) mu: [f64; LN_DIM],
+    pub(super) chol: [[f64; LN_DIM]; LN_DIM],
+    pub(super) long_yield: f64,
+    pub(super) mortgage: f64,
     /// P(recession next month | indicator this month).
     pub(super) recession_next: [f64; 2],
 }

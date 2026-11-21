@@ -2473,6 +2473,15 @@
       "bill_yield": 0.001,
       "source": "Japan after 1989. TOPIX 2,881 at the end of 1989 and 1,086 at the end of 1998 (Cabinet Office of Japan, Annual Report on the Japanese Economy and Public Finance 2002); TOPIX -1.96% a year in price from the end of 1990 to August 2013 (CFA Institute, Enterprising Investor, 2013). Consumer price inflation averaged -0.28% a year over 1999-2012 (World Bank via FRED, FPCPITOTLZGJPN). 10-year government bond yield 6.96% in 1990, 1.54% in 1998, 1.00% in 2003 and 0.7 to 1.7% through 2013 (OECD via FRED, IRLTLT01JPA156N).",
       "confidence": "inflation, long_yield and glide_years sourced (rounded); equity_real_return a judgement between the post-1990 (about -1%) and peak-dated (about -5%) readings; years a judgement (the 'two lost decades'); bill_yield a judgement for 'near zero'"
+    },
+    "fat_tailed": {
+      "arch": 0.15,
+      "garch": 0.83,
+      "dof": 5.0,
+      "variance_cap": 16.0,
+      "mixing_cap": 8.0,
+      "source": "GARCH(1,1) (Bollerslev 1986) with Student-t shocks (Bollerslev 1987, Review of Economics and Statistics 69(3)). arch, garch and dof fitted by simulated moments to data/history/calibration.json: median over 1,203-month simulated samples of the excess kurtosis of monthly US stock returns (record 7.36), and of the autocorrelation of absolute returns at lags 1 and 12 (record 0.219 and 0.148); a grid over arch 0.12-0.21, persistence 0.97-0.99, dof 5-8. Maximum likelihood on the same record gives arch 0.13, garch 0.83, dof 7.3 (computed for this calibration), whose samples are thinner-tailed (kurtosis 3.5). variance_cap: the record's highest trailing 12-month variance of US stocks (71% annualised, 12 months to April 1933) over the full-sample variance (18.3%) is about 15. Calm and turbulent correlations are computed from the record at build time (trailing 12-month volatility above its 75th percentile); stock-stock correlation rising in bear markets matches Longin and Solnik (2001, Journal of Finance 56(2)).",
+      "confidence": "arch, garch and dof fitted to the embedded record (moment targets, not likelihood); variance_cap from the record, rounded; mixing_cap a judgement shared with the regime model"
     }
   }
 }

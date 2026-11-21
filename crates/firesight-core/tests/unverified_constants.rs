@@ -79,4 +79,10 @@ fn market_realism_constants_match_the_data_file() {
     assert_eq!(model::LOST_GENERATION_LONG_YIELD, num(&l["long_yield"]));
     assert_eq!(model::LOST_GENERATION_GLIDE_YEARS, num(&l["glide_years"]));
     assert_eq!(model::LOST_GENERATION_BILL_YIELD, num(&l["bill_yield"]));
+    let f = &section["fat_tailed"];
+    assert_eq!(economy::FAT_TAIL_ARCH, num(&f["arch"]));
+    assert_eq!(economy::FAT_TAIL_GARCH, num(&f["garch"]));
+    assert_eq!(economy::FAT_TAIL_DOF, num(&f["dof"]));
+    assert_eq!(economy::FAT_TAIL_VARIANCE_CAP, num(&f["variance_cap"]));
+    assert_eq!(economy::FAT_TAIL_MIXING_CAP, num(&f["mixing_cap"]));
 }

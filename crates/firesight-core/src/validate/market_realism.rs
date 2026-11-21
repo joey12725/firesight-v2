@@ -9,7 +9,7 @@ pub(super) fn check(m: &MarketModel, r: &mut Report) {
         r.warn(
             "bond_pricing_ignored",
             "/assumptions/market/bond_pricing",
-            "Bond pricing from the yield only applies to the block bootstrap: the regime model always prices bonds from its yield, the historical replay uses the record and the lognormal model has no yield path.",
+            "Bond pricing from the yield only applies to the block bootstrap: the regime model always prices bonds from its yield, the historical replay uses the record and the lognormal and fat-tailed models have no yield path.",
         );
     }
     if let Some(v) = &m.valuation {

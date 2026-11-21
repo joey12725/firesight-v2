@@ -15,7 +15,15 @@ pub fn variants(base: &Profile) -> Vec<(String, Profile)> {
     p.assumptions.market.kind = bootstrap;
     p.assumptions.market.bond_pricing = BondPricing::FromYield;
     out.push(("bond_pricing".to_string(), p));
-    for kind in [bootstrap, MarketKind::Regime, MarketKind::Lognormal] {
+    let mut p = base.clone();
+    p.assumptions.market.kind = MarketKind::FatTailed;
+    out.push(("fat_tailed".to_string(), p));
+    for kind in [
+        bootstrap,
+        MarketKind::Regime,
+        MarketKind::Lognormal,
+        MarketKind::FatTailed,
+    ] {
         let mut p = base.clone();
         p.assumptions.market.kind = kind;
         p.assumptions.market.valuation = Some(Valuation::default());

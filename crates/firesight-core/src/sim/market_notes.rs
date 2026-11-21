@@ -5,7 +5,7 @@
 //! retirement month is known). Nothing here runs outside trace mode.
 
 use crate::economy::{episode_first_month, episode_months, EconomyPath};
-use crate::model::{Episode, YearMonth};
+use crate::model::{AssetClass, Episode, YearMonth};
 use crate::stats::TraceEventKind;
 
 use super::plan::{Plan, Sched, StressPlan};
@@ -17,6 +17,10 @@ pub(crate) struct MarketNotes {
     notes: Vec<(Sched, Option<f64>, String)>,
     done: Vec<bool>,
 }
+
+/// A monthly US stock return below this is announced in a fat-tailed trace: the
+/// record has 11 such months in 1,203 (`data/history/monthly.csv`).
+const CRASH_MONTH: f64 = -0.15;
 
 fn episode_name(e: Episode) -> &'static str {
     match e {
@@ -54,6 +58,21 @@ impl State {
                     None,
                     "US stock valuations are back at their normal level".to_string(),
                 ));
+            }
+        }
+        if plan.econ.is_fat_tailed() {
+            let us = AssetClass::UsStocks.index();
+            for (t, &r) in econ.returns[us][..econ.months].iter().enumerate() {
+                if r < CRASH_MONTH {
+                    notes.notes.push((
+                        Sched::At(t as i32),
+                        None,
+                        format!(
+                            "US stocks fell {:.0}% in one month: the record has 11 months below -15% in 100 years",
+                            -r * 100.0
+                        ),
+                    ));
+                }
             }
         }
         for stress in &plan.stresses {

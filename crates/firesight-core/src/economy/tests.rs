@@ -104,6 +104,7 @@ fn generate(m: &EconomyModel, seed: u64, path: u64, months: usize, out: &mut Eco
     let mut streams = EconomyStreams {
         market: &mut a,
         inflation: &mut b,
+        tails: &mut Rng::stream(seed, path, Stream::MarketTails),
     };
     m.generate(&mut streams, path, months, out);
 }
@@ -1958,6 +1959,7 @@ fn draw_counts_are_fixed_per_month() {
                 &mut EconomyStreams {
                     market: &mut a,
                     inflation: &mut b,
+                    tails: &mut Rng::stream(SEED, path, Stream::MarketTails),
                 },
                 path,
                 months,
@@ -2031,6 +2033,7 @@ fn the_two_streams_are_isolated() {
             &mut EconomyStreams {
                 market: &mut a,
                 inflation: &mut b,
+                tails: &mut Rng::stream(0, 4, Stream::MarketTails),
             },
             4,
             480,

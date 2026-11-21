@@ -8,6 +8,7 @@ use super::*;
 use crate::rng::Stream;
 
 mod episodes;
+mod fat_tails;
 mod valuation;
 
 const SEED: u64 = 0x5EED_1800;
@@ -38,6 +39,7 @@ fn generate(m: &EconomyModel, path: u64, months: usize, out: &mut EconomyPath) {
         &mut EconomyStreams {
             market: &mut a,
             inflation: &mut b,
+            tails: &mut Rng::stream(SEED, path, Stream::MarketTails),
         },
         path,
         months,

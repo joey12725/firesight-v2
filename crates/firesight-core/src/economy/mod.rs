@@ -82,6 +82,7 @@
 
 mod bonds;
 mod episodes;
+mod fat_tailed;
 mod fit;
 #[cfg(test)]
 mod realism_tests;
@@ -108,6 +109,9 @@ use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
 pub use episodes::{episode_first_month, episode_months};
+pub use fat_tailed::{
+    FAT_TAIL_ARCH, FAT_TAIL_DOF, FAT_TAIL_GARCH, FAT_TAIL_MIXING_CAP, FAT_TAIL_VARIANCE_CAP,
+};
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
@@ -345,6 +349,9 @@ pub struct EconomyStreams<'a> {
     pub market: &'a mut Rng,
     /// `Rng::stream(seed, path, Stream::Inflation)`.
     pub inflation: &'a mut Rng,
+    /// `Rng::stream(seed, path, Stream::MarketTails)`: drawn only by the fat-tailed
+    /// model.
+    pub tails: &'a mut Rng,
 }
 
 // ---------------------------------------------------------------------------------
@@ -500,6 +507,7 @@ enum Kind {
     Historical,
     Regime(Arc<RegimeParams>),
     Lognormal(Arc<LognormalParams>),
+    FatTailed(Arc<fat_tailed::FatTailedParams>),
 }
 
 /// The compiled scenario generator for one profile. Built once in `Plan::compile`.
@@ -1074,6 +1082,12 @@ impl EconomyModel {
                 h,
                 &long_run_from_json(&data.actuarial),
             ))),
+            MarketKind::FatTailed => {
+                Kind::FatTailed(Arc::new(fat_tailed::FatTailedParams::calibrate(
+                    LognormalParams::calibrate(h, &long_run_from_json(&data.actuarial)),
+                    h,
+                )))
+            }
         };
         let adjust = Adjust::new(market);
 
@@ -1181,6 +1195,7 @@ impl EconomyModel {
             Kind::Historical => None,
             Kind::Regime(p) => Some(regime_equity_anchor(p, data_is_embedded) + adjust),
             Kind::Lognormal(p) => Some(p.real_equity_log_mean() + adjust),
+            Kind::FatTailed(p) => Some(p.ln.real_equity_log_mean() + adjust),
         }
     }
 
@@ -1189,6 +1204,11 @@ impl EconomyModel {
     pub fn valuation_outlook(&self) -> Option<(f64, f64, f64)> {
         self.valuation
             .map(|v| (v.starting_cape, v.fair_cape, v.expected_tilt_annual(120)))
+    }
+
+    /// Whether this is the fat-tailed parametric model.
+    pub fn is_fat_tailed(&self) -> bool {
+        matches!(self.kind, Kind::FatTailed(_))
     }
 
     /// Applies the profile's single-stock and custom-asset parameters. Call after
@@ -1286,8 +1306,9 @@ impl EconomyModel {
     /// Allocation-free once `out` has capacity for `months`.
     ///
     /// Draws per month from the `Market` stream: bootstrap 8, historical 7, regime
-    /// 17, lognormal 12 (plus one at the start of a lognormal path). From the `Inflation` stream: 1 in the regime and lognormal
-    /// models, none otherwise.
+    /// 17, lognormal and fat-tailed 12 (plus one at the start of a path). From the `Inflation` stream: 1 in the regime, lognormal
+    /// and fat-tailed models, none otherwise. From `MarketTails`: 3 in the fat-tailed model,
+    /// none otherwise.
     pub fn generate(
         &self,
         streams: &mut EconomyStreams<'_>,
@@ -1369,6 +1390,20 @@ impl EconomyModel {
                 let mut recession = u8::from(rng.uniform() < p.recession_share());
                 for t in 0..months {
                     let core = p.step(&mut recession, rng, streams.inflation, emit.normal);
+                    let m = self.assets.month(&self.adjust, &core);
+                    emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
+                }
+            }
+            Kind::FatTailed(p) => {
+                let mut state = p.start(rng);
+                for t in 0..months {
+                    let core = p.step(
+                        &mut state,
+                        rng,
+                        streams.inflation,
+                        streams.tails,
+                        emit.normal,
+                    );
                     let m = self.assets.month(&self.adjust, &core);
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }

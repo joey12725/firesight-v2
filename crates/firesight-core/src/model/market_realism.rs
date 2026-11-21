@@ -22,6 +22,14 @@ pub enum BondPricing {
     FromYield,
 }
 
+impl BondPricing {
+    /// Whether this is the default; the field is then left out of saved profiles,
+    /// which stay as they were before the field existed.
+    pub fn is_sampled(&self) -> bool {
+        *self == BondPricing::Sampled
+    }
+}
+
 /// Default of [`Valuation::starting_cape`]: the S&P 500's cyclically adjusted
 /// price-earnings ratio (Shiller CAPE) read between 38 and 42 through 2026 (YCharts
 /// 39.8 in February, Financer 38.2 in March, multpl.com about 40.5); rounded to 40.

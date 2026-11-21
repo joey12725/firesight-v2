@@ -130,6 +130,55 @@ constant yield. It is the textbook baseline the other models are compared with.
 Bill returns are floored at zero (independent draws around a 0.27% monthly mean were
 negative in 14% of months) with the centre lowered so that the mean is unchanged.
 
+#### Fat tails and volatility clustering (`market.kind: fat_tailed`, opt-in)
+
+The lognormal model with the same means, volatilities and recession chain, and
+three additions. Stocks (US and international), bonds and gold share one Student-t
+mixing variable each month (5 degrees of freedom, unit variance: a multivariate t,
+so a bad month tends to be bad for all of them). The variance of both stock markets
+follows a GARCH(1,1) recursion on the US shock (Bollerslev 1986; with t shocks
+Bollerslev 1987), `v' = 0.02 + 0.15 v eta^2 + 0.83 v`, capped at 16 times normal
+(the record's highest trailing-year variance, to April 1933, is 15 times its
+average) and divided by its long-run mean so that the unconditional volatility is
+the lognormal model's. Months whose conditional variance is in its top quarter use
+the correlations of the record's turbulent months (trailing 12-month volatility
+above its 75th percentile), the others the calm months': US with international
+stocks 0.77 against 0.60 (Longin and Solnik 2001 find the same rise in bear
+markets), US stocks with 10-year Treasuries 0.00 against 0.13. The record shows the
+stock-bond correlation falling in turbulent months, not rising (the flight to
+quality), so the model follows the record. The log-return means are exactly the
+lognormal model's, and the model draws from the `Market` stream exactly what the
+lognormal model draws, so the two see the same normal shocks on a path; the
+mixing variables come from a stream of their own (`MarketTails`).
+
+`a`, `b` and the degrees of freedom were fitted by simulated moments: on a grid,
+the values whose 1,203-month samples (the record's length) have, at the median, the
+record's excess kurtosis of monthly US stock returns (7.4) and autocorrelation of
+absolute returns at lags 1 and 12 (0.22 and 0.15). Maximum likelihood on the same
+record gives 0.13, 0.83 and 7.3 degrees of freedom, whose samples have a kurtosis of
+3.5: too thin-tailed for a model whose point is the tails. Measured
+(`realism_tests/fat_tails.rs`, 300 samples of 1,203 months): kurtosis 7.40,
+absolute-return autocorrelation 0.229 and 0.131, against 0.03 and 0.000 for
+lognormal; the median 100-year worst real fall of US stocks -63% (5th to 95th
+percentile -90% to -38%) against -58% for lognormal, and the record's -79% sits
+inside that band; 7 months below -15% per century on traced paths against the
+record's 11. Volatilities within 2% and log means within 0.05 points of lognormal.
+
+What it does to plans: little to success, more to the bad tail of drawdowns. On a
+60/40 retiree spending 4.5% (3,000 paired paths) success is 87.3% lognormal and
+88.8% fat-tailed, and the 95th percentile of the portfolio's worst fall is 57%
+against 48% (the 5th percentile 15% against 19%). On the early-career example
+(`firesight compare`, 4,000 paired paths, lognormal against fat-tailed) success goes
+from 82.0% to 84.2%. Volatility is concentrated in fewer, wilder paths: most paths
+see calmer markets than lognormal's constant volatility and a few far rougher ones,
+and over a 30-year plan that roughly cancels or slightly helps. A trace announces
+each month in which US stocks fall more than 15%.
+
+Not modelled: no mean reversion and a constant yield (as in lognormal); recessions
+stay independent of the volatility state; no leverage effect (falls do not raise
+volatility more than rises); today's volatility is not an input (paths start at the
+long-run mean variance); bills, home prices and inflation keep normal shocks.
+
 ### 2.4 Historical replay
 
 Path 1 starts in July 1926, path 2 in August 1926, and so on (1,203 cohorts,

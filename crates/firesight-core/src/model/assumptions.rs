@@ -59,12 +59,14 @@ pub struct MarketModel {
     /// prices the bond from the path's own 10-year yield (interest plus the price
     /// change of a 10-year bond when the yield moves), so a path's bond returns and
     /// its yield level agree.
+    #[serde(skip_serializing_if = "BondPricing::is_sampled")]
     pub bond_pricing: BondPricing,
     /// Start expected stock returns from today's valuation instead of the
     /// historical average: an expensive market returns less over the next decade or
     /// two while its valuation drifts back to normal. Applies to the bootstrap,
     /// regime, lognormal and fat-tailed models. Leave empty to keep history's
     /// average from the first month.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub valuation: Option<Valuation>,
 }
 
@@ -107,6 +109,12 @@ pub enum MarketKind {
     /// Independent lognormal returns each month: the simple textbook model, with no
     /// crashes clustering and no mean reversion.
     Lognormal,
+    /// Like `lognormal`, with the same average returns and volatilities, but with
+    /// fat tails (Student-t shocks), volatile spells that cluster and fade over a few
+    /// years (GARCH), and stocks markets that move together more in turbulent
+    /// months, all fitted to the US record since 1926. Crashes are deeper and more
+    /// frequent than in `lognormal`; there is still no mean reversion.
+    FatTailed,
     /// Replay history exactly: path 1 starts in the first month of the record, path 2
     /// in the next, and so on. Answers "would this plan have survived 1966?". Set
     /// `equity_premium_adjustment` to 0 with this model, or the replay is history

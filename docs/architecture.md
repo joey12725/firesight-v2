@@ -30,7 +30,7 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, MarketTails}`. Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -184,6 +184,7 @@ RetirementPlan {
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal
+                              | FatTailed        // lognormal means and vols; Student-t shocks, GARCH(1,1) volatility, calm/turbulent correlations
                               | Historical,       // every start month in history, in order: path i = cohort i
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,

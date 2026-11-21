@@ -232,3 +232,74 @@ fn a_traced_path_announces_the_episode() {
     assert_eq!(note.month, START);
     assert!(note.label.contains("Great Depression"), "{}", note.label);
 }
+
+// ---------------------------------------------------------------------------------
+// F39: the fat-tailed parametric model.
+// ---------------------------------------------------------------------------------
+
+fn scalar_values(p: &Profile, paths: u64, s: PathScalar) -> Vec<f64> {
+    let acc = run(&compile(p), SEED, 0..paths);
+    let mut v: Vec<f64> = acc
+        .scalar_column(s)
+        .iter()
+        .map(|x| f64::from(*x))
+        .filter(|x| x.is_finite())
+        .collect();
+    v.sort_by(f64::total_cmp);
+    v
+}
+
+/// Same means and volatilities as the lognormal model, on the same normal shocks,
+/// but fat tails and clustered volatility. A 60/40 retiree spending 4.5% lives
+/// through deeper worst falls of the portfolio in the bad tail of paths. Success
+/// barely moves: volatility is concentrated in fewer, wilder paths, so most paths
+/// see calmer markets than the lognormal model's and a few far rougher ones, and
+/// over 30 years the two roughly cancel.
+#[test]
+fn fat_tails_deepen_the_worst_falls_of_a_retiree() {
+    let n = 3000;
+    let mut ln = retiree(1_000_000.0, 0.6, 45_000.0, 30.0);
+    ln.assumptions.market.kind = MarketKind::Lognormal;
+    let mut fat = ln.clone();
+    fat.assumptions.market.kind = MarketKind::FatTailed;
+    let (a, b) = (summary(&ln, SEED, n), summary(&fat, SEED, n));
+    let (sa, sb) = (a.headline.success_rate.value, b.headline.success_rate.value);
+    let da = scalar_values(&ln, n, PathScalar::WorstDrawdown);
+    let db = scalar_values(&fat, n, PathScalar::WorstDrawdown);
+    let q = |v: &[f64], p: f64| v[(p * (v.len() - 1) as f64) as usize];
+    eprintln!(
+        "60/40 retiree at 4.5%: success lognormal {sa:.3} fat-tailed {sb:.3}; worst drawdown quantiles 5/50/95% lognormal {:.3} {:.3} {:.3}, fat-tailed {:.3} {:.3} {:.3}; median terminal {:.0} -> {:.0}",
+        q(&da, 0.05), q(&da, 0.5), q(&da, 0.95), q(&db, 0.05), q(&db, 0.5), q(&db, 0.95),
+        median(&a),
+        median(&b)
+    );
+    // The worst falls (a positive fraction of the peak) are deeper in the bad tail
+    // and shallower in the calm one.
+    assert!(q(&db, 0.95) > q(&da, 0.95) + 0.04);
+    assert!(q(&db, 0.05) < q(&da, 0.05));
+    assert!((sb - sa).abs() < 0.04, "{sa} {sb}");
+    let ratio = median(&b) / median(&a);
+    assert!((0.85..1.15).contains(&ratio), "{ratio}");
+}
+
+/// A fat-tailed trace announces its crash months; a lognormal one with the same
+/// shocks has none to announce.
+#[test]
+fn a_fat_tailed_trace_announces_crash_months() {
+    let mut fat = retiree(1_000_000.0, 0.6, 40_000.0, 30.0);
+    fat.assumptions.market.kind = MarketKind::FatTailed;
+    let mut ln = fat.clone();
+    ln.assumptions.market.kind = MarketKind::Lognormal;
+    let crash = |p: &Profile, path: u64| {
+        sim::trace_path(&compile(p), SEED, path)
+            .events
+            .iter()
+            .filter(|e| e.kind == TraceEventKind::Market && e.label.contains("in one month"))
+            .count()
+    };
+    let fat_notes: usize = (0..40).map(|i| crash(&fat, i)).sum();
+    let ln_notes: usize = (0..40).map(|i| crash(&ln, i)).sum();
+    eprintln!("crash-month notes over 40 traced paths: {fat_notes}");
+    assert!(fat_notes > 0);
+    assert_eq!(ln_notes, 0);
+}
