@@ -1069,6 +1069,11 @@ impl Plan {
 
         let (sx, sx_mean_fraction) =
             super::spendx::SpendXPlan::compile(profile, data, &ctx, &mut debts, budget0);
+        if let Some(det) = &sx.detailed {
+            for prop in &mut props {
+                prop.model.carve_out_maintenance(det.home_rate);
+            }
+        }
 
         let stresses = profile
             .assumptions

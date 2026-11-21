@@ -203,6 +203,8 @@ struct Monthly {
     series: Vec<YearSeries>,
     /// `(calendar month 1..=12, values)` for every month of every path.
     months: Vec<(u32, Vec<f64>)>,
+    /// Price level of every month.
+    prices: Vec<f64>,
     events: Vec<firesight_core::stats::TraceEvent>,
 }
 
@@ -225,6 +227,7 @@ impl Recorder for Monthly {
     fn record_month(&mut self, m: &firesight_core::stats::MonthRecord) {
         let v = self.series.iter().map(|s| m.values[s.index()]).collect();
         self.months.push((m.month.month(), v));
+        self.prices.push(m.price_level);
     }
     fn record_event(&mut self, e: firesight_core::stats::TraceEvent) {
         self.events.push(e);
@@ -499,20 +502,28 @@ fn detailed_shocks_are_mean_neutral_but_lumpy() {
     on.properties.clear();
     let mut off = on.clone();
     off.spending.shocks = ShockLevel::Off;
-    let total = |c: &Capture| -> f64 {
-        mean(
-            c.years
-                .iter()
-                .map(|p| p.iter().map(|y| y.iter().sum::<f64>()).sum::<f64>()),
-        )
+    let a = capture(&compile(&off), 30, 1_500, &series, false);
+    let b = capture(&compile(&on), 30, 1_500, &series, false);
+    // The expected cost is netted out of the budget. By hand, a year: car repairs
+    // 0.4 x 8% x exp(0.405) = 4.8% of the 7,200 transport line = 346; medical
+    // 0.16 x 2% x exp(0.5) = 0.53% and family 0.12 x 3% x exp(0.72) = 0.74% of the
+    // 49,200 budget = 624. So the budget falls by 970 a year, 24,250 over 25 years.
+    let lifetime = |c: &Capture, k: usize| -> f64 {
+        mean(c.years.iter().map(|p| p.iter().map(|y| y[k]).sum::<f64>()))
     };
-    let a = capture(&compile(&off), 30, 400, &series, false);
-    let b = capture(&compile(&on), 30, 400, &series, false);
-    // The expected cost is netted out of the budget: lifetime spending is the same on
-    // average (measured +0.1%; allow one percent for sampling and for the offset being
-    // taken at the starting budget).
-    let (ta, tb) = (total(&a), total(&b));
-    assert!(((tb - ta) / ta).abs() < 0.01, "off {ta}, detailed {tb}");
+    let netted = lifetime(&a, 0) + lifetime(&a, 1) - lifetime(&b, 0) - lifetime(&b, 1);
+    assert!((netted - 24_250.0).abs() < 250.0, "netted {netted}");
+    // And the shocks that are drawn cost that much on average: the ratio is 0.97 by
+    // construction (medical and family shocks are sized from the budget after
+    // netting, 2% lower, and the cap on the draw removes about 1%), with a sampling
+    // error of about 2% here. A renter's shocks used to come out 14% short because
+    // the missing home repairs did not feed the clustering.
+    let drawn = lifetime(&b, 2);
+    let ratio = drawn / netted;
+    assert!(
+        (0.91..1.04).contains(&ratio),
+        "drawn {drawn}, netted {netted}"
+    );
     // But the spending is lumpier: the worst path's one-off spending is several times
     // the typical path's.
     let one_off = |c: &Capture| -> Vec<f64> {
@@ -532,7 +543,8 @@ fn detailed_shocks_barely_move_success_because_they_are_mean_neutral() {
     // A retiree spending 5% of a $1m portfolio for 30 years. The shocks add variance
     // but, being netted out of the budget, no level, and when savings run out the
     // engine cuts one-off spending before essentials: so success moves by well under
-    // a point either way (measured +0.2 points, inside the noise of 4,000 paths).
+    // a point either way (measured 0.0 points on 4,000 paths: 22 paths change sides,
+    // eleven each way).
     let mut off = retiree(1_000_000.0, 0.6, 50_000.0, 30.0);
     off.simulation.seed = 5;
     let mut on = off.clone();
@@ -540,7 +552,20 @@ fn detailed_shocks_barely_move_success_because_they_are_mean_neutral() {
     let s_off = summary(&off, 5, 4_000).headline.success_rate.value;
     let s_on = summary(&on, 5, 4_000).headline.success_rate.value;
     assert!((s_on - s_off).abs() < 0.01, "off {s_off}, detailed {s_on}");
-    assert_ne!(s_on, s_off, "detailed shocks had no effect at all");
+    // The rate can come out equal while the paths behind it do not: on paired paths
+    // the shocks must have moved the wealth left at the end nearly everywhere.
+    let a = capture(&compile(&off), 5, 500, &[], false);
+    let b = capture(&compile(&on), 5, 500, &[], false);
+    let moved = a
+        .terminal
+        .iter()
+        .zip(&b.terminal)
+        .filter(|(x, y)| x != y)
+        .count();
+    assert!(
+        moved > 350,
+        "detailed shocks moved only {moved} of 500 paths"
+    );
 }
 
 #[test]
@@ -557,6 +582,98 @@ fn home_repairs_cost_about_a_third_of_a_percent_of_the_home_a_year() {
         .sum();
     let per_year = total / (paths as f64 * 25.0);
     assert!((1_000.0..2_200.0).contains(&per_year), "{per_year}");
+}
+
+#[test]
+fn a_homeowners_repairs_come_out_of_the_maintenance_rate() {
+    // Home repairs are part of what the 1% maintenance rule of thumb pays for, so
+    // their expected cost (0.4 x 0.5% x exp(0.605) = 0.366% of value a year) is taken
+    // out of the home's maintenance_rate: the owner pays the same on average, in lumps.
+    let series = [
+        YearSeries::SpendEssential,
+        YearSeries::SpendDiscretionary,
+        YearSeries::SpendHousing,
+        YearSeries::SpendOneOff,
+    ];
+    let on = homeowner(400_000.0, 600.0);
+    let mut off = on.clone();
+    off.spending.shocks = ShockLevel::Off;
+    let a = capture(&compile(&off), 30, 1_500, &series, false);
+    let b = capture(&compile(&on), 30, 1_500, &series, false);
+    let lifetime = |c: &Capture, k: usize| -> f64 {
+        mean(c.years.iter().map(|p| p.iter().map(|y| y[k]).sum::<f64>()))
+    };
+    // Housing costs fall by 0.366% of the home's value a year: about 1,465 on 400,000,
+    // 36,600 over 25 years (the home's real value drifts, hence the range).
+    let housing = lifetime(&a, 2) - lifetime(&b, 2);
+    assert!((30_000.0..45_000.0).contains(&housing), "{housing}");
+    // Everything planned that was given up, against the shocks drawn instead.
+    let netted = housing + lifetime(&a, 0) + lifetime(&a, 1) - lifetime(&b, 0) - lifetime(&b, 1);
+    let drawn = lifetime(&b, 3);
+    let ratio = drawn / netted;
+    assert!(
+        (0.91..1.05).contains(&ratio),
+        "drawn {drawn}, netted {netted}"
+    );
+    // A maintenance rate too low to absorb the repairs is floored at zero, not negative.
+    let mut low = on.clone();
+    low.properties[0].maintenance_rate = 0.001;
+    low.properties[0].property_tax_rate = Some(0.0);
+    low.properties[0].insurance_rate = 0.0;
+    let c = capture(&compile(&low), 30, 50, &[YearSeries::SpendHousing], false);
+    assert!(c.years.iter().flatten().all(|y| y[0].abs() < 1e-9));
+}
+
+#[test]
+fn the_retirement_date_still_counts_the_repairs_carved_out_of_maintenance() {
+    // The shipped family buys a home and retires when it can afford to. Detailed
+    // shocks move 0.366% of the home's value a year from the maintenance paid every
+    // month to repairs drawn at random; the funded test must go on counting that as a
+    // cost of the home. When it did not, the household looked richer than it was and
+    // the median retirement came two months earlier (53.25 against 53.42), which cost
+    // 1.8 points of success. The typical level plans with the same home costs and
+    // nets about as much out of the budget, so the two median dates must agree to
+    // within a month.
+    let family = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    let median_age = |level: ShockLevel| -> f64 {
+        let mut p = family.clone();
+        p.spending.shocks = level;
+        summary(&p, 1, 1_000).headline.median_retirement_age
+    };
+    let (typical, detailed) = (
+        median_age(ShockLevel::Typical),
+        median_age(ShockLevel::Detailed),
+    );
+    assert!(
+        (detailed - typical).abs() < 0.1,
+        "typical {typical}, detailed {detailed}"
+    );
+}
+
+#[test]
+fn shocks_keep_their_dates_and_frequency_whatever_the_household_owns() {
+    let owner = shock_events(&compile(&homeowner(400_000.0, 600.0)), 300);
+    let mut p = homeowner(400_000.0, 600.0);
+    p.properties.clear();
+    let renter = shock_events(&compile(&p), 300);
+    // The renter has exactly the owner's shocks less the home repairs, to the month
+    // and (for car repairs, which do not depend on the budget level) to the dollar.
+    let rest: Vec<_> = owner.iter().filter(|e| e.2 != "Home repair").collect();
+    assert_eq!(rest.len(), renter.len());
+    for (a, b) in rest.iter().zip(&renter) {
+        assert_eq!((a.0, a.1, &a.2), (b.0, b.1, &b.2));
+        if a.2 == "Car repair" {
+            assert!((a.3 - b.3).abs() < 1e-6, "{a:?} {b:?}");
+        }
+    }
+    // 0.4 + 0.16 + 0.12 = 0.68 a year over 300 paths of 25 years: 5,100 expected,
+    // with a standard error of about 100 (clustered counts).
+    let rate = renter.len() as f64 / (300.0 * 25.0);
+    assert!((rate - 0.68).abs() < 0.06, "rate {rate}");
 }
 
 #[test]
@@ -730,4 +847,242 @@ fn the_unemployment_cut_conserves_money() {
     let mut on = worker_base();
     on.spending.unemployment_cut = 0.3;
     capture(&compile(&on), 12, 100, &[], true);
+}
+
+// ----------------------------------------------------------------------------------
+// All five together: random streams, conservation, finite values
+// ----------------------------------------------------------------------------------
+
+/// Switches every spending-realism feature on.
+fn all_on(mut p: Profile) -> Profile {
+    let mut financed = car(32_000.0, 9.0);
+    financed.id = "second".into();
+    financed.age_years = 6.0;
+    financed.financing = Some(VehicleFinancing {
+        down_fraction: 0.1,
+        rate: 0.07,
+        term_months: 60,
+    });
+    let mut cash = car(38_000.0, 10.0);
+    cash.age_years = 4.0;
+    p.spending.vehicles = vec![cash, financed];
+    p.spending.seasonality = Seasonality::Typical;
+    p.spending.category_inflation = CategoryInflation::Stochastic;
+    p.spending.shocks = ShockLevel::Detailed;
+    p.spending.unemployment_cut = 0.15;
+    p
+}
+
+/// The shipped two-earner family with a fixed retirement age, so that nothing the
+/// household can afford moves the date it stops earning.
+fn family() -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 62.0,
+    };
+    p
+}
+
+/// What the other random streams produce on a path: the price level of every month
+/// (market), wages (career), the months long-term care begins (health; the amount paid
+/// for care is not exogenous, it is cut on a path that has run out of money) and the
+/// months lived (longevity).
+#[derive(Default)]
+struct Exogenous {
+    prices: Vec<f64>,
+    wages: Vec<f64>,
+    care: Vec<i32>,
+    events: Vec<(i32, String)>,
+}
+
+impl Recorder for Exogenous {
+    fn begin_path(&mut self, _: u64) {}
+    fn record_year(&mut self, _: usize, _: &YearRecord) {}
+    fn end_path(&mut self, _: &PathEnd) {}
+    fn wants_detail(&self) -> bool {
+        true
+    }
+    fn record_month(&mut self, m: &firesight_core::stats::MonthRecord) {
+        self.prices.push(m.price_level);
+        self.wages.push(m.values[YearSeries::IncomeWages.index()]);
+    }
+    fn record_event(&mut self, e: firesight_core::stats::TraceEvent) {
+        use firesight_core::stats::TraceEventKind as K;
+        if e.kind == K::LongTermCare {
+            self.care.push(e.month - START);
+        }
+        let vehicle = e.kind == K::MajorExpense && e.label.starts_with("Replace vehicle");
+        if vehicle || e.kind == K::ExpenseShock {
+            self.events.push((e.month - START, e.label));
+        }
+    }
+}
+
+fn exogenous(plan: &Plan, seed: u64, path: u64) -> Exogenous {
+    let mut ws = Workspace::new(plan);
+    let mut rec = Exogenous::default();
+    sim::run_path(plan, seed, path, &mut ws, &mut rec);
+    rec
+}
+
+#[test]
+fn switching_the_features_on_leaves_every_other_random_stream_alone() {
+    let off = compile(&family());
+    let on = compile(&all_on(family()));
+    let (mut wages, mut care) = (0.0, 0usize);
+    for path in 0..60 {
+        let a = exogenous(&off, 7, path);
+        let b = exogenous(&on, 7, path);
+        // Same lifetimes, same inflation, same pay (layoffs included), same care needs.
+        assert_eq!(a.prices, b.prices, "path {path}: market or longevity");
+        assert_eq!(a.wages, b.wages, "path {path}: career");
+        assert_eq!(a.care, b.care, "path {path}: health");
+        wages += a.wages.iter().sum::<f64>();
+        care += a.care.len();
+        // The baseline's own shocks (stream Shocks is still drawn, never used).
+        assert!(a.events.iter().all(|e| e.1 == "Unplanned expense"));
+        assert!(b.events.iter().all(|e| e.1 != "Unplanned expense"));
+    }
+    assert!(wages > 0.0 && care > 10, "nothing was compared");
+}
+
+#[test]
+fn a_household_decision_does_not_move_the_features_random_draws() {
+    let base = all_on(family());
+    // Decisions that change wealth and the budget, but not what the household owns:
+    // retire five years earlier with a different portfolio and a larger cushion.
+    let mut other = base.clone();
+    other.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 57.0,
+    };
+    for a in &mut other.accounts {
+        a.balance *= 3.0;
+        a.cost_basis = a.cost_basis.map(|b| b * 3.0);
+    }
+    let (pa, pb) = (compile(&base), compile(&other));
+    let mut seen = 0;
+    for path in 0..60 {
+        let a = exogenous(&pa, 7, path);
+        let b = exogenous(&pb, 7, path);
+        // Every vehicle replacement and every shock, of the same kind in the same month.
+        // Home repairs are left out: the draws behind them are the same, but they cost
+        // money (and are logged) only while the household owns a home, and whether it
+        // still does late in life depends on what it could afford.
+        let keep = |e: &Exogenous| -> Vec<(i32, String)> {
+            e.events
+                .iter()
+                .filter(|x| x.1 != "Home repair")
+                .cloned()
+                .collect()
+        };
+        let (ea, eb) = (keep(&a), keep(&b));
+        assert_eq!(ea, eb, "path {path}");
+        seen += ea.len();
+    }
+    assert!(seen > 60 * 20, "too few events to compare: {seen}");
+
+    // The price wedge: with a flat all-essential budget the essential spending of each
+    // month is the wedge itself, so it must not change with the size of the portfolio.
+    let mut small = utilities_base();
+    small.spending.category_inflation = CategoryInflation::Stochastic;
+    let mut large = small.clone();
+    large.accounts[0].balance *= 2.0;
+    large.accounts[0].cost_basis = large.accounts[0].cost_basis.map(|b| b * 2.0);
+    let series = [YearSeries::SpendEssential, YearSeries::BalanceTaxable];
+    for path in 0..20 {
+        let a = monthly(&compile(&small), 6, path, &series);
+        let b = monthly(&compile(&large), 6, path, &series);
+        assert_eq!(a.months.len(), b.months.len());
+        for (x, y) in a.months.iter().zip(&b.months) {
+            assert_eq!(x.1[0], y.1[0], "path {path}");
+        }
+        assert!(b.months[12].1[1] > 1.5 * a.months[12].1[1]);
+    }
+}
+
+#[test]
+fn every_feature_at_once_conserves_money_and_stays_finite_in_every_market_model() {
+    let series: Vec<YearSeries> = YearSeries::ALL.to_vec();
+    for example in Profile::examples(START) {
+        for kind in MARKETS {
+            let mut p = all_on(with_market(example.profile.clone(), kind));
+            p.assumptions.career_risk = true;
+            let plan = compile(&p);
+            // `true`: the engine's own monthly conservation checks panic on a leak.
+            let cap = capture(&plan, 13, 150, &series, true);
+            assert_eq!(cap.terminal.len(), 150);
+            assert!(cap.terminal.iter().all(|x| x.is_finite()));
+            for y in cap.years.iter().flatten() {
+                assert!(y.iter().all(|v| v.is_finite()), "{} {kind:?}", example.slug);
+            }
+            let one_off = series
+                .iter()
+                .position(|s| *s == YearSeries::SpendOneOff)
+                .unwrap();
+            let lumps: f64 = cap.years.iter().flatten().map(|y| y[one_off]).sum();
+            assert!(
+                lumps > 0.0,
+                "{}: no vehicle or shock was paid",
+                example.slug
+            );
+        }
+    }
+}
+
+#[test]
+fn a_second_car_loan_takes_back_the_payment_the_first_one_freed() {
+    // A car financed over two years and replaced every four, with another debt and
+    // the avalanche strategy: when the first loan is paid off its payment rolls into
+    // the extra payment, and the next loan must take it back, or every cycle would add
+    // another car payment to the extra debt payments for good.
+    let mut p = retiree_base();
+    let mut v = car(40_000.0, 4.0);
+    v.age_years = 3.5;
+    v.financing = Some(VehicleFinancing {
+        down_fraction: 0.0,
+        rate: 0.05,
+        term_months: 24,
+    });
+    p.spending.vehicles = vec![v];
+    p.debts = vec![Debt {
+        id: "loan".into(),
+        name: "Long loan".into(),
+        balance: 600_000.0,
+        rate: 0.03,
+        payment: Some(2_000.0),
+        ..Debt::default()
+    }];
+    p.accounts[0].balance = 10_000_000.0;
+    p.accounts[0].cost_basis = Some(10_000_000.0);
+    p.debt_policy.strategy = DebtStrategy::Avalanche;
+    let plan = compile(&p);
+    // The engine's own conservation checks, on every path.
+    capture(&plan, 5, 20, &[YearSeries::SpendDebt], true);
+    for path in 0..20 {
+        let m = monthly(&plan, 5, path, &[YearSeries::SpendDebt]);
+        // Loan payments are fixed in nominal dollars. A car loan is 30,000 of today's
+        // dollars at 5% over 24 months: 1,316.14 a month times the price level of the
+        // month it was taken out. So in a typical month debt service is at most the
+        // long loan's 2,000 plus one car payment (while no car loan runs, the freed
+        // payment goes to the long loan instead: the same sum). Months 120 to 180 are
+        // past two or three payoffs: without the fix every one of them left its
+        // payment in the extra amount for good, and the median month would be 2,000
+        // plus two or three car payments (measured without it, first path: 6,331). The median ignores the month of a payoff,
+        // which pays the last instalment and the freed amount together.
+        let peak = m.prices[..180].iter().cloned().fold(0.0, f64::max);
+        let mut nominal: Vec<f64> = (120..180).map(|i| m.months[i].1[0] * m.prices[i]).collect();
+        nominal.sort_by(f64::total_cmp);
+        let median = nominal[30];
+        assert!(median >= 2_000.0, "path {path}: the long loan is gone");
+        assert!(
+            median <= 2_000.0 + 1_316.14 * peak * 1.001,
+            "path {path}: median monthly debt service {median}, peak price level {peak}"
+        );
+    }
 }

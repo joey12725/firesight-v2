@@ -7,10 +7,14 @@
 //! # Random streams
 //!
 //! * `Stream::Vehicle(k)`: one word per replacement of vehicle `k` (its date jitter).
-//!   The number of replacements depends on the path's length only.
+//!   The schedule runs to the end of the path even after the vehicle's `end` date or
+//!   its owner's death, so the number of words depends on the path's length only.
 //! * `Stream::CategoryPrices`: six words every January.
 //! * `Stream::DetailedShocks`: eight words every month (a uniform and a size word for
-//!   each of four shock types), whether or not a shock can happen.
+//!   each of four shock types), whether or not a shock can happen. Whether a type fires,
+//!   and the clustering it feeds, depend on these words alone: a household that owns no
+//!   home still has its "home repair" months, they just cost nothing. So the timing of
+//!   every shock is the same in every scenario.
 //!
 //! None of them depends on a household decision.
 //!
@@ -82,6 +86,7 @@ const GROUP_OF: [usize; Category::COUNT] = {
 };
 
 const SHOCK_KINDS: usize = 4;
+const SHOCK_HOME: usize = 0;
 const SHOCK_CAR: usize = 1;
 const SHOCK_LABELS: [&str; SHOCK_KINDS] = [
     "Home repair",
@@ -161,6 +166,12 @@ pub(crate) struct DetailedPlan {
     pub decay: f64,
     /// Excitement added by one shock.
     pub jump: f64,
+    /// Excitement at the start of a path: its long-run mean `n / (1 - n)`, so that the
+    /// expected hazard is the calibrated one from the first month.
+    pub excite0: f64,
+    /// Expected annual home-repair cost as a fraction of the home's value. The plan
+    /// takes it out of an owner-occupied home's `maintenance_rate`.
+    pub home_rate: f64,
 }
 
 /// Everything compiled from the new `spending` fields.
@@ -315,10 +326,13 @@ impl SpendXPlan {
                 kinds,
                 decay,
                 jump: n * (1.0 - decay) / total_rate,
+                excite0: n / (1.0 - n),
+                home_rate: means[SHOCK_HOME],
             });
             // Expected annual cost at the start, in today's dollars. Home repairs are
-            // not netted: the budget never contained owned-home costs (they are computed
-            // from the property), so they are an addition on top of its maintenance_rate.
+            // not netted here: the budget never contained owned-home costs (they are
+            // computed from the property). `Plan::compile` takes their expected cost
+            // out of the home's maintenance_rate instead.
             let transport: f64 = s
                 .items
                 .iter()
@@ -377,7 +391,7 @@ pub(crate) struct SpendXState {
     pub rng_vehicle: Vec<Rng>,
     /// Unjittered month of each vehicle's next replacement.
     pub veh_base: Vec<i32>,
-    /// Month of each vehicle's next replacement (`i32::MAX`: no more).
+    /// Month of each vehicle's next scheduled replacement.
     pub veh_next: Vec<i32>,
     pub rng_prices: Rng,
     pub x: [f64; N_GROUPS],
@@ -432,7 +446,7 @@ impl SpendXState {
         if sx.detailed.is_some() {
             self.rng_shocks = Rng::stream(seed, path, Stream::DetailedShocks);
         }
-        self.excite = 0.0;
+        self.excite = sx.detailed.map_or(0.0, |d| d.excite0);
         self.tally = Tally::default();
     }
 }
@@ -563,11 +577,23 @@ impl State {
     fn sx_replace(&mut self, plan: &Plan, k: usize, t: usize, price: f64) {
         let ti = t as i32;
         let v = &plan.sx.vehicles[k];
+        // A vehicle whose owner is not in the household (not yet joined, or dead) or
+        // whose end date has passed is not bought, but its schedule runs on: the stream
+        // gives one word per scheduled date whatever the household does.
         let owner_gone = v.owner.is_some_and(|o| o >= MAX_PEOPLE || !self.present[o]);
-        if owner_gone || ti >= v.end.month(self.retire_month) {
-            self.sx.veh_next[k] = i32::MAX;
-            return;
+        if !(owner_gone || ti >= v.end.month(self.retire_month)) {
+            self.sx_buy_vehicle(plan, k, t, price);
         }
+        // The next replacement: one cycle after the unjittered date of this one.
+        let base = self.sx.veh_base[k].saturating_add(v.cycle_months);
+        self.sx.veh_base[k] = base;
+        let j = jitter_months(self.sx.rng_vehicle[k].next_u64());
+        self.sx.veh_next[k] = (base + j).max(ti + 1);
+    }
+
+    /// Pays for the replacement of vehicle `k` in month `t`.
+    fn sx_buy_vehicle(&mut self, plan: &Plan, k: usize, t: usize, price: f64) {
+        let v = &plan.sx.vehicles[k];
         let net = v.price * (1.0 - v.trade_in) * price;
         let now = plan.start + t as i32;
         match v.financing {
@@ -576,6 +602,11 @@ impl State {
                 let loan = net - cash;
                 self.spend(YearSeries::SpendOneOff, cash);
                 let d = &mut self.debts[slot];
+                if d.balance <= 0.0 && d.payment > 0.0 {
+                    // The last loan on this vehicle was paid off and its payment was
+                    // released to the extra debt payment; the new loan takes it back.
+                    self.freed_payments = (self.freed_payments - d.payment).max(0.0);
+                }
                 d.balance += loan;
                 d.rate = rate;
                 d.payment = crate::housing::amortized_payment(d.balance, rate, term);
@@ -592,11 +623,6 @@ impl State {
             Some(v.price * (1.0 - v.trade_in)),
             || format!("Replace vehicle: {}", v.name),
         );
-        // The next replacement: one cycle after the unjittered date of this one.
-        let base = self.sx.veh_base[k].saturating_add(v.cycle_months);
-        self.sx.veh_base[k] = base;
-        let j = jitter_months(self.sx.rng_vehicle[k].next_u64());
-        self.sx.veh_next[k] = (base + j).max(ti + 1);
     }
 
     /// Draws the month's detailed irregular expenses.
@@ -634,12 +660,18 @@ impl State {
         for k in 0..SHOCK_KINDS {
             let kind = &det.kinds[k];
             let p = 1.0 - math::exp(-kind.rate * hazard);
-            if u[k] < p && bases[k] > 0.0 {
+            if u[k] >= p {
+                continue;
+            }
+            // The excitement follows the draws, not the household: a type with nothing
+            // to break (no home, no car) still counts, so the others keep their
+            // calibrated frequency and their timing in every scenario.
+            fired += 1.0;
+            if bases[k] > 0.0 {
                 let z = capped_normal(bits[k], SHOCK_Z_CAP);
                 let cost = bases[k] * math::exp(kind.log_median + kind.sigma * z);
                 if cost > 0.0 {
                     self.spend(YearSeries::SpendOneOff, cost);
-                    fired += 1.0;
                     let now = plan.start + t as i32;
                     self.event(
                         now,
@@ -670,6 +702,30 @@ mod tests {
             owner: None,
             end: Sched::Never,
         }
+    }
+
+    #[test]
+    fn judgement_constants_match_the_data_file() {
+        let j = &crate::data::Data::embedded().actuarial["spending_realism"]["judgement_constants"];
+        let num = |k: &str| j[k].as_f64().unwrap();
+        assert_eq!(
+            REPLACEMENT_JITTER_SD_MONTHS,
+            num("replacement_jitter_sd_months")
+        );
+        assert_eq!(
+            REPLACEMENT_JITTER_CLIP_SD,
+            num("replacement_jitter_clip_sd")
+        );
+        assert_eq!(
+            UNEMPLOYMENT_CUT_PHASE_MONTHS,
+            num("unemployment_cut_phase_months")
+        );
+        assert_eq!(SHOCK_BRANCHING_RATIO, num("shock_branching_ratio"));
+        assert_eq!(
+            SHOCK_CLUSTER_HALF_LIFE_MONTHS,
+            num("shock_cluster_half_life_months")
+        );
+        assert_eq!(SHOCK_Z_CAP, num("shock_z_cap"));
     }
 
     #[test]

@@ -4,6 +4,11 @@
 use super::{check_ids, seg, Checker};
 use crate::model::{Category, PropertyUse, ShockLevel};
 
+/// Expected annual cost of the detailed home-repair shocks as a fraction of the home's
+/// value, rounded up (0.4 a year x median 0.5% x exp(1.1^2 / 2) = 0.366%; see
+/// `spending_realism.detailed_shocks` in `params.json`). Only the threshold of a warning.
+const DETAILED_HOME_REPAIR_RATE: f64 = 0.0037;
+
 impl Checker<'_> {
     pub(super) fn spending_realism(&mut self) {
         let p = self.p;
@@ -115,11 +120,13 @@ impl Checker<'_> {
 
         if s.shocks == ShockLevel::Detailed {
             for (i, prop) in p.properties.iter().enumerate() {
-                if matches!(prop.usage, PropertyUse::Primary) && prop.maintenance_rate > 0.015 {
+                if matches!(prop.usage, PropertyUse::Primary)
+                    && prop.maintenance_rate < DETAILED_HOME_REPAIR_RATE
+                {
                     self.r.warn(
                         "detailed_shocks_home_maintenance",
                         &format!("/properties/{}/maintenance_rate", seg(&prop.id, i)),
-                        "Detailed shocks add home repairs (about 0.4% of the home's value a year on average) on top of this maintenance rate. With a rate above 1.5% the total upkeep is above the usual 1% to 2% rule of thumb; consider lowering it.",
+                        "Detailed shocks draw home repairs averaging about 0.37% of the home's value a year and take that out of this maintenance rate so upkeep is not paid twice. This rate is lower than that, so part of the repairs comes on top of it.",
                     );
                 }
             }
@@ -258,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn detailed_shocks_warn_about_double_counted_home_upkeep() {
+    fn detailed_shocks_warn_when_maintenance_is_too_low_to_absorb_repairs() {
         let mut p = Profile::example();
         p.spending.shocks = crate::model::ShockLevel::Detailed;
         p.properties = vec![crate::model::Property {
@@ -266,7 +273,7 @@ mod tests {
             name: "Home".into(),
             usage: crate::model::PropertyUse::Primary,
             value: 400_000.0,
-            maintenance_rate: 0.02,
+            maintenance_rate: 0.002,
             ..crate::model::Property::default()
         }];
         let r = validate(&p);

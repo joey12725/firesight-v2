@@ -25,9 +25,10 @@ pub struct Spending {
     /// separate shock types (home repair scaling with the value of the home you own,
     /// car repair scaling with transport spending and vehicles, medical-adjacent costs,
     /// family emergencies) with heavy-tailed sizes, and a bad year makes another shock
-    /// more likely. The expected cost of the car, medical and family types is netted out
-    /// of the budget like the other levels; home repairs are not (they come on top of the
-    /// property's own `maintenance_rate`).
+    /// more likely. Like the other levels it adds variance, not cost: the expected cost
+    /// of the car, medical and family types is taken out of the budget, and the expected
+    /// cost of home repairs (about 0.37% of the home's value a year) out of the home's
+    /// `maintenance_rate`.
     pub shocks: ShockLevel,
     /// How health insurance and medical costs are handled.
     pub healthcare: Healthcare,
@@ -51,12 +52,13 @@ pub struct Spending {
     pub category_inflation: CategoryInflation,
     /// Fraction of discretionary (non-essential) spending cut while an earner is in an
     /// unemployment spell, from 0 to 1. The cut phases in over three months and is
-    /// restored on re-employment. 0 (the default) changes nothing. Ganong and Noel
-    /// (2019, American Economic Review), using bank-account data, find nondurable
-    /// spending falls about 6% when unemployment begins, holds while benefits last and
-    /// falls further when they run out (an earlier draft put the extra fall at 13%).
-    /// If discretionary lines are about half of the budget, a 6% to 12% fall in total
-    /// spending is a cut of roughly 0.1 to 0.25 of them, so 0.15 is a reasonable choice.
+    /// restored over three months on re-employment. 0 (the default) changes nothing.
+    /// Ganong and Noel (2019, American Economic Review), using bank-account data, find
+    /// nondurable spending falls about 6% when unemployment begins, holds while
+    /// benefits last and falls further when they run out (a further 13% in the 2017
+    /// draft of the paper). If discretionary lines are about half of the budget, a 6%
+    /// to 12% fall in total spending is a cut of roughly 0.1 to 0.25 of them, so 0.15 is
+    /// a reasonable choice.
     #[serde(skip_serializing_if = "super::spending_ext::is_zero")]
     pub unemployment_cut: f64,
 }

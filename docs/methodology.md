@@ -376,19 +376,23 @@ alone. A replacement costs `price x (1 - trade_in)` in today's dollars, raised w
 the price level; vehicle prices are assumed to track CPI. Paid in cash it is one-off
 spending in that month. Financed, the down payment is one-off spending and the rest
 becomes a debt slot (the same mechanism as a financed `expense` event, an auto loan
-repaid by the ordinary debt payments, with interest). The jitter draws come from one
-stream per vehicle, one word per replacement, so a scenario that changes anything
-else sees the same replacement dates.
+repaid by the ordinary debt payments, with interest; a later loan on the same vehicle
+takes back the payment the earlier one released to the extra debt payment). The jitter
+draws come from one stream per vehicle, one word per scheduled date whether or not the
+vehicle is still being replaced (after its `end` date or its owner's death the schedule
+runs on and nothing is bought), so a scenario that changes anything else sees the same
+replacement dates.
 
 What the user must do: take the purchase and depreciation of these vehicles out of the
 Transport budget lines (keep fuel, insurance, maintenance). The validator warns when
 the average annual cost of the listed vehicles is more than half of the Transport lines.
 
-Measured (shipped `dual-income-family`, 1,000 paired paths, two cars: $38,000 every ten
+Measured (shipped `dual-income-family`, 3,000 paired paths, two cars: $38,000 every ten
 years, 4 years old; $32,000 every nine years, 6 years old, financed 90% at 7% over 60
 months; 25% trade-in; the existing transport line left as it is, so this is extra
-cost): success 90.8% to 86.8%, median terminal net worth $1.69 million to $1.43 million,
-median lifetime spending +$135,000 (today's dollars).
+cost): success 91.8% to 87.4% (-4.4 points, 95% interval -5.2 to -3.6), median
+retirement age 53.4 to 54.3, median terminal net worth $1.73 million to $1.41 million,
+median lifetime spending +$131,000 (today's dollars).
 
 Not modelled: depreciation and resale value beyond the trade-in share, vehicle prices
 moving differently from CPI, repair costs rising with vehicle age (the detailed
@@ -409,9 +413,10 @@ survey publishes annual means), so they are not fitted to data (see
 budget, so it matters for the month a cash shortfall or a withdrawal appears, not for
 the year's spending.
 
-Measured (shipped `dual-income-family`, 1,000 paired paths): success 89.6% to 89.6%,
-no path rescued or harmed, median terminal net worth +$668, median lifetime spending
--$955. As expected, it is a timing feature.
+Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.8%
+(6 paths rescued, 5 harmed), median retirement age unchanged, median terminal net worth
++$8,300 (0.5%), median lifetime spending -$4,600 (0.06%). As expected, it is a timing
+feature: the differences are the noise of which month a withdrawal falls in.
 
 Not modelled: seasonal income, regional or household-specific patterns, weights that
 vary with age or children.
@@ -429,12 +434,16 @@ of the BLS CPI-U sub-indexes relative to all items (retrieved from FRED) by
 the medical and education ratios are unit roots in this sample. Each group uses its own
 standard normal draws from a new stream (`CategoryPrices`) with a fixed number of draws
 per year, so paired comparisons stay paired. The category's long-run real growth stays
-separate. Draws are capped at 3.5 sd.
+separate. The draws are not truncated (the limit of 8.5 sd in the code is beyond what the
+generator can produce and only guards its last value). The wedge acts on the budget
+lines; the modelled healthcare costs, children's costs and owned-home costs keep their
+own price paths.
 
-Measured (shipped `dual-income-family`, 1,000 paired paths): success 89.6% to 89.7%
-(within noise), median terminal net worth -$7,300, median lifetime spending +$10,300.
-The median barely moves because the wedge is mean-preserving; what changes is the
-spread of lifetime spending across paths.
+Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.5%
+(-0.3 points, 95% interval -0.6 to +0.1, within noise; 11 paths rescued, 19 harmed),
+median terminal net worth -$2,600, 10th percentile -$10,400, median lifetime spending
+-$2,400. The medians barely move because the wedge is mean-preserving; what it adds is
+risk in the paths where the household's own prices run ahead of CPI for years.
 
 Not modelled: correlation of the wedges with each other or with CPI and market returns,
 and a wedge that differs by region.
@@ -452,14 +461,36 @@ another (Hawkes-style clustering), scaled so the long-run frequency is unchanged
 Medical frequency and size are anchored on the JP Morgan Chase Institute (2017) figures
 used for the other levels (16% of families a year, median $1,143); the car repair size on
 the same source ($953 median); home repair, family emergency and the clustering are
-judgements (see `spending_realism.detailed_shocks`). The expected annual cost of the car,
-medical and family types is netted out of the budget as for the other levels; home
-repairs are not, because owned-home costs are computed from the property, so they come
-on top of its `maintenance_rate` (the validator warns above 1.5%).
+judgements (see `spending_realism.detailed_shocks`).
 
-Measured (shipped `dual-income-family`, 1,000 paired paths, which owns no home, so only
-three of the four types act): success 89.6% to 88.3% (-1.3 points, 95% interval -2.2
-to -0.4), median terminal net worth -$153,000, median lifetime spending +$82,000.
+Like the other levels, the detailed level adds variance, not cost. The expected annual
+cost of the car, medical and family types at the start is netted out of the budget.
+Home repairs cannot be netted there, because owned-home costs are computed from the
+property: their expected cost (0.4 x 0.5% x exp(1.1^2 / 2) = 0.366% of the home's value
+a year) is taken out of the `maintenance_rate` paid on an owner-occupied home, not
+below zero (the validator warns when the rate is too low to absorb it). The household
+still plans with the full maintenance rate: the funded test and the annual budget count
+the repairs as an expected cost of the home, as they did before the repairs became
+random. Whether a type fires, and the excitement it adds, depend on the random draws
+alone: a household with no home still has its "home repair" months, they cost nothing,
+so every other shock keeps its date and its frequency whatever the household owns.
+The excitement starts at its long-run mean, so the frequency is the calibrated one
+from the first month.
+
+Measured (shipped `dual-income-family`, which buys a home, 3,000 paired paths, against
+the `typical` level it ships with): success 91.8% to 91.4% (-0.3 points, 95% interval
+-0.7 to +0.1, within noise; 14 paths rescued, 24 harmed), median retirement age
+unchanged, median terminal net worth +$29,000, 10th percentile +$12,000, median
+lifetime spending -$8,100. Against shocks off, in a test with the retirement age fixed
+(1,500 paths), mean lifetime spending on the budget and housing falls by $194,000 and
+the shocks drawn cost $178,000: mean-neutral to within 8%, the shocks costing slightly
+less than what is netted (the 3.5 sd cap, the medical and family types being sized from
+the budget after netting, and the netted share being fixed at the start). The typical level nets 2.1% of the
+budget lines; the detailed one nets about as much for this household ($52,000 over the
+plan in both cases) plus the home repairs out of maintenance, so the two differ mostly
+in shape: a heavier tail, repairs that scale with the home, and bad years that come
+together. The medical-adjacent type sits beside the healthcare module's own
+out-of-pocket costs; being netted from the budget it adds variance there, not level.
 
 Not modelled: shocks that depend on the age of the home or car, insurance
 reimbursement, and shocks to rental property (landlord repairs use the property's own
@@ -476,10 +507,16 @@ falls about 6% at the onset of unemployment and further when benefits end; with
 discretionary lines about half the budget, 6% to 12% of total spending is 0.1 to 0.25 of
 them. The trace logs when the cut starts and when it lifts.
 
-Measured (shipped `dual-income-family`, cut 0.15, 1,000 paired paths): success 89.6% to
-89.7%, median lifetime spending +$4,600 (the extra is spending avoided in ruin paths),
-terminal net worth unchanged. Spells are short with the typical career risk, so the
-effect is small; it grows with a high layoff risk and a thin cushion.
+Measured (shipped `dual-income-family`, cut 0.15, 3,000 paired paths): success 91.8% to
+91.5% (-0.2 points, 95% interval -0.4 to 0.0; 2 paths rescued, 9 harmed), median
+terminal net worth +$5,800, 10th percentile +$9,000, median lifetime spending -$7,700.
+Spells are short with the typical career risk, so the effect is small; it grows with a
+high layoff risk and a thin cushion. The cut does not raise success here: this
+household retires when funded and spends by guardrails, so the money saved in a spell
+changes later decisions (a retirement date, a guardrail raise) and a few marginal paths
+end on the other side. With the retirement age fixed at 54 the same comparison gives 7
+rescued and 7 harmed; in a test household with a fixed budget and retirement age no path
+ends poorer.
 
 Not modelled: a cut that deepens when benefits run out, durable goods deferred during
 a spell, and a cut for a partner's spell that differs from the earner's own.
