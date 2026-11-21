@@ -112,3 +112,129 @@ fn a_profile_without_household_dynamics_is_inactive() {
         assert!(!f.active, "{}", ex.slug);
     }
 }
+
+fn with_parent(parent: crate::model::Parent) -> Profile {
+    let mut p = dual_income();
+    p.household.parents = vec![parent];
+    p
+}
+
+#[test]
+fn an_inheritance_arrives_as_cash_and_an_inherited_ira() {
+    use crate::model::Parent;
+    let profile = with_parent(Parent {
+        id: "mom".into(),
+        birth: EXAMPLE_START - 85 * 12,
+        estate: 400_000.0,
+        share: 0.5,
+        inherited_ira_fraction: 0.5,
+        care_erodes_estate: false,
+        ..Parent::default()
+    });
+    let plan = Plan::compile(&profile, crate::data::Data::embedded()).unwrap();
+    assert!(plan.family.active);
+    let mut st = State::new(&plan);
+    st.present = [true, true];
+    st.acc = Accounts::default();
+    st.acc.person[0].traditional[0] = 100_000.0;
+    st.fam = FamilyState::default();
+    st.fam.parents[0].death = 5;
+    let cash0 = st.acc.cash;
+    assert!(st.parents_month(&plan, 1.0, 5));
+    // Half of $400k: $100k of cash and $100k in an inherited IRA.
+    assert!((st.acc.cash - cash0 - 100_000.0).abs() < 1e-6);
+    let trad: f64 = st.acc.person[0].traditional.iter().sum();
+    assert!((trad - 200_000.0).abs() < 1e-6);
+    let slot = st.fam.ira[0];
+    assert_eq!(slot.years_left, 10);
+    assert!((slot.share - 0.5).abs() < 1e-12);
+    let first = slot.first_year;
+    assert_eq!(first, (plan.start + 5).year() + 1);
+    // Nothing is paid out before the December of the following year.
+    let dec_before = YearMonth::ym(first - 1, 12) - plan.start;
+    st.inherited_ira_month(&plan, 1.0, dec_before as usize);
+    assert_eq!(st.ty.traditional_distributions, 0.0);
+    // The first distribution: a tenth of the $100k, taxed, never penalised.
+    let dec = YearMonth::ym(first, 12) - plan.start;
+    st.inherited_ira_month(&plan, 1.0, dec as usize);
+    assert!((st.ty.traditional_distributions - 10_000.0).abs() < 1e-6);
+    assert_eq!(st.ty.early_distributions, 0.0);
+    let trad: f64 = st.acc.person[0].traditional.iter().sum();
+    assert!((trad - 190_000.0).abs() < 1e-6);
+    // $90k is left of the inherited IRA: the next is a ninth of it.
+    assert!((st.fam.ira[0].share * trad - 90_000.0).abs() < 1e-6);
+    assert_eq!(st.fam.ira[0].years_left, 9);
+    st.ty.traditional_distributions = 0.0;
+    st.inherited_ira_month(&plan, 1.0, dec as usize + 12);
+    assert!((st.ty.traditional_distributions - 10_000.0).abs() < 1e-6);
+}
+
+#[test]
+fn care_erodes_the_estate_and_nothing_comes_after_a_divorce() {
+    use crate::model::Parent;
+    let profile = with_parent(Parent {
+        id: "dad".into(),
+        child: 1,
+        birth: EXAMPLE_START - 85 * 12,
+        estate: 300_000.0,
+        share: 1.0,
+        ..Parent::default()
+    });
+    let plan = Plan::compile(&profile, crate::data::Data::embedded()).unwrap();
+    let mut st = State::new(&plan);
+    st.present = [true, true];
+    st.acc = Accounts::default();
+    st.fam = FamilyState::default();
+    st.fam.parents[0].death = 3;
+    st.fam.parents[0].care_total = 120_000.0;
+    st.parents_month(&plan, 1.0, 3);
+    assert!((st.acc.cash - 180_000.0).abs() < 1e-6);
+    // Care costing more than the estate leaves nothing, never a debt.
+    st.acc = Accounts::default();
+    st.fam.parents[0] = super::parents::ParentPath {
+        death: 4,
+        care_total: 900_000.0,
+        ..Default::default()
+    };
+    st.parents_month(&plan, 1.0, 4);
+    assert_eq!(st.acc.cash, 0.0);
+    // The parent of a partner who has left.
+    st.fam.parents[0] = super::parents::ParentPath {
+        death: 5,
+        ..Default::default()
+    };
+    st.present[1] = false;
+    st.fam.left[1] = true;
+    assert!(!st.parents_month(&plan, 1.0, 5));
+    assert_eq!(st.acc.cash, 0.0);
+}
+
+#[test]
+fn parents_draw_from_the_life_table() {
+    use crate::model::Parent;
+    let profile = with_parent(Parent {
+        id: "mom".into(),
+        sex: crate::model::Sex::Female,
+        birth: EXAMPLE_START - 80 * 12,
+        estate: 1.0,
+        ..Parent::default()
+    });
+    let plan = Plan::compile(&profile, crate::data::Data::embedded()).unwrap();
+    let mut st = State::new(&plan);
+    let n = 4000;
+    let mut years = 0.0;
+    let mut care = 0;
+    for path in 0..n {
+        st.fam = FamilyState::default();
+        st.begin_parents(&plan, 1, path);
+        years += f64::from(st.fam.parents[0].death) / 12.0;
+        care += usize::from(st.fam.parents[0].care_total > 0.0);
+    }
+    let mean = years / n as f64;
+    // SSA period life expectancy of a woman of 80 is about 9.7 years; the
+    // default good health and mortality improvement add a little.
+    assert!((9.0..12.5).contains(&mean), "{mean}");
+    // About half of women who reach 80 use paid care before they die.
+    let share = care as f64 / n as f64;
+    assert!((0.35..0.75).contains(&share), "{share}");
+}

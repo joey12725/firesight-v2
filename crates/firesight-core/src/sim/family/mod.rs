@@ -5,18 +5,20 @@
 //! uses none of it, and the month loop then never calls into this module: the
 //! only cost to such a profile is one predictable branch a month.
 //!
-//! Randomness comes only from this module's own streams (`Stream::Divorce`), drawn
+//! Randomness comes only from this module's own streams (`Stream::Divorce`,
+//! `Stream::Parent`), drawn
 //! a fixed number of times per path in [`State::begin_family`] whatever happens on
 //! the path, so the streams of every other subsystem are untouched.
 
 mod divorce;
+mod parents;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use divorce::MarriageHazard;
 
 use crate::data::Data;
-use crate::model::{EventKind, Profile, YearMonth};
+use crate::model::{EventKind, Profile, YearMonth, MAX_PARENTS};
 use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
@@ -31,13 +33,17 @@ pub(crate) struct FamilyPlan {
     pub married_month: i32,
     /// The divorce hazard, when `household.divorce_risk` is on.
     pub hazard: Option<MarriageHazard>,
+    /// The household's parents.
+    pub parents: Vec<parents::ParentPlan>,
+    /// The long-term care model the parents' care is drawn from (with parents).
+    pub parent_care: Option<crate::health::HealthModel>,
 }
 
 impl FamilyPlan {
     /// Compiles the household-dynamics part of a validated profile.
     pub(crate) fn compile(
         profile: &Profile,
-        _data: &Data,
+        data: &Data,
         start: YearMonth,
         horizon_months: usize,
     ) -> FamilyPlan {
@@ -59,10 +65,13 @@ impl FamilyPlan {
             .events
             .iter()
             .any(|e| matches!(e.kind, EventKind::Divorce(_)));
+        let (parents, parent_care) = parents::ParentPlan::compile_all(profile, data, start);
         FamilyPlan {
-            active: hazard.is_some() || has_divorce_event,
+            active: hazard.is_some() || has_divorce_event || !parents.is_empty(),
             married_month,
             hazard,
+            parents,
+            parent_care,
         }
     }
 }
@@ -83,6 +92,10 @@ pub(crate) struct FamilyState {
     pub support_monthly: f64,
     /// First month without support.
     pub support_until: i32,
+    /// The parents on this path.
+    pub parents: [parents::ParentPath; MAX_PARENTS],
+    /// Inherited IRAs being paid out.
+    pub ira: [parents::InheritedIra; MAX_PARENTS],
 }
 
 impl Default for FamilyState {
@@ -94,6 +107,8 @@ impl Default for FamilyState {
             shared_factor: 1.0,
             support_monthly: 0.0,
             support_until: i32::MIN,
+            parents: [parents::ParentPath::default(); MAX_PARENTS],
+            ira: [parents::InheritedIra::default(); MAX_PARENTS],
         }
     }
 }
@@ -107,6 +122,7 @@ impl State {
             let mut rng = Rng::stream(seed, path, Stream::Divorce);
             self.fam.divorce_month = h.draw_month(rng.uniform());
         }
+        self.begin_parents(plan, seed, path);
     }
 
     /// The month's household-dynamics step, at the start of month `t` after deaths
@@ -119,6 +135,9 @@ impl State {
                 let terms = h.terms;
                 replan |= self.divorce(plan, &terms, "Divorce", price, t);
             }
+        }
+        if !plan.family.parents.is_empty() {
+            replan |= self.parents_month(plan, price, t);
         }
         if self.fam.support_monthly != 0.0 && ti < self.fam.support_until {
             if self.alive[1] && self.alive[0] {

@@ -30,7 +30,7 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events, Divorce, ..}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, Divorce, Parent(i), ..}`. Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -75,7 +75,11 @@ Profile {
 
 Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Location,
             married: Option<YearMonth>,              // marriage date: divorce hazard, ten-year Social Security rule
-            divorce_risk: Off | Typical(DivorceTerms) }  // NCHS rates by length of marriage, own stream
+            divorce_risk: Off | Typical(DivorceTerms),  // NCHS rates by length of marriage, own stream
+            parents: Vec<Parent> (0..=4) }
+Parent    { id, name, child: usize, birth, sex, health,    // lifetime from the life table, Stream::Parent(i)
+            estate (today's $), share (1.0), inherited_ira_fraction,  // IRA part paid out over 10 years
+            care_erodes_estate: bool (true) }
 DivorceTerms { asset_split (0.5), support: { annual, years, direction: Pays|Receives },
                keeps_home (true), then_rent_monthly: Option<f64>, legal_costs (11_300),
                spending_factor (0.7) }

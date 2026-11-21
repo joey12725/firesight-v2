@@ -207,3 +207,107 @@ fn a_divorce_after_ten_years_keeps_the_spousal_record() {
     let short = ss(12);
     assert!(long > 1.05 * short, "long {long} short {short}");
 }
+
+// ---------------------------------------------------------------- F47 parents
+
+fn parent(id: &str, child: usize, age: i32, estate: f64) -> Parent {
+    Parent {
+        id: id.into(),
+        name: id.into(),
+        child,
+        birth: START - age * 12,
+        sex: Sex::Female,
+        estate,
+        share: 0.5,
+        inherited_ira_fraction: 0.4,
+        ..Parent::default()
+    }
+}
+
+#[test]
+fn an_inheritance_arrives_when_the_parent_dies() {
+    let base = example("dual-income-family");
+    let mut p = base.clone();
+    let mut mom = parent("mom", 0, 78, 600_000.0);
+    mom.care_erodes_estate = false;
+    p.household.parents = vec![mom];
+    let a = traces(&base, 21, 30);
+    let b = traces(&p, 21, 30);
+    let mut seen = 0;
+    for (x, y) in a.iter().zip(&b) {
+        let Some(ev) = y
+            .events
+            .iter()
+            .find(|e| e.label.starts_with("Inheritance from mom"))
+        else {
+            continue;
+        };
+        seen += 1;
+        // Half of $600k, all of it with care not charged to the estate.
+        assert_eq!(ev.amount, Some(300_000.0), "{}", ev.label);
+        let at = (ev.month - START) as usize;
+        let nx = column(x, "net_worth");
+        let ny = column(y, "net_worth");
+        for m in 0..at.min(nx.len()) {
+            assert_eq!(nx[m], ny[m], "path {} month {m}", x.path_index);
+        }
+        // Ten December distributions of the inherited IRA (while someone is alive).
+        let dists = y
+            .events
+            .iter()
+            .filter(|e| e.label.starts_with("Inherited IRA distribution"))
+            .count();
+        if y.months as i32 > (ev.month - START) + 12 * 12 {
+            assert_eq!(dists, 10, "path {}", y.path_index);
+        }
+    }
+    assert!(
+        seen > 25,
+        "{seen} of 30 paths had the parent die within the plan"
+    );
+    let sa = summary(&base, 21, 400);
+    let sb = summary(&p, 21, 400);
+    assert!(sb.headline.success_rate.value >= sa.headline.success_rate.value);
+    let gain = sb.headline.median_terminal_net_worth - sa.headline.median_terminal_net_worth;
+    // $300k arriving about ten years in, invested for decades: more than its face
+    // value at the end, but not wildly so.
+    assert!((200_000.0..3_000_000.0).contains(&gain), "{gain}");
+}
+
+#[test]
+fn a_parents_care_erodes_the_estate() {
+    let mut p = example("dual-income-family");
+    p.household.parents = vec![parent("mom", 0, 80, 200_000.0)];
+    let ts = traces(&p, 5, 60);
+    let mut eroded = 0;
+    let mut full = 0;
+    for t in &ts {
+        if let Some(ev) = t.events.iter().find(|e| e.label.starts_with("Inheritance")) {
+            let a = ev.amount.unwrap();
+            assert!((0.0..=100_000.0).contains(&a));
+            if ev.label.contains("of care") {
+                eroded += 1;
+                assert!(a < 100_000.0);
+            } else {
+                full += 1;
+                assert_eq!(a, 100_000.0);
+            }
+        }
+    }
+    assert!(eroded > 10 && full > 10, "eroded {eroded} full {full}");
+}
+
+#[test]
+fn parents_switched_off_change_nothing() {
+    let base = example("dual-income-family");
+    let mut p = base.clone();
+    p.household.parents = Vec::new();
+    assert_eq!(json(&summary(&base, 3, 200)), json(&summary(&p, 3, 200)));
+    // A parent with nothing to leave changes nothing either but the event log.
+    p.household.parents = vec![parent("mom", 0, 70, 0.0)];
+    let s = summary(&p, 3, 200);
+    assert_eq!(
+        s.headline.median_terminal_net_worth,
+        summary(&base, 3, 200).headline.median_terminal_net_worth
+    );
+}

@@ -200,5 +200,27 @@ pub fn household_dynamics() -> Profile {
         }),
         ..LifeEvent::default()
     });
+    p.household.parents = vec![
+        Parent {
+            id: "mom".into(),
+            child: 0,
+            birth: START - 74 * 12,
+            sex: Sex::Female,
+            estate: 450_000.0,
+            share: 0.5,
+            inherited_ira_fraction: 0.5,
+            ..Parent::default()
+        },
+        Parent {
+            id: "dad_in_law".into(),
+            child: 1,
+            birth: START - 79 * 12,
+            sex: Sex::Male,
+            estate: 300_000.0,
+            share: 1.0,
+            inherited_ira_fraction: 0.3,
+            ..Parent::default()
+        },
+    ];
     p
 }

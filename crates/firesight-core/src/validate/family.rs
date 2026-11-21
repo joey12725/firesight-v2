@@ -3,7 +3,7 @@
 
 use crate::model::*;
 
-use super::Checker;
+use super::{check_ids, Checker};
 
 impl Checker<'_> {
     /// `household.married`, `household.divorce_risk`.
@@ -47,6 +47,93 @@ impl Checker<'_> {
                 );
             }
             self.divorce_terms("/household/divorce_risk", terms);
+        }
+        self.parents();
+    }
+
+    /// `household.parents`.
+    fn parents(&mut self) {
+        let p = self.p;
+        let parents = &p.household.parents;
+        if parents.is_empty() {
+            return;
+        }
+        if parents.len() > MAX_PARENTS {
+            self.r.error(
+                "parents_too_many",
+                "/household/parents",
+                format!("At most {MAX_PARENTS} parents can be listed."),
+            );
+        }
+        check_ids(
+            &mut self.r,
+            "/household/parents",
+            parents.iter().map(|x| x.id.as_str()),
+        );
+        for (i, parent) in parents.iter().enumerate() {
+            let k = format!("/household/parents/{i}");
+            if parent.child >= self.n_people {
+                self.r.error(
+                    "person_index",
+                    &format!("{k}/child"),
+                    format!(
+                        "Parent {} names person {}, who is not in the household.",
+                        parent.id, parent.child
+                    ),
+                );
+            } else if let Some(child) = p.household.people.get(parent.child) {
+                let gap = child.birth - parent.birth;
+                if gap < 12 * 12 {
+                    self.r.error(
+                        "date_range",
+                        &format!("{k}/birth"),
+                        format!(
+                            "{} is less than 12 years older than their child.",
+                            parent.id
+                        ),
+                    );
+                } else if !(15 * 12..=55 * 12).contains(&gap) {
+                    self.r.warn(
+                        "parent_age_gap",
+                        &format!("{k}/birth"),
+                        format!(
+                            "{} is {} years older than their child; check the birth date.",
+                            parent.id,
+                            gap / 12
+                        ),
+                    );
+                }
+            }
+            if let Some(start) = p.start {
+                if parent.birth.age_months_at(start) >= 119 * 12 {
+                    self.r.error(
+                        "date_range",
+                        &format!("{k}/birth"),
+                        format!("{} would be 119 or older at the start.", parent.id),
+                    );
+                }
+            }
+            self.r
+                .money(&format!("{k}/estate"), "Estate", parent.estate);
+            self.r
+                .range(&format!("{k}/share"), "Share", parent.share, 0.0, 1.0);
+            self.r.range(
+                &format!("{k}/inherited_ira_fraction"),
+                "Inherited IRA fraction",
+                parent.inherited_ira_fraction,
+                0.0,
+                1.0,
+            );
+            if parent.estate > 0.0 && parent.share == 0.0 {
+                self.r.warn(
+                    "parent_share_zero",
+                    &format!("{k}/share"),
+                    format!(
+                        "{} has an estate but the household's share of it is 0.",
+                        parent.id
+                    ),
+                );
+            }
         }
     }
 
@@ -167,6 +254,36 @@ mod tests {
         let mut early = p;
         early.household.married = Some(YearMonth::ym(1995, 1));
         assert!(codes(&validate(&early).errors).contains(&"date_range"));
+    }
+
+    #[test]
+    fn parent_checks() {
+        let mut p = dual();
+        let parent = Parent {
+            id: "mom".into(),
+            birth: p.household.people[0].birth - 30 * 12,
+            estate: 100_000.0,
+            share: 0.5,
+            ..Parent::default()
+        };
+        p.household.parents = vec![parent.clone()];
+        let r = validate(&p);
+        assert!(r.errors.is_empty() && r.warnings.is_empty(), "{r:?}");
+        let mut bad = p.clone();
+        bad.household.parents[0].child = 2;
+        assert!(codes(&validate(&bad).errors).contains(&"person_index"));
+        let mut bad = p.clone();
+        bad.household.parents[0].birth = p.household.people[0].birth - 60;
+        assert!(codes(&validate(&bad).errors).contains(&"date_range"));
+        let mut bad = p.clone();
+        bad.household.parents[0].share = 1.2;
+        assert!(!validate(&bad).errors.is_empty());
+        let mut dup = p.clone();
+        dup.household.parents.push(parent);
+        assert!(codes(&validate(&dup).errors).contains(&"id_duplicate"));
+        let mut odd = p;
+        odd.household.parents[0].birth = odd.household.people[0].birth - 13 * 12;
+        assert!(codes(&validate(&odd).warnings).contains(&"parent_age_gap"));
     }
 
     #[test]

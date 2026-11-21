@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{DivorceRisk, YearMonth};
+use super::{DivorceRisk, Parent, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -31,6 +31,11 @@ pub struct Household {
     /// can still schedule one.
     #[serde(skip_serializing_if = "DivorceRisk::is_off")]
     pub divorce_risk: DivorceRisk,
+    /// Parents (or other relatives) whose deaths leave the household an
+    /// inheritance. Empty (the default): inheritances are not modelled, except as
+    /// a `windfall` event.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parents: Vec<Parent>,
 }
 
 /// One adult in the household.

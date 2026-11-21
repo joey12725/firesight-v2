@@ -5,6 +5,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::YearMonth;
+
 /// Average attorney fees of a divorce with a full-scope lawyer: Martindale-Nolo
 /// Research survey (2019), $11,300 (median $7,000; $10,400 when settled out of
 /// court, $17,700 when a dispute went to trial). Taken as today's dollars.
@@ -124,5 +126,67 @@ impl DivorceRisk {
     /// True when no divorce hazard is modelled.
     pub fn is_off(&self) -> bool {
         matches!(self, DivorceRisk::Off)
+    }
+}
+
+/// Most parents a profile can list.
+pub const MAX_PARENTS: usize = 4;
+
+/// Years within which an inherited IRA must be emptied by a beneficiary who is not
+/// a spouse, minor child, disabled or close in age: ten (SECURE Act of 2019, IRC
+/// 401(a)(9)(H)).
+pub const INHERITED_IRA_YEARS: u32 = 10;
+
+/// A parent (or another relative) of someone in the household, whose death leaves
+/// the household an inheritance and whose late-life care can use up the estate.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Parent {
+    /// Stable identifier used by patches, for example "mom".
+    pub id: String,
+    /// Display name, shown in the event log.
+    pub name: String,
+    /// Which person of the household (0 or 1) is this parent's child. After a
+    /// divorce the parents of the partner who left no longer matter to the plan.
+    pub child: usize,
+    /// Month of birth, "YYYY-MM". The parent's lifetime is drawn from the SSA
+    /// life table for this age and sex, on a random stream of its own.
+    pub birth: YearMonth,
+    /// Sex, for the life table and the chance of needing long-term care.
+    pub sex: super::Sex,
+    /// Health, which scales the mortality rates as for the household's own people.
+    pub health: super::HealthStatus,
+    /// What the parent would leave if they died today, today's dollars, all heirs
+    /// together. Held constant in real terms until death, less the cost of any
+    /// late-life care.
+    pub estate: f64,
+    /// Share of the estate that comes to the household, from 0 to 1 (0.5 for one
+    /// of two children).
+    pub share: f64,
+    /// Fraction of the household's inheritance that is in traditional IRAs and
+    /// 401(k)s. That part is an inherited IRA: it is paid out in equal parts over
+    /// the ten years after the death and taxed as ordinary income (no penalty at any
+    /// age). The rest arrives untaxed with its cost basis stepped up to its value.
+    pub inherited_ira_fraction: f64,
+    /// True (the default): paid long-term care at the end of the parent's life
+    /// (drawn as for the household's own people, by sex and age at death) is paid
+    /// out of the estate before anything is inherited.
+    pub care_erodes_estate: bool,
+}
+
+impl Default for Parent {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            child: 0,
+            birth: YearMonth::default(),
+            sex: super::Sex::default(),
+            health: super::HealthStatus::default(),
+            estate: 0.0,
+            share: 1.0,
+            inherited_ira_fraction: 0.0,
+            care_erodes_estate: true,
+        }
     }
 }

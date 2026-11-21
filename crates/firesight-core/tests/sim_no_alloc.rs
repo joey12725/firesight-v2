@@ -72,6 +72,7 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    profiles.push(common::household_dynamics());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

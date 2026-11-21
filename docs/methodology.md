@@ -529,6 +529,44 @@ understates it), the partner's income after the separation on that year's joint
 return, and the fact that divorce risk differs with age at marriage, education and
 previous marriages.
 
+### Parents and inheritance
+
+Opt-in through `household.parents` (up to four). Each parent's month of death is
+drawn from the same SSA life table as the household's own people (for their age,
+sex and health, with mortality improvement), on a random stream of their own, so
+the household's paths are paired with and without them. Their late-life paid care
+is drawn with the household's own care model (probability by sex and age at
+death, length, type; section 7) and, by default, paid out of the estate before
+anything is left: the household receives `share` of what remains of `estate`,
+which is held constant in real terms until then (a judgement: the parent's own
+spending and returns are not modelled). Nothing comes from the parents of a
+partner who has left in a divorce; after the child's death it goes to the
+partner who stays.
+
+The `inherited_ira_fraction` of the inheritance is an inherited IRA. It is put in
+the heir's traditional account and paid out each December of the ten years after
+the death, each time the balance divided by the years left, as ordinary income
+with no penalty at any age (SECURE Act of 2019, IRC 401(a)(9)(H): a beneficiary
+who is not a spouse empties the account by the end of the tenth year; spreading it
+evenly is the usual way to keep the brackets low and is a judgement about the
+household's behaviour). The rest arrives as cash, untaxed (IRC 102) and with its
+basis stepped up to its value (IRC 1014), so it carries no gain.
+
+Measured on the dual-income example (4,000 paired paths) with two parents of 68
+and 71 leaving $500k and $400k, half to the household, 40% in IRAs: success rises
+from 91.5% to 93.2%, the median terminal net worth by $306k and the tenth
+percentile from $104k to $301k. With care not charged to the estates: 94.1% and
+$430k, so the parents' care takes about 30% of the expected inheritance.
+
+Not modelled: estate and inheritance taxes (the federal exemption is far above
+typical estates; a few states tax heirs), the parent's own spending, returns and
+gifts during life, Medicaid spend-down rules, the annual required distributions
+of an IRA whose owner had already begun them (the ten-year schedule here pays at
+least as fast after the first year), the separate-property treatment of an
+inheritance in a divorce (it is split with everything else), and the household
+anticipating the inheritance: the funded test and the spending rules do not
+count it until it arrives.
+
 ## 11. When retirement happens
 
 Triggers: at an age, at a date, already retired, when a fixed number is reached, or
