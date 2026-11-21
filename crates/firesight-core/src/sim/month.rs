@@ -465,9 +465,13 @@ impl State {
                 }
                 _ => {}
             }
-            if hm.long_term_care > 0.0 {
-                self.spend(YearSeries::SpendLongTermCare, hm.long_term_care);
-                self.ltc_real += hm.long_term_care / price;
+            let mut care = hm.long_term_care;
+            if plan.family.spousal_care && care > 0.0 {
+                care *= self.spousal_care_factor(i, t);
+            }
+            if care > 0.0 {
+                self.spend(YearSeries::SpendLongTermCare, care);
+                self.ltc_real += care / price;
             }
             self.in_facility[i] = hm.ltc_in_facility;
             if hm.ltc_started {

@@ -696,6 +696,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
                 early_retirement: EarlyRetirementCoverage::Custom { annual: 3_100.0 },
                 long_term_care: true,
                 quality: PlanTier::Silver,
+                ..Healthcare::default()
             },
             lifestyle_creep: 0.2,
             ..Spending::default()

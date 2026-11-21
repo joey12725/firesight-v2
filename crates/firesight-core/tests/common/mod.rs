@@ -200,6 +200,7 @@ pub fn household_dynamics() -> Profile {
         }),
         ..LifeEvent::default()
     });
+    p.spending.healthcare.spousal_care = true;
     p.household.parents = vec![
         Parent {
             id: "mom".into(),

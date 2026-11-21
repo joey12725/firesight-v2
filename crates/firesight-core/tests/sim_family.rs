@@ -8,7 +8,7 @@ mod common;
 use common::*;
 use firesight_core::model::*;
 use firesight_core::sim::{self, Workspace};
-use firesight_core::stats::{PathTrace, Summary, TraceEventKind};
+use firesight_core::stats::{PathScalar, PathTrace, Summary, TraceEventKind};
 
 fn example(slug: &str) -> Profile {
     Profile::examples(START)
@@ -386,4 +386,47 @@ fn caring_for_a_parent_costs_money_and_hours() {
     let sa = summary(&base, 31, 400);
     let sb = summary(&p, 31, 400);
     assert!(sb.headline.median_terminal_net_worth < sa.headline.median_terminal_net_worth);
+}
+
+// ------------------------------------------------------- F49 spousal care
+
+#[test]
+fn spousal_care_lowers_the_care_bill() {
+    let base = example("dual-income-family");
+    let mut p = base.clone();
+    p.spending.healthcare.spousal_care = true;
+    let n = 400;
+    let plan_a = compile(&base);
+    let plan_b = compile(&p);
+    let a = run(&plan_a, 41, 0..n);
+    let b = run(&plan_b, 41, 0..n);
+    let ca = a.scalar_column(PathScalar::LongTermCareCost);
+    let cb = b.scalar_column(PathScalar::LongTermCareCost);
+    let (mut lower, mut higher) = (0, 0);
+    let (mut sa, mut sb) = (0.0, 0.0);
+    for (x, y) in ca.iter().zip(&cb) {
+        let (x, y) = (f64::from(*x), f64::from(*y));
+        if x.is_finite() && y.is_finite() {
+            sa += x;
+            sb += y;
+            if y < x - 1.0 {
+                lower += 1;
+            }
+            if y > x + 1.0 {
+                higher += 1;
+            }
+        }
+    }
+    // Home care is about a third of episodes; half of it is saved while the
+    // partner is alive and at home: several percent of the lifetime care bill.
+    let saved = 1.0 - sb / sa;
+    assert!((0.02..0.3).contains(&saved), "saved {saved}");
+    assert!(lower > 20, "{lower}");
+    // Care can only cost more on a path where the household's money changes
+    // something else (a later sale, a different plan): rare.
+    assert!(higher * 10 < lower, "{higher} vs {lower}");
+    // Off: the profile is the baseline.
+    let mut off = base.clone();
+    off.spending.healthcare.spousal_care = false;
+    assert_eq!(json(&summary(&base, 3, 100)), json(&summary(&off, 3, 100)));
 }

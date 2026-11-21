@@ -330,3 +330,75 @@ fn the_household_takes_part_with_the_stated_probability() {
     let share = helps as f64 / spells as f64;
     assert!((share - 0.3).abs() < 0.04, "{share} of {spells}");
 }
+
+fn spousal_plan() -> Plan {
+    let mut p = dual_income();
+    p.spending.healthcare.spousal_care = true;
+    Plan::compile(&p, crate::data::Data::embedded()).unwrap()
+}
+
+fn home_care(st: &mut State, i: usize, from: u32, to: u32, care: crate::health::CareType) {
+    st.health[i].ltc_start_month = from;
+    st.health[i].ltc_end_month = to;
+    st.health[i].ltc_care = care;
+}
+
+#[test]
+fn a_partner_at_home_halves_the_home_care_bill() {
+    use crate::health::CareType;
+    let plan = spousal_plan();
+    assert!(plan.family.spousal_care && plan.family.active);
+    let mut st = State::new(&plan);
+    st.present = [true, true];
+    home_care(&mut st, 0, 10, 30, CareType::Home);
+    assert_eq!(st.spousal_care_factor(0, 5), 1.0);
+    assert_eq!(st.spousal_care_factor(0, 10), 0.5);
+    assert_eq!(st.spousal_care_factor(0, 29), 0.5);
+    assert_eq!(st.spousal_care_factor(0, 30), 1.0);
+    assert_eq!(st.spousal_care_factor(1, 15), 1.0);
+    // Not when the partner is in care too, in a facility, or gone.
+    home_care(&mut st, 1, 20, 40, CareType::Home);
+    assert_eq!(st.spousal_care_factor(0, 15), 0.5);
+    assert_eq!(st.spousal_care_factor(0, 25), 1.0);
+    home_care(&mut st, 1, u32::MAX, 0, CareType::None);
+    st.in_facility[1] = true;
+    assert_eq!(st.spousal_care_factor(0, 15), 1.0);
+    st.in_facility[1] = false;
+    st.present[1] = false;
+    assert_eq!(st.spousal_care_factor(0, 15), 1.0);
+    // Nor for a nursing home.
+    st.present[1] = true;
+    home_care(&mut st, 0, 10, 30, CareType::NursingHome);
+    assert_eq!(st.spousal_care_factor(0, 15), 1.0);
+}
+
+#[test]
+fn a_working_partner_cuts_back_with_the_stated_probabilities() {
+    use crate::career::Employment;
+    use crate::health::CareType;
+    let plan = spousal_plan();
+    let run = |u: f64| {
+        let mut st = State::new(&plan);
+        st.present = [true, true];
+        for (rt, jp) in st.jobs.iter_mut().zip(&plan.jobs) {
+            jp.model.begin(&mut rt.st, 40.0);
+            rt.begun = true;
+        }
+        home_care(&mut st, 0, 12, 36, CareType::Home);
+        st.fam.care_u = [1.0, u];
+        let replan = st.spousal_care_month(&plan, 12);
+        let job = plan.jobs.iter().position(|j| j.owner == 1).unwrap();
+        (replan, st.jobs[job].st.employment, st.jobs[job].ended)
+    };
+    // u below 0.15: half time for the 24 months of the episode.
+    let (r, e, ended) = run(0.1);
+    assert!(r && !ended);
+    assert_eq!(e, Employment::OnBreak { months_left: 24 });
+    // Between 0.15 and 0.26: stops working.
+    let (r, _, ended) = run(0.2);
+    assert!(r && ended);
+    // Otherwise: works on.
+    let (r, e, ended) = run(0.5);
+    assert!(!r && !ended);
+    assert_eq!(e, Employment::Employed);
+}

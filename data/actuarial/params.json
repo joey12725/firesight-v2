@@ -2443,6 +2443,22 @@
     "divorce_spending_factor": {
       "note": "Default share of shared spending one adult keeps after a divorce (model::DIVORCE_SPENDING_FACTOR): a judgement within the OECD square-root (0.71) and OECD-modified (0.67) equivalence scales.",
       "value": 0.7
+    },
+    "spousal_care_share": {
+      "note": "Share of paid home-care hours a partner at home provides instead (model::SPOUSAL_CARE_SHARE): a judgement; no source found for the share of paid hours replaced.",
+      "value": 0.5
+    },
+    "spousal_care_reduce_probability": {
+      "note": "Probability that a working partner cuts their hours when the other enters home care (model::SPOUSAL_CARE_REDUCE_PROBABILITY): 15% of working family caregivers went part time or cut hours, AARP and NAC 'Caregiving in the U.S. 2020' as reported by Next Avenue, not checked against the report's tables; for all family caregivers, not spouses only.",
+      "value": 0.15
+    },
+    "spousal_care_stop_probability": {
+      "note": "Probability that a working partner stops working instead (model::SPOUSAL_CARE_STOP_PROBABILITY): 6% quit and 5% retired early, same secondary source as spousal_care_reduce_probability.",
+      "value": 0.11
+    },
+    "spousal_care_hours_cut": {
+      "note": "Share of full-time work given up by a partner who cuts their hours (model::SPOUSAL_CARE_HOURS_CUT): half time, a judgement.",
+      "value": 0.5
     }
   },
   "long_run_assumptions": {

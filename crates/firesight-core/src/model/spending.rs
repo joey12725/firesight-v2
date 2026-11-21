@@ -71,6 +71,13 @@ pub struct Healthcare {
     pub long_term_care: bool,
     /// Plan generosity, which trades premiums against out-of-pocket costs.
     pub quality: PlanTier,
+    /// True: when one partner needs paid care at home (a long-term care episode of
+    /// home care), the other partner, if at home and not in care themselves,
+    /// provides half of the hours, halving the bill, and a partner still working
+    /// may cut their hours or stop working (15% and 11% of working caregivers do,
+    /// AARP and NAC 2020). False (the default): all care is paid.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub spousal_care: bool,
 }
 
 impl Default for Healthcare {
@@ -80,6 +87,7 @@ impl Default for Healthcare {
             early_retirement: EarlyRetirementCoverage::Aca,
             long_term_care: true,
             quality: PlanTier::Silver,
+            spousal_care: false,
         }
     }
 }

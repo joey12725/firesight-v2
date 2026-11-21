@@ -30,7 +30,7 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events, Divorce, Parent(i), ..}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, Divorce, Parent(i), SpousalCare, ..}`. Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -128,7 +128,8 @@ Spending { items: Vec<BudgetItem>,
            retirement_smile: bool,                 // Blanchett real decline through the 70s, healthcare rises separately
            shocks: Off|Typical|High,               // irregular expenses, compound Poisson
            healthcare: Healthcare { mode: Modeled|InBudget, early_retirement: Aca|Cobra|Custom{annual},
-                                    long_term_care: bool, quality: Bronze|Silver|Gold },
+                                    long_term_care: bool, quality: Bronze|Silver|Gold,
+                                    spousal_care: bool (false) },   // partner provides half of home care
            survivor_factor: f64 (0.7) }
 BudgetItem { id, name, category: Category, amount, frequency: Monthly|Annual|Weekly|Biweekly|Quarterly,
              essential: bool, real_growth: Option<f64> (default by category),

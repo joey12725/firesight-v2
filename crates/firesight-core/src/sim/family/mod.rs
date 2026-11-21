@@ -6,12 +6,13 @@
 //! only cost to such a profile is one predictable branch a month.
 //!
 //! Randomness comes only from this module's own streams (`Stream::Divorce`,
-//! `Stream::Parent`), drawn
+//! `Stream::Parent`, `Stream::SpousalCare`), drawn
 //! a fixed number of times per path in [`State::begin_family`] whatever happens on
 //! the path, so the streams of every other subsystem are untouched.
 
 mod divorce;
 mod parents;
+mod spousal;
 #[cfg(test)]
 mod tests;
 
@@ -37,6 +38,8 @@ pub(crate) struct FamilyPlan {
     pub parents: Vec<parents::ParentPlan>,
     /// The long-term care model the parents' care is drawn from (with parents).
     pub parent_care: Option<crate::health::HealthModel>,
+    /// `spending.healthcare.spousal_care` for a couple with long-term care on.
+    pub spousal_care: bool,
 }
 
 impl FamilyPlan {
@@ -66,8 +69,11 @@ impl FamilyPlan {
             .iter()
             .any(|e| matches!(e.kind, EventKind::Divorce(_)));
         let (parents, parent_care) = parents::ParentPlan::compile_all(profile, data, start);
+        let hc = &profile.spending.healthcare;
+        let spousal_care = hc.spousal_care && hc.long_term_care && people.len() == 2;
         FamilyPlan {
-            active: hazard.is_some() || has_divorce_event || !parents.is_empty(),
+            active: hazard.is_some() || has_divorce_event || !parents.is_empty() || spousal_care,
+            spousal_care,
             married_month,
             hazard,
             parents,
@@ -96,6 +102,9 @@ pub(crate) struct FamilyState {
     pub parents: [parents::ParentPath; MAX_PARENTS],
     /// Inherited IRAs being paid out.
     pub ira: [parents::InheritedIra; MAX_PARENTS],
+    /// Per person, the uniform that decides whether they cut back at work to care
+    /// for the other partner.
+    pub care_u: [f64; MAX_PEOPLE],
 }
 
 impl Default for FamilyState {
@@ -109,6 +118,7 @@ impl Default for FamilyState {
             support_until: i32::MIN,
             parents: [parents::ParentPath::default(); MAX_PARENTS],
             ira: [parents::InheritedIra::default(); MAX_PARENTS],
+            care_u: [1.0; MAX_PEOPLE],
         }
     }
 }
@@ -123,6 +133,9 @@ impl State {
             self.fam.divorce_month = h.draw_month(rng.uniform());
         }
         self.begin_parents(plan, seed, path);
+        if plan.family.spousal_care {
+            self.begin_spousal_care(seed, path);
+        }
     }
 
     /// The month's household-dynamics step, at the start of month `t` after deaths
@@ -138,6 +151,9 @@ impl State {
         }
         if !plan.family.parents.is_empty() {
             replan |= self.parents_month(plan, price, t);
+        }
+        if plan.family.spousal_care {
+            replan |= self.spousal_care_month(plan, t);
         }
         if self.fam.support_monthly != 0.0 && ti < self.fam.support_until {
             if self.alive[1] && self.alive[0] {

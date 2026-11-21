@@ -129,6 +129,30 @@ impl DivorceRisk {
     }
 }
 
+/// Share of the hours of paid home care that a partner at home provides instead,
+/// with `spending.healthcare.spousal_care` on. A judgement (registered in
+/// `data/actuarial/params.json` under `unverified_from_memory`): spouses are the
+/// main unpaid caregivers of married people who need care, and married people
+/// receiving home care use markedly fewer paid hours, but no source found gives
+/// the share of paid hours replaced.
+pub const SPOUSAL_CARE_SHARE: f64 = 0.5;
+
+/// Probability that a working partner cuts their hours when the other partner
+/// enters home care: 15% of working family caregivers went part time or cut
+/// their hours (AARP and National Alliance for Caregiving, "Caregiving in the
+/// U.S. 2020", as reported by Next Avenue; not checked against the report's
+/// tables, and for all family caregivers, not spouses only).
+pub const SPOUSAL_CARE_REDUCE_PROBABILITY: f64 = 0.15;
+
+/// Probability that a working partner stops working instead: 6% of working
+/// caregivers quit and 5% retired early (same source as
+/// [`SPOUSAL_CARE_REDUCE_PROBABILITY`]).
+pub const SPOUSAL_CARE_STOP_PROBABILITY: f64 = 0.11;
+
+/// Share of full-time work given up by a partner who cuts their hours: half
+/// time. A judgement.
+pub const SPOUSAL_CARE_HOURS_CUT: f64 = 0.5;
+
 /// Most parents a profile can list.
 pub const MAX_PARENTS: usize = 4;
 

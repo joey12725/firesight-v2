@@ -415,6 +415,31 @@ as a failure cause means private-pay care exhausted the portfolio. A care episod
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
 
+### Spousal caregiving
+
+Opt-in with `spending.healthcare.spousal_care: true` (a couple with long-term care
+on). While one partner is in paid care at home and the other is in the household,
+not in a facility and not in care themselves, the other partner provides half of
+the hours and the bill is halved (`SPOUSAL_CARE_SHARE`, a judgement: spouses are
+the main unpaid caregivers of married people and married people at home use fewer
+paid hours, but no source gives the share replaced). Assisted living and nursing
+homes are unaffected. When the episode begins, a partner who still has a job cuts
+to half time for its length with probability 15% or stops working with
+probability 11% (6% quit and 5% retire early: AARP and the National Alliance for
+Caregiving, Caregiving in the U.S. 2020, as reported by Next Avenue and not
+checked against the report's tables; those figures are for all working family
+caregivers, not spouses only). The choice is one draw per person on a stream of
+its own, made on every path.
+
+Measured on the dual-income example (4,000 paired paths): mean lifetime care cost
+falls from $464k to $436k (6%), success rises from 91.5% to 92.0%, the median
+terminal net worth by $36k and the tenth percentile from $104k to $152k. This
+couple retires in its fifties, so the work-reduction branch never fires there.
+
+Not modelled: the caregiver's own health (caregiving strain), care by children,
+the partner's time when they are themselves old and frail beyond being in care,
+and any limit on how many hours one person can provide.
+
 ### Caring for a parent
 
 Opt-in per parent with `care_support` (section 10 describes the parents). The
