@@ -85,4 +85,15 @@ fn market_realism_constants_match_the_data_file() {
     assert_eq!(economy::FAT_TAIL_DOF, num(&f["dof"]));
     assert_eq!(economy::FAT_TAIL_VARIANCE_CAP, num(&f["variance_cap"]));
     assert_eq!(economy::FAT_TAIL_MIXING_CAP, num(&f["mixing_cap"]));
+    let d = &section["dynamic_yields"];
+    assert_eq!(
+        economy::DIVIDEND_ADJUSTMENT_ANNUAL,
+        num(&d["adjustment_annual"])
+    );
+    assert_eq!(
+        economy::RECESSION_DIVIDEND_CUT_ANNUAL,
+        num(&d["recession_cut_annual"])
+    );
+    assert_eq!(economy::DIVIDEND_YIELD_RANGE.0, num(&d["yield_range"][0]));
+    assert_eq!(economy::DIVIDEND_YIELD_RANGE.1, num(&d["yield_range"][1]));
 }

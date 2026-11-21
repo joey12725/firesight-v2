@@ -68,6 +68,15 @@ pub struct MarketModel {
     /// average from the first month.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valuation: Option<Valuation>,
+    /// Let the dividend yield of stocks move with the market: it rises when prices
+    /// fall, drifts back as companies adjust their dividends, falls in recessions
+    /// (dividend cuts) and, with `valuation`, rises as an expensive market returns
+    /// to normal. Total returns are unchanged; only the split between taxable
+    /// dividends and price gains moves, and with it taxes and income-tested costs.
+    /// Bond interest and cash interest always follow the path's yields. Default
+    /// off (constant dividend yields).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dynamic_yields: bool,
 }
 
 /// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
@@ -84,6 +93,7 @@ impl Default for MarketModel {
             stress: Vec::new(),
             bond_pricing: BondPricing::default(),
             valuation: None,
+            dynamic_yields: false,
         }
     }
 }

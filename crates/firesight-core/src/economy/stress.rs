@@ -110,6 +110,9 @@ impl EconomyModel {
                 self.apply_lost_generation(out, from_month, months)
             }
         }
+        if self.dividends.is_some() {
+            self.refresh_dividends(out);
+        }
     }
 
     /// Sets the US equity return of month `t` and moves the beta assets with it.

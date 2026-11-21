@@ -303,3 +303,76 @@ fn a_fat_tailed_trace_announces_crash_months() {
     assert!(fat_notes > 0);
     assert_eq!(ln_notes, 0);
 }
+
+// ---------------------------------------------------------------------------------
+// F40: dividend yields that move with the market.
+// ---------------------------------------------------------------------------------
+
+#[test]
+fn dynamic_yields_off_is_the_baseline_bit_for_bit() {
+    for example in Profile::examples(START) {
+        let mut off = example.profile.clone();
+        off.assumptions.market.dynamic_yields = false;
+        assert_eq!(
+            digest_json(&example.profile, 300),
+            digest_json(&off, 300),
+            "{}",
+            example.slug
+        );
+    }
+}
+
+/// From a CAPE of 40 the dividend yield rises toward 3.5% as valuations normalise,
+/// so a wealthy retiree holding stocks in a taxable account receives more of the
+/// same total return as taxable dividends: more tax, a little less wealth.
+#[test]
+fn dynamic_yields_with_valuation_raise_a_taxable_retirees_tax() {
+    let n = 1500;
+    let mut off = retiree(3_000_000.0, 0.8, 120_000.0, 30.0);
+    off.assumptions.taxes.kind = TaxKind::UsCurrentLaw;
+    off.assumptions.market.kind = bootstrap();
+    off.assumptions.market.valuation = Some(Valuation::default());
+    let mut on = off.clone();
+    on.assumptions.market.dynamic_yields = true;
+    let (a, b) = (summary(&off, SEED, n), summary(&on, SEED, n));
+    let (ta, tb) = (
+        a.headline.median_lifetime_tax,
+        b.headline.median_lifetime_tax,
+    );
+    eprintln!(
+        "80/20 taxable retiree with $3M, CAPE 40: median lifetime tax {ta:.0} -> {tb:.0}, median terminal {:.0} -> {:.0}, success {:.3} -> {:.3}",
+        median(&a),
+        median(&b),
+        a.headline.success_rate.value,
+        b.headline.success_rate.value
+    );
+    assert!(tb > ta * 1.05, "{ta} {tb}");
+    assert!(tb < ta * 2.0, "{ta} {tb}");
+    let ratio = median(&b) / median(&a);
+    assert!((0.85..1.0).contains(&ratio), "{ratio}");
+}
+
+/// Retiring into 2008 with dynamic yields, the trace says when dividends are cut.
+#[test]
+fn a_dynamic_yield_trace_announces_dividend_cuts() {
+    let mut p = retiree_with(Some(episode_now(Episode::Financial2008)));
+    p.assumptions.market.dynamic_yields = true;
+    let trace = sim::trace_path(&compile(&p), SEED, 1);
+    let note = trace
+        .events
+        .iter()
+        .find(|e| e.label.contains("cut dividends"))
+        .expect("a dividend-cut note");
+    assert_eq!(note.kind, TraceEventKind::Market);
+    assert!(
+        note.month > START && note.month < START + 36,
+        "{}",
+        note.month
+    );
+    let mut off = p.clone();
+    off.assumptions.market.dynamic_yields = false;
+    assert!(!sim::trace_path(&compile(&off), SEED, 1)
+        .events
+        .iter()
+        .any(|e| e.label.contains("cut dividends")));
+}

@@ -52,5 +52,19 @@ pub fn variants(base: &Profile) -> Vec<(String, Profile)> {
         years: 20.0,
     });
     out.push(("lost generation".to_string(), p));
+    for kind in [bootstrap, MarketKind::FatTailed, MarketKind::Historical] {
+        let mut p = base.clone();
+        p.assumptions.market.kind = kind;
+        p.assumptions.market.dynamic_yields = true;
+        out.push((format!("dynamic_yields {kind:?}"), p));
+    }
+    let mut p = base.clone();
+    p.assumptions.market.dynamic_yields = true;
+    p.assumptions.market.valuation = Some(Valuation::default());
+    p.assumptions.market.stress.push(Stress::CrashAtRetirement {
+        drawdown: 0.4,
+        recovery_years: 5.0,
+    });
+    out.push(("dynamic_yields valuation crash".to_string(), p));
     out
 }

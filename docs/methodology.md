@@ -436,6 +436,47 @@ holding moves it by half.)
 While working, cash above the emergency fund (default six months of spending) is
 invested each month.
 
+#### Dividend yields that move with the market (`market.dynamic_yields`, opt-in)
+
+Off, US stocks (and the single stock) distribute 1.5% a year and international
+stocks 3%, whatever the market does. On, each yield is a state on the path, after
+Lintner's (1956) model of dividend smoothing: a fall in prices raises the yield at
+once, dividends then close 30% a year of the gap to their target (a judgement:
+Lintner's partial-adjustment form, with published speeds that vary widely), and in
+recession months they are cut at a further 10% a year. The 10% is calibrated so that
+replaying 2007-11 to 2013-01 (`historical_episode: financial2008`) cuts the US
+dividend run rate by 20% from peak to trough, against the 21% fall of S&P 500
+dividends per share from 2008 to 2009 (Shiller's data, as tabulated by DQYDJ). Only
+the surprise in each month's return moves the yield (against the model's long-run
+mean log return), and the target is lifted by the long-run effect of the recession
+cuts, so the average yield stays today's: 1.53% and 3.1% over the bootstrap,
+regime, lognormal and fat-tailed models (`realism_tests/dividends.rs`). With
+`market.valuation` the US target also moves inversely with the CAPE gap: from a
+CAPE of 40 the yield rises toward 1.5% x 40 / 17.3 = 3.5% as the market returns to
+its normal valuation (3.6% on average after 50 years, against 1.55% without
+valuation). Yields are bounded to 0.2% to 15%.
+
+Total returns are never changed: only the split between taxable dividends and price
+gains moves, and with it the taxable account's tax timing and the income that ACA
+subsidies and IRMAA test. Bond and cash interest already followed the path's
+10-year and bill yields before this option (a par bond's coupon and the bill rate of
+the month), so the option does not change them; in the lognormal and fat-tailed
+models the 10-year yield is constant and so is bond interest. Stress overlays
+re-derive the yields from their start month on. A trace announces each fall of
+the US dividend run rate by 10% from its peak.
+
+Measured: an 80/20 retiree with $3M in a taxable account spending $120k, with
+`valuation` on (1,500 paired paths): median lifetime tax $367,700 -> $400,300
+(+8.9%), median terminal wealth -1.2%, success 90.1% -> 89.9%. On the
+dual-income example (`firesight compare`, 4,000 paired paths) the change is within
+noise: success 91.5% both, median lifetime tax +$500; with `valuation` on, tax
++$4,800 and success 89.7% -> 89.8%. Little of that household's money is in a
+taxable account.
+
+Not modelled: listed real estate keeps its constant 4% (REIT payouts follow rents,
+not prices); the qualified share of dividends is fixed; bond funds pay the current
+yield, not the book yield of bonds bought earlier; special dividends and buybacks.
+
 ## 5. Taxes
 
 US federal law for 2026 as enacted, every state and DC, and the larger local

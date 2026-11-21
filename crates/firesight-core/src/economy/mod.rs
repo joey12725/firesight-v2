@@ -84,6 +84,7 @@ mod bonds;
 mod episodes;
 mod fat_tailed;
 mod fit;
+mod income_yields;
 #[cfg(test)]
 mod realism_tests;
 mod regime;
@@ -111,6 +112,9 @@ use sampler::ShockTable;
 pub use episodes::{episode_first_month, episode_months};
 pub use fat_tailed::{
     FAT_TAIL_ARCH, FAT_TAIL_DOF, FAT_TAIL_GARCH, FAT_TAIL_MIXING_CAP, FAT_TAIL_VARIANCE_CAP,
+};
+pub use income_yields::{
+    DIVIDEND_ADJUSTMENT_ANNUAL, DIVIDEND_YIELD_RANGE, RECESSION_DIVIDEND_CUT_ANNUAL,
 };
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
@@ -239,6 +243,10 @@ pub struct EconomyPath {
     /// With `market.valuation`: log of the CAPE of US stocks over its normal level
     /// at the end of month `t`. Empty when valuation is off.
     pub valuation_gap: Vec<f64>,
+    /// With `market.dynamic_yields`: the dividend yields of US and international
+    /// stocks in month `t`, annualised. Empty when off (the constant
+    /// [`DIVIDEND_YIELD`] applies).
+    pub dividend_yields: Vec<[f64; 2]>,
 }
 
 impl EconomyPath {
@@ -318,6 +326,11 @@ impl EconomyPath {
         let mut out = DIVIDEND_YIELD;
         out[AssetClass::Bonds.index()] = self.long_yield[t].max(0.0);
         out[AssetClass::Cash.index()] = self.tbill[t].max(0.0);
+        if let Some(&[us, intl]) = self.dividend_yields.get(t) {
+            out[AssetClass::UsStocks.index()] = us;
+            out[AssetClass::SingleStock.index()] = us;
+            out[AssetClass::IntlStocks.index()] = intl;
+        }
         out
     }
 
@@ -533,6 +546,8 @@ pub struct EconomyModel {
     valuation: Option<valuation::ValuationTilt>,
     /// The record's months of the historical episodes, when a stress replays one.
     episodes: Option<Arc<episodes::EpisodeTables>>,
+    /// `market.dynamic_yields`, compiled; `None` when off.
+    dividends: Option<income_yields::DividendModel>,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -1159,6 +1174,7 @@ impl EconomyModel {
                 && market.bond_pricing == BondPricing::FromYield,
             valuation: None,
             episodes: None,
+            dividends: None,
         };
         let mut model = model.with_asset_params(&SingleStock::default(), &CustomAsset::default());
         if market
@@ -1173,6 +1189,9 @@ impl EconomyModel {
             model.valuation = model
                 .real_equity_log_mean(embedded)
                 .and_then(|m| valuation::ValuationTilt::new(v, m));
+        }
+        if market.dynamic_yields {
+            model.dividends = Some(model.dividend_model(h));
         }
         model
     }
@@ -1417,6 +1436,41 @@ impl EconomyModel {
         }
         if let Some(v) = &self.valuation {
             v.apply(out, &self.stress_beta);
+        }
+        self.refresh_dividends(out);
+    }
+
+    /// The dividend model of `market.dynamic_yields`: the long-run mean monthly
+    /// log returns of US and international stocks (the record's rows with this
+    /// model's adjustments) and the record's share of recession months.
+    fn dividend_model(&self, h: &crate::data::History) -> income_yields::DividendModel {
+        let n = self.base.rows.len().max(1) as f64;
+        let adjust = math::ln(self.adjust.equity) + math::ln(self.adjust.inflation);
+        let mean = |f: fn(&Core) -> f64| -> f64 {
+            self.base
+                .rows
+                .iter()
+                .map(|r| math::ln_1p(f(r)))
+                .sum::<f64>()
+                / n
+                + adjust
+        };
+        let share = h.recession.iter().map(|&r| f64::from(r)).sum::<f64>()
+            / h.recession.len().max(1) as f64;
+        income_yields::DividendModel::new(
+            [mean(|r| r.eq), mean(|r| r.intl)],
+            share,
+            self.valuation.map(|v| v.gap0),
+        )
+    }
+
+    /// Recomputes the path's dividend yields after its returns changed (generation
+    /// or a stress overlay); clears them when `dynamic_yields` is off.
+    #[inline]
+    pub(super) fn refresh_dividends(&self, out: &mut EconomyPath) {
+        match &self.dividends {
+            Some(d) => d.fill(out),
+            None => out.dividend_yields.clear(),
         }
     }
 

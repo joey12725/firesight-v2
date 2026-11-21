@@ -22,6 +22,10 @@ pub(crate) struct MarketNotes {
 /// record has 11 such months in 1,203 (`data/history/monthly.csv`).
 const CRASH_MONTH: f64 = -0.15;
 
+/// A fall of the US dividend run rate by this much from its peak is announced in a
+/// trace with `market.dynamic_yields`. Judgement: a tenth.
+const DIVIDEND_CUT_NOTE: f64 = 0.10;
+
 fn episode_name(e: Episode) -> &'static str {
     match e {
         Episode::GreatDepression1929 => "the Great Depression",
@@ -58,6 +62,32 @@ impl State {
                     None,
                     "US stock valuations are back at their normal level".to_string(),
                 ));
+            }
+        }
+        if !econ.dividend_yields.is_empty() {
+            // The US dividend run rate (yield times price): announce each fall of
+            // DIVIDEND_CUT_NOTE below its previous peak, once until it recovers.
+            let us = AssetClass::UsStocks.index();
+            let (mut price, mut peak, mut armed) = (1.0f64, 0.0f64, true);
+            for t in 0..econ.months {
+                let y = econ.dividend_yields[t][0];
+                let d = y * price;
+                if d >= peak {
+                    peak = d;
+                    armed = true;
+                } else if armed && d < peak * (1.0 - DIVIDEND_CUT_NOTE) {
+                    armed = false;
+                    notes.notes.push((
+                        Sched::At(t as i32),
+                        None,
+                        format!(
+                            "US companies have cut dividends {:.0}% from their peak; the dividend yield is {:.1}%",
+                            (1.0 - d / peak) * 100.0,
+                            y * 100.0
+                        ),
+                    ));
+                }
+                price *= 1.0 + econ.returns[us][t] - y / 12.0;
             }
         }
         if plan.econ.is_fat_tailed() {

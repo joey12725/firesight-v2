@@ -7,6 +7,7 @@
 use super::*;
 use crate::rng::Stream;
 
+mod dividends;
 mod episodes;
 mod fat_tails;
 mod valuation;

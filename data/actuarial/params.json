@@ -2482,6 +2482,13 @@
       "mixing_cap": 8.0,
       "source": "GARCH(1,1) (Bollerslev 1986) with Student-t shocks (Bollerslev 1987, Review of Economics and Statistics 69(3)). arch, garch and dof fitted by simulated moments to data/history/calibration.json: median over 1,203-month simulated samples of the excess kurtosis of monthly US stock returns (record 7.36), and of the autocorrelation of absolute returns at lags 1 and 12 (record 0.219 and 0.148); a grid over arch 0.12-0.21, persistence 0.97-0.99, dof 5-8. Maximum likelihood on the same record gives arch 0.13, garch 0.83, dof 7.3 (computed for this calibration), whose samples are thinner-tailed (kurtosis 3.5). variance_cap: the record's highest trailing 12-month variance of US stocks (71% annualised, 12 months to April 1933) over the full-sample variance (18.3%) is about 15. Calm and turbulent correlations are computed from the record at build time (trailing 12-month volatility above its 75th percentile); stock-stock correlation rising in bear markets matches Longin and Solnik (2001, Journal of Finance 56(2)).",
       "confidence": "arch, garch and dof fitted to the embedded record (moment targets, not likelihood); variance_cap from the record, rounded; mixing_cap a judgement shared with the regime model"
+    },
+    "dynamic_yields": {
+      "adjustment_annual": 0.3,
+      "recession_cut_annual": 0.1,
+      "yield_range": [0.002, 0.15],
+      "source": "Partial-adjustment form after Lintner (1956, 'Distribution of Incomes of Corporations Among Dividends, Retained Earnings, and Taxes', American Economic Review 46(2)). recession_cut_annual calibrated so that replaying 2007-11 to 2013-01 cuts the US dividend run rate by about 20% from peak to trough, against the 21% fall of S&P 500 dividends per share from $28.39 (2008) to $22.41 (2009) in Shiller's data as tabulated by DQYDJ.",
+      "confidence": "adjustment_annual a judgement (published speeds of adjustment vary widely); recession_cut_annual calibrated to one episode; yield_range a judgement that only bounds collapsed indices"
     }
   }
 }
