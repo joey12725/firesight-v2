@@ -1,12 +1,13 @@
 //! Checks of the household-behaviour settings (`sim/behavior`).
 
-use super::Checker;
-use crate::model::{InvestorBehavior, JobSearch};
+use super::{seg, Checker};
+use crate::model::{Claiming, InvestorBehavior, JobSearch, SocialSecurityBasis};
 
 impl Checker<'_> {
     /// Errors for impossible behaviour settings, warnings for implausible ones.
     pub(super) fn behavior(&mut self) {
         self.panic_selling();
+        self.adaptive_claiming();
         if let Some(r) = self.p.retirement.return_to_work {
             let base = "/retirement/return_to_work";
             self.r.range(
@@ -120,6 +121,47 @@ impl Checker<'_> {
                 &format!("{base}/probability"),
                 "In 2008 about 2% of Vanguard plan savers sold all their stocks and 16% traded at all; a panic chance above one half is far beyond what was observed.",
             );
+        }
+    }
+
+    fn adaptive_claiming(&mut self) {
+        for (i, person) in self.p.household.people.iter().enumerate() {
+            let ss = &person.social_security;
+            let Claiming::Adaptive { earliest, latest } = ss.claiming else {
+                continue;
+            };
+            let base = format!(
+                "/household/people/{}/social_security/claiming",
+                seg(&person.id, i)
+            );
+            let ok_early = self.r.range(
+                &format!("{base}/earliest"),
+                "The earliest Social Security claim age",
+                earliest,
+                62.0,
+                70.0,
+            );
+            let ok_late = self.r.range(
+                &format!("{base}/latest"),
+                "The latest Social Security claim age",
+                latest,
+                62.0,
+                70.0,
+            );
+            if ok_early && ok_late && earliest > latest {
+                self.r.error(
+                    "claiming_order",
+                    &format!("{base}/earliest"),
+                    "The earliest claim age is after the latest one.",
+                );
+            }
+            if matches!(ss.basis, SocialSecurityBasis::None) {
+                self.r.warn(
+                    "claiming_without_benefit",
+                    &base,
+                    "This person has no Social Security benefit, so the claiming strategy has no effect.",
+                );
+            }
         }
     }
 }

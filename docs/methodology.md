@@ -511,6 +511,48 @@ That is current law under the Trustees' assumptions; SSA's own "today's dollars"
 statements do not include it, so the engine will read higher than a statement. A
 trust-fund haircut (benefits at 79% from 2033) is available and off by default.
 
+### Adaptive claiming (opt-in)
+
+`social_security.claiming: adaptive { earliest (62), latest (70) }` (the default is
+the fixed `claim_age`) plans the claim at `latest`, which is also the claim age the
+funded test and the present value of the benefit start from. Each month from
+`earliest`, once the person has stopped working, the household compares its
+investable savings with what delaying still costs:
+
+```
+bridge  = months to latest x the benefit available by claiming now (today's $)
+reserve = 12 months of the household's budget
+claim now if savings < reserve + bridge (+ the higher earner's bridge, for the
+                                         lower earner of a living couple)
+```
+
+and claims at once, working or not, in a month after one in which essentials were
+cut. The bridge is what the portfolio has to pay in place of the benefit; the
+reserve of a year's budget is a judgement. **Survivor benefit:** the higher
+earner's benefit is what the survivor keeps, so while both are alive the lower
+earner's test also counts the higher earner's remaining bridge: when money is short
+the lower earner claims first and the higher earner keeps delaying. No random
+numbers are used. The claim shows in a trace as a life event naming the reason,
+followed by the usual "starts Social Security" event, and in the per-person
+claim-age column.
+
+Measured on a test household (single, 61, $2,000 a month at full retirement age,
+$300,000 in a 60/40 account, $36,000 budget, no tax, 400 paths): fixed at 70,
+paths spend 10.3 years on average with savings exhausted; adaptive, 7.4 years, with
+lifetime spending $1.029 million against $1.002 million for claiming at 62. With
+the CLI (3,000 paired paths, both partners adaptive in `dual-income-family`, the
+single person in the others): `dual-income-family` 8.2% -> 7.8% depleted (within
+noise), 10th-percentile terminal net worth +$85,000; `side-hustle-landlord` 7.8%
+-> 7.1% depleted, median retirement age +0.25 years (planning on a claim at 70
+raises the funded-test bridge); `early-career-saver` within noise (15.8% ->
+16.1%).
+
+Not modelled: the decision does not weigh life expectancy, health, tax or the
+marketplace premium credit; a claim is never withdrawn or suspended; a working
+person claims early only when essentials are being cut; the cache of benefit
+thresholds still uses the planned claim age, which only matters for the return of
+months withheld by the earnings test.
+
 ## 10. Longevity
 
 Each adult's age at death is drawn from the SSA 2023 period life table, improved

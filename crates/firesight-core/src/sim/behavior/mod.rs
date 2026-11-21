@@ -1,6 +1,6 @@
 //! Household behaviour and decisions that are not mechanical rules: going back to
-//! work when retirement savings fall short (`work.rs`) and panic selling in a crash
-//! (`panic.rs`).
+//! work when retirement savings fall short (`work.rs`), panic selling in a crash
+//! (`panic.rs`) and adaptive Social Security claiming (`claiming.rs`).
 //!
 //! Every feature here is opt-in through a profile field whose default leaves it off.
 //! With every feature off, [`BehaviorPlan::any`] is false, nothing in this module
@@ -19,6 +19,7 @@ use crate::model::{InvestorBehavior, JobSearch, Profile};
 use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
+pub(crate) mod claiming;
 pub(crate) mod panic;
 pub(crate) mod work;
 
@@ -34,6 +35,8 @@ pub(crate) struct BehaviorPlan {
     pub rtw: Option<RtwPlan>,
     /// `portfolio.behavior: panic_prone`.
     pub panic: Option<PanicPlan>,
+    /// `social_security.claiming: adaptive`, per person.
+    pub claim: Option<claiming::ClaimPlan>,
 }
 
 impl BehaviorPlan {
@@ -64,10 +67,12 @@ impl BehaviorPlan {
             InvestorBehavior::Disciplined => None,
             InvestorBehavior::PanicProne(p) => Some(PanicPlan::compile(p)),
         };
+        let claim = claiming::compile(profile);
         BehaviorPlan {
-            any: rtw.is_some() || panic.is_some(),
+            any: rtw.is_some() || panic.is_some() || claim.is_some(),
             rtw,
             panic,
+            claim,
         }
     }
 }
@@ -123,6 +128,9 @@ impl super::state::State {
     ) {
         if plan.beh.rtw.is_some() {
             self.return_to_work_month(plan, econ, t);
+        }
+        if plan.beh.claim.is_some() {
+            self.adaptive_claiming_month(plan, t, econ.price_level[t]);
         }
     }
 

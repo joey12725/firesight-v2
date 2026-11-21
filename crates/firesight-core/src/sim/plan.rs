@@ -758,7 +758,7 @@ impl Plan {
             };
             let ss_annuity = ss.annuity(
                 person.birth,
-                person.social_security.claim_age,
+                person.social_security.planned_claim_age(),
                 income_discount,
                 &survival[i],
             );
@@ -768,7 +768,7 @@ impl Plan {
                 age0,
                 joins: person.joins.map_or(i32::MIN, |j| j - start),
                 mortality: mortality[i].clone(),
-                claim_age: person.social_security.claim_age,
+                claim_age: person.social_security.planned_claim_age(),
                 basis,
                 record0,
                 ss_annuity,

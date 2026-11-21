@@ -284,6 +284,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             basis: SocialSecurityBasis::FromEarnings {
                 career_start_age: 24.0,
             },
+            ..SocialSecurity::default()
         },
         ..Person::default()
     };

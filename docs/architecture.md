@@ -79,6 +79,7 @@ Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             joins: Option<YearMonth>,               // future partner: not in household before this
             social_security: SocialSecurity }
 SocialSecurity { claim_age: f64 (62..=70, default 67),
+                 claiming: Fixed (default) | Adaptive{ earliest (62), latest (70) },  // sim/behavior/claiming.rs
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $
                       | None }

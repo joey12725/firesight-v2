@@ -52,6 +52,12 @@ pub fn with_behaviors(mut p: Profile) -> Profile {
         probability: 0.5,
         ..PanicSelling::default()
     });
+    for person in &mut p.household.people {
+        person.social_security.claiming = Claiming::Adaptive {
+            earliest: 62.0,
+            latest: 70.0,
+        };
+    }
     p
 }
 

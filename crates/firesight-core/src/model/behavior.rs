@@ -1,6 +1,6 @@
 //! Household behaviour that is not a mechanical rule: how investors react to a
-//! crash. Every setting here is opt-in; the default is the disciplined household the
-//! engine has always modelled.
+//! crash and how a person decides when to claim Social Security. Every setting here
+//! is opt-in; the default is the household the engine has always modelled.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -72,4 +72,41 @@ impl Default for Reentry {
             max_months: 36,
         }
     }
+}
+
+/// How a person decides when to claim Social Security.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Claiming {
+    /// Claim at `claim_age` whatever happens (the default).
+    #[default]
+    Fixed,
+    /// Plan to claim at `latest`, but claim earlier (from `earliest`, once the person
+    /// has stopped working) when savings could no longer pay the household's way
+    /// until then, and at once if the household is cutting essentials. In a couple the
+    /// lower earner claims first, so the higher earner's benefit, which the survivor
+    /// keeps, grows longest. `claim_age` is not used.
+    Adaptive {
+        /// Earliest age at which to claim (62 to 70). Default 62.
+        #[serde(default = "default_earliest_claim")]
+        earliest: f64,
+        /// Age to delay to while savings can bridge (62 to 70). Default 70.
+        #[serde(default = "default_latest_claim")]
+        latest: f64,
+    },
+}
+
+impl Claiming {
+    /// True for the default, fixed claim age.
+    pub fn is_fixed(&self) -> bool {
+        matches!(self, Claiming::Fixed)
+    }
+}
+
+fn default_earliest_claim() -> f64 {
+    62.0
+}
+
+fn default_latest_claim() -> f64 {
+    70.0
 }

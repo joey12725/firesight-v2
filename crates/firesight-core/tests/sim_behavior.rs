@@ -239,3 +239,128 @@ fn panic_settings_are_validated() {
         .iter()
         .any(|w| w.code == "panic_reentry_immediate"));
 }
+
+fn adaptive(earliest: f64, latest: f64) -> Claiming {
+    Claiming::Adaptive { earliest, latest }
+}
+
+/// A 61-year-old retiree with $2,000 a month at full retirement age, `savings` in a
+/// 60/40 taxable account and a $48,000 budget, no tax, living to 92.
+fn early_retiree(savings: f64) -> Profile {
+    let mut who = person("retiree", 61, Sex::Female);
+    who.social_security.basis = SocialSecurityBasis::KnownBenefit {
+        monthly_at_fra: 2_000.0,
+    };
+    let mut p = quiet(vec![who], 92.0);
+    p.spending.items = vec![item("living", Category::Other, 4_000.0, true)];
+    p.accounts = vec![Account {
+        cost_basis: Some(savings),
+        ..account("savings", 0, AccountKind::Taxable, savings)
+    }];
+    p.portfolio.target =
+        Allocation::from_pairs(&[(AssetClass::UsStocks, 0.6), (AssetClass::Bonds, 0.4)]);
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    p
+}
+
+#[test]
+fn adaptive_claiming_with_no_room_to_adapt_is_the_fixed_claim() {
+    let mut base = early_retiree(400_000.0);
+    base.household.people[0].social_security.claim_age = 67.0;
+    let mut same = base.clone();
+    same.household.people[0].social_security.claiming = adaptive(67.0, 67.0);
+    let a = run(&compile(&base), SEED, 0..300);
+    let b = run(&compile(&same), SEED, 0..300);
+    assert_eq!(a.to_bytes(), b.to_bytes());
+}
+
+#[test]
+fn adaptive_claiming_delays_when_it_can_and_claims_early_when_it_must() {
+    let n = 400;
+    let mut late = early_retiree(300_000.0);
+    late.spending.items = vec![item("living", Category::Other, 3_000.0, true)];
+    late.household.people[0].social_security.claim_age = 70.0;
+    let mut early = late.clone();
+    early.household.people[0].social_security.claim_age = 62.0;
+    let mut adapt = late.clone();
+    adapt.household.people[0].social_security.claiming = adaptive(62.0, 70.0);
+    let l = run(&compile(&late), SEED, 0..n);
+    let e = run(&compile(&early), SEED, 0..n);
+    let a = run(&compile(&adapt), SEED, 0..n);
+    // Delaying to 70 on $300,000 against $36,000 a year leaves many paths cutting
+    // essentials before the benefit starts; claiming once the delay can no longer
+    // be bridged cuts the years spent depleted (measured: 10.3 -> 7.4).
+    let years = |acc: &Accumulator| mean(&column(acc, PathScalar::YearsDepleted));
+    let (yl, ya) = (years(&l), years(&a));
+    assert!(
+        ya < 0.85 * yl,
+        "years depleted: fixed 70 {yl}, adaptive {ya}"
+    );
+    assert!(share_depleted(&a) <= share_depleted(&l));
+    // And it keeps more of the delay credit than claiming at 62: more spending over
+    // a lifetime (measured: $1.029 million against $1.002 million).
+    let spend = |acc: &Accumulator| mean(&column(acc, PathScalar::LifetimeSpending));
+    assert!(
+        spend(&a) > spend(&e) * 1.01,
+        "{} vs {}",
+        spend(&a),
+        spend(&e)
+    );
+    // Claim ages spread between 62 and 70, path by path.
+    let ages = column(&a, PathScalar::SocialSecurityClaimAge0);
+    let lo = ages.iter().cloned().fold(f32::INFINITY, f32::min);
+    let hi = ages.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    assert!(lo < 66.0, "earliest claim {lo}");
+    assert!((69.9..=70.01).contains(&hi), "latest claim {hi}");
+    // A retiree who can afford the bridge on every path waits to 70.
+    let mut wealthy = early_retiree(1_500_000.0);
+    wealthy.household.people[0].social_security.claiming = adaptive(62.0, 70.0);
+    let w = run(&compile(&wealthy), SEED, 0..200);
+    let ages = column(&w, PathScalar::SocialSecurityClaimAge0);
+    let at70 = ages.iter().filter(|a| (**a - 70.0).abs() < 0.05).count();
+    assert!(at70 > 180, "a wealthy retiree delays to 70: {at70} of 200");
+}
+
+#[test]
+fn in_a_couple_the_lower_earner_claims_first() {
+    let mut p = early_retiree(500_000.0);
+    let mut partner = person("partner", 61, Sex::Male);
+    partner.social_security.basis = SocialSecurityBasis::KnownBenefit {
+        monthly_at_fra: 3_200.0,
+    };
+    p.household.people.push(partner);
+    p.spending.items = vec![item("living", Category::Other, 6_000.0, true)];
+    for person in &mut p.household.people {
+        person.social_security.claiming = adaptive(62.0, 70.0);
+    }
+    let a = run(&compile(&p), SEED, 0..400);
+    let lower = mean(&column(&a, PathScalar::SocialSecurityClaimAge0));
+    let higher = mean(&column(&a, PathScalar::SocialSecurityClaimAge1));
+    assert!(
+        higher > lower + 1.0,
+        "claim ages: lower {lower}, higher {higher}"
+    );
+    let trace = sim::trace_path(&compile(&p), SEED, 0);
+    assert!(trace
+        .events
+        .iter()
+        .any(|e| e.label.contains("claims Social Security at")));
+}
+
+#[test]
+fn claiming_settings_are_validated() {
+    let mut p = early_retiree(400_000.0);
+    p.household.people[0].social_security.claiming = adaptive(68.0, 64.0);
+    let r = firesight_core::validate::validate(&p);
+    assert!(
+        r.errors.iter().any(|e| e.code == "claiming_order"),
+        "{:?}",
+        r.errors
+    );
+    p.household.people[0].social_security.claiming = adaptive(60.0, 70.0);
+    let r = firesight_core::validate::validate(&p);
+    assert!(r
+        .errors
+        .iter()
+        .any(|e| e.path.ends_with("/social_security/claiming/earliest")));
+}

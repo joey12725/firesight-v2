@@ -1968,6 +1968,14 @@
       "evidence": "Vanguard, How America Saves 2009: in 2008 16% of defined-contribution participants traded, 2% abandoned equities entirely, and on net traders shifted 4% of assets from equities to fixed income. probability x share = 0.08 x 0.5 = 4% of stocks sold per fall of 25% or more. Morningstar, Mind the Gap 2024: investor returns trailed fund total returns by about 1.1 points a year over the ten years to 2023 (all US funds; timing of purchases and sales).",
       "source": "Vanguard How America Saves 2009 (as reported by PLANSPONSOR, 2009); https://www.morningstar.com/lp/mind-the-gap",
       "confidence": "low (a behavioural assumption: plan savers are inert; the re-entry rule and the trigger depth are judgements)"
+    },
+    "adaptive_claiming": {
+      "reserve_months": {
+        "value": 12.0,
+        "code": "sim::behavior::claiming::RESERVE_MONTHS",
+        "model": "Claim now when investable savings < reserve_months x monthly budget + the benefit given up until the latest claim age.",
+        "confidence": "judgement (a year of spending as a cash reserve is a rule of thumb, not a measured quantity)"
+      }
     }
   },
   "housing": {
