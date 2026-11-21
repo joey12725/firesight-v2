@@ -1,7 +1,7 @@
 //! Household behaviour and decisions that are not mechanical rules: going back to
 //! work when retirement savings fall short (`work.rs`), panic selling in a crash
-//! (`panic.rs`), adaptive Social Security claiming (`claiming.rs`) and stopping
-//! saving in distress (`distress.rs`).
+//! (`panic.rs`), adaptive Social Security claiming (`claiming.rs`), stopping saving
+//! in distress (`distress.rs`) and not retiring into a crash (`confirm.rs`).
 //!
 //! Every feature here is opt-in through a profile field whose default leaves it off.
 //! With every feature off, [`BehaviorPlan::any`] is false, nothing in this module
@@ -9,7 +9,8 @@
 //! without the module.
 //!
 //! Random numbers come only from the module's own streams
-//! ([`crate::rng::Stream::ReturnToWork`], [`crate::rng::Stream::PanicSelling`]) and
+//! ([`crate::rng::Stream::ReturnToWork`], [`crate::rng::Stream::PanicSelling`],
+//! [`crate::rng::Stream::OneMoreYear`]) and
 //! are drawn at a fixed rate (one draw per person, or per household, per month while
 //! a feature is on), whatever the household decides, so two scenarios that differ in
 //! a decision stay paired.
@@ -21,6 +22,7 @@ use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
 pub(crate) mod claiming;
+pub(crate) mod confirm;
 pub(crate) mod distress;
 pub(crate) mod panic;
 pub(crate) mod work;
@@ -41,6 +43,8 @@ pub(crate) struct BehaviorPlan {
     pub claim: Option<claiming::ClaimPlan>,
     /// `portfolio.pause_deferrals_in_distress`.
     pub distress: Option<distress::DistressPlan>,
+    /// `retirement.trigger.when_funded.confirmation` and `one_more_year`.
+    pub confirm: Option<confirm::ConfirmPlan>,
 }
 
 impl BehaviorPlan {
@@ -73,8 +77,14 @@ impl BehaviorPlan {
         };
         let claim = claiming::compile(profile);
         let distress = distress::DistressPlan::compile(&profile.portfolio);
+        let confirm = confirm::ConfirmPlan::compile(profile);
         BehaviorPlan {
-            any: rtw.is_some() || panic.is_some() || claim.is_some() || distress.is_some(),
+            any: rtw.is_some()
+                || panic.is_some()
+                || claim.is_some()
+                || distress.is_some()
+                || confirm.is_some(),
+            confirm,
             rtw,
             panic,
             claim,
@@ -97,6 +107,9 @@ pub(crate) struct BehaviorState {
     pub penalty_seen: f64,
     /// Months the last penalty still counts for.
     pub penalty_months: u8,
+    /// Confirming retirement.
+    pub confirm: confirm::ConfirmState,
+    pub confirm_rng: Rng,
 }
 
 impl Default for BehaviorState {
@@ -108,6 +121,8 @@ impl Default for BehaviorState {
             distress: false,
             penalty_seen: 0.0,
             penalty_months: 0,
+            confirm: confirm::ConfirmState::default(),
+            confirm_rng: Rng::from_seed(0),
         }
     }
 }
@@ -129,6 +144,16 @@ impl BehaviorState {
         self.distress = false;
         self.penalty_seen = 0.0;
         self.penalty_months = 0;
+        self.confirm = confirm::ConfirmState::default();
+        if matches!(
+            plan.confirm,
+            Some(confirm::ConfirmPlan {
+                one_more_year: Some(_),
+                ..
+            })
+        ) {
+            self.confirm_rng = Rng::stream(seed, path, Stream::OneMoreYear);
+        }
         if plan.panic.is_some() {
             self.panic_rng = Rng::stream(seed, path, Stream::PanicSelling);
         }
@@ -146,6 +171,9 @@ impl super::state::State {
     ) {
         if plan.beh.rtw.is_some() {
             self.return_to_work_month(plan, econ, t);
+        }
+        if plan.beh.confirm.is_some() {
+            self.confirm_draw(plan);
         }
         if plan.beh.claim.is_some() {
             self.adaptive_claiming_month(plan, t, econ.price_level[t]);

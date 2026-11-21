@@ -655,6 +655,47 @@ A partner can stop work later (`partner_offset_years`). Coast-FI (the age at whi
 today's savings, with no more saving, would meet the test at the planned
 retirement age) is reported too.
 
+### Not retiring into a crash (opt-in)
+
+Two settings on `when_funded` change the month a funded household retires; the FI
+age (the first month the test is met) does not move.
+
+* `confirmation: { months (6), max_equity_drawdown (0.2) }`: the test, with
+  `min_age`, must hold for `months` months in a row, and US stocks must not be more
+  than `max_equity_drawdown` below their peak. A household funded at the top of a
+  boom that loses it in the crash keeps working. A postponement for the market is a
+  trace event.
+* `one_more_year: { probability (0.25) }`: each time the household would retire it
+  decides, with this chance, to work another year first, then decides again (the
+  "one more year" habit). One draw a month from its own stream.
+
+`max_age` still forces retirement. Both defaults are judgements: there is no agreed
+estimate of how long households wait for confirmation or how often they add a
+year, so they are the user's to set.
+
+Measured with the CLI (`firesight run`, 3,000 paths each; retirement age p10 / p50
+/ p90, then paths depleted):
+
+| | early-career-saver | dual-income-family |
+|---|---|---|
+| plain rule | 36.1 / 39.3 / 45.1, 15.8% | 50.0 / 53.4 / 60.9, 8.2% |
+| confirmation | 36.7 / 40.2 / 47.8, 9.2% | 50.4 / 54.7 / 63.8, 6.1% |
+| one more year | 36.3 / 39.7 / 45.6, 13.4% | 50.0 / 53.9 / 61.6, 7.4% |
+| both | 37.0 / 40.6 / 48.6, 8.0% | 50.5 / 54.9 / 64.6, 5.5% |
+
+For `early-career-saver`, confirmation moves the median by 0.9 years and cuts
+depletion by 6.6 points; one more year moves the median by 0.4 years and cuts it
+by 2.4 points. Confirmation acts on the paths where retiring would have happened
+during a fall of more than 20%, and stretches the upper tail (the 90th percentile
+moves by 2.7 to 2.8 years) as those households wait the fall out; how much of its
+larger effect comes from that timing rather than the longer delay was not
+separated. One more year at 25% adds about a third of a year on
+average, as the geometric expectation 0.25 / 0.75 says it should.
+
+Not modelled: the decision does not weigh the margin over the target, age or how
+the job is going; a delay is always a whole year; a retired household does not
+reconsider (see going back to work below).
+
 ### Going back to work (opt-in)
 
 `retirement.return_to_work` (off by default) lets a retired household look for

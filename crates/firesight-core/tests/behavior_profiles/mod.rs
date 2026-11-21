@@ -53,6 +53,10 @@ pub fn with_behaviors(mut p: Profile) -> Profile {
         ..PanicSelling::default()
     });
     p.portfolio.pause_deferrals_in_distress = true;
+    if let RetirementTrigger::WhenFunded(rule) = &mut p.retirement.trigger {
+        rule.confirmation = Some(RetirementConfirmation::default());
+        rule.one_more_year = Some(OneMoreYear { probability: 0.3 });
+    }
     for person in &mut p.household.people {
         person.social_security.claiming = Claiming::Adaptive {
             earliest: 62.0,

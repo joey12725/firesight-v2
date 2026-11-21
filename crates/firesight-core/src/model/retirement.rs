@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::behavior::{OneMoreYear, RetirementConfirmation};
 use super::YearMonth;
 
 /// The retirement plan.
@@ -180,6 +181,15 @@ pub struct WhenFunded {
     pub min_age: Option<f64>,
     /// Retire at this age of the first person at the latest, funded or not. Default 70.
     pub max_age: f64,
+    /// Before retiring, require the test to hold for some months in a row and stocks
+    /// not to be deep in a fall. Leave empty to retire the month after the test is
+    /// first met.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmation: Option<RetirementConfirmation>,
+    /// The chance of deciding to work one more year each time the household would
+    /// retire. Leave empty for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub one_more_year: Option<OneMoreYear>,
 }
 
 impl Default for WhenFunded {
@@ -190,6 +200,8 @@ impl Default for WhenFunded {
             count_future_income: true,
             min_age: None,
             max_age: 70.0,
+            confirmation: None,
+            one_more_year: None,
         }
     }
 }

@@ -494,3 +494,118 @@ fn penalties_paid_count_as_distress() {
         .count();
     assert_eq!(pauses, 1);
 }
+
+fn example(slug: &str) -> Profile {
+    Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == slug)
+        .unwrap()
+        .profile
+}
+
+fn with_rule(mut p: Profile, f: impl Fn(&mut WhenFunded)) -> Profile {
+    if let RetirementTrigger::WhenFunded(rule) = &mut p.retirement.trigger {
+        f(rule);
+    } else {
+        panic!("not when_funded");
+    }
+    p
+}
+
+#[test]
+fn confirmation_that_always_holds_retires_as_before() {
+    let base = example("early-career-saver");
+    let same = with_rule(base.clone(), |r| {
+        r.confirmation = Some(RetirementConfirmation {
+            months: 1,
+            max_equity_drawdown: 1.0,
+        });
+        r.one_more_year = Some(OneMoreYear { probability: 0.0 });
+    });
+    let a = run(&compile(&base), SEED, 0..200);
+    let b = run(&compile(&same), SEED, 0..200);
+    assert_eq!(a.to_bytes(), b.to_bytes());
+}
+
+#[test]
+fn waiting_for_confirmation_and_one_more_year_retire_later() {
+    let n = 600;
+    let base = example("early-career-saver");
+    let confirmed = with_rule(base.clone(), |r| {
+        r.confirmation = Some(RetirementConfirmation::default());
+    });
+    let omy = with_rule(base.clone(), |r| {
+        r.one_more_year = Some(OneMoreYear { probability: 0.25 });
+    });
+    let a = run(&compile(&base), SEED, 0..n);
+    let c = run(&compile(&confirmed), SEED, 0..n);
+    let o = run(&compile(&omy), SEED, 0..n);
+    let ages = |acc: &Accumulator| column(acc, PathScalar::RetirementAge);
+    let (ra, rc, ro) = (ages(&a), ages(&c), ages(&o));
+    // Never earlier on any path, later on average.
+    for (x, y) in ra.iter().zip(&rc).chain(ra.iter().zip(&ro)) {
+        if x.is_finite() && y.is_finite() {
+            assert!(y + 1e-3 >= *x, "{x} -> {y}");
+        }
+    }
+    let gap = |b: &[f32]| {
+        let d: Vec<f32> = ra
+            .iter()
+            .zip(b)
+            .filter(|(x, y)| x.is_finite() && y.is_finite())
+            .map(|(x, y)| y - x)
+            .collect();
+        mean(&d)
+    };
+    // Confirmation: at least the 5 extra months of the run on every path (6 in a row
+    // instead of 1), more when a fall holds it back.
+    let gc = gap(&rc);
+    assert!(
+        (5.0 / 12.0 - 1e-3..2.0).contains(&gc),
+        "confirmation delay {gc}"
+    );
+    // One more year at 25%: the expected number of extra years is
+    // 0.25 / (1 - 0.25) = 1/3 when the household stays funded through the year.
+    let go = gap(&ro);
+    assert!((0.2..0.5).contains(&go), "one-more-year delay {go}");
+    // Working longer lowers the depletion rate.
+    assert!(share_depleted(&o) < share_depleted(&a));
+    // In a trace: the decision, then retirement at least a year later.
+    let plan = compile(&omy);
+    let shown = (0..40).any(|path| {
+        let trace = sim::trace_path(&plan, SEED, path);
+        let decided = trace
+            .events
+            .iter()
+            .find(|e| e.label == "Funded, but working one more year");
+        let retired = trace
+            .events
+            .iter()
+            .find(|e| e.kind == TraceEventKind::Retired);
+        match (decided, retired) {
+            (Some(d), Some(r)) => {
+                assert!(r.month - d.month >= 12, "{:?} {:?}", d.month, r.month);
+                true
+            }
+            _ => false,
+        }
+    });
+    assert!(shown, "no one-more-year decision in 40 traced paths");
+}
+
+#[test]
+fn confirmation_settings_are_validated() {
+    let p = with_rule(example("early-career-saver"), |r| {
+        r.confirmation = Some(RetirementConfirmation {
+            months: 6,
+            max_equity_drawdown: 1.5,
+        });
+        r.one_more_year = Some(OneMoreYear { probability: 0.7 });
+    });
+    let r = firesight_core::validate::validate(&p);
+    assert!(r
+        .errors
+        .iter()
+        .any(|e| e.path == "/retirement/trigger/confirmation/max_equity_drawdown"));
+    assert!(r.warnings.iter().any(|w| w.code == "one_more_year_likely"));
+}

@@ -1,13 +1,14 @@
 //! Checks of the household-behaviour settings (`sim/behavior`).
 
 use super::{seg, Checker};
-use crate::model::{Claiming, InvestorBehavior, JobSearch, SocialSecurityBasis};
+use crate::model::{Claiming, InvestorBehavior, JobSearch, RetirementTrigger, SocialSecurityBasis};
 
 impl Checker<'_> {
     /// Errors for impossible behaviour settings, warnings for implausible ones.
     pub(super) fn behavior(&mut self) {
         self.panic_selling();
         self.adaptive_claiming();
+        self.retirement_confirmation();
         if self.p.portfolio.pause_deferrals_in_distress {
             self.r.range(
                 "/portfolio/distress/high_interest_rate",
@@ -169,6 +170,54 @@ impl Checker<'_> {
                     "claiming_without_benefit",
                     &base,
                     "This person has no Social Security benefit, so the claiming strategy has no effect.",
+                );
+            }
+        }
+    }
+
+    fn retirement_confirmation(&mut self) {
+        let RetirementTrigger::WhenFunded(rule) = &self.p.retirement.trigger else {
+            return;
+        };
+        let base = "/retirement/trigger";
+        if let Some(c) = rule.confirmation {
+            if c.months > 120 {
+                self.r.error(
+                    "out_of_range",
+                    &format!("{base}/confirmation/months"),
+                    format!(
+                        "Confirmation months is {}; it must be between 0 and 120.",
+                        c.months
+                    ),
+                );
+            } else if c.months > 24 {
+                self.r.warn(
+                    "confirmation_long",
+                    &format!("{base}/confirmation/months"),
+                    "Waiting more than two years of funded months in a row before retiring is unusual; most plans use a few months.",
+                );
+            }
+            self.r.range(
+                &format!("{base}/confirmation/max_equity_drawdown"),
+                "The stock-market fall that postpones retirement",
+                c.max_equity_drawdown,
+                0.0,
+                1.0,
+            );
+        }
+        if let Some(o) = rule.one_more_year {
+            if self.r.range(
+                &format!("{base}/one_more_year/probability"),
+                "The chance of working one more year",
+                o.probability,
+                0.0,
+                1.0,
+            ) && o.probability > 0.5
+            {
+                self.r.warn(
+                    "one_more_year_likely",
+                    &format!("{base}/one_more_year/probability"),
+                    "With a chance above one half the household usually works until max_age.",
                 );
             }
         }

@@ -1990,6 +1990,13 @@
         "code": "sim::behavior::distress::PENALTY_MONTHS",
         "confidence": "judgement (a retired household draws a quarter's money at a time)"
       }
+    },
+    "retirement_confirmation": {
+      "code": "model::RetirementConfirmation::default(), model::OneMoreYear::default()",
+      "months": 6,
+      "max_equity_drawdown": 0.2,
+      "one_more_year_probability": 0.25,
+      "confidence": "judgement (no agreed estimate of how long households wait for confirmation or how often they add a year; the defaults are illustrative and the user's to set)"
     }
   },
   "housing": {

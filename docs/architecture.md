@@ -176,7 +176,9 @@ EventKind =
 RetirementPlan {
   trigger: AtAge{person, age} | AtDate{at}
          | WhenFunded{ withdrawal_rate (0.04), basis: Investable|NetWorth, count_future_income: bool,
-                       min_age, max_age }
+                       min_age, max_age,
+                       confirmation: Option<{ months (6), max_equity_drawdown (0.2) }>,  // sim/behavior/confirm.rs
+                       one_more_year: Option<{ probability (0.25) }> }
          | FixedNumber{ amount, basis }
          | AlreadyRetired,
   partner_offset_years: f64,                     // second earner keeps working this much longer (can be negative)

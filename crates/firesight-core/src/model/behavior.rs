@@ -1,6 +1,6 @@
 //! Household behaviour that is not a mechanical rule: how investors react to a
-//! crash, how a person decides when to claim Social Security and when a household
-//! stops saving. Every setting here
+//! crash, how a person decides when to claim Social Security, when a household
+//! stops saving and how it decides that it can retire. Every setting here
 //! is opt-in; the default is the household the engine has always modelled.
 
 use schemars::JsonSchema;
@@ -138,5 +138,42 @@ impl DistressRules {
     /// True for the default rules.
     pub fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+}
+
+/// What has to hold before a funded household retires.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct RetirementConfirmation {
+    /// Months in a row the funded test must hold (after `min_age`) before
+    /// retiring. Default 6.
+    pub months: u32,
+    /// Do not retire while US stocks are more than this far below their peak, as a
+    /// decimal: 0.2 is a 20% fall. Default 0.2.
+    pub max_equity_drawdown: f64,
+}
+
+impl Default for RetirementConfirmation {
+    fn default() -> Self {
+        Self {
+            months: 6,
+            max_equity_drawdown: 0.2,
+        }
+    }
+}
+
+/// "One more year": deciding to keep working although the plan is funded.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct OneMoreYear {
+    /// Chance, each time the household would retire, that it works another year
+    /// first (and then decides again). A behavioural assumption with no agreed
+    /// value; default 0.25.
+    pub probability: f64,
+}
+
+impl Default for OneMoreYear {
+    fn default() -> Self {
+        Self { probability: 0.25 }
     }
 }
