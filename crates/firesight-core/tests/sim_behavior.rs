@@ -364,3 +364,133 @@ fn claiming_settings_are_validated() {
         .iter()
         .any(|e| e.path.ends_with("/social_security/claiming/earliest")));
 }
+
+/// A 35-year-old earning $100,000 who defers 15% into a 401(k) with a 50% match on
+/// the first 6%, holding `card` on a 22% credit card; no tax, retires at 65.
+fn saver_with_card(card: f64) -> Profile {
+    let mut p = quiet(vec![person("saver", 35, Sex::Female)], 90.0);
+    let mut income = job("job", 0, 100_000.0);
+    if let IncomeKind::Job(j) = &mut income.kind {
+        j.plan = Some(EmployerPlan {
+            employee_fraction: 0.15,
+            match_rate: 0.5,
+            match_up_to: 0.06,
+            ..EmployerPlan::default()
+        });
+    }
+    p.incomes = vec![income];
+    p.spending.items = vec![item("living", Category::Other, 4_000.0, true)];
+    p.portfolio.emergency_months = 3.0;
+    p.accounts = vec![
+        account("cash", 0, AccountKind::Cash, 30_000.0),
+        account("brokerage", 0, AccountKind::Taxable, 50_000.0),
+    ];
+    if card > 0.0 {
+        p.debts = vec![Debt {
+            id: "card".into(),
+            name: "Card".into(),
+            kind: DebtKind::CreditCard,
+            balance: card,
+            rate: 0.22,
+            ..Debt::default()
+        }];
+    }
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 65.0,
+    };
+    p
+}
+
+#[test]
+fn a_household_never_in_distress_saves_as_before() {
+    let base = saver_with_card(0.0);
+    let mut pausing = base.clone();
+    pausing.portfolio.pause_deferrals_in_distress = true;
+    let a = run(&compile(&base), SEED, 0..200);
+    let b = run(&compile(&pausing), SEED, 0..200);
+    assert_eq!(a.to_bytes(), b.to_bytes());
+}
+
+#[test]
+fn pausing_to_clear_a_credit_card_pays_it_off_sooner_and_ends_richer() {
+    let base = saver_with_card(25_000.0);
+    let mut pausing = base.clone();
+    pausing.portfolio.pause_deferrals_in_distress = true;
+    let ta = sim::trace_path(&compile(&base), SEED, 0);
+    let tb = sim::trace_path(&compile(&pausing), SEED, 0);
+    let paid_off = |t: &firesight_core::stats::PathTrace| {
+        t.events
+            .iter()
+            .find(|e| e.kind == TraceEventKind::DebtPaidOff)
+            .map(|e| e.month - t.start)
+    };
+    let (ma, mb) = (paid_off(&ta), paid_off(&tb));
+    // Minimum payments (2% of the balance) take years; the paused saver puts its
+    // whole surplus above the cash target on the card.
+    assert!(mb.unwrap() < 12, "paid off after {mb:?} months");
+    assert!(
+        ma.map_or(true, |m| m > 36),
+        "baseline paid off after {ma:?} months"
+    );
+    // The pause shows in the trace and so does the end of it.
+    assert!(tb
+        .events
+        .iter()
+        .any(|e| e.label == "Saving paused: carrying high-interest debt"));
+    assert!(tb.events.iter().any(|e| e.label == "Saving resumed"));
+    // While paused the deferral is the 6% that earns the match, not 15%: $500 a
+    // month instead of $1,250.
+    let (sa, sb) = (
+        ta.column("save_traditional").unwrap(),
+        tb.column("save_traditional").unwrap(),
+    );
+    assert!((sa[1] - 1_250.0).abs() < 1.0, "{}", sa[1]);
+    assert!((sb[1] - 500.0).abs() < 1.0, "{}", sb[1]);
+    // Clearing 22% debt beats investing: richer at the end on paired paths.
+    let a = run(&compile(&base), SEED, 0..200);
+    let b = run(&compile(&pausing), SEED, 0..200);
+    let (wa, wb) = (
+        mean(&column(&a, PathScalar::TerminalNetWorth)),
+        mean(&column(&b, PathScalar::TerminalNetWorth)),
+    );
+    assert!(wb > wa, "terminal net worth {wa} -> {wb}");
+    assert!(wb < wa * 1.5, "terminal net worth {wa} -> {wb}");
+}
+
+#[test]
+fn penalties_paid_count_as_distress() {
+    // A retired 50-year-old living off a traditional IRA with the 10% penalty.
+    let mut who = person("early", 50, Sex::Female);
+    who.social_security.basis = SocialSecurityBasis::None;
+    let mut p = quiet(vec![who], 90.0);
+    p.assumptions.taxes.kind = TaxKind::UsCurrentLaw;
+    p.spending.items = vec![item("living", Category::Other, 3_000.0, true)];
+    p.accounts = vec![account("ira", 0, AccountKind::Traditional, 900_000.0)];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    p.retirement.early_access = EarlyAccess::PayPenalty;
+    p.portfolio.pause_deferrals_in_distress = true;
+    let trace = sim::trace_path(&compile(&p), SEED, 0);
+    let paused = trace
+        .events
+        .iter()
+        .find(|e| e.label == "Saving paused: paying early-withdrawal penalties")
+        .expect("a pause for penalties");
+    // The pause ends once the penalty-free age of 59 and a half is passed.
+    let resumed = trace
+        .events
+        .iter()
+        .filter(|e| e.label == "Saving resumed")
+        .map(|e| e.month - trace.start)
+        .max()
+        .expect("saving resumes");
+    assert!(paused.month - trace.start < 12);
+    assert!((114..=140).contains(&resumed), "resumed at month {resumed}");
+    // Quarterly withdrawals keep it paused in between: one pause, one resumption.
+    let pauses = trace
+        .events
+        .iter()
+        .filter(|e| e.label.starts_with("Saving paused"))
+        .count();
+    assert_eq!(pauses, 1);
+}

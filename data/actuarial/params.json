@@ -1976,6 +1976,20 @@
         "model": "Claim now when investable savings < reserve_months x monthly budget + the benefit given up until the latest claim age.",
         "confidence": "judgement (a year of spending as a cash reserve is a rule of thumb, not a measured quantity)"
       }
+    },
+    "distress_pause": {
+      "high_interest_rate": {
+        "value": 0.08,
+        "code": "model::DistressRules::default().high_interest_rate",
+        "evidence": "Federal Reserve G.19 Consumer Credit: commercial bank interest rate on credit card plans, all accounts, 21.58% in 2024 (annual average). Student and auto loans in the shipped examples are at 5% and 6.5%.",
+        "source": "https://www.federalreserve.gov/releases/g19/",
+        "confidence": "judgement (the 8% line separates card and personal-loan rates from typical secured and student loans; it is not a published threshold)"
+      },
+      "penalty_months": {
+        "value": 3,
+        "code": "sim::behavior::distress::PENALTY_MONTHS",
+        "confidence": "judgement (a retired household draws a quarter's money at a time)"
+      }
     }
   },
   "housing": {

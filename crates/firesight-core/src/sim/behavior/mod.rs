@@ -1,6 +1,7 @@
 //! Household behaviour and decisions that are not mechanical rules: going back to
 //! work when retirement savings fall short (`work.rs`), panic selling in a crash
-//! (`panic.rs`) and adaptive Social Security claiming (`claiming.rs`).
+//! (`panic.rs`), adaptive Social Security claiming (`claiming.rs`) and stopping
+//! saving in distress (`distress.rs`).
 //!
 //! Every feature here is opt-in through a profile field whose default leaves it off.
 //! With every feature off, [`BehaviorPlan::any`] is false, nothing in this module
@@ -20,6 +21,7 @@ use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
 pub(crate) mod claiming;
+pub(crate) mod distress;
 pub(crate) mod panic;
 pub(crate) mod work;
 
@@ -37,6 +39,8 @@ pub(crate) struct BehaviorPlan {
     pub panic: Option<PanicPlan>,
     /// `social_security.claiming: adaptive`, per person.
     pub claim: Option<claiming::ClaimPlan>,
+    /// `portfolio.pause_deferrals_in_distress`.
+    pub distress: Option<distress::DistressPlan>,
 }
 
 impl BehaviorPlan {
@@ -68,11 +72,13 @@ impl BehaviorPlan {
             InvestorBehavior::PanicProne(p) => Some(PanicPlan::compile(p)),
         };
         let claim = claiming::compile(profile);
+        let distress = distress::DistressPlan::compile(&profile.portfolio);
         BehaviorPlan {
-            any: rtw.is_some() || panic.is_some() || claim.is_some(),
+            any: rtw.is_some() || panic.is_some() || claim.is_some() || distress.is_some(),
             rtw,
             panic,
             claim,
+            distress,
         }
     }
 }
@@ -85,6 +91,12 @@ pub(crate) struct BehaviorState {
     /// Panic selling.
     pub panic: PanicState,
     pub panic_rng: Rng,
+    /// Stopping saving in distress: this month counts as one of distress, and the
+    /// year's penalised early distributions as last seen.
+    pub distress: bool,
+    pub penalty_seen: f64,
+    /// Months the last penalty still counts for.
+    pub penalty_months: u8,
 }
 
 impl Default for BehaviorState {
@@ -93,6 +105,9 @@ impl Default for BehaviorState {
             rtw: Default::default(),
             panic: PanicState::default(),
             panic_rng: Rng::from_seed(0),
+            distress: false,
+            penalty_seen: 0.0,
+            penalty_months: 0,
         }
     }
 }
@@ -111,6 +126,9 @@ impl BehaviorState {
             }
         }
         self.panic = PanicState::default();
+        self.distress = false;
+        self.penalty_seen = 0.0;
+        self.penalty_months = 0;
         if plan.panic.is_some() {
             self.panic_rng = Rng::stream(seed, path, Stream::PanicSelling);
         }

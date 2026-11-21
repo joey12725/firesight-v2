@@ -255,6 +255,37 @@ holding moves it by half.)
 While working, cash above the emergency fund (default six months of spending) is
 invested each month.
 
+### Stopping saving in distress (opt-in)
+
+`portfolio.pause_deferrals_in_distress: true` (default false) stops a household
+saving for retirement while it is in trouble. A month is one of distress when the
+household paid an early-withdrawal penalty within the last three months (a retired
+household draws a quarter at a time; the three is a judgement), cut essential
+spending, carries a non-mortgage debt at `distress.high_interest_rate` or more
+(default 8%: credit cards averaged 21.6% in 2024, Federal Reserve G.19; the line
+itself is a judgement), or, while working, holds less cash than its emergency-fund
+target. In such a month, cash above the month's cash target first pays down the
+high-interest debts, dearest first; then nothing else is invested (no IRA, HSA,
+after-tax 401(k) or taxable contribution from the surplus), so the remainder
+rebuilds the emergency fund. In the next month's pay the employee deferral drops
+to what earns the full employer match (`distress.keep_match`, default true; false
+stops it) and the after-tax route closes. Saving resumes the month after a month
+without distress. Pauses and resumptions are trace events; the debt paid shows
+in the debt-service spending line. No random numbers.
+
+Measured on a test household (35, $100,000, 15% into a 401(k) with a 50% match on
+6%, $25,000 on a 22% card, no tax): the card is gone within a year instead of
+dragging on at minimum payments, the deferral is $500 a month instead of $1,250
+while it lasts, and terminal net worth is higher on paired paths. With the CLI
+(3,000 paired paths) the shipped examples barely move, because their debts are
+small or cheap: `dual-income-family` median terminal net worth +$30,000 (success
+91.8% -> 91.7%, within noise), `early-career-saver` -$21,000, `side-hustle-landlord`
+-$4,000; each within noise on success.
+
+Not modelled: solo 401(k) and HSA payroll contributions continue, as do the
+employer's own; there are no hardship withdrawals or 401(k) loans; the household
+does not cut spending to save more.
+
 ### Panic selling (opt-in, a behavioural assumption)
 
 `portfolio.behavior: panic_prone` (the default is `disciplined`) lets the household

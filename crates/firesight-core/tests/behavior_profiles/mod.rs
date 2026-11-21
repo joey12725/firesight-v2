@@ -52,6 +52,7 @@ pub fn with_behaviors(mut p: Profile) -> Profile {
         probability: 0.5,
         ..PanicSelling::default()
     });
+    p.portfolio.pause_deferrals_in_distress = true;
     for person in &mut p.household.people {
         person.social_security.claiming = Claiming::Adaptive {
             earliest: 62.0,

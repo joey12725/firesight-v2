@@ -143,7 +143,9 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   single_stock: SingleStock{ volatility, beta },
                   behavior: Disciplined (default)             // sim/behavior/panic.rs
                           | PanicProne{ drawdown_trigger (0.25), probability (0.08), share (0.5),
-                                        reentry: { recovered_within (0.05), max_months (36) } } }
+                                        reentry: { recovered_within (0.05), max_months (36) } },
+                  pause_deferrals_in_distress: bool (false),  // sim/behavior/distress.rs
+                  distress: { keep_match (true), high_interest_rate (0.08) } }
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 

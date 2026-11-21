@@ -9,7 +9,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::behavior::InvestorBehavior;
+use super::behavior::{DistressRules, InvestorBehavior};
 
 /// Number of asset classes. Balances and returns are `[f64; N_ASSETS]` indexed by
 /// [`AssetClass::index`].
@@ -295,6 +295,16 @@ pub struct PortfolioPolicy {
     /// or prone to selling stocks after a deep fall.
     #[serde(skip_serializing_if = "InvestorBehavior::is_disciplined")]
     pub behavior: InvestorBehavior,
+    /// Pause retirement saving in months of financial distress (paying
+    /// early-withdrawal penalties, cutting essentials, carrying high-interest debt or
+    /// short of the emergency fund): payroll deferrals drop to what earns the
+    /// employer match and the surplus stays in cash or pays the debt. Default false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pause_deferrals_in_distress: bool,
+    /// What a pause keeps and what counts as high-interest debt (used only with
+    /// `pause_deferrals_in_distress`).
+    #[serde(skip_serializing_if = "DistressRules::is_default")]
+    pub distress: DistressRules,
 }
 
 impl Default for PortfolioPolicy {
@@ -311,6 +321,8 @@ impl Default for PortfolioPolicy {
             custom_asset: None,
             single_stock: SingleStock::default(),
             behavior: InvestorBehavior::Disciplined,
+            pause_deferrals_in_distress: false,
+            distress: DistressRules::default(),
         }
     }
 }

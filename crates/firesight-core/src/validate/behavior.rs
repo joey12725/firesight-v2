@@ -8,6 +8,15 @@ impl Checker<'_> {
     pub(super) fn behavior(&mut self) {
         self.panic_selling();
         self.adaptive_claiming();
+        if self.p.portfolio.pause_deferrals_in_distress {
+            self.r.range(
+                "/portfolio/distress/high_interest_rate",
+                "The interest rate from which a debt counts as high-interest",
+                self.p.portfolio.distress.high_interest_rate,
+                0.0,
+                1.0,
+            );
+        }
         if let Some(r) = self.p.retirement.return_to_work {
             let base = "/retirement/return_to_work";
             self.r.range(

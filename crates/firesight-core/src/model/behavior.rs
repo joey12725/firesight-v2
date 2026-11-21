@@ -1,5 +1,6 @@
 //! Household behaviour that is not a mechanical rule: how investors react to a
-//! crash and how a person decides when to claim Social Security. Every setting here
+//! crash, how a person decides when to claim Social Security and when a household
+//! stops saving. Every setting here
 //! is opt-in; the default is the household the engine has always modelled.
 
 use schemars::JsonSchema;
@@ -109,4 +110,33 @@ fn default_earliest_claim() -> f64 {
 
 fn default_latest_claim() -> f64 {
     70.0
+}
+
+/// When a household in distress stops saving (`portfolio.pause_deferrals_in_distress`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DistressRules {
+    /// Keep contributing what earns the full employer match during a pause (true,
+    /// the default); false stops payroll deferrals altogether.
+    pub keep_match: bool,
+    /// A debt at this interest rate or more counts as high-interest, as a decimal.
+    /// Default 0.08: credit cards (21.6% on average in 2024) and most personal loans,
+    /// not typical student or car loans.
+    pub high_interest_rate: f64,
+}
+
+impl Default for DistressRules {
+    fn default() -> Self {
+        Self {
+            keep_match: true,
+            high_interest_rate: 0.08,
+        }
+    }
+}
+
+impl DistressRules {
+    /// True for the default rules.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }

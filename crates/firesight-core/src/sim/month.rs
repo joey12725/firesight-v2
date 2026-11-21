@@ -186,6 +186,11 @@ impl State {
                 self.wage_like += gross;
                 let pay = jm.wages + jm.bonus + jm.commission;
                 if let (Some(ep), true) = (self.jobs[j].plan, pay > 0.0) {
+                    let ep = if plan.beh.any {
+                        self.deferral_plan(plan, ep)
+                    } else {
+                        ep
+                    };
                     let d = self.acc.payroll_deferral(
                         p,
                         &ep,
@@ -1353,7 +1358,8 @@ impl State {
         } else {
             self.efund_target
         } + self.tax_reserve();
-        if self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
+        let hold = plan.beh.any && self.distress_settle(plan, t, cap);
+        if !hold && self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
             let surplus = self.acc.cash - cap;
             self.acc.cash -= surplus;
             let flows = self.acc.save_surplus(surplus, &self.sctx, &target);
