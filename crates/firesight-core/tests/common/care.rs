@@ -5,6 +5,7 @@ use firesight_core::model::*;
 /// `p` with every opt-in health, longevity and care feature on.
 pub fn all_care(mut p: Profile) -> Profile {
     p.assumptions.health_model = HealthModelKind::States;
+    p.spending.healthcare.medicaid = true;
     if let Longevity::Stochastic {
         couple_dependence,
         income_gradient,

@@ -32,6 +32,7 @@ pub mod housing;
 pub mod legacy;
 pub mod longevity_links;
 pub mod math;
+pub mod medicaid;
 pub mod model;
 pub mod patch;
 pub mod rng;

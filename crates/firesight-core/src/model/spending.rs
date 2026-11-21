@@ -71,6 +71,18 @@ pub struct Healthcare {
     pub long_term_care: bool,
     /// Plan generosity, which trades premiums against out-of-pocket costs.
     pub quality: PlanTier,
+    /// Medicaid as the payer of last resort for long-term care. Off (the default):
+    /// care is paid privately until savings run out. On: once countable savings are
+    /// spent down to the asset limit ($2,000), Medicaid pays for care; the person
+    /// pays their income less a small allowance, a spouse at home keeps part of the
+    /// savings and enough income to live on, and after both have died the state
+    /// recovers what it paid from the estate. National default rules; states vary.
+    #[serde(skip_serializing_if = "is_false")]
+    pub medicaid: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Default for Healthcare {
@@ -80,6 +92,7 @@ impl Default for Healthcare {
             early_retirement: EarlyRetirementCoverage::Aca,
             long_term_care: true,
             quality: PlanTier::Silver,
+            medicaid: false,
         }
     }
 }

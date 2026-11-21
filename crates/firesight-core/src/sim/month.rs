@@ -445,7 +445,7 @@ impl State {
                 continue;
             }
             if plan.care.active {
-                self.care_month(plan, i, t, &mut hm);
+                self.care_month(plan, i, t, price, &mut hm);
             }
             health_cost += hm.premium + hm.out_of_pocket;
             match hm.phase {
@@ -1316,7 +1316,8 @@ impl State {
         {
             self.release_home_equity(plan, t, price, -self.acc.cash - overdraft);
         }
-        let depleted = essentials_cut || -self.acc.cash - overdraft > DUST;
+        let depleted = (essentials_cut || -self.acc.cash - overdraft > DUST)
+            && !(plan.care.active && self.care_safety_net(t));
         if depleted {
             self.depleted_year = true;
             if !self.ever_depleted {

@@ -32,6 +32,14 @@ impl Checker<'_> {
                 "Health states are on but health_risk is off, so costs are averages: the states still shape who needs care late in life only through mortality, not costs. Turn health_risk on for the states to change costs.",
             );
         }
+        let hc = &p.spending.healthcare;
+        if hc.medicaid && (!hc.long_term_care || hc.mode != HealthcareMode::Modeled) {
+            self.r.warn(
+                "medicaid_without_care",
+                "/spending/healthcare/medicaid",
+                "Medicaid only pays for long-term care the engine models; with long-term care off or healthcare in the budget it does nothing.",
+            );
+        }
         if let Longevity::Stochastic {
             couple_dependence,
             income_gradient,
@@ -122,5 +130,26 @@ mod tests {
         assert!(e.is_empty(), "{e:?}");
         let single = crate::model::Profile::example().household.people.len() < 2;
         assert_eq!(w.contains(&"linked_lifespans_single".to_string()), single);
+    }
+
+    #[test]
+    fn income_gradient_without_earnings_and_idle_medicaid_warn() {
+        let p = crate::model::Profile::example();
+        let ranked = crate::longevity_links::household_income(&p).is_some();
+        let (_, w) = codes(&[PatchOp::set(
+            "/assumptions/longevity",
+            json!({"type": "stochastic", "income_gradient": true}),
+        )]);
+        assert_eq!(
+            w.contains(&"income_gradient_no_earnings".to_string()),
+            !ranked
+        );
+        let (_, w) = codes(&[
+            PatchOp::set("/spending/healthcare/medicaid", json!(true)),
+            PatchOp::set("/spending/healthcare/long_term_care", json!(false)),
+        ]);
+        assert!(w.contains(&"medicaid_without_care".to_string()), "{w:?}");
+        let (_, w) = codes(&[PatchOp::set("/spending/healthcare/medicaid", json!(true))]);
+        assert!(!w.contains(&"medicaid_without_care".to_string()), "{w:?}");
     }
 }

@@ -483,7 +483,9 @@ mod tests {
         // - 1)(e^-av - 1)/(e^-a - 1)) / a.
         let c = |u: f64, v: f64| {
             let a = 2.0f64;
-            -((1.0 + ((-a * u).exp() - 1.0) * ((-a * v).exp() - 1.0) / ((-a).exp() - 1.0)).ln()) / a
+            -math::ln(
+                1.0 + (math::exp(-a * u) - 1.0) * (math::exp(-a * v) - 1.0) / (math::exp(-a) - 1.0),
+            ) / a
         };
         let h = 1e-6;
         let d = (c(0.2 + h, v) - c(0.2 - h, v)) / (2.0 * h);
@@ -498,7 +500,7 @@ mod tests {
         let mut d1 = 0.0;
         for k in 0..n_int {
             let t = (k as f64 + 0.5) * a / n_int as f64;
-            d1 += t / (t.exp() - 1.0) * a / n_int as f64;
+            d1 += t / (math::exp(t) - 1.0) * a / n_int as f64;
         }
         d1 /= a;
         let tau = 1.0 - 4.0 / a * (1.0 - d1);
@@ -644,8 +646,8 @@ mod tests {
             let u = [0, 1].map(|i| Rng::stream(9, path, Stream::Longevity(i)).uniform());
             let mut r = Rng::stream(9, path, Stream::CoupleLongevity);
             let ([d0, d1], _) = m.draw(curves, u, r.uniform(), r.uniform());
-            v0 += (f64::from(d0) - m0).powi(2);
-            v1 += (f64::from(d1) - m1).powi(2);
+            v0 += math::powi(f64::from(d0) - m0, 2);
+            v1 += math::powi(f64::from(d1) - m1, 2);
         }
         let corr = cov / ((v0 / 20_000.0).sqrt() * (v1 / 20_000.0).sqrt());
         assert!(corr > 0.5 && corr < 0.8, "{corr}");

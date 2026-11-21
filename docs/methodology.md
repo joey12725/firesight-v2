@@ -410,8 +410,9 @@ health and excess inflation, from 65: mean $114k for men, $227k for women, 95th
 percentile $618k and $997k.
 
 Care is the dominant cause of failure for well-funded retirees: on the family
-example, switching it off halves depletion risk. Medicaid is not modelled; "health"
-as a failure cause means private-pay care exhausted the portfolio. A care episode
+example, switching it off halves depletion risk. Medicaid is not modelled unless
+switched on (below); "health" as a failure cause means private-pay care exhausted
+the portfolio. A care episode
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
 
@@ -465,6 +466,61 @@ state is drawn from the prevalence at the person's age, whatever the
 self-assessed `health`, which still scales mortality as before); health affecting
 work, earnings or the spending budget; a correlation of the two partners' states;
 the year's planned spending uses the average out-of-pocket cost, not the state's.
+
+### Medicaid for long-term care (opt-in)
+
+With `spending.healthcare.medicaid: true` Medicaid is the payer of last resort
+for the care episodes above, with the national default rules of 2026 (CMS SSI
+and spousal impoverishment standards; 42 U.S.C. 1396a(q), 1396r-5 and 1396p):
+
+* **Spend-down.** Care is paid privately while countable assets (every account,
+  plus the equity in property other than the home) are above the $2,000 asset
+  limit, a dollar figure fixed since 1989 and not indexed. In the month they no
+  longer cover the cost above the limit, Medicaid starts paying. A single person
+  with home equity above $752,000 is not eligible; the home is otherwise exempt.
+* **Patient liability.** The person then pays all of their own income (Social
+  Security and the pensions, annuities and other streams they own) less a
+  personal needs allowance of $60 a month in a nursing home (a judgement: the
+  federal minimum is $30 and most states set more) or the special income level
+  ($2,982, 300% of the SSI benefit) for care at home or in assisted living, less
+  their own premiums and out-of-pocket costs. Medicaid pays the rest of the cost.
+* **Spousal impoverishment.** With a spouse at home, half of the countable
+  assets in the first month of care (the snapshot) is protected, at least
+  $32,532 and at most $162,660 (the 2026 community spouse resource allowance),
+  and the spouse keeps enough of the patient's income to bring their own up to
+  $2,643.75 a month (the minimum maintenance needs allowance of July 2025 to June
+  2026). Indexed figures rise with the path's prices.
+* **Estate recovery.** When the path ends with the deaths of the recipient and
+  any spouse, the state recovers what Medicaid paid, up to the estate, which
+  lowers the estate tested against the bequest target. A path that ends with
+  someone alive at the horizon has nothing recovered yet.
+
+A month in which Medicaid pays for someone with no spouse at home is covered by
+the safety net and is not counted as depletion, even though spending is cut to
+the allowance; such paths are reported on their own (`medicaid_rate` in the
+headline, `medicaid_age` per path, and "medicaid" trace events for the start of
+coverage and for the estate recovery), as `home_sale_rate` is for a home sold.
+A spouse at home who runs out is still depleted. Care that Medicaid pays is not
+in `long_term_care_cost`, which is what the household paid.
+
+Measured (simulation tests): for a widow of 78 with $150,000 and Social Security
+covering her budget (3,000 paths), depletion falls from 34% to 8% of paths and
+Medicaid pays on 32%; paths on which it never pays are identical bit for bit;
+every Medicaid path that ends with her death has its cost recovered from her
+home. For a couple, Medicaid begins with at least the protected allowance still
+held. On the dual-income example (4,000 paired paths) success rises from 91.5%
+to 98.4% and depletion falls from 8.5% to 1.6%; Medicaid pays on 13.9% of paths,
+more than were depleted without it, because a couple qualifies while the spouse
+at home keeps up to $162,660.
+
+Not modelled: state rules (asset limits, income caps, medically needy
+spend-down, more generous allowances, which settings a state's waivers pay for:
+here every care type is covered), the five-year look-back on gifts and Medicaid
+planning (trusts, annuities, spending on exempt assets), the higher maximum
+maintenance allowance by court order or excess shelter costs, Medicaid paying
+Medicare premiums and cost-sharing (the person's own health costs are deducted
+from the liability instead), the spouse's wages in the income test, recovery
+liens during life, and waiting lists for home and community-based services.
 
 ## 8. Housing and debt
 

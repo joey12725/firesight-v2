@@ -164,6 +164,10 @@ pub struct Headline {
     pub lifetime_spending: Spread,
     /// Funded ratio at retirement, when the simulation records it.
     pub funded_ratio: Option<Spread>,
+    /// Share of all paths on which Medicaid paid for long-term care after savings
+    /// were spent down (`spending.healthcare.medicaid`; 0 when it is off). Such a
+    /// path is not counted as depleted while the safety net covers the person.
+    pub medicaid_rate: Estimate,
 }
 
 /// Spending delivered versus planned in retirement ("probability of adjustment" and
@@ -799,6 +803,7 @@ fn headline(acc: &Accumulator, table: &Table, sorted: &[Vec<f32>]) -> Headline {
         lifetime_spending: dollars(PathScalar::LifetimeSpending),
         funded_ratio: (finite(PathScalar::FundedRatio) > 0)
             .then(|| Spread::of(col(PathScalar::FundedRatio), 4)),
+        medicaid_rate: Estimate::proportion(finite(PathScalar::MedicaidAge), n).rounded(5),
     }
 }
 

@@ -5,6 +5,7 @@
 mod common;
 
 use common::*;
+use firesight_core::math;
 use firesight_core::model::*;
 use firesight_core::sim;
 use firesight_core::stats::{Accumulator, PathScalar};
@@ -164,7 +165,7 @@ fn couple(dependence: CoupleDependence) -> Profile {
 
 fn stats(x: &[f64]) -> (f64, f64) {
     let m = mean(x);
-    let v = x.iter().map(|a| (a - m).powi(2)).sum::<f64>() / x.len() as f64;
+    let v = x.iter().map(|a| math::powi(a - m, 2)).sum::<f64>() / x.len() as f64;
     (m, v.sqrt())
 }
 
@@ -247,7 +248,7 @@ fn linked_lifespans_are_bit_identical_when_off_and_traced_when_on() {
     let off = couple(CoupleDependence::Independent);
     let mut implicit = off.clone();
     implicit.assumptions.longevity = Longevity::default();
-    let json = serde_json::to_value(&implicit.assumptions.longevity).unwrap();
+    let json = serde_json::to_value(implicit.assumptions.longevity).unwrap();
     assert!(json.get("couple_dependence").is_none());
     assert_eq!(
         run(&compile(&off), 4, 0..300).to_bytes(),
@@ -356,4 +357,206 @@ fn income_gradient_ranks_the_household_earnings() {
     neutral.assumptions.longevity = Longevity::default();
     let avg = le(&neutral);
     assert!(high > avg + 2.0 && low < avg - 0.5, "{low} {avg} {high}");
+}
+
+/// A widow of 78 with a paid-for home, $150,000 in cash and Social Security that
+/// covers her budget and ordinary health costs: only a long care episode can
+/// exhaust her savings.
+fn widow_78(medicaid: bool) -> Profile {
+    let mut p = retiree_70(Sex::Female);
+    p.household.people[0] = person("ann", 78, Sex::Female);
+    p.household.people[0].social_security.basis = SocialSecurityBasis::KnownBenefit {
+        monthly_at_fra: 3_000.0,
+    };
+    p.household.people[0].social_security.claim_age = 67.0;
+    p.accounts = vec![account("cash", 0, AccountKind::Cash, 150_000.0)];
+    p.spending.items = vec![item("living", Category::Other, 2_400.0, true)];
+    p.properties = vec![Property {
+        id: "home".into(),
+        value: 300_000.0,
+        basis: Some(150_000.0),
+        ..Property::default()
+    }];
+    p.retirement.home_equity = HomeEquity::Never;
+    p.spending.healthcare.medicaid = medicaid;
+    p
+}
+
+#[test]
+fn medicaid_off_is_the_default_bit_for_bit() {
+    let off = widow_78(false);
+    let json = serde_json::to_value(&off).unwrap();
+    assert!(json["spending"]["healthcare"].get("medicaid").is_none());
+    let back: Profile = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        run(&compile(&off), 6, 0..300).to_bytes(),
+        run(&compile(&back), 6, 0..300).to_bytes()
+    );
+    // Without long-term care in the model there is nothing for Medicaid to pay.
+    let mut no_ltc = widow_78(false);
+    no_ltc.spending.healthcare.long_term_care = false;
+    let mut no_ltc_on = no_ltc.clone();
+    no_ltc_on.spending.healthcare.medicaid = true;
+    assert_eq!(
+        run(&compile(&no_ltc), 6, 0..300).to_bytes(),
+        run(&compile(&no_ltc_on), 6, 0..300).to_bytes()
+    );
+}
+
+#[test]
+fn medicaid_pays_for_care_once_savings_are_spent_down() {
+    let (off, on) = (widow_78(false), widow_78(true));
+    let (plan_off, plan_on) = (compile(&off), compile(&on));
+    let n = 3_000;
+    let (a, b) = (run(&plan_off, 6, 0..n), run(&plan_on, 6, 0..n));
+    let f = |acc: &Accumulator, s: PathScalar| -> Vec<f64> {
+        column(acc, s).iter().map(|&v| f64::from(v)).collect()
+    };
+    let (dep_a, dep_b) = (
+        f(&a, PathScalar::DepletionAge),
+        f(&b, PathScalar::DepletionAge),
+    );
+    let medicaid = f(&b, PathScalar::MedicaidAge);
+    assert!(f(&a, PathScalar::MedicaidAge).iter().all(|v| v.is_nan()));
+    let count = |x: &[f64]| x.iter().filter(|v| !v.is_nan()).count();
+    let (da, db, m) = (count(&dep_a), count(&dep_b), count(&medicaid));
+    // Care is paid privately until savings are gone, so Medicaid pays only on
+    // paths that would otherwise have run out, and on those the safety net
+    // replaces depletion.
+    assert!(m > n as usize / 20, "{m}");
+    assert!(db < da / 2, "depleted {da} -> {db}");
+    // Paths on which Medicaid never paid are the same path, bit for bit.
+    let (ltc_a, ltc_b) = (
+        f(&a, PathScalar::LongTermCareCost),
+        f(&b, PathScalar::LongTermCareCost),
+    );
+    let mut before = 0;
+    for k in 0..n as usize {
+        if medicaid[k].is_nan() {
+            assert_eq!(dep_a[k].to_bits(), dep_b[k].to_bits(), "path {k}");
+            assert_eq!(ltc_a[k].to_bits(), ltc_b[k].to_bits(), "path {k}");
+        } else {
+            // The household pays less for care, and the path is one that ran out
+            // without Medicaid (or, rarely, one where the last of the savings paid
+            // the final month of care).
+            assert!(ltc_b[k] < ltc_a[k], "path {k}");
+            before += usize::from(!dep_a[k].is_nan() && medicaid[k] >= dep_a[k] - 1.0);
+        }
+    }
+    assert!(before as f64 >= 0.95 * m as f64, "{before} of {m}");
+    let s = plan_on.summarize(&b);
+    assert!((s.headline.medicaid_rate.value - m as f64 / n as f64).abs() < 1e-4);
+    assert_eq!(plan_off.summarize(&a).headline.medicaid_rate.value, 0.0);
+}
+
+#[test]
+fn medicaid_recovers_its_costs_from_the_estate() {
+    let plan = compile(&widow_78(true));
+    // Full cost of care in today's dollars on the same paths without Medicaid
+    // (`LongTermCareCost` counts care before any cut): what Medicaid paid, and so
+    // what it can recover, is part of it.
+    let full = column(
+        &run(&compile(&widow_78(false)), 6, 0..300),
+        PathScalar::LongTermCareCost,
+    );
+    let (mut traced, mut recovered) = (0, 0);
+    let traces: Vec<_> = (0..300)
+        .map(|path| sim::trace_path(&plan, 6, path))
+        .collect();
+    // Paths that reach the horizon end with her alive: nothing is recovered yet.
+    let horizon = traces.iter().map(|t| t.months).max().unwrap();
+    for (path, trace) in traces.iter().enumerate() {
+        let events: Vec<_> = trace
+            .events
+            .iter()
+            .filter(|e| e.kind == firesight_core::stats::TraceEventKind::Medicaid)
+            .collect();
+        if events.is_empty() || trace.months == horizon {
+            continue;
+        }
+        traced += 1;
+        // Medicaid starts paying, and after her death the state takes back what it
+        // paid from the home: something, and no more than the care cost.
+        let recovery = events
+            .iter()
+            .find(|e| e.label.contains("estate recovery"))
+            .and_then(|e| e.amount);
+        if let Some(x) = recovery {
+            recovered += 1;
+            let cap = f64::from(full[path]);
+            assert!(x > 0.0 && x <= cap, "path {path}: {x} of {cap}");
+        }
+    }
+    assert!(traced > 5, "{traced}");
+    // She is single, so every Medicaid path that ends with her death ends with
+    // recovery from the home.
+    assert_eq!(recovered, traced);
+}
+
+#[test]
+fn a_spouse_at_home_keeps_the_protected_savings() {
+    // A couple of 80 and 78, $250,000 in cash, Social Security covering the budget.
+    let mut a = person("al", 80, Sex::Male);
+    let mut b = person("bea", 78, Sex::Female);
+    for who in [&mut a, &mut b] {
+        who.social_security.basis = SocialSecurityBasis::KnownBenefit {
+            monthly_at_fra: 2_600.0,
+        };
+        who.social_security.claim_age = 67.0;
+    }
+    let mut p = quiet(vec![a, b], 100.0);
+    p.assumptions.longevity = Longevity::default();
+    p.assumptions.health_risk = true;
+    p.spending.healthcare = Healthcare {
+        medicaid: true,
+        ..Healthcare::default()
+    };
+    p.spending.items = vec![item("living", Category::Other, 4_000.0, true)];
+    p.accounts = vec![account("cash", 0, AccountKind::Cash, 250_000.0)];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    p.retirement.spending_rule = SpendingRule::ConstantReal;
+    let plan = compile(&p);
+    let medicaid = firesight_core::stats::TraceEventKind::Medicaid;
+    let died = firesight_core::stats::TraceEventKind::Died;
+    let mut checked = 0;
+    for path in 0..400 {
+        let trace = sim::trace_path(&plan, 8, path);
+        let Some(first) = trace.events.iter().find(|e| e.kind == medicaid) else {
+            continue;
+        };
+        // Skip paths where a partner had died or both were in care by then (no
+        // spouse at home).
+        let ltc = firesight_core::stats::TraceEventKind::LongTermCare;
+        let in_care = trace
+            .events
+            .iter()
+            .filter(|e| e.kind == ltc && e.month <= first.month)
+            .count();
+        if in_care > 1
+            || trace
+                .events
+                .iter()
+                .any(|e| e.kind == died && e.month <= first.month)
+        {
+            continue;
+        }
+        // Both alive and one in care: the couple still holds the protected
+        // allowance (at least $32,532 in today's dollars, less one month's
+        // spending) when Medicaid starts paying, not the $2,000 a single keeps.
+        let k = (first.month - trace.start) as usize;
+        let cash: f64 = [
+            "balance_cash",
+            "balance_taxable",
+            "balance_traditional",
+            "balance_roth",
+            "balance_hsa",
+        ]
+        .iter()
+        .filter_map(|key| trace.column(key))
+        .map(|c| c[k])
+        .sum();
+        assert!(cash > 32_532.0 - 6_000.0, "path {path}: {cash}");
+        checked += 1;
+    }
+    assert!(checked > 3, "{checked}");
 }

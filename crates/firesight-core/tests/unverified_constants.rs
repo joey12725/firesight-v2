@@ -5,7 +5,7 @@
 
 use firesight_core::data::Data;
 use firesight_core::model::AssetClass;
-use firesight_core::{decumulation, economy, health, health_states};
+use firesight_core::{decumulation, economy, health, health_states, medicaid};
 
 #[test]
 fn constants_quoted_from_memory_match_the_data_file() {
@@ -57,4 +57,8 @@ fn constants_quoted_from_memory_match_the_data_file() {
         .map(num)
         .collect();
     assert_eq!(health_states::LTC_STATE_FACTOR.to_vec(), factors);
+    assert_eq!(
+        medicaid::PERSONAL_NEEDS_ALLOWANCE,
+        num(&care["personal_needs_allowance"])
+    );
 }
