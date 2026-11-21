@@ -1,7 +1,10 @@
 //! Checks of the housing decisions (`model::housing_choices`): borrowing against the
 //! home, downsizing, cash-out refinancing, prepayment and rental dynamics.
 
-use crate::model::{Downsize, DownsizeWhen, HomeEquityBorrowing, PropertyUse, ReverseMortgageOpen};
+use crate::model::{
+    Downsize, DownsizeWhen, HomeEquityBorrowing, MortgagePrepayment, PropertyUse,
+    ReverseMortgageOpen,
+};
 
 use super::Checker;
 
@@ -116,6 +119,70 @@ impl Checker<'_> {
         }
         if let Some(d) = &p.retirement.downsize {
             self.downsize(d, has_home);
+        }
+        self.refinancing(has_home);
+    }
+
+    fn refinancing(&mut self, has_home: bool) {
+        let p = self.p;
+        if let Some(c) = &p.debt_policy.cash_out_refinance {
+            let path = "/debt_policy/cash_out_refinance";
+            if self.r.range(
+                &format!("{path}/max_ltv"),
+                "Loan-to-value limit",
+                c.max_ltv,
+                0.0,
+                1.0,
+            ) && c.max_ltv > 0.8
+            {
+                self.r.warn(
+                    "cash_out_ltv_high",
+                    &format!("{path}/max_ltv"),
+                    "Conventional cash-out loans on a main home stop at 80% of its value; above that no mortgage insurance is charged here.",
+                );
+            }
+            if self.r.range(
+                &format!("{path}/rate_premium"),
+                "Rate premium",
+                c.rate_premium,
+                -0.05,
+                0.1,
+            ) && c.rate_premium > 0.01
+            {
+                self.r.warn(
+                    "cash_out_premium_high",
+                    &format!("{path}/rate_premium"),
+                    "Cash-out loans usually cost a quarter to half a point more than other mortgages.",
+                );
+            }
+            if c.term_years == 0 || c.term_years > 40 {
+                self.r.error(
+                    "out_of_range",
+                    &format!("{path}/term_years"),
+                    format!(
+                        "Term is {} years; it must be between 1 and 40.",
+                        c.term_years
+                    ),
+                );
+            }
+            if !has_home {
+                self.r.warn(
+                    "cash_out_without_home",
+                    path,
+                    "A cash-out refinance is allowed, but the household owns no main home and buys none.",
+                );
+            }
+        }
+        if let MortgagePrepayment::WhenRateAbove { real_rate: Some(r) } =
+            p.debt_policy.mortgage_prepayment
+        {
+            self.r.range(
+                "/debt_policy/mortgage_prepayment/real_rate",
+                "Real rate",
+                r,
+                -0.1,
+                0.2,
+            );
         }
     }
 
@@ -405,6 +472,68 @@ mod tests {
         assert!(!serde_json::to_string(&Profile::example())
             .unwrap()
             .contains("downsize"));
+    }
+
+    #[test]
+    fn refinancing_is_checked_and_round_trips() {
+        let mut p = Profile::example();
+        let base = "/debt_policy/cash_out_refinance";
+        p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+        p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(
+            !warnings.iter().any(|(c, _)| c.starts_with("cash_out")),
+            "{warnings:?}"
+        );
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            json.contains(r#""mortgage_prepayment":{"type":"when_rate_above","real_rate":null}"#),
+            "{json}"
+        );
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
+        p.debt_policy.cash_out_refinance = Some(CashOutRefinance {
+            max_ltv: 1.5,
+            rate_premium: 0.2,
+            term_years: 0,
+        });
+        p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove {
+            real_rate: Some(0.5),
+        };
+        let (errors, _) = codes(&p);
+        assert!(has(&errors, "out_of_range", &format!("{base}/max_ltv")));
+        assert!(has(
+            &errors,
+            "out_of_range",
+            &format!("{base}/rate_premium")
+        ));
+        assert!(has(&errors, "out_of_range", &format!("{base}/term_years")));
+        assert!(has(
+            &errors,
+            "out_of_range",
+            "/debt_policy/mortgage_prepayment/real_rate"
+        ));
+        p.debt_policy.cash_out_refinance = Some(CashOutRefinance {
+            max_ltv: 0.9,
+            rate_premium: 0.02,
+            term_years: 30,
+        });
+        p.debt_policy.mortgage_prepayment = MortgagePrepayment::Never;
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(has(
+            &warnings,
+            "cash_out_ltv_high",
+            &format!("{base}/max_ltv")
+        ));
+        assert!(has(
+            &warnings,
+            "cash_out_premium_high",
+            &format!("{base}/rate_premium")
+        ));
+        let json = serde_json::to_string(&Profile::example()).unwrap();
+        assert!(!json.contains("cash_out") && !json.contains("prepayment"));
     }
 
     #[test]

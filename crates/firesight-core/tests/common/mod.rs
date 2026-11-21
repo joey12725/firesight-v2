@@ -175,6 +175,8 @@ pub fn with_housing_decisions(mut p: Profile) -> Profile {
         when: DownsizeWhen::WhenFundedRatioBelow { ratio: 0.9 },
         ..Downsize::default()
     });
+    p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+    p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
     p
 }
 

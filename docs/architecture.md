@@ -152,7 +152,9 @@ RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_frac
 Debt { id, name, kind: Student|Auto|CreditCard|Personal|Other, balance, rate,
        payment: Option<f64>, remaining_months: Option<u32> }
 DebtPolicy { strategy: Minimum | Avalanche | Snowball, extra_monthly: f64,
-             refinance_mortgages: bool (true) }  // each January, if the market rate is 1+ point lower and 4 years of saving exceed the costs
+             refinance_mortgages: bool (true),  // each January, if the market rate is 1+ point lower and 4 years of saving exceed the costs
+             cash_out_refinance: Option<{ max_ltv (0.80), rate_premium (0.0025), term_years (30) }>,  // before penalised withdrawals
+             mortgage_prepayment: Never (default) | WhenRateAbove{ real_rate: Option<f64> (None = after-tax 10y yield) } }
 
 LifeEvent { id, name, when: When, probability: f64 (1.0), timing_uncertainty_years: f64 (0), kind }
 EventKind =

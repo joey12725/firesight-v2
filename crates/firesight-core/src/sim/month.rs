@@ -1252,6 +1252,9 @@ impl State {
             );
             self.ledger_withdrawals(&ex);
         }
+        if plan.hx.cash_out.is_some() && self.acc.cash < -DUST {
+            self.hx_cash_out_before_shortfall(plan, t, price);
+        }
         if self.acc.cash < -DUST {
             // Cash has run out: sell investments, penalty-free sources first, then
             // with the penalty.

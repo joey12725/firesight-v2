@@ -142,3 +142,22 @@ fn downsize_constants_match_the_data_file() {
     assert_eq!(f64::from(c::LEAVE_AGE), ages[0].as_f64().unwrap());
     assert_eq!(f64::from(c::LEAVE_AGE_COLLEGE), ages[1].as_f64().unwrap());
 }
+
+#[test]
+fn cash_out_constants_match_the_data_file() {
+    use firesight_core::model::CashOutRefinance;
+    use firesight_core::sim::cash_out_constants as c;
+    let h = &section()["cash_out_refinance"];
+    let d = CashOutRefinance::default();
+    assert_eq!(d.max_ltv, value(&h["default_max_ltv"]));
+    assert_eq!(d.rate_premium, value(&h["default_rate_premium"]));
+    assert_eq!(
+        f64::from(c::CASH_OUT_MIN_MONTHS),
+        value(&h["min_months_between"])
+    );
+    assert_eq!(
+        c::CASH_OUT_RAISE_MONTHS,
+        value(&h["raise_months_of_spending"])
+    );
+    assert_eq!(c::CASH_OUT_MIN_CASH, value(&h["min_cash"]));
+}

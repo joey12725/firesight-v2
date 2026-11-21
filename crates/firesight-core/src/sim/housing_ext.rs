@@ -40,7 +40,11 @@ use crate::model::{HomeEquityBorrowing, Profile, PropertyUse, ReverseMortgageOpe
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEventKind, YearSeries};
 
+use super::cash_out::{CashOutPlan, Prepay};
 use super::downsize::DownsizePlan;
+
+/// `last_cash_out` before any cash-out refinance.
+const NEVER_CASHED_OUT: i32 = i32::MIN / 2;
 use super::plan::{Plan, PropPlan};
 use super::state::State;
 
@@ -76,6 +80,10 @@ pub(crate) struct HxPlan {
     pub surplus: bool,
     /// A planned downsizing (`retirement.downsize`).
     pub downsize: Option<DownsizePlan>,
+    /// Cash-out refinancing (`debt_policy.cash_out_refinance`, `cash_out.rs`).
+    pub cash_out: Option<CashOutPlan>,
+    /// Mortgage prepayment (`debt_policy.mortgage_prepayment`).
+    pub prepay: Prepay,
 }
 
 impl HxPlan {
@@ -104,12 +112,21 @@ impl HxPlan {
             .downsize
             .as_ref()
             .map(|d| DownsizePlan::compile(profile, d));
+        let cash_out = profile
+            .debt_policy
+            .cash_out_refinance
+            .as_ref()
+            .map(CashOutPlan::compile);
+        let prepay = Prepay::compile(&profile.debt_policy.mortgage_prepayment);
+        let prepaying = !matches!(prepay, Prepay::Never);
         HxPlan {
             borrow,
             lines,
-            monthly: lines || downsize.is_some(),
-            surplus: lines,
+            monthly: lines || downsize.is_some() || cash_out.is_some() || prepaying,
+            surplus: lines || prepaying,
             downsize,
+            cash_out,
+            prepay,
         }
     }
 }
@@ -136,6 +153,10 @@ pub(crate) struct HxState {
     pub long_yield: f64,
     /// True once the planned downsizing has happened (or lapsed).
     pub downsized: bool,
+    /// The market's 30-year mortgage rate this month.
+    pub mortgage_rate: f64,
+    /// Month of the last cash-out refinance.
+    pub last_cash_out: i32,
 }
 
 impl HxState {
@@ -151,6 +172,8 @@ impl HxState {
             tbill: 0.0,
             long_yield: 0.0,
             downsized: false,
+            mortgage_rate: 0.0,
+            last_cash_out: NEVER_CASHED_OUT,
         }
     }
 
@@ -165,6 +188,8 @@ impl HxState {
         self.tbill = 0.0;
         self.long_yield = 0.0;
         self.downsized = false;
+        self.mortgage_rate = 0.0;
+        self.last_cash_out = NEVER_CASHED_OUT;
         if let Borrow::Heloc(_) = plan.hx.borrow {
             self.rng = Rng::stream(seed, path, Stream::HomeEquityCredit);
         }
@@ -209,6 +234,7 @@ impl State {
         let now = plan.start + t as i32;
         self.hx.tbill = econ.tbill[t];
         self.hx.long_yield = econ.long_yield[t];
+        self.hx.mortgage_rate = econ.mortgage_rate[t];
         if let Borrow::Heloc(terms) = plan.hx.borrow {
             let u = self.hx.rng.uniform();
             if self.home_index > self.hx.home_peak {
@@ -409,7 +435,7 @@ impl State {
         for slot in 0..self.hx.lines.len() {
             let spare = self.acc.cash - cap;
             if spare <= 0.0 {
-                return;
+                break;
             }
             let line = &mut self.hx.lines[slot];
             if line.kind != LineKind::Heloc || line.balance <= 0.0 {
@@ -428,6 +454,9 @@ impl State {
                     format!("Repaid the home-equity line on {}", plan.props[slot].name)
                 });
             }
+        }
+        if plan.hx.surplus && !matches!(plan.hx.prepay, Prepay::Never) {
+            self.hx_prepay(plan, t, cap);
         }
     }
 

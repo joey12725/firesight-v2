@@ -49,8 +49,8 @@ const REFINANCE_THRESHOLD: f64 = 0.01;
 /// Closing costs of a refinance: this share of the balance plus a fixed amount in
 /// today's dollars (lender, title and appraisal fees; a judgement in the usual
 /// 2 to 5% range, at the low end because nothing is paid for points).
-const REFINANCE_COST_FRACTION: f64 = 0.02;
-const REFINANCE_COST_FIXED: f64 = 2_000.0;
+pub(crate) const REFINANCE_COST_FRACTION: f64 = 0.02;
+pub(crate) const REFINANCE_COST_FIXED: f64 = 2_000.0;
 /// The interest saved over this many years must exceed the closing costs.
 const REFINANCE_PAYBACK_YEARS: f64 = 4.0;
 
@@ -896,6 +896,10 @@ impl State {
                     cash_floor: 0.0,
                     in_drawdown: self.in_drawdown(),
                 };
+                if plan.hx.cash_out.is_some() {
+                    let rate = econ.mortgage_rate[t];
+                    self.hx_cash_out_before_plan(plan, t, price, rate, &base_result);
+                }
                 self.wplan = plan_year_from(
                     &plan.profile.retirement.withdrawal_order,
                     plan.profile.retirement.early_access,

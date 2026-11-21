@@ -167,15 +167,16 @@ pub enum DownsizeWhen {
     },
 }
 
-/// Refinancing for cash when savings would otherwise be withdrawn with a penalty.
+/// Refinancing the main home for cash when savings would otherwise be withdrawn with
+/// the early-withdrawal penalty.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct CashOutRefinance {
-    /// The new loan is this share of the home's value (lenders allow up to 0.80 on a
-    /// main home).
+    /// The new loan is at most this share of the home's value. Lenders allow up to
+    /// 0.80 on a one-unit main home.
     pub max_ltv: f64,
-    /// How much more a cash-out loan costs than the market's mortgage rate, as a
-    /// decimal (lenders price cash-out loans higher).
+    /// How much more a cash-out loan costs than the market's 30-year mortgage rate,
+    /// as a decimal (lenders price cash-out loans higher). 0.0025 by default.
     pub rate_premium: f64,
     /// Term of the new loan in years.
     pub term_years: u32,
@@ -199,12 +200,13 @@ pub enum MortgagePrepayment {
     #[default]
     Never,
     /// Spare cash that would go to the taxable account pays down the mortgage with
-    /// the highest rate instead, while that rate after expected inflation is above
-    /// `real_rate`.
+    /// the highest rate instead (on a home or second home, not a rental), while that
+    /// mortgage's rate is above the return safe investments would earn.
     WhenRateAbove {
-        /// Real rate above which paying the mortgage beats investing, as a decimal.
-        /// Leave empty to use the after-tax real yield of 10-year Treasuries at the
-        /// time (the safe return the money would otherwise earn).
+        /// Real rate (the mortgage rate less last year's inflation) above which paying
+        /// the mortgage beats investing, as a decimal. Leave empty to compare the
+        /// mortgage rate with the 10-year Treasury yield after tax at the
+        /// household's marginal rate.
         #[serde(default)]
         real_rate: Option<f64>,
     },

@@ -2216,6 +2216,38 @@
         "source": "Judgement (a convention of the schema): a child leaves home at 18, or at 22 when college is planned.",
         "confidence": "judgement"
       }
+    },
+    "cash_out_refinance": {
+      "default_max_ltv": {
+        "value": 0.8,
+        "source": "Fannie Mae Eligibility Matrix (April 2026): standard cash-out refinance of a one-unit principal residence, maximum LTV 80% (75% for second homes and investment properties).",
+        "confidence": "high"
+      },
+      "default_rate_premium": {
+        "value": 0.0025,
+        "source": "Fannie Mae loan-level price adjustment matrix (2026, as tabulated by The Mortgage Reports): at 75-80% LTV and a 740-759 score a cash-out refinance carries 2.375% of the loan against 1.125% for a rate-and-term refinance, 1.25 points more; at the usual conversion of 4 to 6 points of price per point of rate (a judgement) that is about 0.2 to 0.3 points of rate. Less at lower LTVs and better scores.",
+        "confidence": "low"
+      },
+      "closing_costs": {
+        "value": [0.02, 2000.0],
+        "source": "Judgement shared with the rate refinance (sim/year.rs REFINANCE_COST_FRACTION and REFINANCE_COST_FIXED): 2% of the loan plus $2,000 in today's dollars, the low end of the usual 2 to 5% because no points are paid.",
+        "confidence": "judgement"
+      },
+      "min_months_between": {
+        "value": 12,
+        "source": "Judgement: closing costs make refinancing more often than yearly uneconomic, and lenders commonly require months of seasoning between refinances.",
+        "confidence": "judgement"
+      },
+      "raise_months_of_spending": {
+        "value": 12.0,
+        "source": "Judgement: a refinance raises at least a year of planned spending, so that one carries the household for a while.",
+        "confidence": "judgement"
+      },
+      "min_cash": {
+        "value": 10000.0,
+        "source": "Judgement: a cash-out below $10,000 (today's dollars) is not worth its closing costs.",
+        "confidence": "judgement"
+      }
     }
   },
   "equity_compensation": {

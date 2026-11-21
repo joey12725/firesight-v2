@@ -640,3 +640,196 @@ fn downsize_with_a_mortgage_finances_what_the_proceeds_do_not_cover() {
         vec![START]
     );
 }
+
+// ---------------------------------------------------------------------------------
+// F29: cash-out refinancing and rate-aware prepayment.
+
+/// A 50-year-old who retired with $600,000 in a traditional IRA, nothing in taxable
+/// accounts, and a $600,000 house with $100,000 owed at 3%: every dollar she spends
+/// before 59 and a half (beyond a 72(t) schedule) would bear the 10% penalty.
+fn early_retiree() -> Profile {
+    let mut p = quiet(vec![person("early", 50, Sex::Female)], 90.0);
+    p.assumptions.taxes = TaxModel::default();
+    p.spending.items = vec![item("living", Category::Other, 60_000.0 / 12.0, true)];
+    p.accounts = vec![account("ira", 0, AccountKind::Traditional, 600_000.0)];
+    p.properties = vec![Property {
+        id: "home".into(),
+        name: "home".into(),
+        value: 600_000.0,
+        property_tax_rate: Some(0.01),
+        mortgage: Some(Mortgage {
+            balance: 100_000.0,
+            rate: 0.03,
+            remaining_months: 240,
+            ..Mortgage::default()
+        }),
+        ..Property::default()
+    }];
+    p.retirement.trigger = RetirementTrigger::AlreadyRetired;
+    p.retirement.home_equity = HomeEquity::Never;
+    p
+}
+
+fn years_total(acc: &Accumulator, s: YearSeries, years: std::ops::Range<usize>) -> i64 {
+    years.map(|y| in_year(acc, s, y)).sum()
+}
+
+#[test]
+fn cash_out_refinance_unused_changes_nothing() {
+    // At 66 nothing is ever penalised: identical bytes.
+    let base_p = house_rich_retiree();
+    let base = run(&compile(&base_p), SEED, 0..200).to_bytes();
+    let mut p = base_p;
+    p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+    assert_eq!(base, run(&compile(&p), SEED, 0..200).to_bytes());
+}
+
+#[test]
+fn cash_out_refinance_replaces_penalised_withdrawals() {
+    let base_p = early_retiree();
+    let mut p = base_p.clone();
+    p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+    let plan = compile(&p);
+    let paths = 100;
+    let on = run_checked(&plan, SEED, 0..paths);
+    let base = run(&compile(&base_p), SEED, 0..paths);
+    let pen = |a: &Accumulator| years_total(a, YearSeries::TaxPenalties, 0..9);
+    let (pb, po) = (pen(&base), pen(&on));
+    eprintln!("penalties before 59: without {pb}, with cash-out {po}");
+    assert!(pb > 0);
+    assert!((po as f64) < 0.6 * pb as f64, "{po} vs {pb}");
+    // Year 0: cash from the house is the new loan less the $100,000 repaid, and the
+    // closing costs are 2% of the loan plus $2,000, on every path:
+    // costs = 0.02 x (cash + payoff) + 2,000.
+    let n = paths as f64;
+    let cash = in_year(&on, YearSeries::PropertySale, 0) as f64 / n;
+    let costs = (in_year(&on, YearSeries::SpendOneOff, 0)
+        - in_year(&base, YearSeries::SpendOneOff, 0)) as f64
+        / n;
+    eprintln!("cash out {cash:.0}, closing costs {costs:.0}");
+    assert!(cash > 50_000.0, "{cash}");
+    // The balance is a little under 100,000 by the month of the refinance.
+    let expected = 0.02 * (cash + 99_500.0) + 2_000.0;
+    assert!((costs - expected).abs() < 50.0, "{costs} vs {expected}");
+    // Never more than 80% of the home's value is owed.
+    let trace = sim::trace_path(&plan, SEED, 0);
+    assert!(trace
+        .events
+        .iter()
+        .any(|e| e.label.starts_with("Cash-out refinance of home")));
+    let column = |s: YearSeries| {
+        trace
+            .annual
+            .columns
+            .iter()
+            .find(|c| c.key == s.key())
+            .unwrap()
+            .values
+            .clone()
+    };
+    let (owed, value) = (
+        column(YearSeries::Mortgage),
+        column(YearSeries::PropertyValue),
+    );
+    let peak = owed
+        .iter()
+        .zip(&value)
+        .map(|(o, v)| o / v)
+        .fold(0.0f64, f64::max);
+    assert!(peak > 0.15 && peak <= 0.80 + 1e-6, "{peak}");
+    // At most one refinance in any 12 months.
+    let months: Vec<_> = trace
+        .events
+        .iter()
+        .filter(|e| e.label.starts_with("Cash-out"))
+        .map(|e| e.month)
+        .collect();
+    for w in months.windows(2) {
+        assert!(w[1] - w[0] >= 12, "{months:?}");
+    }
+}
+
+/// A 40-year-old earning $150,000 and spending $60,000, whose $350,000 home carries
+/// a $300,000 mortgage at 7%: the surplus beyond her IRA goes to the taxable account.
+fn saver_with_mortgage() -> Profile {
+    let mut p = quiet(vec![person("saver", 40, Sex::Female)], 90.0);
+    p.incomes = vec![job("job", 0, 150_000.0)];
+    p.spending.items = vec![item("living", Category::Other, 60_000.0 / 12.0, true)];
+    p.accounts = vec![account("brokerage", 0, AccountKind::Taxable, 50_000.0)];
+    p.properties = vec![Property {
+        id: "home".into(),
+        name: "home".into(),
+        value: 350_000.0,
+        property_tax_rate: Some(0.01),
+        mortgage: Some(Mortgage {
+            balance: 300_000.0,
+            rate: 0.07,
+            remaining_months: 330,
+            ..Mortgage::default()
+        }),
+        ..Property::default()
+    }];
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 65.0,
+    };
+    p.debt_policy.refinance_mortgages = false;
+    p
+}
+
+#[test]
+fn prepayment_goes_to_the_mortgage_only_while_its_rate_beats_safe_returns() {
+    let base_p = saver_with_mortgage();
+    let base = run(&compile(&base_p), SEED, 0..PATHS);
+    // A real threshold of 20% is never met (7% less last year's inflation would need
+    // a deflation of 13%; the record's worst year, 1921, was about 10.5%): identical
+    // bytes. At 15% it is met in the bootstrap's deflation years of the early 1930s.
+    let mut never = base_p.clone();
+    never.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove {
+        real_rate: Some(0.2),
+    };
+    assert_eq!(
+        base.to_bytes(),
+        run(&compile(&never), SEED, 0..PATHS).to_bytes()
+    );
+    // 7% against a 10-year yield of about 4%: what would go to the taxable account
+    // pays the mortgage instead, dollar for dollar.
+    let mut p = base_p.clone();
+    p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
+    let plan = compile(&p);
+    let on = run_checked(&plan, SEED, 0..PATHS);
+    let saved =
+        in_year(&base, YearSeries::SaveTaxable, 0) - in_year(&on, YearSeries::SaveTaxable, 0);
+    let prepaid = in_year(&on, YearSeries::SpendDebt, 0) - in_year(&base, YearSeries::SpendDebt, 0);
+    eprintln!("year 0: taxable saving down {saved}, prepaid {prepaid}");
+    assert!(prepaid > 1_000 * PATHS as i64, "{prepaid}");
+    assert!(
+        (saved - prepaid).abs() <= 2 * PATHS as i64,
+        "{saved} vs {prepaid}"
+    );
+    // The loan, 27.5 years long, is gone within about a decade.
+    let years = on.years as usize;
+    let owed = |a: &Accumulator, y: usize| a.sums[YearSeries::Mortgage.index() * years + y];
+    eprintln!(
+        "owed in year 10: without {}, with {}",
+        owed(&base, 10),
+        owed(&on, 10)
+    );
+    assert!(owed(&on, 10) < owed(&base, 10) / 4);
+    // A mortgage at 2% is below the after-tax yield on most paths and in most years:
+    // a small fraction is prepaid.
+    let mut cheap = p.clone();
+    if let Some(m) = &mut cheap.properties[0].mortgage {
+        m.rate = 0.02;
+    }
+    let mut cheap_base = base_p;
+    cheap_base.properties = cheap.properties.clone();
+    let c_on = run(&compile(&cheap), SEED, 0..PATHS);
+    let c_base = run(&compile(&cheap_base), SEED, 0..PATHS);
+    let extra = years_total(&c_on, YearSeries::SpendDebt, 0..10)
+        - years_total(&c_base, YearSeries::SpendDebt, 0..10);
+    let at_seven = years_total(&on, YearSeries::SpendDebt, 0..10)
+        - years_total(&base, YearSeries::SpendDebt, 0..10);
+    eprintln!("prepaid in ten years: on a 7% loan {at_seven}, on a 2% loan {extra}");
+    assert!(extra < at_seven / 10, "{extra} vs {at_seven}");
+}

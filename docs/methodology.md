@@ -549,6 +549,47 @@ home with different tax or insurance rates, HOA or appreciation than the old one
 lender's income test, moving to another state, and the choice of when to move by
 anything but these rules.
 
+**Cash-out refinancing** (opt-in, `debt_policy.cash_out_refinance`; code in
+`sim/cash_out.rs`). When money would otherwise be withdrawn with the 10% early-withdrawal
+penalty (the year's withdrawal plan contains penalised withdrawals, or a mid-year
+shortfall would be covered from penalised sources; both found by running the
+withdrawal on a copy of the accounts), the household first refinances its main home:
+a new loan up to `max_ltv` of the value (default 0.80, the Fannie Mae April 2026
+eligibility limit for a one-unit main home), repaying the mortgage and any home-equity
+line, at the simulated 30-year rate plus `rate_premium` (0.25 points: Fannie Mae's
+loan-level price adjustments charge a cash-out loan 1.25 points of price more than a
+rate refinance at 75 to 80% LTV and a 740-759 score, which at the usual 4 to 6 points
+per point of rate is 0.2 to 0.3 points, a conversion that is a judgement) over
+`term_years` (30). It raises the penalised amount, at least a year of planned spending,
+pays closing costs of 2% plus $2,000 (the judgement the rate refinance already uses),
+and happens at most once in twelve months and only for at least $10,000 (judgements).
+The cash is booked as cash from property, the costs as one-off spending, the loan in
+`mortgage`. Measured (4,000 paired paths): on the early-career saver, who retires at
+about 39, success rises from 83.7% to 84.7% (103 rescued, 64 harmed) and the median
+terminal net worth by $288,000; on the family example success falls from 91.5% to
+90.7% and FI from 96.4% to 95.8%, because a working household that refinances instead
+of taking a penalised withdrawal must clear the larger mortgage before it counts as
+funded, and pays its interest for decades. Not modelled: the lender's income and
+credit tests, freezes of refinancing in downturns, the rule that interest on the
+cash-out part is deductible only if spent on the home (it is deducted like the rest),
+and the choice between a cash-out and a home-equity line by their costs.
+
+**Rate-aware mortgage prepayment** (opt-in, `debt_policy.mortgage_prepayment: {type:
+when_rate_above}`; same file). When surplus cash is about to be invested, the part the
+savings waterfall would put in the taxable account (found by running the waterfall on a
+copy) pays down the highest-rate mortgage on a home or second home instead, while its
+rate is above the 10-year Treasury yield after tax at the household's marginal rate
+(the expected inflation on both sides cancels), or, with `real_rate`, while its rate
+less last year's inflation is above that real rate. Contributions to tax-advantaged
+accounts come first, as before; the prepayment is booked as debt spending and the
+scheduled payment is unchanged, so the loan ends sooner. Measured (4,000 paired paths):
+on the early-career saver success rises from 83.7% to 90.3% (296 rescued, 29 harmed),
+the FI age moves 0.3 years later and median lifetime tax falls by $49,000 (less taxable
+income from the brokerage account); on the family example success is unchanged within
+noise (91.5% to 91.2%). Not modelled: the mortgage interest deduction in the
+comparison, rental mortgages, the liquidity lost by prepaying, and expectations of
+future rates.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus
