@@ -46,6 +46,10 @@ pub struct Person {
     /// Social Security claiming plan and how the benefit is estimated.
     #[serde(default)]
     pub social_security: SocialSecurity,
+    /// A long-term-care insurance policy this person owns, if any. Leave empty for
+    /// none (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ltc_insurance: Option<super::LtcInsurance>,
 }
 
 impl Default for Person {
@@ -58,6 +62,7 @@ impl Default for Person {
             health: HealthStatus::default(),
             joins: None,
             social_security: SocialSecurity::default(),
+            ltc_insurance: None,
         }
     }
 }

@@ -77,7 +77,11 @@ Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Locatio
 Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             health: Excellent|Good|Average|Poor,     // scales mortality; default Good (0.85x)
             joins: Option<YearMonth>,               // future partner: not in household before this
-            social_security: SocialSecurity }
+            social_security: SocialSecurity,
+            ltc_insurance: Option<LtcInsurance> }      // None (default): no policy
+LtcInsurance { annual_premium, daily_benefit, benefit_years, elimination_days,   // start-of-plan dollars, level premium
+               inflation_rider: None | Compound{rate},
+               premium_increase_risk: bool (true) }    // class-wide increases from Stream::LtcPremiumRates; lapse when unaffordable
 SocialSecurity { claim_age: f64 (62..=70, default 67),
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $

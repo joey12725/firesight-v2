@@ -522,6 +522,56 @@ Medicare premiums and cost-sharing (the person's own health costs are deducted
 from the liability instead), the spouse's wages in the income test, recovery
 liens during life, and waiting lists for home and community-based services.
 
+### Long-term-care insurance (opt-in)
+
+`ltc_insurance` on a person adds a policy with the usual terms: a level annual
+premium (fixed in dollars of the plan's start), a daily benefit, a benefit pool of
+daily benefit x 365 x benefit years, an elimination period in days of paid care
+(rounded up to whole months) and an optional compound inflation rider that grows
+the daily benefit and the unused pool each year. Premiums are paid monthly as
+healthcare spending until the person's care episode begins, then waived. From the
+month after the elimination period the policy pays the cost of care up to the
+monthly benefit (daily x 365 / 12) until the pool is used up; the benefit pays the
+provider, so the household's long-term-care spending falls by it (benefits of a
+tax-qualified policy are not income, IRC 7702B; premiums are not deducted).
+Medicaid, when on, pays only what the policy does not.
+
+**Premium increases.** Premiums of a policy class are not guaranteed. With
+`premium_increase_risk` on, each policy year the class (one for the household)
+gets an approved increase with probability 8%, uniform between 10% and 30%,
+drawn from the new `Stream::LtcPremiumRates` (two uniforms a year, always). These
+are judgements calibrated to the record: an average cumulative increase of 31%
+since 2001 on policies sold under the NAIC rate-stability rules and 55% on older
+ones (LTC Shop data reported by InvestmentNews, 2018); the model gives a geometric-mean
+cumulative factor of about 1.28 over 17 years (a unit test).
+
+**Lapse.** At each policy anniversary, before a claim, a policy lapses (no more
+premiums, no benefits, no non-forfeiture value) if the household was depleted in
+any month of the past year, or if the year's premium is above 10% of its
+resources: the past year's wages, self-employment income, Social Security and
+taxable pensions plus 4% of its investable assets. Both thresholds are
+judgements.
+
+Measured (simulation tests): for a woman of 70 with a $3,000 policy paying $200 a
+day for three years after 90 days (3,000 paired paths), the deaths are identical,
+the care the household pays never rises on any path and its mean falls by between
+20% and 80%, premiums add roughly $3,000 a year of remaining life, most paths see
+a premium increase, and a widow with $20,000 and $1,500 a month whose $5,000
+premium is unaffordable lapses at the first anniversary on every path without an
+earlier claim. On the dual-income example with a $1,500 policy each ($200 a day,
+three years, 90 days, 3% compound rider) bought at the start (4,000 paired
+paths): success rises from 91.5% to 93.0% (95% interval of the change +1.1 to
++2.1 points), depletion falls from 8.5% to 7.0%, median retirement age is 0.3
+years later (the premiums are budgeted), and the 10th percentile of terminal net
+worth rises by $142k; with Medicaid also on, success is 98.5%.
+
+Not modelled: premiums that depend on the age and health at purchase (the user
+enters the premium), underwriting and buying a policy later in the plan,
+non-forfeiture and reduced-benefit options offered at a rate increase, hybrid
+life/LTC policies, partnership policies' Medicaid asset protection, shared pools
+for couples, benefits that depend on the care setting, a restoration of benefits,
+and the tax deduction of premiums.
+
 ## 8. Housing and debt
 
 A property has a value that follows the national index times a local random walk

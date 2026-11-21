@@ -7,6 +7,48 @@ use crate::model::*;
 impl Checker<'_> {
     /// Errors: values the features are not defined for.
     pub(super) fn care_errors(&mut self) {
+        for (i, person) in self.p.household.people.iter().enumerate() {
+            let Some(policy) = &person.ltc_insurance else {
+                continue;
+            };
+            let base = format!(
+                "/household/people/{}/ltc_insurance",
+                super::seg(&person.id, i)
+            );
+            self.r.money(
+                &format!("{base}/annual_premium"),
+                "Annual premium",
+                policy.annual_premium,
+            );
+            self.r.money(
+                &format!("{base}/daily_benefit"),
+                "Daily benefit",
+                policy.daily_benefit,
+            );
+            self.r.range(
+                &format!("{base}/benefit_years"),
+                "Benefit years",
+                policy.benefit_years,
+                0.0,
+                100.0,
+            );
+            self.r.range(
+                &format!("{base}/elimination_days"),
+                "Elimination period",
+                policy.elimination_days,
+                0.0,
+                3_650.0,
+            );
+            if let InflationRider::Compound { rate } = policy.inflation_rider {
+                self.r.range(
+                    &format!("{base}/inflation_rider/rate"),
+                    "Inflation rider",
+                    rate,
+                    0.0,
+                    0.2,
+                );
+            }
+        }
         if let Longevity::Stochastic {
             income_percentile: Some(pct),
             ..
@@ -33,6 +75,43 @@ impl Checker<'_> {
             );
         }
         let hc = &p.spending.healthcare;
+        for (i, person) in p.household.people.iter().enumerate() {
+            let Some(policy) = &person.ltc_insurance else {
+                continue;
+            };
+            let base = format!(
+                "/household/people/{}/ltc_insurance",
+                super::seg(&person.id, i)
+            );
+            if !hc.long_term_care || hc.mode != HealthcareMode::Modeled {
+                self.r.warn(
+                    "ltc_insurance_without_care",
+                    &base,
+                    "A long-term-care policy only pays for care the engine models; with long-term care off or healthcare in the budget it does nothing.",
+                );
+            }
+            if policy.daily_benefit > 1_000.0 {
+                self.r.warn(
+                    "ltc_daily_benefit_high",
+                    &format!("{base}/daily_benefit"),
+                    "A daily benefit above $1,000 is far above what policies sell (typically $150 to $250 a day). Enter the benefit per day, not per month.",
+                );
+            }
+            if policy.benefit_years > 10.0 {
+                self.r.warn(
+                    "ltc_benefit_years_long",
+                    &format!("{base}/benefit_years"),
+                    "Policies with more than 10 years of benefits (or unlimited ones) are rarely sold today.",
+                );
+            }
+            if policy.annual_premium > 20_000.0 {
+                self.r.warn(
+                    "ltc_premium_high",
+                    &format!("{base}/annual_premium"),
+                    "An annual premium above $20,000 is unusual for one person. Enter the premium per year.",
+                );
+            }
+        }
         if hc.medicaid && (!hc.long_term_care || hc.mode != HealthcareMode::Modeled) {
             self.r.warn(
                 "medicaid_without_care",
@@ -130,6 +209,41 @@ mod tests {
         assert!(e.is_empty(), "{e:?}");
         let single = crate::model::Profile::example().household.people.len() < 2;
         assert_eq!(w.contains(&"linked_lifespans_single".to_string()), single);
+    }
+
+    #[test]
+    fn ltc_insurance_is_checked() {
+        let policy = |extra: serde_json::Value| {
+            let mut v = json!({"annual_premium": 2500.0, "daily_benefit": 200.0});
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            PatchOp::set("/household/people/0/ltc_insurance", v)
+        };
+        let (e, w) = codes(&[policy(json!({}))]);
+        assert!(
+            e.is_empty() && w.iter().all(|c| !c.starts_with("ltc_")),
+            "{e:?} {w:?}"
+        );
+        let (e, _) = codes(&[policy(json!({"annual_premium": -1.0}))]);
+        assert!(e.contains(&"negative_amount".to_string()), "{e:?}");
+        let (e, _) = codes(&[policy(
+            json!({"inflation_rider": {"type": "compound", "rate": 3.0}}),
+        )]);
+        assert!(e.contains(&"out_of_range".to_string()), "{e:?}");
+        let (_, w) = codes(&[policy(
+            json!({"daily_benefit": 6000.0, "benefit_years": 20.0}),
+        )]);
+        assert!(w.contains(&"ltc_daily_benefit_high".to_string()), "{w:?}");
+        assert!(w.contains(&"ltc_benefit_years_long".to_string()), "{w:?}");
+        let (_, w) = codes(&[
+            policy(json!({})),
+            PatchOp::set("/spending/healthcare/long_term_care", json!(false)),
+        ]);
+        assert!(
+            w.contains(&"ltc_insurance_without_care".to_string()),
+            "{w:?}"
+        );
     }
 
     #[test]

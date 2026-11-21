@@ -12,6 +12,7 @@
 use crate::health::{CareType, HealthMonth};
 use crate::health_states::{HealthChain, HealthLevel, HealthStateParams, MAX_YEARS};
 use crate::longevity_links::CoupleModel;
+use crate::ltc_insurance::{rate_path, LtcPolicy, PolicyState};
 use crate::medicaid::{CareMonth, MedicaidRules};
 use crate::model::{
     CoupleDependence, HealthModelKind, HealthcareMode, Longevity, Profile, PropertyUse,
@@ -39,6 +40,9 @@ pub(crate) struct CarePlan {
     /// Medicaid's rules for long-term care (`spending.healthcare.medicaid` with
     /// modelled healthcare and long-term care on).
     pub medicaid: Option<MedicaidRules>,
+    /// Each person's long-term-care insurance policy (`person.ltc_insurance`, with
+    /// modelled long-term care on).
+    pub ltc: [Option<LtcPolicy>; MAX_PEOPLE],
 }
 
 impl CarePlan {
@@ -84,7 +88,15 @@ impl CarePlan {
         if hc.medicaid && hc.long_term_care && hc.mode == HealthcareMode::Modeled {
             care.medicaid = Some(MedicaidRules::from_data(data));
         }
-        care.active = !care.chains.is_empty() || care.couple.is_some() || care.medicaid.is_some();
+        if hc.long_term_care && hc.mode == HealthcareMode::Modeled {
+            for (slot, person) in care.ltc.iter_mut().zip(&profile.household.people) {
+                *slot = person.ltc_insurance.as_ref().map(LtcPolicy::new);
+            }
+        }
+        care.active = !care.chains.is_empty()
+            || care.couple.is_some()
+            || care.medicaid.is_some()
+            || care.ltc.iter().any(Option::is_some);
         care
     }
 }
@@ -113,6 +125,16 @@ pub(crate) struct CareState {
     /// Community spouse's protected assets fixed in the first month of person
     /// `i`'s care (`None` before it).
     pub snapshot: [Option<f64>; MAX_PEOPLE],
+    /// Each person's insurance policy on this path.
+    pub policy: [PolicyState; MAX_PEOPLE],
+    /// Premium factor of the household's policy class by policy year.
+    pub rates: [f64; MAX_YEARS],
+    /// Household wage-like income since the last policy anniversary, nominal.
+    pub income_since: f64,
+    /// True if the household was depleted in a month since the last anniversary.
+    pub depleted_since: bool,
+    /// The last month the household-wide insurance bookkeeping ran.
+    pub policy_stamp: i32,
 }
 
 impl Default for CareState {
@@ -126,6 +148,11 @@ impl Default for CareState {
             on_medicaid: [false; MAX_PEOPLE],
             safety_net_month: i32::MIN,
             snapshot: [None; MAX_PEOPLE],
+            policy: [PolicyState::default(); MAX_PEOPLE],
+            rates: [1.0; MAX_YEARS],
+            income_since: 0.0,
+            depleted_since: false,
+            policy_stamp: i32::MIN,
         }
     }
 }
@@ -144,6 +171,19 @@ impl State {
         self.care.medicaid_paid = 0.0;
         self.care.medicaid_month = i32::MAX;
         self.care.safety_net_month = i32::MIN;
+        self.care.income_since = 0.0;
+        self.care.depleted_since = false;
+        self.care.policy_stamp = i32::MIN;
+        if care.ltc.iter().any(Option::is_some) {
+            // Two uniforms a policy year, always, whatever the household does.
+            let mut rng = Rng::stream(seed, path, Stream::LtcPremiumRates);
+            rate_path(&mut rng, &mut self.care.rates);
+            for (state, policy) in self.care.policy.iter_mut().zip(&care.ltc) {
+                *state = policy
+                    .as_ref()
+                    .map_or(PolicyState::default(), PolicyState::start);
+            }
+        }
         if let Some(couple) = &care.couple {
             // The same first uniform of each person's longevity stream that the
             // independent draw used, and two uniforms of the couple stream.
@@ -212,9 +252,112 @@ impl State {
                 }
             }
         }
+        if care.ltc.iter().any(Option::is_some) {
+            self.ltc_insurance_month(plan, i, t, price, hm);
+        }
         if let Some(rules) = &care.medicaid {
             self.medicaid_month(rules, plan, i, t, price, hm);
         }
+    }
+
+    /// Long-term-care insurance in month `t` for person `i` (`ltc_insurance.rs`):
+    /// the household-wide anniversary test (rate increases, lapse) once a month,
+    /// then this person's premium or benefit. The benefit pays the provider, so it
+    /// lowers the care cost the household pays; the premium is healthcare spending.
+    fn ltc_insurance_month(
+        &mut self,
+        plan: &Plan,
+        i: usize,
+        t: usize,
+        price: f64,
+        hm: &mut HealthMonth,
+    ) {
+        let now = plan.start + t as i32;
+        if self.care.policy_stamp != t as i32 {
+            self.care.policy_stamp = t as i32;
+            if t > 0 && t % 12 == 0 {
+                self.ltc_anniversary(plan, t, now);
+            }
+            self.care.income_since += self.wage_like;
+            self.care.depleted_since |= self.depleted_now;
+        }
+        let Some(policy) = plan.care.ltc[i] else {
+            return;
+        };
+        let year = (t / 12).min(MAX_YEARS - 1);
+        let m = self.care.policy[i].month(&policy, hm.long_term_care, year, self.care.rates[year]);
+        if m.premium > 0.0 {
+            self.spend(crate::stats::YearSeries::SpendHealthcare, m.premium);
+        }
+        if m.benefit > 0.0 {
+            hm.long_term_care -= m.benefit;
+            if m.first_benefit {
+                self.event(
+                    now,
+                    TraceEventKind::LtcInsurance,
+                    Some(m.benefit / price),
+                    || {
+                        format!(
+                            "Long-term-care insurance starts paying for person {}",
+                            i + 1
+                        )
+                    },
+                );
+            }
+            if m.exhausted {
+                self.event(now, TraceEventKind::LtcInsurance, None, || {
+                    format!(
+                        "Person {}'s long-term-care insurance benefits are used up",
+                        i + 1
+                    )
+                });
+            }
+        }
+    }
+
+    /// A policy anniversary: a class-wide premium increase takes effect, and a
+    /// policy whose premium the household can no longer afford lapses.
+    fn ltc_anniversary(&mut self, plan: &Plan, t: usize, now: crate::model::YearMonth) {
+        let year = (t / 12).min(MAX_YEARS - 1);
+        let rate = self.care.rates[year];
+        let raised = rate > self.care.rates[year - 1];
+        let investable = self.acc.investable().max(0.0);
+        for j in 0..self.n {
+            let Some(policy) = plan.care.ltc[j] else {
+                continue;
+            };
+            let st = self.care.policy[j];
+            if !st.in_force || st.care_months > 0 || !self.alive[j] {
+                continue;
+            }
+            let factor = if policy.increase_risk { rate } else { 1.0 };
+            if policy.increase_risk && raised {
+                let pct = (rate / self.care.rates[year - 1] - 1.0) * 100.0;
+                self.event(now, TraceEventKind::LtcInsurance, None, || {
+                    format!(
+                        "Long-term-care premiums of person {} raised by {pct:.0}%",
+                        j + 1
+                    )
+                });
+            }
+            let premium = policy.monthly_premium * factor * 12.0;
+            let resources =
+                self.care.income_since + crate::ltc_insurance::LAPSE_ASSET_DRAW * investable;
+            if self.care.depleted_since
+                || premium > crate::ltc_insurance::LAPSE_INCOME_SHARE * resources
+            {
+                self.care.policy[j].in_force = false;
+                self.care.policy[j].lapsed = true;
+                self.event(now, TraceEventKind::LtcInsurance, None, || {
+                    format!(
+                        "Person {}'s long-term-care insurance lapses: the premium is unaffordable",
+                        j + 1
+                    )
+                });
+            }
+        }
+        self.care.income_since = 0.0;
+        self.care.depleted_since = false;
     }
 
     /// True while person `j` is in a paid care episode in month `t`.

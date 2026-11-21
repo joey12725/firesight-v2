@@ -31,6 +31,7 @@ pub mod health_states;
 pub mod housing;
 pub mod legacy;
 pub mod longevity_links;
+pub mod ltc_insurance;
 pub mod math;
 pub mod medicaid;
 pub mod model;

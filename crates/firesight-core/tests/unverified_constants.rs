@@ -5,7 +5,7 @@
 
 use firesight_core::data::Data;
 use firesight_core::model::AssetClass;
-use firesight_core::{decumulation, economy, health, health_states, medicaid};
+use firesight_core::{decumulation, economy, health, health_states, ltc_insurance, medicaid};
 
 #[test]
 fn constants_quoted_from_memory_match_the_data_file() {
@@ -61,4 +61,16 @@ fn constants_quoted_from_memory_match_the_data_file() {
         medicaid::PERSONAL_NEEDS_ALLOWANCE,
         num(&care["personal_needs_allowance"])
     );
+    for (constant, key) in [
+        (
+            ltc_insurance::RATE_INCREASE_PROBABILITY,
+            "rate_increase_probability",
+        ),
+        (ltc_insurance::RATE_INCREASE_MIN, "rate_increase_min"),
+        (ltc_insurance::RATE_INCREASE_MAX, "rate_increase_max"),
+        (ltc_insurance::LAPSE_INCOME_SHARE, "lapse_income_share"),
+        (ltc_insurance::LAPSE_ASSET_DRAW, "lapse_asset_draw"),
+    ] {
+        assert_eq!(constant, num(&care[key]), "{key}");
+    }
 }

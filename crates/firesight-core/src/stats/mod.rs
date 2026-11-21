@@ -712,6 +712,9 @@ keyed_enum! {
         /// Medicaid began paying for a person's long-term care, or the state
         /// recovered its costs from the estate (`spending.healthcare.medicaid`).
         Medicaid => "medicaid",
+        /// Long-term-care insurance: a premium increase, the first benefit, the pool
+        /// used up, or a lapse (`person.ltc_insurance`).
+        LtcInsurance => "ltc_insurance",
     }
 }
 

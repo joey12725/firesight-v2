@@ -1455,7 +1455,7 @@
       "confidence": "high for the federal figures; state rules vary (the national defaults are used)"
     },
     "ltc_insurance": {
-      "rate_increase_evidence": "Average cumulative increase since 2001: about 31% on policies sold under the NAIC rate-stability rules and 55% on older policies (LTC Shop data reported by InvestmentNews, 2018). Requested increases averaged 47% (2021) and 56% (2024) per filing in Milliman's surveys (SOA LTC newsletter 2022 and 2025); approved increases are smaller (Maryland's 2025 approvals averaged 14.6%).",
+      "rate_increase_evidence": "Average cumulative increase since 2001: 31% on policies sold under the NAIC rate-stability rules and 55% on older policies (LTC Shop data reported by InvestmentNews, States try to beat back rate increases on long-term-care policies, 13 September 2018). Requested increases averaged 47% (2021) and 56% (2024) per filing in Milliman's surveys (SOA LTC newsletter 2022 and 2025); approved increases are smaller (Maryland's 2025 approvals averaged 14.6%). The 31%/55% figures were checked against the InvestmentNews article; the Milliman and Maryland figures were not re-verified and are context only.",
       "tax": "Benefits of a tax-qualified policy within the per-diem limit are not income (IRC 7702B); treated as untaxed here.",
       "confidence": "low for the size and frequency of increases (judgement calibrated to the 31% figure)"
     }
@@ -2519,7 +2519,7 @@
       ]
     },
     "health_mortality_care_judgements": {
-      "note": "Judgements of the opt-in health, longevity and care features (health_mortality_care), not data: health_states::HEALTHY_TO_FRAIL_SHARE, FRAIL_RECOVERY, LTC_STATE_FACTOR; medicaid::PERSONAL_NEEDS_ALLOWANCE (most states set more than the $30 federal minimum); ltc_insurance::RATE_INCREASE_PROBABILITY, RATE_INCREASE_MIN, RATE_INCREASE_MAX (chosen so a policy bought today sees about 30% of increases in 17 years, the post-2001 record), LAPSE_INCOME_SHARE.",
+      "note": "Judgements of the opt-in health, longevity and care features (health_mortality_care), not data: health_states::HEALTHY_TO_FRAIL_SHARE, FRAIL_RECOVERY, LTC_STATE_FACTOR; medicaid::PERSONAL_NEEDS_ALLOWANCE (most states set more than the $30 federal minimum); ltc_insurance::RATE_INCREASE_PROBABILITY, RATE_INCREASE_MIN, RATE_INCREASE_MAX (chosen so a policy bought today sees about 30% of increases in 17 years, the post-2001 record), LAPSE_INCOME_SHARE, LAPSE_ASSET_DRAW (the share of investable assets counted with income in the lapse test).",
       "healthy_to_frail_share": 0.25,
       "frail_recovery": 0.1,
       "ltc_state_factor": [0.5, 1.0, 2.0],
@@ -2527,7 +2527,8 @@
       "rate_increase_probability": 0.08,
       "rate_increase_min": 0.1,
       "rate_increase_max": 0.3,
-      "lapse_income_share": 0.1
+      "lapse_income_share": 0.1,
+      "lapse_asset_draw": 0.04
     },
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",

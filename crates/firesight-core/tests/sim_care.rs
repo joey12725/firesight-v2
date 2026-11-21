@@ -560,3 +560,145 @@ fn a_spouse_at_home_keeps_the_protected_savings() {
     }
     assert!(checked > 3, "{checked}");
 }
+
+fn insured(mut p: Profile, policy: LtcInsurance) -> Profile {
+    p.household.people[0].ltc_insurance = Some(policy);
+    p
+}
+
+fn policy_3y() -> LtcInsurance {
+    LtcInsurance {
+        annual_premium: 3_000.0,
+        daily_benefit: 200.0,
+        benefit_years: 3.0,
+        elimination_days: 90.0,
+        inflation_rider: InflationRider::None,
+        premium_increase_risk: true,
+    }
+}
+
+#[test]
+fn ltc_insurance_off_is_the_default_bit_for_bit() {
+    let base = retiree_70(Sex::Female);
+    let json = serde_json::to_value(&base).unwrap();
+    assert!(json["household"]["people"][0]
+        .get("ltc_insurance")
+        .is_none());
+    // With long-term care off a policy has nothing to pay and charges nothing.
+    let mut no_ltc = base.clone();
+    no_ltc.spending.healthcare.long_term_care = false;
+    assert_eq!(
+        run(&compile(&no_ltc), 2, 0..300).to_bytes(),
+        run(&compile(&insured(no_ltc.clone(), policy_3y())), 2, 0..300).to_bytes()
+    );
+}
+
+#[test]
+fn ltc_insurance_pays_for_care_and_costs_premiums() {
+    let base = retiree_70(Sex::Female);
+    let (plan_a, plan_b) = (compile(&base), compile(&insured(base.clone(), policy_3y())));
+    let n = 3_000;
+    let (a, b) = (run(&plan_a, 2, 0..n), run(&plan_b, 2, 0..n));
+    let f = |acc: &Accumulator, s: PathScalar| -> Vec<f64> {
+        column(acc, s).iter().map(|&v| f64::from(v)).collect()
+    };
+    // Same lives: the policy's draws come from their own stream.
+    assert_eq!(
+        column(&a, PathScalar::DeathAge0),
+        column(&b, PathScalar::DeathAge0)
+    );
+    let (ca, cb) = (
+        f(&a, PathScalar::LongTermCareCost),
+        f(&b, PathScalar::LongTermCareCost),
+    );
+    let mut longer = 0;
+    for k in 0..n as usize {
+        // Benefits only ever lower what the household pays for care.
+        assert!(cb[k] <= ca[k] + 1e-3, "path {k}: {} -> {}", ca[k], cb[k]);
+        if ca[k] > 0.0 && cb[k] < ca[k] {
+            longer += 1;
+        }
+    }
+    assert!(longer > n as usize / 5, "{longer}");
+    // A pool of 3 x 365 x $200 = $219,000 nominal against care costing about
+    // $5,000 to $11,000 a month: most of a typical episode, little of a long one.
+    let (ma, mb) = (mean(&ca), mean(&cb));
+    assert!(mb < 0.8 * ma && mb > 0.2 * ma, "care paid {ma} -> {mb}");
+    // Premiums: $3,000 a year from 70 until a claim or death, more after rate
+    // increases; lifetime spending rises by roughly that.
+    let (sa, sb) = (
+        mean(&f(&a, PathScalar::LifetimeSpending)),
+        mean(&f(&b, PathScalar::LifetimeSpending)),
+    );
+    let years = mean(&f(&a, PathScalar::DeathAge0)) - 70.0;
+    let premiums = sb - sa + (ma - mb);
+    assert!(
+        premiums > 0.7 * 3_000.0 * years && premiums < 2.0 * 3_000.0 * years,
+        "premiums {premiums} over {years} years"
+    );
+}
+
+#[test]
+fn ltc_premiums_rise_and_unaffordable_policies_lapse() {
+    let plan = compile(&insured(retiree_70(Sex::Female), policy_3y()));
+    let kind = firesight_core::stats::TraceEventKind::LtcInsurance;
+    let (mut raised, mut paying) = (0, 0);
+    for path in 0..300 {
+        let trace = sim::trace_path(&plan, 2, path);
+        let labels: Vec<&str> = trace
+            .events
+            .iter()
+            .filter(|e| e.kind == kind)
+            .map(|e| e.label.as_str())
+            .collect();
+        raised += usize::from(labels.iter().any(|l| l.contains("raised")));
+        paying += usize::from(labels.iter().any(|l| l.contains("starts paying")));
+        // She has $3 million: never unaffordable.
+        assert!(!labels.iter().any(|l| l.contains("lapses")), "path {path}");
+    }
+    // 8% a year: over roughly 17 years most paths see an increase; about half the
+    // women of 70 use paid care, most for longer than 90 days.
+    assert!(raised > 150 && raised < 300, "{raised}");
+    assert!(paying > 60 && paying < 200, "{paying}");
+
+    // A widow with $20,000 and $1,500 a month of Social Security paying $5,000 a
+    // year: more than 10% of her income plus 4% of her savings, so the policy
+    // lapses at its first anniversary and never pays.
+    let mut poor = retiree_70(Sex::Female);
+    poor.household.people[0].social_security.basis = SocialSecurityBasis::KnownBenefit {
+        monthly_at_fra: 1_500.0,
+    };
+    poor.accounts = vec![account("cash", 0, AccountKind::Cash, 20_000.0)];
+    poor.spending.items = vec![item("living", Category::Other, 1_000.0, true)];
+    let plan = compile(&insured(
+        poor,
+        LtcInsurance {
+            annual_premium: 5_000.0,
+            ..policy_3y()
+        },
+    ));
+    let mut lapsed = 0;
+    let ltc = firesight_core::stats::TraceEventKind::LongTermCare;
+    for path in 0..100 {
+        let trace = sim::trace_path(&plan, 2, path);
+        let events: Vec<_> = trace.events.iter().filter(|e| e.kind == kind).collect();
+        let care_by_12 = trace
+            .events
+            .iter()
+            .any(|e| e.kind == ltc && e.month - trace.start <= 12);
+        if let Some(e) = events.iter().find(|e| e.label.contains("lapses")) {
+            assert_eq!(e.month - trace.start, 12, "path {path}");
+            // A lapsed policy never pays.
+            assert!(
+                !events.iter().any(|e| e.label.contains("starts paying")),
+                "path {path}"
+            );
+            lapsed += 1;
+        } else {
+            // Only a policy already claimed on (premiums waived) or a life over
+            // before the anniversary escapes the lapse.
+            assert!(care_by_12 || trace.months <= 12, "path {path}");
+        }
+    }
+    assert!(lapsed > 85, "{lapsed}");
+}
