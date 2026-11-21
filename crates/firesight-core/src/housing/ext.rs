@@ -3,11 +3,11 @@
 //!
 //! The simulation calls [`PropertyModel::prepare`] once a month before
 //! [`PropertyModel::step`], only for properties where [`PropertyModel::has_ext`] is
-//! true. `prepare` draws a fixed number of words from the slot's own extra streams
+//! true. `prepare` draws a fixed number of words from the slot's maintenance stream
 //! (whether or not the property is owned), advances the extra state and leaves its
 //! results in [`PropExt`] for `step` to charge.
 
-use super::{insurance, maintenance, ArmTerms, PropertyModel, PropertyState};
+use super::{maintenance, ArmTerms, PropertyModel, PropertyState};
 use crate::model::{Assessment, InsuranceGrowth, MaintenanceModel, MortgageKind};
 use crate::rng::Rng;
 
@@ -16,8 +16,9 @@ use crate::rng::Rng;
 pub struct PropExt {
     /// Component ages of a lumpy-maintenance home.
     pub maint: maintenance::MaintState,
-    /// The path's insurance premium index.
-    pub ins: insurance::InsState,
+    /// The path's insurance premium index this month, set by `prepare`. Zero before
+    /// the first month (read as 1).
+    pub ins_factor: f64,
     /// Major repairs falling in this month, nominal dollars, set by `prepare` and
     /// cleared by `step`.
     pub repair: f64,
@@ -58,7 +59,8 @@ impl PropertyModel {
         self.lumpy
     }
 
-    /// True if the property draws from `Stream::InsuranceDrift`.
+    /// True if the premium follows the path's insurance index
+    /// (`Stream::InsuranceDrift`).
     pub fn has_insurance_drift(&self) -> bool {
         self.ins_stochastic
     }
@@ -69,24 +71,17 @@ impl PropertyModel {
     }
 
     /// Monthly pre-step: draws and advances the extra state. `index` is the
-    /// simulated short-term rate for adjustable-rate resets. Returns the insurance
-    /// jump (a log increment) that happened this month, 0 if none.
+    /// simulated short-term rate for adjustable-rate resets and `ins_factor` the
+    /// path's insurance premium index (see [`insurance`]).
     pub fn prepare(
         &self,
         state: &mut PropertyState,
         index: f64,
+        ins_factor: f64,
         rng_maint: &mut Rng,
-        rng_ins: &mut Rng,
-    ) -> f64 {
+    ) {
         state.ext.index = index;
-        let mut jump = 0.0;
-        if self.ins_stochastic {
-            let mut w = [0u64; insurance::DRAWS_PER_MONTH];
-            for x in &mut w {
-                *x = rng_ins.next_u64();
-            }
-            jump = insurance::advance(&mut state.ext.ins, &w);
-        }
+        state.ext.ins_factor = ins_factor;
         if self.lumpy {
             let mut w = [0u64; maintenance::DRAWS_PER_MONTH];
             for x in &mut w {
@@ -101,6 +96,5 @@ impl PropertyModel {
                 );
             }
         }
-        jump
     }
 }

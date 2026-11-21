@@ -9,16 +9,24 @@
 //! g'    = MU + RHO (g - MU) + SIGMA z          (annual real growth rate, persistent)
 //! ```
 //!
-//! The index runs from the plan's start whether or not a property is owned, so a
-//! home bought later pays the premium level of its day.
+//! There is one index per path, shared by every property that opts in (the
+//! repricing of 2021 to 2025 was national in character, and a household that sells
+//! one home and buys another keeps the premium level of its day). It runs from the
+//! plan's start whether or not a property is owned.
 //!
 //! Calibration. Urban Institute (Housing Finance at a Glance, September 2026; see
 //! `data/actuarial/params.json` `housing.homeowners_insurance_pct_of_value`): the
 //! average premium on newly originated agency mortgages rose 46% from 2018 to 2024,
-//! about 6.5% a year against CPI of about 4% a year. The parameters below give a
-//! long-run real drift of about 1.5% a year (0.5% persistent plus 8% a year of
-//! jumps averaging 12.5%), below the 2021 to 2025 pace because repricing cannot
-//! continue forever. Every figure is a JUDGEMENT anchored to that evidence.
+//! about 6.5% a year against CPI of about 3.8% a year: about 2.6 points a year in
+//! real terms over six years, an episode regarded as exceptional. The parameters
+//! below give a long-run real drift of about 1.5% a year in logs (0.5% persistent
+//! plus 8% a year of jumps averaging 12.6% in logs), below the 2018 to 2024 pace
+//! because repricing cannot continue forever. The persistent growth rate has a
+//! stationary sd of about 1.6 points a year, so that a six-year episode like 2018
+//! to 2024 is roughly half a standard deviation above the mean and a 30-year index
+//! is 1.1 at the 10th percentile, 1.5 at the median and 2.2 at the 90th (measured
+//! over 3,000 paths). Every
+//! figure is a JUDGEMENT anchored to that evidence.
 //!
 //! Randomness: 3 words a month from `Stream::InsuranceDrift`.
 
@@ -31,8 +39,9 @@ pub const DRAWS_PER_MONTH: usize = 3;
 pub const MU: f64 = 0.005;
 /// Monthly persistence of the growth rate deviation (about 0.7 a year). JUDGEMENT.
 pub const RHO: f64 = 0.97;
-/// Monthly innovation sd of the annual growth rate. JUDGEMENT.
-pub const SIGMA: f64 = 0.01;
+/// Monthly innovation sd of the annual growth rate (stationary sd
+/// `SIGMA / sqrt(1 - RHO^2)`, about 1.6 points a year). JUDGEMENT.
+pub const SIGMA: f64 = 0.004;
 /// Expected repricing jumps per year. JUDGEMENT.
 pub const JUMP_RATE: f64 = 0.08;
 /// Median log size of a jump (e^-2.2 = 0.11). JUDGEMENT.

@@ -153,6 +153,20 @@ fn constants_match_the_research_file() {
         num(&h["arm"]["initial_discount_to_fixed"]["value"]),
         arm::INITIAL_DISCOUNT
     );
+    // The figures recalled from memory are also listed where a reviewer looks for
+    // them.
+    let recalled = &Data::embedded().actuarial["unverified_from_memory"]["housing_realism"];
+    for (name, life, _) in maintenance::COMPONENTS {
+        assert_eq!(
+            num(&recalled["home_component_life_years"][name]),
+            life,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        num(&recalled["arm_initial_discount_to_fixed"]),
+        arm::INITIAL_DISCOUNT
+    );
     // Every entry names a source or says it is a judgement.
     fn check(v: &serde_json::Value, path: &str) {
         if let Some(map) = v.as_object() {

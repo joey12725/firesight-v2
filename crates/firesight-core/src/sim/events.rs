@@ -77,7 +77,7 @@ impl State {
     }
 
     /// [`State::sell_slot`] at `price_factor` times the market price (slow sales:
-    /// the price agreed at listing, less a discount).
+    /// one less the discount of a weak market).
     pub(crate) fn sell_slot_discounted(
         &mut self,
         plan: &Plan,

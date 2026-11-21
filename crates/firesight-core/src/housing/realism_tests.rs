@@ -232,7 +232,7 @@ fn insurance_index_scales_the_premium() {
     // Before the index has run, the premium is the plain one: 400,000 * 0.5% / 12.
     let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
     close(hm.insurance, 166.666_666_666, 1e-6);
-    st.ext.ins.factor = 1.5;
+    st.ext.ins_factor = 1.5;
     let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
     close(hm.insurance, 250.0, 1e-6);
 }
@@ -244,7 +244,7 @@ fn insurance_index_drifts_up_with_jumps_and_stays_bounded() {
     let mut sum = 0.0;
     let paths = 1_500;
     for path in 0..paths {
-        let mut r = Rng::stream(5, path, Stream::InsuranceDrift(0));
+        let mut r = Rng::stream(5, path, Stream::InsuranceDrift);
         let mut st = insurance::InsState::default();
         for _ in 0..120 {
             let w = [r.next_u64(), r.next_u64(), r.next_u64()];
@@ -398,4 +398,27 @@ fn refinancing_an_arm_makes_it_fixed_over_the_remaining_term() {
     assert!(m.arm.is_none());
     close(m.rate, 0.05, 1e-12);
     close(m.payment, 1_753.77, 0.01);
+}
+
+// ---- F14 slow home sales -----------------------------------------------------------
+
+#[test]
+fn a_discounted_sale_fetches_the_factor_times_the_price() {
+    let model = PropertyModel::from_property(&arm_home(MortgageKind::Fixed), 0.012, data());
+    let mut a = model.initial_state();
+    let mut b = a;
+    // 600,000 home with a 300,000 loan and 6% costs: 600,000 * 0.94 - 300,000 =
+    // 264,000. At 5% below market: 570,000 * 0.94 - 300,000 = 235,800.
+    let full = model.sell(&mut a, 0, 0.06, 0.0);
+    close(full.price, 600_000.0, 1e-6);
+    close(full.net_proceeds, 264_000.0, 1e-6);
+    let cut = model.sell_discounted(&mut b, 0, 0.06, 0.0, 0.95);
+    close(cut.price, 570_000.0, 1e-6);
+    close(cut.selling_costs, 34_200.0, 1e-6);
+    close(cut.mortgage_payoff, 300_000.0, 1e-6);
+    close(cut.net_proceeds, 235_800.0, 1e-6);
+    assert!(!b.owned);
+    // A factor of one is the plain sale.
+    let mut c = model.initial_state();
+    assert_eq!(model.sell_discounted(&mut c, 0, 0.06, 0.0, 1.0), full);
 }

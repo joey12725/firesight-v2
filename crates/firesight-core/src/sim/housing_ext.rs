@@ -23,11 +23,19 @@
 //!
 //! # Housing liquidity (`assumptions.housing_liquidity: realistic`)
 //!
-//! A sale becomes a listing that closes `months` later at a discount; see
-//! [`Liquidity`]. `Stream::Liquidity` supplies 2 words per property slot every
-//! month, so the draws do not depend on when a household decides to sell.
+//! A sale becomes a listing that closes `months` later, at the home's value of
+//! that month less a discount fixed at listing; see [`sale_terms`].
+//! `Stream::Liquidity` supplies 2 words per property slot every month, so the
+//! draws do not depend on when a household decides to sell.
+//!
+//! # Insurance index (`insurance_real_growth: stochastic` on a property)
+//!
+//! One premium index per path ([`crate::housing::insurance`]), advanced here with
+//! 3 words a month from `Stream::InsuranceDrift` and handed to every property that
+//! opts in.
 
 use crate::economy::EconomyPath;
+use crate::housing::insurance;
 use crate::math;
 use crate::model::{Category, HousingLiquidity, Profile, RentGrowth};
 use crate::rng::{normal_from_bits, Rng, Stream};
@@ -65,6 +73,9 @@ pub const RENEWAL_PASS_THROUGH: f64 = 0.75;
 pub const FORCED_MOVE_PROBABILITY: f64 = 0.06;
 /// A new lease costs this much above the market rent index. JUDGEMENT.
 pub const NEW_LEASE_PREMIUM: f64 = 0.04;
+/// An ordinary renewal is written to the path's event log only if it moves the
+/// rent by at least this much after inflation (a forced move always is).
+pub const RENEWAL_LOG_THRESHOLD: f64 = 0.03;
 /// Largest and smallest the paid rent may be relative to its start (a sanity bound).
 pub const RENT_INDEX_RANGE: (f64, f64) = (0.25, 8.0);
 
@@ -76,13 +87,17 @@ pub const BASE_CLOSE_MONTHS: u32 = 2;
 /// Mean extra months (exponentially distributed) in a normal market. JUDGEMENT.
 pub const BASE_EXTRA_MONTHS: f64 = 0.5;
 /// Additional mean extra months at full market stress. JUDGEMENT: puts the mean
-/// at about 5.5 months in a 2009-style market.
+/// at about 5 months in a 2009-style market (2 plus the whole months of an
+/// exponential wait of mean 3.5), against a little over 2 in a normal one.
 pub const STRESS_EXTRA_MONTHS: f64 = 3.0;
 /// Longest a sale may take.
 pub const MAX_CLOSE_MONTHS: u32 = 24;
-/// Mean price discount at full stress. Campbell, Giglio and Pathak (American
-/// Economic Review 2011): forced sales (death, bankruptcy) close 3 to 7% below
-/// comparable homes; 6% is used. The discount is scaled by `0.5 + u` (mean 1).
+/// Mean price discount at full stress. JUDGEMENT, sized from Campbell, Giglio and
+/// Pathak (American Economic Review 2011), who find that forced sales (around a
+/// seller's death or bankruptcy) close 3 to 7% below comparable homes. Their
+/// discount is for the seller's circumstances, not the state of the market; the
+/// engine applies a figure of that size to any seller who must close in a stressed
+/// market, and none in a normal one. The discount is scaled by `0.5 + u` (mean 1).
 pub const FULL_STRESS_DISCOUNT: f64 = 0.06;
 /// No discount exceeds this.
 pub const MAX_DISCOUNT: f64 = 0.25;
@@ -102,6 +117,8 @@ fn unit(bits: u64) -> f64 {
 pub(crate) struct HxPlan {
     /// Some property slot has lumpy maintenance, insurance drift or an ARM.
     pub props: bool,
+    /// Some property slot follows the insurance premium index.
+    pub ins: bool,
     /// Some rent line follows the rent market.
     pub rent_market: bool,
     /// Home sales are slow.
@@ -113,6 +130,7 @@ pub(crate) struct HxPlan {
 impl HxPlan {
     pub(crate) fn compile(profile: &Profile, props: &[PropPlan]) -> HxPlan {
         let props_on = props.iter().any(|p| p.model.has_ext());
+        let ins = props.iter().any(|p| p.model.has_insurance_drift());
         let rent_market = profile
             .spending
             .items
@@ -121,6 +139,7 @@ impl HxPlan {
         let liquidity = profile.assumptions.housing_liquidity == HousingLiquidity::Realistic;
         HxPlan {
             props: props_on,
+            ins,
             rent_market,
             liquidity,
             any: props_on || rent_market || liquidity,
@@ -191,10 +210,8 @@ pub struct PendingSale {
     pub cost_fraction: f64,
     /// Rent taken on after the sale, today's dollars a month.
     pub then_rent: f64,
-    /// Price discount at closing.
+    /// Price discount at closing, against the home's value of that month.
     pub discount: f64,
-    /// Market value when the sale was listed: the price is agreed then.
-    pub list_value: f64,
     /// True for a last-resort sale (the household ran out of money).
     pub forced: bool,
 }
@@ -219,10 +236,11 @@ pub fn sale_terms(stress: f64, u_time: f64, u_discount: f64) -> (u32, f64) {
 #[derive(Clone, Debug)]
 pub(crate) struct HxState {
     pub rng_maint: Vec<Rng>,
-    pub rng_ins: Vec<Rng>,
+    pub rng_ins: Rng,
     pub rng_rent: Rng,
     pub rng_liq: Rng,
     pub rent: RentMarket,
+    pub ins: insurance::InsState,
     pub pending: Vec<Option<PendingSale>>,
     pub liq_words: Vec<[u64; 2]>,
     pub stress: f64,
@@ -234,10 +252,11 @@ impl HxState {
         let n = plan.props.len();
         HxState {
             rng_maint: vec![rng.clone(); n],
-            rng_ins: vec![rng.clone(); n],
+            rng_ins: rng.clone(),
             rng_rent: rng.clone(),
             rng_liq: rng,
             rent: RentMarket::default(),
+            ins: insurance::InsState::default(),
             pending: vec![None; n],
             liq_words: vec![[0; 2]; n],
             stress: 0.0,
@@ -247,6 +266,7 @@ impl HxState {
     /// Starts a path.
     pub(crate) fn reset(&mut self, plan: &Plan, seed: u64, path: u64) {
         self.rent = RentMarket::default();
+        self.ins = insurance::InsState::default();
         self.stress = 0.0;
         if !plan.hx.any {
             return;
@@ -255,9 +275,9 @@ impl HxState {
             if pp.model.has_lumpy_maintenance() {
                 self.rng_maint[i] = Rng::stream(seed, path, Stream::Maintenance(i));
             }
-            if pp.model.has_insurance_drift() {
-                self.rng_ins[i] = Rng::stream(seed, path, Stream::InsuranceDrift(i));
-            }
+        }
+        if plan.hx.ins {
+            self.rng_ins = Rng::stream(seed, path, Stream::InsuranceDrift);
         }
         if plan.hx.rent_market {
             self.rng_rent = Rng::stream(seed, path, Stream::RentMarket);
@@ -270,8 +290,36 @@ impl HxState {
 }
 
 impl State {
-    /// Start of month: moves the rent market and draws the sale terms.
+    /// True if a budget line that follows the rent market is being paid this month.
+    fn hx_pays_market_rent(&self, plan: &Plan, t: usize) -> bool {
+        let ti = t as i32;
+        plan.items.iter().enumerate().any(|(i, item)| {
+            item.market_rent
+                && self.item_scale[i] != 0.0
+                && ti >= item.start.month(self.retire_month)
+                && ti < item.end.month(self.retire_month)
+        })
+    }
+
+    /// Start of month: moves the insurance index and the rent market and draws the
+    /// sale terms.
     pub(crate) fn hx_month_start(&mut self, plan: &Plan, econ: &EconomyPath, t: usize) {
+        if plan.hx.ins {
+            let mut w = [0u64; insurance::DRAWS_PER_MONTH];
+            for x in &mut w {
+                *x = self.hx.rng_ins.next_u64();
+            }
+            let jump = insurance::advance(&mut self.hx.ins, &w);
+            if jump > 0.0 {
+                let now = plan.start + t as i32;
+                self.event(now, TraceEventKind::LifeEvent, None, || {
+                    format!(
+                        "Insurance repriced: premiums up {:.0}%",
+                        (math::exp(jump) - 1.0) * 100.0
+                    )
+                });
+            }
+        }
         if plan.hx.rent_market {
             let w = [self.hx.rng_rent.next_u64(), self.hx.rng_rent.next_u64()];
             self.hx
@@ -283,16 +331,25 @@ impl State {
                 self.budget_dirty = true;
                 let now = plan.start + t as i32;
                 let change = self.hx.rent.paid / before - 1.0;
-                self.event(now, TraceEventKind::LifeEvent, None, || {
-                    if forced {
-                        format!(
-                            "Rent: lease not renewed, new lease at market ({:+.1}%)",
-                            change * 100.0
-                        )
-                    } else {
-                        format!("Rent: lease renewed at market ({:+.1}%)", change * 100.0)
-                    }
-                });
+                // Logged only while such a line is being paid, and an ordinary
+                // renewal only when it moves the rent noticeably.
+                if (forced || change.abs() >= RENEWAL_LOG_THRESHOLD)
+                    && self.hx_pays_market_rent(plan, t)
+                {
+                    self.event(now, TraceEventKind::LifeEvent, None, || {
+                        if forced {
+                            format!(
+                                "Rent: lease not renewed, new lease at market ({:+.1}% after inflation)",
+                                change * 100.0
+                            )
+                        } else {
+                            format!(
+                                "Rent: lease renewed ({:+.1}% after inflation)",
+                                change * 100.0
+                            )
+                        }
+                    });
+                }
             }
         }
         if plan.hx.liquidity {
@@ -322,25 +379,17 @@ impl State {
         if !model.has_ext() {
             return rate;
         }
-        let jump = model.prepare(
+        model.prepare(
             &mut self.props[i],
             econ.tbill[t],
+            self.hx.ins.factor,
             &mut self.hx.rng_maint[i],
-            &mut self.hx.rng_ins[i],
         );
         let now = plan.start + t as i32;
         let repair = self.props[i].ext.repair;
         if repair > 0.0 {
             self.event(now, TraceEventKind::LifeEvent, Some(repair / price), || {
                 format!("Major repair on {}", plan.props[i].name)
-            });
-        }
-        if jump > 0.0 {
-            self.event(now, TraceEventKind::LifeEvent, None, || {
-                format!(
-                    "Insurance repriced: premiums up {:.0}%",
-                    (math::exp(jump) - 1.0) * 100.0
-                )
             });
         }
         rate
@@ -370,7 +419,8 @@ impl State {
 
     /// Lists the sale of the property in `slot` if sales are slow. Returns true if
     /// it was listed (the caller must not sell now). A property already listed
-    /// counts as handled.
+    /// counts as handled; if the household now needs the money (`forced`), the
+    /// listing it already has becomes one it can borrow against.
     pub(crate) fn hx_list_sale(
         &mut self,
         plan: &Plan,
@@ -383,7 +433,8 @@ impl State {
         if !plan.hx.liquidity {
             return false;
         }
-        if self.hx.pending[slot].is_some() {
+        if let Some(p) = &mut self.hx.pending[slot] {
+            p.forced |= forced;
             return true;
         }
         let w = self.hx.liq_words[slot];
@@ -393,7 +444,6 @@ impl State {
             cost_fraction,
             then_rent,
             discount,
-            list_value: self.props[slot].value,
             forced,
         });
         let now = plan.start + t as i32;
@@ -419,7 +469,7 @@ impl State {
         for (slot, p) in self.hx.pending.iter().enumerate() {
             if let Some(p) = p {
                 if p.forced {
-                    let net = p.list_value * (1.0 - p.discount) * (1.0 - p.cost_fraction)
+                    let net = self.props[slot].value * (1.0 - p.discount) * (1.0 - p.cost_fraction)
                         - self.props[slot].mortgage_balance();
                     expected += net.max(0.0);
                 }
@@ -441,15 +491,17 @@ impl State {
             if !self.props[slot].owned {
                 continue;
             }
-            // The price was agreed at listing, less the discount of a weak market.
-            let value = self.props[slot].value;
-            let factor = if value > 0.0 {
-                p.list_value / value * (1.0 - p.discount)
-            } else {
-                1.0
-            };
-            let net =
-                self.sell_slot_discounted(plan, t, slot, p.cost_fraction, p.then_rent, factor);
+            // The buyer pays what the home is worth when the sale closes (the seller
+            // carries the market while it is listed), less the discount of the weak
+            // market it was listed in.
+            let net = self.sell_slot_discounted(
+                plan,
+                t,
+                slot,
+                p.cost_fraction,
+                p.then_rent,
+                1.0 - p.discount,
+            );
             if p.forced && self.home_sale_month == i32::MAX {
                 self.home_sale_month = t as i32;
             }

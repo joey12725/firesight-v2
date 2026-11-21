@@ -30,7 +30,7 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events, Maintenance(property), InsuranceDrift(property),
+  Shocks, Housing(property), Events, Maintenance(property), InsuranceDrift,
   RentMarket, Liquidity}` (the last four are the opt-in housing realism options and
   are drawn only when an option is on). Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario

@@ -662,10 +662,7 @@ impl PropertyModel {
             sale_noise: state.sale_noise,
             rental_year_to_date: 0.0,
             passive_loss_carryforward: 0.0,
-            ext: PropExt {
-                ins: state.ext.ins,
-                ..PropExt::default()
-            },
+            ext: PropExt::default(),
         };
         Purchase {
             price,
@@ -716,8 +713,8 @@ impl PropertyModel {
         state.assessment_clock = (state.assessment_clock + 1) % 12;
         out.property_tax = state.assessed_value * self.tax_rate / 12.0;
         out.insurance = value * self.insurance_rate / 12.0;
-        if self.ins_stochastic && state.ext.ins.factor > 0.0 {
-            out.insurance *= state.ext.ins.factor;
+        if self.ins_stochastic && state.ext.ins_factor > 0.0 {
+            out.insurance *= state.ext.ins_factor;
         }
         if self.lumpy {
             out.maintenance = value * self.maintenance_rate * (1.0 - maintenance::CAPITAL_SHARE)
@@ -811,8 +808,7 @@ impl PropertyModel {
     }
 
     /// [`PropertyModel::sell`] at `price_factor` times the price it would otherwise
-    /// fetch (1 for none): a sale whose price was agreed earlier, or forced into a
-    /// weak market.
+    /// fetch (1 for none): a sale forced into a weak market.
     pub fn sell_discounted(
         &self,
         state: &mut PropertyState,
@@ -868,10 +864,6 @@ impl PropertyModel {
             sale_noise: state.sale_noise,
             // Rental profit earned this year before the sale is still taxable.
             rental_year_to_date: state.rental_year_to_date.max(0.0),
-            ext: PropExt {
-                ins: state.ext.ins,
-                ..PropExt::default()
-            },
             ..PropertyState::default()
         };
         sale

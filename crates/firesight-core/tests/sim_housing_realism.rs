@@ -158,9 +158,11 @@ fn lumpy_maintenance_has_the_same_mean_cost_and_far_more_spread() {
     let total = |rows: &Vec<Vec<f64>>| mean(rows.iter().map(|r| r.iter().sum::<f64>()));
     let ratio = total(&b) / total(&a);
     // Both are 1% of value in expectation (repairs are sized on the value of the
-    // day), so the totals agree up to the luck of 300 paths and the start-up ages.
+    // day). Over 3,000 paths the ratio is 1.001 (1.02 in the first ten years, 0.993
+    // in the last twenty: the start-up ages are not quite the stationary mix); 300
+    // paths leave sampling error of about 1.2%.
     assert!(
-        (0.93..=1.07).contains(&ratio),
+        (0.95..=1.05).contains(&ratio),
         "lumpy / smooth total cost {ratio}"
     );
     // The most expensive full year against the median full year (year 0 is a two-month
@@ -229,6 +231,25 @@ fn insurance_drift_raises_premiums_on_average_with_a_long_tail() {
     assert!(sd(&per_path) > 0.1);
 }
 
+#[test]
+fn every_property_of_a_path_follows_the_same_insurance_index() {
+    // Two identical homes (no local price noise) pay exactly twice what one pays,
+    // year by year and path by path: one index, not one per property.
+    let mut home = bare_home(500_000.0);
+    home.insurance_rate = 0.005;
+    home.insurance_real_growth = InsuranceGrowth::Stochastic;
+    let mut second = home.clone();
+    second.id = "second".into();
+    second.usage = PropertyUse::Vacation;
+    let one = collect(&household(vec![home.clone()]), YearSeries::SpendHousing, 40);
+    let two = collect(&household(vec![home, second]), YearSeries::SpendHousing, 40);
+    for (a, b) in one.iter().zip(&two) {
+        for (x, y) in a.iter().zip(b) {
+            assert!((2.0 * x - y).abs() <= 1e-9 * y.abs(), "{x} and {y}");
+        }
+    }
+}
+
 // ---- F13 market rents --------------------------------------------------------------
 
 fn renter(growth: RentGrowth) -> Profile {
@@ -261,16 +282,19 @@ fn market_rents_have_the_same_trend_and_much_more_variation() {
             .map(|(f, m)| m[year] / f[year])
             .collect();
         let m = mean(ratios.iter().copied());
-        assert!((0.9..=1.15).contains(&m), "year {year}: mean ratio {m}");
+        // Over 3,000 paths the mean ratio is 1.003 at year 10 and 1.004 at year 20;
+        // 300 paths leave sampling error of about 0.35%.
+        assert!((0.98..=1.03).contains(&m), "year {year}: mean ratio {m}");
         // Fixed rent has no variation in real terms: all the spread is the market's.
         let s = sd(&ratios);
-        // The local deviation has a stationary sd of 5% and home prices add a little.
-        assert!((0.03..=0.5).contains(&s), "year {year}: sd of ratio {s}");
+        // The local deviation has a stationary sd of 5% and home prices add a little:
+        // 5.3% at year 10 and 6.0% at year 20 over 3,000 paths.
+        assert!((0.035..=0.09).contains(&s), "year {year}: sd of ratio {s}");
     }
 }
 
 #[test]
-fn leases_are_sometimes_not_renewed() {
+fn leases_are_sometimes_not_renewed_and_only_notable_renewals_are_logged() {
     let plan = compile(&renter(RentGrowth::Market));
     let mut forced = 0;
     let mut renewals = 0;
@@ -280,14 +304,35 @@ fn leases_are_sometimes_not_renewed() {
         for e in &trace.events {
             if e.label.starts_with("Rent: lease not renewed") {
                 forced += 1;
-            } else if e.label.starts_with("Rent: lease renewed") {
+            } else if let Some(rest) = e.label.strip_prefix("Rent: lease renewed (") {
                 renewals += 1;
+                let pct: f64 = rest[..rest.find('%').unwrap()].parse().unwrap();
+                assert!(pct.abs() >= 2.95, "a small renewal was logged: {}", e.label);
             }
         }
     }
-    // About 29 renewals a path at 6% a year: about 1.7 forced moves a path.
-    let rate = forced as f64 / (forced + renewals) as f64;
-    assert!((0.03..=0.10).contains(&rate), "forced share {rate}");
+    // 29 renewals a path at 6% a year: 104 forced moves expected in 1,740 lease
+    // years, with a binomial sd of 10.
+    let rate = f64::from(forced) / (paths as f64 * 29.0);
+    assert!((0.04..=0.08).contains(&rate), "forced share {rate}");
+    // Ordinary renewals of 3% or more happen, but not every year.
+    assert!(renewals > 0 && renewals < paths * 20, "{renewals} logged");
+}
+
+#[test]
+fn rent_renewals_are_not_logged_while_the_household_does_not_pay_market_rent() {
+    // The rent line ends after five years; the market goes on, the log does not.
+    let mut p = renter(RentGrowth::Market);
+    p.spending.items[0].end = Some(When::date(START + 60));
+    let plan = compile(&p);
+    for path in 0..40 {
+        let trace = sim::trace_path(&plan, SEED, path);
+        for e in &trace.events {
+            if e.label.starts_with("Rent:") {
+                assert!(e.month < START + 60, "{} at {:?}", e.label, e.month);
+            }
+        }
+    }
 }
 
 // ---- F14 slow home sales ----------------------------------------------------------
@@ -358,7 +403,7 @@ fn realistic_sales_take_months_and_longer_when_the_market_is_weak() {
         "a sale closes in under 2 months"
     );
     let mean_months = mean(d.iter().map(|(m, _)| f64::from(*m)));
-    // 2 months plus half a month on average in a normal market, up to 5.5 in a
+    // 2 months plus half a month on average in a normal market, up to 5 in a
     // 2009-style one; most paths are not in one.
     assert!(
         (2.2..=4.0).contains(&mean_months),
@@ -381,8 +426,8 @@ fn realistic_sales_take_months_and_longer_when_the_market_is_weak() {
 }
 
 #[test]
-fn a_slow_sale_nets_a_little_less_on_paired_paths() {
-    let paths = 250;
+fn a_sale_into_a_weak_market_nets_less_than_the_same_sale_made_at_once() {
+    let paths = 400;
     let sale = |l| {
         collect(&seller(l), YearSeries::PropertySale, paths)
             .iter()
@@ -391,13 +436,28 @@ fn a_slow_sale_nets_a_little_less_on_paired_paths() {
     };
     let instant = sale(HousingLiquidity::Instant);
     let slow = sale(HousingLiquidity::Realistic);
-    // The home has no price noise and the price is fixed at listing, so the only
-    // difference is the discount of a weak market (mean about 6% of the price at full
-    // stress, none in a normal market): the slow sale nets less, by well under 5%.
-    let diff = mean(instant.iter().zip(&slow).map(|(a, b)| a - b));
-    let net = mean(instant.iter().copied());
-    assert!(diff > 0.0, "slow sales net more: {diff}");
-    assert!(diff < 0.05 * net, "difference {diff} of {net}");
+    let terms = sale_delays(&seller(HousingLiquidity::Realistic), paths);
+    // Net proceeds (today's dollars) of the slow sale over the instant one, by
+    // whether the market was weak when the home was listed.
+    let ratio = |weak: bool| {
+        let r: Vec<f64> = (0..paths as usize)
+            .filter(|i| (terms[*i].1 > 0.0) == weak)
+            .map(|i| slow[i] / instant[i])
+            .collect();
+        assert!(r.len() > 20, "{} paths with weak = {weak}", r.len());
+        mean(r.into_iter())
+    };
+    // In a normal market the slow sale closes two or three months later at the
+    // home's value of that month: the same money, give or take a quarter's real
+    // price change (leveraged 1.35 times by the mortgage) and principal repaid.
+    let calm = ratio(false);
+    assert!((0.98..=1.03).contains(&calm), "calm ratio {calm}");
+    // In a weak market the home sells below its value (3% of the price on average
+    // at half stress, 6% at full) after a longer wait in a market that is often
+    // still falling: several percent of the net proceeds, not tens.
+    let weak = ratio(true);
+    assert!(weak < calm - 0.02, "weak {weak} against calm {calm}");
+    assert!(weak > 0.80, "weak ratio {weak}");
 }
 
 // ---- F15 adjustable-rate mortgages -------------------------------------------------
@@ -602,15 +662,38 @@ fn a_forced_sale_waits_for_closing_and_is_logged() {
     let mut ws = Workspace::new(&plan);
     ws.set_check(true);
     let mut listed = 0;
+    let mut closed = 0;
     for path in 0..80 {
         let trace = sim::trace_path_in(&plan, 3, path, &mut ws);
-        for e in &trace.events {
-            if e.label.starts_with("Listed") {
-                listed += 1;
+        let end = trace.start + trace.months as i32;
+        for (i, e) in trace.events.iter().enumerate() {
+            if !e.label.starts_with("Listed") {
+                continue;
+            }
+            listed += 1;
+            let name = &e.label["Listed ".len()..e.label.find(" for sale").unwrap()];
+            // No instant sale in this mode: the next thing that happens to the
+            // property is its closing, at least two months later, unless the plan
+            // ends first.
+            assert!(!trace
+                .events
+                .iter()
+                .any(|x| x.label.contains("because savings ran out")));
+            let closing = trace.events[i..]
+                .iter()
+                .find(|x| x.kind == TraceEventKind::SoldHome && x.label.contains(name));
+            match closing {
+                Some(c) => {
+                    closed += 1;
+                    assert!(c.month >= e.month + 2, "{:?} then {:?}", e.month, c.month);
+                    assert!(c.month <= e.month + 24);
+                }
+                None => assert!(end <= e.month + 24, "a listing never closed"),
             }
         }
     }
-    assert!(listed > 0, "no sale was listed");
+    assert!(listed > 20, "{listed} sales listed");
+    assert!(closed * 10 >= listed * 9, "{closed} of {listed} closed");
 }
 
 // ---- Validation ---------------------------------------------------------------------
@@ -681,4 +764,188 @@ fn impossible_settings_are_errors_and_odd_ones_warnings() {
     assert!(codes(&p)
         .1
         .contains(&"housing_liquidity_unused".to_string()));
+}
+
+// ---- Random streams ------------------------------------------------------------------
+
+/// Switches every option on wherever the profile has something for it to act on.
+fn all_options_on(mut p: Profile) -> Profile {
+    let cap = Assessment::Capped {
+        annual_cap: 0.02,
+        assessed_value: None,
+    };
+    for pr in &mut p.properties {
+        pr.maintenance = MaintenanceModel::Lumpy;
+        pr.assessment = cap;
+        pr.insurance_real_growth = InsuranceGrowth::Stochastic;
+        if let Some(m) = &mut pr.mortgage {
+            m.kind = arm_kind();
+        }
+    }
+    for ev in &mut p.events {
+        if let EventKind::BuyHome(b) = &mut ev.kind {
+            b.maintenance = MaintenanceModel::Lumpy;
+            b.assessment = cap;
+            b.insurance_real_growth = InsuranceGrowth::Stochastic;
+            b.mortgage_kind = arm_kind();
+        }
+    }
+    for item in &mut p.spending.items {
+        if item.category == Category::Rent {
+            item.rent_growth = RentGrowth::Market;
+        }
+    }
+    p.assumptions.housing_liquidity = HousingLiquidity::Realistic;
+    p
+}
+
+fn scalar(t: &firesight_core::stats::PathTrace, s: PathScalar) -> u64 {
+    t.scalars
+        .iter()
+        .find(|x| x.scalar == s)
+        .unwrap()
+        .value
+        .to_bits()
+}
+
+fn months_of(t: &firesight_core::stats::PathTrace, kind: TraceEventKind) -> Vec<YearMonth> {
+    t.events
+        .iter()
+        .filter(|e| e.kind == kind)
+        .map(|e| e.month)
+        .collect()
+}
+
+#[test]
+fn switching_the_options_on_leaves_markets_careers_health_and_lifespans_untouched() {
+    for example in Profile::examples(START) {
+        let on = all_options_on(example.profile.clone());
+        assert!(firesight_core::validate::validate(&on).is_ok());
+        let (plan_a, plan_b) = (compile(&example.profile), compile(&on));
+        let mut changed = 0;
+        for path in 0..20 {
+            let a = sim::trace_path(&plan_a, 21, path);
+            let b = sim::trace_path(&plan_b, 21, path);
+            let at = format!("{} path {path}", example.slug);
+            // Lifespans and inflation.
+            assert_eq!(a.months, b.months, "{at}");
+            for s in [
+                PathScalar::DeathAge0,
+                PathScalar::DeathAge1,
+                PathScalar::Inflation,
+            ] {
+                assert_eq!(scalar(&a, s), scalar(&b, s), "{at} {s:?}");
+            }
+            // Markets, month by month.
+            for key in [
+                "price_level",
+                "return_us_stocks",
+                "return_intl_stocks",
+                "return_bonds",
+                "return_cash",
+            ] {
+                assert_eq!(a.column(key), b.column(key), "{at} {key}");
+            }
+            // Careers: the same layoffs up to the earlier retirement (the options
+            // may move the date the household can afford to stop).
+            let retired = |t: &firesight_core::stats::PathTrace| {
+                months_of(t, TraceEventKind::Retired)
+                    .first()
+                    .copied()
+                    .unwrap_or(YearMonth::ym(9999, 1))
+            };
+            let cutoff = retired(&a).min(retired(&b));
+            let layoffs = |t: &firesight_core::stats::PathTrace| -> Vec<YearMonth> {
+                months_of(t, TraceEventKind::LaidOff)
+                    .into_iter()
+                    .filter(|m| *m < cutoff)
+                    .collect()
+            };
+            assert_eq!(layoffs(&a), layoffs(&b), "{at}");
+            // Health: long-term care begins in the same months.
+            assert_eq!(
+                months_of(&a, TraceEventKind::LongTermCare),
+                months_of(&b, TraceEventKind::LongTermCare),
+                "{at}"
+            );
+            if a.column("net_worth") != b.column("net_worth") {
+                changed += 1;
+            }
+        }
+        assert_eq!(changed, 20, "{}: the options did something", example.slug);
+    }
+}
+
+#[test]
+fn an_unrelated_decision_does_not_move_the_options_draws() {
+    // The same household spending 30% less, and one that sells its house three
+    // years earlier: the rent market, the insurance index, the rental's repairs and
+    // (for the first) the terms of the listed sale are the same, event for event.
+    let base = everything(false);
+    let mut frugal = base.clone();
+    for item in &mut frugal.spending.items {
+        if item.category != Category::Rent {
+            item.amount *= 0.7;
+        }
+    }
+    frugal.spending.shocks = ShockLevel::Off;
+    let mut early = base.clone();
+    early.events[1].when = When::date(START + 114);
+    let plans = [compile(&base), compile(&frugal), compile(&early)];
+    let picked = |t: &firesight_core::stats::PathTrace, prefixes: &[&str], until: YearMonth| {
+        t.events
+            .iter()
+            .filter(|e| e.month < until && prefixes.iter().any(|p| e.label.starts_with(p)))
+            .map(|e| (e.month, e.label.clone()))
+            .collect::<Vec<_>>()
+    };
+    let mut seen = [0usize; 3];
+    for path in 0..25 {
+        let [a, b, c] = [0, 1, 2].map(|i| sim::trace_path(&plans[i], 8, path));
+        // The rental is listed only if a household runs out of money, which is its
+        // own doing: compare up to the first time any of them does.
+        let until = [&a, &b, &c]
+            .iter()
+            .flat_map(|t| t.events.iter())
+            .filter(|e| e.label.starts_with("Listed rental"))
+            .map(|e| e.month)
+            .min()
+            .unwrap_or(YearMonth::ym(9999, 1));
+        // Spending less changes nothing the options draw.
+        let all = [
+            "Rent:",
+            "Insurance repriced",
+            "Major repair",
+            "Listed",
+            "Sale of",
+        ];
+        assert_eq!(
+            picked(&a, &all, until),
+            picked(&b, &all, until),
+            "path {path}"
+        );
+        // The ARM resets too (same index, same loans).
+        assert_eq!(
+            picked(&a, &["rental: adjustable", "buy: adjustable"], until),
+            picked(&b, &["rental: adjustable", "buy: adjustable"], until),
+            "path {path}"
+        );
+        // Selling earlier moves the listing, but not the insurance index, nor the
+        // rental's repairs, nor the rent market while both still rent or both own.
+        let own = ["Insurance repriced", "Major repair on rental"];
+        assert_eq!(
+            picked(&a, &own, until),
+            picked(&c, &own, until),
+            "path {path}"
+        );
+        assert_eq!(
+            picked(&a, &["Rent:"], START + 30),
+            picked(&c, &["Rent:"], START + 30),
+            "path {path}"
+        );
+        seen[0] += picked(&a, &["Insurance repriced"], until).len();
+        seen[1] += picked(&a, &["Major repair"], until).len();
+        seen[2] += picked(&a, &["Listed"], until).len();
+    }
+    assert!(seen.iter().all(|n| *n >= 20), "{seen:?}");
 }

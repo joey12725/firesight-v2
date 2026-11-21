@@ -458,52 +458,107 @@ or snowball order.
 Every option below defaults to the earlier behaviour; a profile that does not
 mention them simulates bit for bit as before and serialises without the new keys.
 Their numbers are in `data/actuarial/params.json` under `housing_realism`, each
-marked sourced or a judgement. Effects were measured on the side-hustle landlord
-example (one option at a time, 2,000 paths, seed 7, success rate; baseline 92.1%).
+marked sourced or a judgement (most are judgements). Each option draws from its own
+random stream, a fixed number of words a month whatever the household decides, so
+switching one on leaves markets, careers, health and lifespans path for path the
+same. Effects were measured on the side-hustle landlord example (a renter with a
+mortgaged rental duplex), one option at a time, 4,000 paired paths, seed 7;
+baseline success 91.7%, median terminal net worth $987,000, 10th percentile
+$146,000.
 
 **Lumpy maintenance** (`maintenance: lumpy`). Half of `maintenance_rate` stays a
 smooth routine charge. The other half arrives as major repairs of five components
-(roof, heating and cooling, water heater, exterior, appliances) whose hazard rises
-with years since replacement (Weibull shape 3; mean lives from the NAHB and Bank of
-America 2007 component-life study as reported secondhand; budget shares are a
-judgement). Expected cost equals the smooth rate. Measured: success 92.2%, median
-terminal net worth +$11,000, a few more paths with spikes. Not modelled: repairs
-tied to the actual age of the house beyond a random starting age, or to hurricanes.
+(roof, heating and cooling, water heater, exterior, appliances and flooring) whose
+hazard rises with years since replacement (Weibull shape 3; mean lives of 11 to 25
+years recalled from secondary reports of the NAHB and Bank of America 2007
+component-life study; the split and the budget shares are judgements). A repair
+costs a fixed share of the home's value of the day (a roof is 3.75% of value at
+the default 1% rate), so the expected cost equals the smooth rate: over 3,000
+paths of 30 years the lumpy total was 1.001 times the smooth one (1.02 in the first
+ten years, 0.993 in the last twenty, because the random starting ages are not
+quite the stationary mix). Measured: success 91.7% (unchanged; 22 paths rescued,
+22 harmed), 10th-percentile terminal net worth $12,000 lower. On a rental the
+reported lifetime spending rises (+$128,000 at the median) without any more money
+being spent: a month with a repair bigger than the rent is booked as housing
+spending and the other months as higher rental income. Not modelled: the actual age
+of the house, catastrophes, repairs that hold their price when home values fall,
+and the tax rule that a rental's roof is depreciated, not expensed.
 
 **Assessment cap and insurance drift** (`assessment: {type: capped, annual_cap}`,
-`insurance_real_growth: stochastic`). The assessed value rises by at most the cap
-and never above market, and resets to the price on a purchase; tax is charged on
-it. Insurance adds a persistent real drift plus occasional 10 to 20% repricing
-jumps, shared across properties of the path (Urban Institute premium growth
-2018 to 2024; the process parameters are judgements). Measured: capped at 2% 91.9%
-(lower property tax, but the earlier-financial-independence effect shows in
-spending), stochastic insurance 90.0% with p10 terminal net worth falling to $0.
-Not modelled: Proposition 19 transfers, supplemental assessments, state-specific
-homestead rules, insurance availability.
+`insurance_real_growth: stochastic`). The assessed value rises by the cap each
+year, never above market value, starts from the basis (or a stated
+`assessed_value`) and resets to the price on a purchase; tax is charged on it.
+Measured at 2%: success 91.7% (unchanged), financial independence 1.2 years
+earlier at the median (the duplex is assessed at its $310,000 basis, not its
+$385,000 value, and the gap widens), which the household spends by retiring
+sooner. Not modelled: caps tied to inflation (California's is the lesser of 2% and
+CPI; here the full cap applies every year), the return to the pre-decline
+assessment after a fall in prices (the cap applies from the lowered value),
+Proposition 19 transfers, supplemental assessments, other states' homestead rules.
 
-**Market rents** (`rent_growth: market` on a rent line). The path's rent index
-follows national real price growth with a lag, persistent local noise, a yearly
-lease renewal that passes most of the gap to market through, and an occasional
-forced move to a new-lease premium. Measured: 91.8%, an Overspending cause appears
-on 0.6% of paths. Not modelled: metro-level indices, rent control.
+The insurance premium of a property that opts in is multiplied by one index per
+path, shared by all of its properties: a persistent real growth rate (mean 0.5% a
+year, stationary sd about 1.6 points) plus repricing jumps (8% of years, 11% at
+the median). The only evidence is the Urban Institute figure in `params.json`
+(premiums on new agency mortgages up 46% from 2018 to 2024, about 2.6 points a
+year above CPI); every process parameter is a judgement set so that the long-run
+real drift is about 1.5% a year and that episode is about half a standard
+deviation above the mean. Over 3,000 paths the index after 30 years was 1.09 at
+the 10th percentile, 1.51 at the median and 2.22 at the 90th. Measured on the
+example (a Florida duplex insured at 1.1% of value): success 90.6% (-1.1 points,
+58 paths harmed, 13 rescued), median terminal net worth $147,000 lower. Not
+modelled: insurers withdrawing from a market, non-renewal, regional differences
+(one national index).
 
-**Slow home sales** (`assumptions.housing_liquidity: realistic`). A sale takes a
-random number of months to close (about two plus a stress-dependent tail), longer
-and at up to a 6% discount (Campbell, Giglio and Pathak 2011, forced sales 3 to 7%
-below comparable homes) when the path is in recession or national prices are
-falling; carrying costs run until closing and a last-resort sale bridges the wait
-from cash. Measured: 92.1% (few paths of this example sell). Not modelled: price
-negotiation, financing falling through.
+**Market rents** (`rent_growth: market` on a rent line). One real rent index per
+path: it grows 0.5% a year (the default real growth of a rent line) plus 15% of
+the gap between lagged real home-price growth and 1% a year, with local noise
+(stationary sd 5%, half-life about four years). The household pays the rent set
+at its last yearly renewal, which closes 75% of the gap to market; in 6% of years
+the lease is not renewed and a new one starts 4% above market. All of these are
+judgements. Over 3,000 paths the rent paid was 1.003 times the fixed-growth rent
+at year 10 and 1.006 at year 29, with a spread of 5 to 6% between paths. Measured:
+success 91.7% (unchanged; 24 rescued, 25 harmed), 10th-percentile terminal net
+worth $7,000 lower. Not modelled: metro-level indices, rent control, moving
+costs, and the rent taken on after a home sale (`then_rent_monthly`), which keeps
+the fixed growth.
+
+**Slow home sales** (`assumptions.housing_liquidity: realistic`). A planned or
+last-resort sale is listed and closes two months later plus the whole months of an
+exponential wait whose mean is 0.5 months in a normal market and 3.5 at full stress
+(a recession counts for half, a 10% fall of the national index over twelve months
+for the other half): a little over 2 months on average in a normal market, about 5
+in a 2009-style one, at most 24. It closes at the home's value of the closing
+month less a discount of 6% of the price on average at full stress and none in a
+normal market. The discount is a judgement sized from Campbell, Giglio and Pathak
+(2011), who measure 3 to 7% for sales forced by a death or bankruptcy; they
+measure the seller's circumstances, not the state of the market. Carrying costs
+(and a rental's rent) run until closing, and a household that listed as a last
+resort borrows against the expected proceeds meanwhile, at no interest. Measured:
+success 91.8% (+0.1 points, within noise; few paths of this example sell), 10th
+percentile terminal net worth $3,000 lower. Not modelled: a base discount for a
+distressed seller in a normal market, sales that fall through, interest on the
+bridge, and a purchase that depends on the proceeds of a slow sale (it waits up to
+its usual retry period for the cash).
 
 **Adjustable-rate mortgages** (`mortgage.kind` or `buy_home.mortgage_kind`:
-`arm`). After the fixed months the rate resets every period to the simulated bill
-yield plus margin, limited by the periodic and lifetime caps and never below the
-margin; the payment is re-amortised over the months left (Fannie Mae ARM plan
-terms for the structure). Without a stated rate a purchased ARM starts 0.75 points
-below the market rate (a judgement). A refinance of an ARM turns it into a fixed
-loan over the remaining term. Measured with a 1/1 reset, 2.75 margin, 2/5 caps:
-92.5%, with a fatter bad tail of resets in high-rate paths. Not modelled:
-interest-only and negative-amortisation loans, a separate initial cap.
+`arm`). After the fixed months the rate resets every period to the simulated
+Treasury bill yield plus the margin, moving at most the periodic cap at a time,
+never above the starting rate plus the lifetime cap and never below the margin
+(Fannie Mae Selling Guide B2-1.4-02 for the floor and the requirement of periodic
+and lifetime caps); the payment is re-amortised over the months left. For a
+mortgage that already exists the fixed months and the lifetime cap count from the
+start of the plan. Without a stated rate a purchased ARM starts 0.75 points below
+the simulated 30-year rate (a judgement). The yearly refinancing test compares the
+market fixed rate with the loan's current rate; a refinanced ARM becomes a fixed
+loan over the months it had left. Measured on the duplex loan (4.25%, 26 years
+left) as a 1/1 ARM with a 2.75-point margin and 2/5 caps: the first reset takes
+the rate to about 6%, financial independence comes 1.0 year later at the median,
+and success is 92.3% (+0.6 points): the household works longer to carry the
+dearer loan, and that extra year protects it for the rest of its life. With five
+fixed years: 92.2%, 0.7 years later. Not modelled: interest-only and
+negative-amortisation loans, a first-reset cap different from the periodic cap,
+the SOFR and CMT indices themselves (the bill yield stands in for them).
 
 ## 9. Social Security
 

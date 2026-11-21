@@ -2126,10 +2126,10 @@
       }
     },
     "insurance_drift": {
-      "evidence": "Urban Institute, Housing Finance at a Glance (September 2026), quoted in housing.homeowners_insurance_pct_of_value: average premium on newly originated agency mortgages rose from $1,270 (2018) to $1,856 (2024), +46%, about 6.5% a year against CPI near 4%.",
+      "evidence": "Urban Institute, Housing Finance at a Glance (September 2026), quoted in housing.homeowners_insurance_pct_of_value: average premium on newly originated agency mortgages rose from $1,270 (2018) to $1,856 (2024), +46%, about 6.5% a year against CPI-U of about 3.8% a year (251 to 314), so about 2.6 points a year in real terms.",
       "mu": {"value": 0.005, "judgement": true, "confidence": "low. Long-run mean of the persistent real growth rate; below the 2018-2024 pace because repricing cannot continue for decades."},
       "rho": {"value": 0.97, "judgement": true, "confidence": "low (monthly persistence, about 0.7 a year)"},
-      "sigma": {"value": 0.01, "judgement": true, "confidence": "low"},
+      "sigma": {"value": 0.004, "judgement": true, "confidence": "low. Monthly innovation sd of the annual real growth rate; with rho it gives a stationary sd of about 1.6 points a year, so that the 2018-2024 episode (about 2.6 points a year real for six years) is roughly half a standard deviation above the mean."},
       "jump_rate": {"value": 0.08, "judgement": true, "confidence": "low (repricing events a year)"},
       "jump_log_median": {"value": -2.2, "judgement": true, "confidence": "low (median jump 11%)"},
       "jump_log_sd": {"value": 0.5, "judgement": true, "confidence": "low"}
@@ -2149,8 +2149,8 @@
       "evidence": "NAR (2012 analysis of existing-home sales): median time on market of non-distressed sellers peaked at 10 weeks in 2009 (10.0 months of supply, median price down 12.9%); 6 to 7 weeks is a balanced market. Campbell, Giglio and Pathak, Forced Sales and House Prices, American Economic Review 101(5), 2011 (NBER w14866): forced sales close 3 to 7% below comparable homes (death 5 to 7%, bankruptcy 3%); foreclosures about 27%.",
       "base_close_months": {"value": 2, "judgement": true, "confidence": "low (3 to 4 weeks on market plus 30 to 45 days to close)"},
       "base_extra_months": {"value": 0.5, "judgement": true, "confidence": "low"},
-      "stress_extra_months": {"value": 3.0, "judgement": true, "confidence": "low. Gives a mean of about 5.5 months at full stress."},
-      "full_stress_discount": {"value": 0.06, "source": "Campbell, Giglio and Pathak (2011): forced sales 3 to 7% below comparable homes", "confidence": "medium for a forced sale; a household that merely sells into a weak market may lose less"},
+      "stress_extra_months": {"value": 3.0, "judgement": true, "confidence": "low. Gives a mean of about 5 months at full stress (2 plus the whole months of an exponential wait of mean 3.5)."},
+      "full_stress_discount": {"value": 0.06, "judgement": true, "confidence": "low. Sized from Campbell, Giglio and Pathak (2011), forced sales 3 to 7% below comparable homes; their discount is for the seller's circumstances (death, bankruptcy), and the engine applies a figure of that size to any sale that must close in a stressed market and none in a normal one."},
       "full_stress_price_fall": {"value": 0.10, "judgement": true, "confidence": "low (2008 saw falls of 10 to 12% over twelve months)"}
     },
     "arm": {
@@ -2502,6 +2502,17 @@
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
+    },
+    "housing_realism": {
+      "note": "Opt-in housing realism figures recalled rather than fetched (housing::maintenance::COMPONENTS and housing::arm::INITIAL_DISCOUNT; sim/housing_ext_tests.rs keeps them equal to this entry). Component lives: NAHB and Bank of America Home Equity, Study of Life Expectancy of Home Components (February 2007); the study exists, but its table was not re-read and the figures here are round numbers from secondary reports of it. ARM discount: the gap between the initial rate of a 5/1 ARM and the 30-year fixed rate, recalled as 0.5 to 1 point through 2010 to 2019.",
+      "home_component_life_years": {
+        "roof": 25.0,
+        "heating and cooling": 17.0,
+        "water heater": 11.0,
+        "exterior paint and siding": 12.0,
+        "appliances and flooring": 13.0
+      },
+      "arm_initial_discount_to_fixed": 0.0075
     }
   },
   "long_run_assumptions": {
