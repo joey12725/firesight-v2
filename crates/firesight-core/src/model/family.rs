@@ -172,6 +172,48 @@ pub struct Parent {
     /// (drawn as for the household's own people, by sex and age at death) is paid
     /// out of the estate before anything is inherited.
     pub care_erodes_estate: bool,
+    /// The household's part in this parent's care, if any. The care spell is the
+    /// parent's paid long-term care at the end of life (drawn as above); during it
+    /// the household may pay part of the cost and one person may work less.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub care_support: Option<CareSupport>,
+}
+
+/// Average yearly out-of-pocket spending of a family caregiver: $7,242 (AARP,
+/// "Caregiving Out-of-Pocket Costs Study", 2021; housing more than half, medical
+/// 17%). A reference for `CareSupport::annual_cost`, not a default.
+pub const CAREGIVER_OUT_OF_POCKET_ANNUAL: f64 = 7_242.0;
+
+/// What the household does while a parent needs care.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct CareSupport {
+    /// Probability, from 0 to 1, that the household takes part when the parent
+    /// needs care (drawn once per path on the parent's own random stream).
+    pub probability: f64,
+    /// What the household pays toward the care each year of the spell, today's
+    /// dollars, rising with medical costs (no more than the care costs). The
+    /// estate pays the rest. Family caregivers spend $7,242 a year on average
+    /// (AARP 2021).
+    pub annual_cost: f64,
+    /// Share of full-time work the caregiver gives up during the spell: 0 none,
+    /// 0.5 half time, 1 a full career break. Their pay, and so their Social
+    /// Security record, falls by that share; they return to their job afterwards.
+    pub hours: f64,
+    /// Who cuts back: a person index. Leave empty for the parent's own child.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caregiver: Option<usize>,
+}
+
+impl Default for CareSupport {
+    fn default() -> Self {
+        Self {
+            probability: 1.0,
+            annual_cost: 0.0,
+            hours: 0.0,
+            caregiver: None,
+        }
+    }
 }
 
 impl Default for Parent {
@@ -187,6 +229,7 @@ impl Default for Parent {
             share: 1.0,
             inherited_ira_fraction: 0.0,
             care_erodes_estate: true,
+            care_support: None,
         }
     }
 }

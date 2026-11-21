@@ -415,6 +415,33 @@ as a failure cause means private-pay care exhausted the portfolio. A care episod
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
 
+### Caring for a parent
+
+Opt-in per parent with `care_support` (section 10 describes the parents). The
+care spell is the parent's paid long-term care at the end of life, drawn as for
+the household's own people. With `probability` (drawn once per path on the
+parent's own stream) the household takes part: it pays `annual_cost` a year
+toward the care (in today's dollars, rising with excess medical inflation, never
+more than the care costs; the estate pays the rest, so the inheritance is that
+much larger), and the caregiver (the parent's child unless stated) works
+`hours` less for the length of the spell: their pay, their workplace
+contributions and their Social Security record fall by that share, and they
+return to the job at the end. A reference figure: family caregivers spend $7,242
+a year out of pocket on average (AARP, Caregiving Out-of-Pocket Costs Study,
+2021).
+
+Measured on the dual-income example (4,000 paired paths) with Daniel's father, 80,
+leaving nothing: paying $7,242 a year and Daniel working half time while his
+father is in care lowers the median terminal net worth by $10,000 and the tenth
+percentile by $17,000; success is unchanged within noise (91.5% to 91.3%). Paid
+care happens on about half of paths and lasts a median of under two years, so
+the cost is modest on average and concentrated on a few paths.
+
+Not modelled: unpaid care before or without paid care (most family care is of
+this kind), a caregiver's self-employment, the chance that a caregiver does not
+return to work or comes back at lower pay, and caregiving for anyone other than
+a listed parent.
+
 ## 8. Housing and debt
 
 A property has a value that follows the national index times a local random walk

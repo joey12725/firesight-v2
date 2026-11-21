@@ -124,6 +124,36 @@ impl Checker<'_> {
                 0.0,
                 1.0,
             );
+            if let Some(cs) = &parent.care_support {
+                let c = format!("{k}/care_support");
+                self.r.range(
+                    &format!("{c}/probability"),
+                    "Probability",
+                    cs.probability,
+                    0.0,
+                    1.0,
+                );
+                self.r
+                    .money(&format!("{c}/annual_cost"), "Care cost", cs.annual_cost);
+                self.r
+                    .range(&format!("{c}/hours"), "Hours given up", cs.hours, 0.0, 1.0);
+                if let Some(who) = cs.caregiver {
+                    if who >= self.n_people {
+                        self.r.error(
+                            "person_index",
+                            &format!("{c}/caregiver"),
+                            format!("The caregiver is person {who}, who is not in the household."),
+                        );
+                    }
+                }
+                if cs.annual_cost > 60_000.0 {
+                    self.r.warn(
+                        "care_support_cost",
+                        &format!("{c}/annual_cost"),
+                        "Family caregivers spend about $7,000 a year on average (AARP 2021); more than $60,000 is the cost of full-time paid care.",
+                    );
+                }
+            }
             if parent.estate > 0.0 && parent.share == 0.0 {
                 self.r.warn(
                     "parent_share_zero",
@@ -281,6 +311,14 @@ mod tests {
         let mut dup = p.clone();
         dup.household.parents.push(parent);
         assert!(codes(&validate(&dup).errors).contains(&"id_duplicate"));
+        let mut bad = p.clone();
+        bad.household.parents[0].care_support = Some(CareSupport {
+            hours: 1.5,
+            caregiver: Some(3),
+            ..CareSupport::default()
+        });
+        let e = validate(&bad).errors;
+        assert!(codes(&e).contains(&"person_index") && e.len() >= 2, "{e:?}");
         let mut odd = p;
         odd.household.parents[0].birth = odd.household.people[0].birth - 13 * 12;
         assert!(codes(&validate(&odd).warnings).contains(&"parent_age_gap"));

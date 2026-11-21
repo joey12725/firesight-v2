@@ -155,13 +155,15 @@ impl State {
     }
 
     /// Obligations of the household outside its budget lines that the year's plan
-    /// should expect, nominal dollars a month (support paid).
-    pub(crate) fn family_run_rate(&self, t: usize) -> f64 {
-        if self.fam.support_monthly > 0.0 && (t as i32) < self.fam.support_until {
+    /// should expect, nominal dollars a month (support paid to a former partner,
+    /// what the household pays toward a parent's care).
+    pub(crate) fn family_run_rate(&self, plan: &Plan, t: usize, price: f64) -> f64 {
+        let support = if self.fam.support_monthly > 0.0 && (t as i32) < self.fam.support_until {
             self.fam.support_monthly
         } else {
             0.0
-        }
+        };
+        support + self.parent_support_rate(plan, t) * price
     }
 }
 

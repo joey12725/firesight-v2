@@ -311,3 +311,79 @@ fn parents_switched_off_change_nothing() {
         summary(&base, 3, 200).headline.median_terminal_net_worth
     );
 }
+
+// ---------------------------------------------------------- F48 parent care
+
+#[test]
+fn caring_for_a_parent_costs_money_and_hours() {
+    let base = example("dual-income-family");
+    let mut p = base.clone();
+    let mut dad = parent("dad", 1, 80, 0.0);
+    dad.sex = Sex::Male;
+    dad.care_support = Some(CareSupport {
+        probability: 1.0,
+        annual_cost: 12_000.0,
+        hours: 0.5,
+        caregiver: None,
+    });
+    p.household.parents = vec![dad];
+    let a = traces(&base, 31, 60);
+    let b = traces(&p, 31, 60);
+    let mut spells = 0;
+    for (x, y) in a.iter().zip(&b) {
+        let Some(ev) = y
+            .events
+            .iter()
+            .find(|e| e.kind == TraceEventKind::LongTermCare && e.label.starts_with("dad"))
+        else {
+            continue;
+        };
+        let at = (ev.month - START) as usize;
+        let nx = column(x, "net_worth");
+        let ny = column(y, "net_worth");
+        for m in 0..at {
+            assert_eq!(nx[m], ny[m], "path {} month {m}", x.path_index);
+        }
+        if !ev.label.contains("works 50% less") {
+            continue; // the caregiver was not in a job then
+        }
+        spells += 1;
+        // The first year of the spell (or all of it if shorter; it ends with the
+        // death): the nurse earns about half, and the household pays $1,000 a
+        // month toward the care.
+        let death = y
+            .events
+            .iter()
+            .find(|e| e.label.starts_with("Inheritance from dad"))
+            .map_or(usize::MAX, |e| (e.month - START) as usize);
+        let end = (at + 12)
+            .min(death)
+            .min(x.months as usize)
+            .min(y.months as usize);
+        let months = (end - at) as f64;
+        let wx: f64 = column(x, "income_wages")[at..end].iter().sum();
+        let wy: f64 = column(y, "income_wages")[at..end].iter().sum();
+        let lost = wx - wy;
+        // Daniel earns about $92k a year in today's dollars: half is about $3,800
+        // a month, give or take raises, shocks and the other earner.
+        assert!(
+            (1_500.0 * months..7_000.0 * months).contains(&lost),
+            "lost {lost} over {months} months"
+        );
+        let cx: f64 = column(x, "spend_long_term_care")[at..end].iter().sum();
+        let cy: f64 = column(y, "spend_long_term_care")[at..end].iter().sum();
+        // $1,000 a month in today's dollars at the start, rising with excess
+        // medical inflation (1.5% a year by default) since then.
+        let years = at as f64 / 12.0;
+        let growth = (cy - cx) / (1_000.0 * months);
+        let expected = firesight_core::math::powi(1.015, years.round() as i32);
+        assert!(
+            (growth / expected - 1.0).abs() < 0.05,
+            "{growth} vs {expected}"
+        );
+    }
+    assert!(spells > 5, "{spells}");
+    let sa = summary(&base, 31, 400);
+    let sb = summary(&p, 31, 400);
+    assert!(sb.headline.median_terminal_net_worth < sa.headline.median_terminal_net_worth);
+}

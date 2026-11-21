@@ -238,3 +238,95 @@ fn parents_draw_from_the_life_table() {
     let share = care as f64 / n as f64;
     assert!((0.35..0.75).contains(&share), "{share}");
 }
+
+#[test]
+fn the_households_share_of_care_comes_off_the_estates_bill() {
+    use crate::model::{CareSupport, Parent};
+    let mom = Parent {
+        id: "mom".into(),
+        sex: crate::model::Sex::Female,
+        birth: EXAMPLE_START - 84 * 12,
+        estate: 1.0,
+        ..Parent::default()
+    };
+    let plain = Plan::compile(&with_parent(mom.clone()), crate::data::Data::embedded()).unwrap();
+    let helped = Plan::compile(
+        &with_parent(Parent {
+            care_support: Some(CareSupport {
+                probability: 1.0,
+                annual_cost: 12_000.0,
+                hours: 0.5,
+                caregiver: None,
+            }),
+            ..mom.clone()
+        }),
+        crate::data::Data::embedded(),
+    )
+    .unwrap();
+    let care = plain.family.parent_care.as_ref().unwrap();
+    let mut a = State::new(&plain);
+    let mut b = State::new(&helped);
+    let mut spells = 0;
+    for path in 0..200 {
+        a.fam = FamilyState::default();
+        b.fam = FamilyState::default();
+        a.begin_parents(&plain, 4, path);
+        b.begin_parents(&helped, 4, path);
+        let (x, y) = (a.fam.parents[0], b.fam.parents[0]);
+        // The same life and the same care with or without the household's help.
+        assert_eq!(
+            (x.death, x.care_start, x.care_end),
+            (y.death, y.care_start, y.care_end)
+        );
+        if x.care_start == u32::MAX {
+            assert!(!y.helps);
+            continue;
+        }
+        spells += 1;
+        assert!(y.helps && !x.helps);
+        // $1,000 a month (care costs far more), rising with medical costs.
+        assert_eq!(y.household_monthly, 1_000.0);
+        let mut growth = 0.0;
+        for m in x.care_start..x.care_end {
+            growth += care.excess_growth(m);
+        }
+        let diff = x.care_total - y.care_total;
+        assert!(
+            (diff - 1_000.0 * growth).abs() < 1e-6 * x.care_total,
+            "{diff}"
+        );
+    }
+    assert!(spells > 40, "{spells}");
+}
+
+#[test]
+fn the_household_takes_part_with_the_stated_probability() {
+    use crate::model::{CareSupport, Parent};
+    let plan = Plan::compile(
+        &with_parent(Parent {
+            id: "dad".into(),
+            birth: EXAMPLE_START - 84 * 12,
+            care_support: Some(CareSupport {
+                probability: 0.3,
+                annual_cost: 5_000.0,
+                ..CareSupport::default()
+            }),
+            ..Parent::default()
+        }),
+        crate::data::Data::embedded(),
+    )
+    .unwrap();
+    let mut st = State::new(&plan);
+    let (mut spells, mut helps) = (0, 0);
+    for path in 0..4000 {
+        st.fam = FamilyState::default();
+        st.begin_parents(&plan, 9, path);
+        let p = st.fam.parents[0];
+        if p.care_start != u32::MAX {
+            spells += 1;
+            helps += usize::from(p.helps);
+        }
+    }
+    let share = helps as f64 / spells as f64;
+    assert!((share - 0.3).abs() < 0.04, "{share} of {spells}");
+}

@@ -344,7 +344,7 @@ impl State {
             r.children = self.children_cost(plan, t) * price;
         }
         if plan.family.active {
-            r.debt += self.family_run_rate(t);
+            r.debt += self.family_run_rate(plan, t, price);
         }
         for d in &self.debts {
             if d.balance > 0.0 {

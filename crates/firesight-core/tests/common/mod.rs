@@ -219,6 +219,12 @@ pub fn household_dynamics() -> Profile {
             estate: 300_000.0,
             share: 1.0,
             inherited_ira_fraction: 0.3,
+            care_support: Some(CareSupport {
+                probability: 0.6,
+                annual_cost: 7_242.0,
+                hours: 0.5,
+                caregiver: None,
+            }),
             ..Parent::default()
         },
     ];

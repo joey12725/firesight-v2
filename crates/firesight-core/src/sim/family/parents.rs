@@ -22,8 +22,8 @@ use crate::accounts::{Bucket, WithdrawContext};
 use crate::data::Data;
 use crate::health::{HealthModel, MortalityModel};
 use crate::model::{
-    Healthcare, HealthcareMode, Longevity, Profile, Sex, YearMonth, INHERITED_IRA_YEARS,
-    MAX_PARENTS,
+    CareSupport, Healthcare, HealthcareMode, Longevity, Profile, Sex, YearMonth,
+    INHERITED_IRA_YEARS, MAX_PARENTS,
 };
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEventKind, YearSeries};
@@ -44,6 +44,8 @@ pub(crate) struct ParentPlan {
     pub share: f64,
     pub ira_fraction: f64,
     pub care_erodes_estate: bool,
+    /// The household's part in the care, if any.
+    pub support: Option<CareSupport>,
 }
 
 impl ParentPlan {
@@ -90,6 +92,12 @@ impl ParentPlan {
                 share: p.share.clamp(0.0, 1.0),
                 ira_fraction: p.inherited_ira_fraction.clamp(0.0, 1.0),
                 care_erodes_estate: p.care_erodes_estate,
+                support: p.care_support.map(|s| CareSupport {
+                    probability: s.probability.clamp(0.0, 1.0),
+                    annual_cost: s.annual_cost.max(0.0),
+                    hours: s.hours.clamp(0.0, 1.0),
+                    caregiver: Some(s.caregiver.unwrap_or(p.child)),
+                }),
             })
             .collect();
         (plans, Some(care))
@@ -107,8 +115,14 @@ pub(crate) struct ParentPath {
     pub care_end: u32,
     /// Cost of the care, today's dollars a month before excess medical inflation.
     pub care_monthly: f64,
-    /// Total cost of the care in today's dollars (with excess medical inflation).
+    /// Total cost of the care in today's dollars (with excess medical inflation)
+    /// that the estate pays.
     pub care_total: f64,
+    /// What the household pays toward the care, today's dollars a month before
+    /// excess medical inflation (0: it does not take part on this path).
+    pub household_monthly: f64,
+    /// True when the household takes part in the care on this path.
+    pub helps: bool,
     /// True once the death has been handled.
     pub done: bool,
 }
@@ -121,6 +135,8 @@ impl Default for ParentPath {
             care_end: 0,
             care_monthly: 0.0,
             care_total: 0.0,
+            household_monthly: 0.0,
+            helps: false,
             done: false,
         }
     }
@@ -152,6 +168,8 @@ impl State {
             let mut rng = Rng::stream(seed, path, Stream::Parent(i));
             let death = p.mortality.draw_months_to_death(&mut rng);
             let hs = care.initial_state(p.sex, p.age0_months, death, &mut rng);
+            // Whether the household takes part: drawn on every path, used or not.
+            let u_helps = rng.uniform();
             let mut path = ParentPath {
                 death,
                 ..ParentPath::default()
@@ -160,8 +178,15 @@ impl State {
                 path.care_start = hs.ltc_start_month;
                 path.care_end = hs.ltc_end_month;
                 path.care_monthly = hs.ltc_monthly_cost;
+                if let Some(s) = &p.support {
+                    if u_helps < s.probability {
+                        path.helps = true;
+                        path.household_monthly = (s.annual_cost / 12.0).min(hs.ltc_monthly_cost);
+                    }
+                }
+                let estate_monthly = hs.ltc_monthly_cost - path.household_monthly;
                 for m in hs.ltc_start_month..hs.ltc_end_month {
-                    path.care_total += hs.ltc_monthly_cost * care.excess_growth(m);
+                    path.care_total += estate_monthly * care.excess_growth(m);
                 }
             }
             self.fam.parents[i] = path;
@@ -176,6 +201,9 @@ impl State {
         let tu = t as u32;
         for i in 0..plan.family.parents.len() {
             let pp = self.fam.parents[i];
+            if pp.helps && !pp.done && tu >= pp.care_start && tu < pp.care_end {
+                replan |= self.support_parent(plan, i, price, t);
+            }
             if !pp.done && tu >= pp.death {
                 self.fam.parents[i].done = true;
                 replan |= self.inherit_from_parent(plan, i, price, t);
@@ -183,6 +211,70 @@ impl State {
         }
         self.inherited_ira_month(plan, price, t);
         replan
+    }
+
+    /// Month `t` of parent `i`'s care spell, in which the household takes part.
+    /// Returns true in the first month (the year is re-planned).
+    pub(super) fn support_parent(&mut self, plan: &Plan, i: usize, price: f64, t: usize) -> bool {
+        let p = &plan.family.parents[i];
+        let pp = self.fam.parents[i];
+        let child = p.child.min(self.n.saturating_sub(1));
+        // Only while the parent's child is in this household (not after a divorce).
+        if self.fam.left[child] || (!self.present[child] && !(0..self.n).any(|o| self.present[o])) {
+            return false;
+        }
+        let growth = plan
+            .family
+            .parent_care
+            .as_ref()
+            .map_or(1.0, |c| c.excess_growth(t as u32));
+        let paid = pp.household_monthly * growth * price;
+        if paid > 0.0 {
+            self.spend(YearSeries::SpendLongTermCare, paid);
+        }
+        if t as u32 != pp.care_start {
+            return false;
+        }
+        let support = p.support.unwrap_or_default();
+        let who = support
+            .caregiver
+            .unwrap_or(child)
+            .min(self.n.saturating_sub(1));
+        let mut cut = false;
+        if support.hours > 0.0 && self.present[who] {
+            let months = pp.care_end - pp.care_start;
+            for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
+                if jp.owner == who && rt.st.employment == crate::career::Employment::Employed {
+                    jp.model
+                        .start_break(&mut rt.st, months, 1.0 - support.hours);
+                    cut = true;
+                }
+            }
+        }
+        self.req_dirty = true;
+        let now = plan.start + t as i32;
+        let years = f64::from(pp.care_end - pp.care_start) / 12.0;
+        self.event(
+            now,
+            TraceEventKind::LongTermCare,
+            Some(paid * 12.0 / price),
+            || {
+                let mut s = format!(
+                    "{} needs care for {years:.1} years; the household pays ${:.0}k a year",
+                    p.name,
+                    paid * 12.0 / price / 1000.0
+                );
+                if cut {
+                    s.push_str(&format!(
+                        "; person {} works {:.0}% less",
+                        who + 1,
+                        support.hours * 100.0
+                    ));
+                }
+                s
+            },
+        );
+        true
     }
 
     /// Parent `i` dies at the start of month `t`.
@@ -362,5 +454,21 @@ impl State {
     /// Person `p`'s traditional holdings, nominal.
     fn traditional_of(&self, p: usize) -> f64 {
         self.acc.person[p].traditional.iter().sum()
+    }
+}
+
+impl State {
+    /// What the household is paying toward its parents' care this month, nominal
+    /// dollars before excess medical inflation (for the year's plan).
+    pub(super) fn parent_support_rate(&self, plan: &Plan, t: usize) -> f64 {
+        let tu = t as u32;
+        let mut r = 0.0;
+        for (i, _) in plan.family.parents.iter().enumerate() {
+            let pp = &self.fam.parents[i];
+            if pp.helps && !pp.done && tu >= pp.care_start && tu < pp.care_end {
+                r += pp.household_monthly;
+            }
+        }
+        r
     }
 }

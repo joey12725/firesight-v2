@@ -79,7 +79,9 @@ Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Locatio
             parents: Vec<Parent> (0..=4) }
 Parent    { id, name, child: usize, birth, sex, health,    // lifetime from the life table, Stream::Parent(i)
             estate (today's $), share (1.0), inherited_ira_fraction,  // IRA part paid out over 10 years
-            care_erodes_estate: bool (true) }
+            care_erodes_estate: bool (true),
+            care_support: Option<CareSupport> }
+CareSupport { probability (1.0), annual_cost, hours (0..1), caregiver: Option<usize> }  // during the parent's care spell
 DivorceTerms { asset_split (0.5), support: { annual, years, direction: Pays|Receives },
                keeps_home (true), then_rent_monthly: Option<f64>, legal_costs (11_300),
                spending_factor (0.7) }
