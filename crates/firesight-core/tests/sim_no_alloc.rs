@@ -232,3 +232,41 @@ fn rich_asset_options_do_not_allocate() {
         assert!(sink.years > 300 && sink.total.is_finite());
     }
 }
+
+/// The opt-in career shapes (fat-tailed wage shocks, the two-part pay cut and the
+/// monthly job search) switched on for every job at the riskiest level: their
+/// tables are built when the plan is compiled and only read on the path.
+#[test]
+fn rich_career_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich careers".into();
+    let mut jobs = 0;
+    for income in &mut profile.incomes {
+        if let IncomeKind::Job(job) = &mut income.kind {
+            job.risk = CareerRisk {
+                level: RiskLevel::High,
+                wage_shocks: WageShockShape::FatTailed,
+                layoff_pay_cut: PayCutShape::TwoPart,
+                job_search: JobSearchModel::Monthly,
+            };
+            jobs += 1;
+        }
+    }
+    assert!(jobs > 0);
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
