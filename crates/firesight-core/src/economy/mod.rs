@@ -106,6 +106,7 @@ use crate::rng::Rng;
 use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
+pub use joins::{MIN_CELL as JOIN_MIN_CELL, TRAILING_MONTHS as JOIN_TRAILING_MONTHS};
 pub use overlay::{
     Episode, CASH_PASS_THROUGH, DISASTER_MONTHS_RANGE, DISASTER_RECESSION_MONTHS,
     DISASTER_WORDS_PER_EPISODE, MAX_BURST_INFLATION, MAX_BURST_PRICE_FACTOR, MAX_DISASTER_DEPTH,

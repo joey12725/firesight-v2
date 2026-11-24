@@ -2446,5 +2446,38 @@
       "gold_real_return": "Annual geometric real return of gold. Gold kept its real value over the very long run (0 to 1% a year; 1926-2026 about 2.4% including the 1970s repricing after the end of the gold standard). 1% is the upper end of the long-run range. Before this was fixed the models implied 3.4%, 4.3% and 5.3%: the 1968-2026 nominal mean set against full-sample inflation."
     },
     "confidence": "judgement; the direction and rough size are supported by the long-run record, the exact values are not estimable"
+  },
+  "market_risk": {
+    "summary": "Opt-in market options (assumptions.market): uncertainty about long-run averages, state-matched bootstrap joins and rare disasters. All are off by default. Nothing here is estimated from a data set; every number is a judgement, kept equal to the code by tests/rich_markets.rs.",
+    "long_run_uncertainty": {
+      "summary": "Suggested settings for equity_premium_uncertainty and inflation_uncertainty (the engine default is none). The editor may offer these as presets.",
+      "suggested_equity_return_sd": 0.01,
+      "suggested_inflation_sd": 0.005,
+      "reasoning": "The average of about 100 annual returns with a standard deviation near 18 points (computed from data/history/monthly.csv) has a standard error of 18 / sqrt(100) = 1.8 points a year, and that is before asking whether the next 50 years resemble the last 100. One point is a cautious round number below that. Half a point for inflation is a round number of the same kind, not an estimate.",
+      "confidence": "low; a judgement"
+    },
+    "bootstrap_joins": {
+      "summary": "Constants of the matched-join state grid (economy/joins.rs).",
+      "trailing_months": 12,
+      "min_cell_rows": 12,
+      "confidence": "judgement; the grid is deliberately coarse"
+    },
+    "rare_disasters": {
+      "summary": "Defaults of assumptions.market.disasters and the fixed constants of the disaster overlay (economy/overlay.rs). annual_probability defaults to 0 (off); suggested_annual_probability is what the documentation proposes when it is switched on.",
+      "suggested_annual_probability": 0.01,
+      "depth_pert": {"low": 0.2, "mode": 0.4, "high": 0.75},
+      "years_pert": {"low": 3.0, "mode": 8.0, "high": 20.0},
+      "inflation_probability": 0.3,
+      "inflation_pert": {"low": 0.02, "mode": 0.05, "high": 0.12},
+      "cash_inflation_pass_through": 0.5,
+      "bond_inflation_pass_through": 0.0,
+      "recession_months_max": 36,
+      "max_episodes_per_path": 3,
+      "max_depth": 0.95,
+      "max_burst_inflation": 0.25,
+      "max_burst_price_factor": 10.0,
+      "reasoning": "The US record the generators resample contains one episode of this kind (1929-33). Other developed markets had several in the twentieth century: wars, hyperinflations, and long stagnations such as Japan after 1989. Published cross-country estimates of the frequency of macroeconomic disasters are of the order of 2% a year (Barro 2006; Barro and Ursua 2008; figures recalled from memory, not re-verified, and they measure output or consumption, not share prices). One percent a year is a round number for events beyond those the US record already holds. The depth is a permanent loss against the undisturbed path, not a peak-to-trough fall that is later recovered, so it is set below the peak-to-trough falls usually quoted. The pass-through figures sit between the 1940s, when US bill rates were pegged and kept up with none of the inflation, and the 1970s, when they kept up with most of it.",
+      "confidence": "low; a judgement throughout. Treat the option as a stress dial, not a forecast."
+    }
   }
 }

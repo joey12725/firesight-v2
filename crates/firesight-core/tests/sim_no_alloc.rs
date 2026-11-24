@@ -96,6 +96,51 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
     }
 }
 
+/// The opt-in market options (long-run uncertainty, rare disasters, matched bootstrap
+/// joins) switched on: their per-path overlays rewrite the economy in place.
+#[test]
+fn rich_market_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich markets".into();
+    let m = &mut profile.assumptions.market;
+    m.equity_premium_uncertainty = Some(Uncertain::Normal {
+        mean: 0.0,
+        sd: 0.015,
+    });
+    m.inflation_uncertainty = Some(Uncertain::Pert {
+        low: -0.005,
+        mode: 0.0,
+        high: 0.015,
+    });
+    m.disasters = Disasters {
+        annual_probability: 0.05,
+        inflation_probability: 0.5,
+        ..Disasters::default()
+    };
+    let mut kinds = common::MARKETS.to_vec();
+    kinds.push(MarketKind::Bootstrap {
+        mean_block_months: 24,
+        from_year: None,
+        joins: BootstrapJoins::Matched,
+    });
+    for kind in kinds {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
+
 /// A household with events, stresses, a rental and a partner who joins: the paths
 /// through the loop the demo households do not take.
 fn kitchen_sink_lite() -> Profile {

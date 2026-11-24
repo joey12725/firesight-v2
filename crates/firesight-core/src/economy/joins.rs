@@ -40,9 +40,9 @@ use super::Core;
 
 /// Smallest cell that is kept on its own. A judgement: a year of months gives a
 /// restart a real choice; below that the path would mostly replay one episode.
-pub(super) const MIN_CELL: usize = 12;
+pub const MIN_CELL: usize = 12;
 /// Months in the trailing window of the two continuous features.
-pub(super) const TRAILING_MONTHS: usize = 12;
+pub const TRAILING_MONTHS: usize = 12;
 
 /// For each row, the slice of `members` holding the rows of its cell.
 #[derive(Clone, Debug)]
