@@ -483,7 +483,8 @@ pub struct SelfEmployment {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FallbackWage {
-    /// Gross wage per year in today's dollars, paid until the person retires.
+    /// Gross wage per year in today's dollars, paid until the person retires or the
+    /// self-employment income's own end date, whichever comes first.
     pub annual: f64,
     /// Months between the failure and the first pay (the job search).
     pub search_months: u32,

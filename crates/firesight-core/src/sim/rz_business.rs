@@ -8,7 +8,7 @@ use super::state::{State, TAX_PAYROLL};
 
 impl State {
     /// Multiplier on self-employment income `k`'s profit this month: 0 while the owner
-    /// is disabled or out of work for good, the business regime and recession effect
+    /// is disabled, the business regime and recession effect
     /// when `business_risk` is on, and 0 from the month the business fails (which also
     /// ends the income, so plans stop counting on it).
     pub(super) fn rz_se_factor(
@@ -19,9 +19,7 @@ impl State {
         t: usize,
         recession: bool,
     ) -> f64 {
-        if self.rz.dis.get(p).is_some_and(|d| d.disabled)
-            || self.rz.never.get(p).copied().unwrap_or(false)
-        {
+        if self.rz.dis.get(p).is_some_and(|d| d.disabled) {
             return 0.0;
         }
         let Some(model) = plan.rz.selfemp.get(k).copied().flatten() else {
@@ -71,14 +69,23 @@ impl State {
     }
 
     /// Pays the fallback wage of business `k` once its search spell is over.
-    pub(super) fn rz_se_fallback(&mut self, plan: &Plan, k: usize, p: usize, price: f64) {
+    pub(super) fn rz_se_fallback(&mut self, plan: &Plan, k: usize, p: usize, t: usize, price: f64) {
         let Some(model) = plan.rz.selfemp.get(k).copied().flatten() else {
             return;
         };
         let Some((annual, _)) = model.fallback else {
             return;
         };
-        if !self.alive[p] || !self.present[p] || self.person_retired[p] {
+        // The fallback job replaces the business while the person would have been
+        // running it: not once they have retired, not past the income's own end
+        // date, and not while they are disabled.
+        let sp = &plan.selfemp[k];
+        if !self.alive[p]
+            || !self.present[p]
+            || self.person_retired[p]
+            || t as i32 >= sp.end.month(self.retire_month)
+            || self.rz.dis.get(p).is_some_and(|d| d.disabled)
+        {
             return;
         }
         if !model.fallback_pays(&mut self.rz.biz[k]) {

@@ -355,7 +355,7 @@ impl State {
                 }
             }
             if plan.rz.any {
-                self.rz_se_fallback(plan, k, p, price);
+                self.rz_se_fallback(plan, k, p, t, price);
             }
         }
 
