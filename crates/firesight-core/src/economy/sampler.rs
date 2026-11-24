@@ -25,18 +25,29 @@ const CELLS_F: f64 = CELLS as f64;
 const MASK53: u64 = (1 << 53) - 1;
 const UNIT53: f64 = 1.0 / (1u64 << 53) as f64;
 
+/// Length of a table: two sides of two levels.
+const LEN: usize = 4 * KNOTS;
+
 /// A quantile table for one distribution. Layout: for each sign (0 = positive side,
-/// 1 = negative side) a main level then a tail level, each `KNOTS` long.
+/// 1 = negative side) a main level then a tail level, each `KNOTS` long. The length
+/// is part of the type so that `sample` indexes it without bounds checks.
 #[derive(Clone, Debug)]
 pub(super) struct ShockTable {
-    t: Box<[f64]>,
+    t: Box<[f64; LEN]>,
+}
+
+/// Boxes a vector of exactly [`LEN`] values as a table.
+fn boxed(t: Vec<f64>) -> Box<[f64; LEN]> {
+    t.into_boxed_slice()
+        .try_into()
+        .unwrap_or_else(|_| unreachable!("shock tables are {LEN} long"))
 }
 
 impl ShockTable {
     /// Builds the table of `f(x)` where `x` is symmetric with `|x|` having quantile
     /// function `half_q(u)`, `u` in `[0, 1)` (that is, `Q(0.5 + u / 2)` of `x`).
     pub(super) fn build(half_q: impl Fn(f64) -> f64, f: impl Fn(f64) -> f64) -> ShockTable {
-        let mut t = vec![0.0; 4 * KNOTS];
+        let mut t = vec![0.0; LEN];
         let mut half = vec![0.0; 2 * KNOTS];
         for j in 0..KNOTS {
             // Main level: knots at u = j / CELLS; the last cell is replaced by the
@@ -51,7 +62,7 @@ impl ShockTable {
             t[k] = f(x);
             t[2 * KNOTS + k] = f(-x);
         }
-        ShockTable { t: t.into() }
+        ShockTable { t: boxed(t) }
     }
 
     /// One variate from 64 random bits: 1 sign bit, 10 cell bits, 53 bits of position
@@ -66,7 +77,9 @@ impl ShockTable {
             a + frac * (self.t[base + cell + 1] - a)
         } else {
             let pos = frac * CELLS_F;
-            let sub = pos as usize;
+            // `frac < 1` and the product by a power of two is exact, so `pos < CELLS`:
+            // the mask changes nothing and lets the index be proven in range.
+            let sub = pos as usize & (CELLS - 1);
             let a = self.t[base + KNOTS + sub];
             a + (pos - sub as f64) * (self.t[base + KNOTS + sub + 1] - a)
         }
@@ -109,7 +122,7 @@ impl ShockTable {
     /// A table that always returns `value`.
     pub(super) fn constant(value: f64) -> ShockTable {
         ShockTable {
-            t: vec![value; 4 * KNOTS].into(),
+            t: Box::new([value; LEN]),
         }
     }
 }
@@ -237,12 +250,12 @@ impl UnitShock {
 
     /// The table of `f(x)` for `x` distributed as this unit shock.
     pub(super) fn transformed(&self, f: impl Fn(f64) -> f64) -> ShockTable {
-        let mut t = vec![0.0; 4 * KNOTS];
+        let mut t = vec![0.0; LEN];
         for (k, &x) in self.half.iter().enumerate() {
             t[k] = f(x);
             t[2 * KNOTS + k] = f(-x);
         }
-        ShockTable { t: t.into() }
+        ShockTable { t: boxed(t) }
     }
 }
 

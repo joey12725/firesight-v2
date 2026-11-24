@@ -175,8 +175,14 @@ fn normal_cdf(x: f64) -> f64 {
 /// One uniform strictly inside `(0, 1)` from exactly one 64-bit draw.
 #[inline]
 fn open_uniform(rng: &mut Rng) -> f64 {
+    open_from_bits(rng.next_u64())
+}
+
+/// [`open_uniform`] of a word already drawn.
+#[inline]
+fn open_from_bits(bits: u64) -> f64 {
     const UNIT: f64 = 1.0 / (1u64 << 53) as f64;
-    ((rng.next_u64() >> 11) as f64 + 0.5) * UNIT
+    ((bits >> 11) as f64 + 0.5) * UNIT
 }
 
 // ---------------------------------------------------------------------------
@@ -431,11 +437,13 @@ pub struct HealthState {
     /// This year's total standardised shock (persistent plus transitory), mean 0 and
     /// variance 1.
     pub oop_shock: f64,
-    /// The year's out-of-pocket amount for the plan and age it was last priced for
-    /// (`oop_cache_key`), so the lognormal is evaluated once a year, not monthly.
-    pub oop_cache: f64,
-    /// Identifies what `oop_cache` was priced for; `u32::MAX` when empty.
-    pub oop_cache_key: u32,
+    /// The month's costs in today's dollars before excess inflation, for the year,
+    /// plan and age they were last priced for (`price_key`): premium, out-of-pocket
+    /// and ACA benchmark. They change at most at a birthday, a change of plan or
+    /// the yearly out-of-pocket draw, so they are priced then, not monthly.
+    pub priced: [f64; 3],
+    /// Identifies what `priced` was priced for; `u64::MAX` when empty.
+    pub price_key: u64,
 }
 
 impl Default for HealthState {
@@ -447,8 +455,8 @@ impl Default for HealthState {
             ltc_care: CareType::None,
             oop_persistent: 0.0,
             oop_shock: 0.0,
-            oop_cache: 0.0,
-            oop_cache_key: u32::MAX,
+            priced: [0.0; 3],
+            price_key: u64::MAX,
         }
     }
 }
@@ -1104,39 +1112,52 @@ impl HealthModel {
     /// configured mean for the age and plan. With `health_risk` off the configured
     /// mean is charged every year.
     pub fn step(&self, state: &mut HealthState, ctx: &HealthContext, rng: &mut Rng) -> HealthMonth {
-        let u_persistent = open_uniform(rng);
-        let u_transitory = open_uniform(rng);
+        // Two words every month; they become normals only in a year's first month.
+        let b_persistent = rng.next_u64();
+        let b_transitory = rng.next_u64();
         let t = ctx.months_since_start;
         if self.risk && t % 12 == 0 {
             state.oop_persistent = self.rho * state.oop_persistent
-                + self.persistent_innovation_sd * inverse_normal_cdf(u_persistent);
-            state.oop_shock =
-                state.oop_persistent + self.transitory_sd * inverse_normal_cdf(u_transitory);
+                + self.persistent_innovation_sd * inverse_normal_cdf(open_from_bits(b_persistent));
+            state.oop_shock = state.oop_persistent
+                + self.transitory_sd * inverse_normal_cdf(open_from_bits(b_transitory));
         }
 
         let phase = self.phase(ctx);
         let growth = self.excess_growth(t) * ctx.price_level;
-        let (premium, oop, scale) = self.price(ctx.age, phase);
-        let annual_oop = if self.risk {
-            // The draw changes with the year's shock, the plan and the age band.
-            let key = ((t / 12) << 12) | ((phase as u32) << 8) | (ctx.age.max(0.0) as u32 & 0xff);
-            if state.oop_cache_key != key {
-                state.oop_cache = oop.draw(state.oop_shock);
-                state.oop_cache_key = key;
-            }
-            state.oop_cache
-        } else {
-            oop.mean
-        };
+        // What `price` returns depends only on the phase and the whole years of age
+        // (clamped to the tables), and the out-of-pocket draw on the year's shock:
+        // the same key gives the same values, so they are computed when it changes.
+        let key =
+            (u64::from(t / 12) << 40) | ((phase as u64) << 32) | u64::from(ctx.age.max(0.0) as u32);
+        if state.price_key != key {
+            let (premium, oop, scale) = self.price(ctx.age, phase);
+            let annual_oop = if self.risk {
+                oop.draw(state.oop_shock)
+            } else {
+                oop.mean
+            };
+            state.priced = [
+                premium * scale,
+                annual_oop / 12.0 * scale,
+                if phase == CoveragePhase::Aca {
+                    self.aca_benchmark_monthly(ctx.age)
+                } else {
+                    0.0
+                },
+            ];
+            state.price_key = key;
+        }
+        let [premium, oop, aca] = state.priced;
         let mut out = HealthMonth {
             phase,
-            premium: premium * scale * growth,
+            premium: premium * growth,
             aca_benchmark: if phase == CoveragePhase::Aca {
-                self.aca_benchmark_monthly(ctx.age) * growth
+                aca * growth
             } else {
                 0.0
             },
-            out_of_pocket: annual_oop / 12.0 * scale * growth,
+            out_of_pocket: oop * growth,
             ..HealthMonth::default()
         };
         if t >= state.ltc_start_month && t < state.ltc_end_month {

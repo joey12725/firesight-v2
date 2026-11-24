@@ -1212,7 +1212,12 @@ impl EconomyModel {
             crypto: &self.crypto_shock,
         };
         let mut sink = Sink::new(out);
-        let rng = &mut *streams.market;
+        // The generators run on copies of the streams, written back at the end: the
+        // state of a stream behind a `&mut` would otherwise be stored to memory after
+        // every draw (a bounds-check panic could observe it).
+        let mut market = streams.market.clone();
+        let mut inflation = streams.inflation.clone();
+        let rng = &mut market;
         match &self.kind {
             Kind::Bootstrap { restart } => {
                 let rows = &self.rows[..];
@@ -1268,7 +1273,7 @@ impl EconomyModel {
             Kind::Regime(p) => {
                 let mut state = p.start;
                 for t in 0..months {
-                    let core = p.step(&mut state, rng, streams.inflation, emit.normal);
+                    let core = p.step(&mut state, rng, &mut inflation, emit.normal);
                     let m = self.assets.month(&self.adjust, &core);
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }
@@ -1276,12 +1281,14 @@ impl EconomyModel {
             Kind::Lognormal(p) => {
                 let mut recession = u8::from(rng.uniform() < p.recession_share());
                 for t in 0..months {
-                    let core = p.step(&mut recession, rng, streams.inflation, emit.normal);
+                    let core = p.step(&mut recession, rng, &mut inflation, emit.normal);
                     let m = self.assets.month(&self.adjust, &core);
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }
             }
         }
+        *streams.market = market;
+        *streams.inflation = inflation;
     }
 
     /// Emits one table row: the residuals of the synthesised columns (2 draws, used

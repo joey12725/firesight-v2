@@ -282,14 +282,19 @@ impl EarningsRecord {
     pub fn aime(&self) -> f64 {
         const BEST: usize = 35;
         let n = self.years.min(MAX_EARNING_YEARS);
-        let mut top = self.indexed;
-        let used = &mut top[..n];
-        if n > BEST {
-            used.select_nth_unstable_by(BEST - 1, |a, b| b.total_cmp(a));
-        }
         let mut sum = 0.0;
-        for value in &used[..n.min(BEST)] {
-            sum += value;
+        if n > BEST {
+            let mut top = self.indexed;
+            let used = &mut top[..n];
+            used.select_nth_unstable_by(BEST - 1, |a, b| b.total_cmp(a));
+            for value in &used[..BEST] {
+                sum += value;
+            }
+        } else {
+            // Every year counts, in the recorded order: no copy needed.
+            for value in &self.indexed[..n] {
+                sum += value;
+            }
         }
         sum / (BEST as f64 * 12.0)
     }
@@ -351,6 +356,10 @@ pub struct SocialSecurityModel {
     cola_first_year: i32,
     /// Full retirement age rows: (last birth year of the row, months).
     fra_table: Vec<(i32, u32)>,
+    /// Birth years after this one all take the last row of `fra_table` (they are past
+    /// every other row): `(last birth year of the second-to-last row, months of the
+    /// last row)`. Nearly everyone is in the last row.
+    fra_tail: (i32, u32),
     earliest_claim_months: u32,
     latest_claim_months: u32,
     early_first_36: f64,
@@ -530,6 +539,11 @@ impl SocialSecurityModel {
             })
             .collect();
         fra_table.sort_by_key(|row| row.0);
+        let fra_tail = match fra_table.len() {
+            0 => (i32::MAX, 0),
+            1 => (i32::MIN, fra_table[0].1),
+            n => (fra_table[n - 2].0, fra_table[n - 1].1),
+        };
 
         let cgm = &data.actuarial["earnings"]["age_profile"]["cgm_coefficients"];
         let coefficients = |group: &str| {
@@ -582,6 +596,7 @@ impl SocialSecurityModel {
             cola,
             cola_first_year,
             fra_table,
+            fra_tail,
             earliest_claim_months: num(ss, &["early_retirement_reduction", "earliest_age"]) as u32
                 * MONTHS_PER_YEAR,
             latest_claim_months: num(ss, &["delayed_retirement_credit", "max_age"]) as u32
@@ -815,7 +830,11 @@ impl SocialSecurityModel {
     }
 
     /// Full retirement age in months for a birth year (67 years for 1960 and later).
+    #[inline]
     pub fn full_retirement_age_months(&self, birth_year: i32) -> u32 {
+        if birth_year > self.fra_tail.0 {
+            return self.fra_tail.1;
+        }
         self.fra_table
             .iter()
             .find(|(last_year, _)| birth_year <= *last_year)

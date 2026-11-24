@@ -78,7 +78,7 @@ use crate::model::{
     EquityCompany, EquityKind, Job, LifecycleProfile, RiskLevel, SelfEmployment, WageGrowth,
     YearMonth,
 };
-use crate::rng::{normal_from_bits, Rng};
+use crate::rng::{normal_from_bits, uniform_from_bits, Rng};
 
 /// Maximum equity grants tracked per job. Refresh grants are pooled inside the slot
 /// of the grant that spawns them, so this is the number of `job.equity` entries used;
@@ -554,11 +554,17 @@ pub struct JobModel {
     company: Company,
 }
 
+/// Months of real growth of a self-employment income tabulated at compile time.
+const SELF_EMPLOYMENT_GROWTH_MONTHS: u32 = 1_200;
+
 /// Compiled parameters of one self-employment income.
 #[derive(Clone, Debug)]
 pub struct SelfEmploymentModel {
     monthly_real: f64,
     log_growth: f64,
+    /// `exp(log_growth * m / 12)` for `m` whole months since the start, the real
+    /// growth factor `step` would otherwise evaluate every month.
+    growth: Box<[f64]>,
     log_sd: f64,
     risk: bool,
     params: CareerParams,
@@ -993,7 +999,7 @@ impl JobModel {
         let c = climate;
         // Every variate is one 64-bit word, drawn whether or not it is used; the
         // words are turned into normals only where a branch needs them.
-        let u_layoff = career.uniform();
+        let b_layoff = career.next_u64();
         let r_spell = career.next_u64();
         let r_scar = career.next_u64();
         let r_commission = career.next_u64();
@@ -1005,9 +1011,7 @@ impl JobModel {
             (0, 0)
         };
         let r_stock = equity.next_u64();
-        let u_liquidity = equity.uniform();
-        let u_class = equity.uniform();
-        let u_multiple = equity.uniform();
+        let b_equity = [equity.next_u64(), equity.next_u64(), equity.next_u64()];
 
         let mut out = JobMonth::default();
 
@@ -1034,7 +1038,8 @@ impl JobModel {
 
         // Layoff.
         if s.employment == Employment::Employed
-            && u_layoff < self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)]
+            && uniform_from_bits(b_layoff)
+                < self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)]
         {
             let p = &self.params;
             let z_spell = normal_from_bits(r_spell);
@@ -1130,7 +1135,7 @@ impl JobModel {
         }
 
         if self.n_grants > 0 {
-            self.step_equity(s, c, r_stock, u_liquidity, u_class, u_multiple, &mut out);
+            self.step_equity(s, c, r_stock, b_equity, &mut out);
         }
         out
     }
@@ -1142,9 +1147,7 @@ impl JobModel {
         s: &mut JobState,
         c: &CareerClimate,
         r_stock: u64,
-        u_liquidity: f64,
-        u_class: f64,
-        u_multiple: f64,
+        b_equity: [u64; 3],
         out: &mut JobMonth,
     ) {
         match &self.company {
@@ -1162,6 +1165,8 @@ impl JobModel {
                 Liquidity::Pending => {
                     // Paper value is constant in real terms until the event.
                     s.stock_price = c.price_level;
+                    // The words become uniforms only here, where they are used.
+                    let [u_liquidity, u_class, u_multiple] = b_equity.map(uniform_from_bits);
                     if c.recession == 0 && u_liquidity < *monthly_hazard {
                         if u_class < *fail_prob {
                             s.liquidity = Liquidity::Failed;
@@ -1423,9 +1428,13 @@ impl SelfEmploymentModel {
     /// return of the last 12 months (so profit falls in bad years for the economy) and
     /// `e` an independent normal.
     pub fn new(se: &SelfEmployment, risk_enabled: bool, data: &Data) -> SelfEmploymentModel {
+        let log_growth = math::ln_1p(se.real_growth.max(-0.99));
         SelfEmploymentModel {
             monthly_real: se.net_annual / 12.0,
-            log_growth: math::ln_1p(se.real_growth.max(-0.99)),
+            log_growth,
+            growth: (0..SELF_EMPLOYMENT_GROWTH_MONTHS)
+                .map(|m| math::exp(log_growth * (f64::from(m) / 12.0).max(0.0)))
+                .collect(),
             log_sd: log_sd_from_cv(se.volatility),
             risk: risk_enabled && se.volatility > 0.0,
             params: CareerParams::from_data(data),
@@ -1461,10 +1470,23 @@ impl SelfEmploymentModel {
             state.factor = math::exp(state.log_shock - 0.5 * state.shock_variance);
         }
         state.steps = state.steps.saturating_add(1);
-        self.monthly_real
-            * math::exp(self.log_growth * years_since_start.max(0.0))
-            * climate.price_level
-            * state.factor
+        self.monthly_real * self.growth_at(years_since_start) * climate.price_level * state.factor
+    }
+
+    /// `exp(log_growth * max(years, 0))`, from the table when `years` is a whole
+    /// number of months (as the simulation passes it): the table entry was computed
+    /// from the same value, so it is the same number.
+    #[inline]
+    fn growth_at(&self, years: f64) -> f64 {
+        let m = (years * 12.0).round();
+        if m >= 0.0
+            && m < SELF_EMPLOYMENT_GROWTH_MONTHS as f64
+            && f64::from(m as u32) / 12.0 == years
+        {
+            self.growth[m as usize]
+        } else {
+            math::exp(self.log_growth * years.max(0.0))
+        }
     }
 
     /// Expected real annual profit `years_since_start` years after `profile.start`.
