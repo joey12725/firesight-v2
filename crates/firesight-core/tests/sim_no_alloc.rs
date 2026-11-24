@@ -72,6 +72,13 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    // The opt-in career-realism features, all on, on every demo household.
+    let with_realism: Vec<Profile> = profiles
+        .iter()
+        .cloned()
+        .map(common::career_realism_on)
+        .collect();
+    profiles.extend(with_realism);
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

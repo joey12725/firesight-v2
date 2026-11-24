@@ -355,8 +355,9 @@ not modelled by the engine, so there is nothing to reset there.
 *No double counting.* The lifecycle curve is fitted to earnings panels in which people
 change jobs, so its average growth already includes the average gain from moves.
 Every month an employed person does not move, pay is therefore multiplied by
-`1 / (1 + h (E[e^J] - 1))`, which makes the expected growth of pay equal to the curve
-exactly. Movers gain more than stayers, stayers fall behind the curve, and the mean
+`(1 - h E[e^J]) / (1 - h)` (`h` the month's move probability), which makes the expected
+growth of pay equal to the curve exactly: `h E[e^J] + (1 - h) d = 1`. Forfeited equity
+is not compensated, so total pay of a job with large grants is lower on average. Movers gain more than stayers, stayers fall behind the curve, and the mean
 career is the curve; what changes is the spread between careers. The persistent wage
 shock of the existing model is calibrated to the same data and carries some of the
 same dispersion, so the two overlap in variance (not in the mean).
@@ -371,9 +372,10 @@ constants are listed in `params.json` under `unverified_from_memory.career_reali
 
 *Measured* (dual-income-family example, 4,000 paths, seed 1, both jobs on `typical`):
 success rate 91.5% either way; median terminal net worth $1.73m off, $1.76m on; 10th
-percentile $104k off, $122k on (the Monte Carlo noise on the 10th percentile is of
-that order); median retirement age 53.4 off, 53.5 on; share of paths with a retired
-year below 90% of planned spending 44.2% off, 42.7% on. The headline barely moves
+percentile $104k off, $117k on (the Monte Carlo noise on the 10th percentile is of
+that order); median retirement age 53.4 off, 53.5 on (90th percentile 61.2 off, 61.8
+on); share of paths with a retired year below 90% of planned spending 44.2% off, 42.6%
+on. The headline barely moves
 because the mean is preserved; the unit tests show the spread of pay at 45 to 50
 rising by more than 10%, and workers with five or more moves ending 15 points ahead
 of workers with two or fewer.
@@ -392,7 +394,11 @@ had, the lifecycle curve's real growth at that age plus the path's last-12-month
 inflation, is lost for good, at most one a year) or start a *temporary cut* (15% a
 year: pay down 5 to 20% for nine months, then restored). Bonuses are 30% smaller in a
 recession and for twelve months after it, and carry the freeze, being a share of pay.
-Commission follows the pay factor.
+Commission follows the pay factor. The nine months of a cut and the year between
+freezes run on calendar time, so a cut does not resume in a new job after a layoff.
+The whole forgone raise is taken off pay in the month the freeze starts (in reality it
+opens up over the frozen year), which overstates the first year's loss by about half a
+raise.
 
 *Sources.* The direction is documented (the share of workers with an unchanged annual
 wage reached a record in and after the Great Recession: Daly, Hobijn and Lucking, FRBSF
@@ -413,7 +419,9 @@ rate 91.5% off, 91.0% on; median retirement age 53.4 off, 53.8 on (90th percenti
 61.2 off, 62.1 on); median terminal net worth $1.73m off, $1.72m on; 10th percentile
 $104k off, $75k on. In the integration test (a 35-year-old on $90,000 with a bonus,
 300 paths) pay is identical to the baseline until the first recession month on every
-path, never higher afterwards, and lifetime pay is 0.2% to 6% lower.
+path, never higher afterwards, and lifetime pay is 2.7% lower over all paths (the test
+accepts 0.2% to 6%). The same kind of check for 6.1 (a 30-year-old to 50, 1,000 paths,
+`typical`) gives lifetime pay 0.6% below the baseline, within the noise of the jumps.
 
 *Not modelled:* a freeze's effect on the nominal-versus-real distinction beyond the
 inflation term, work sharing and furlough programmes, sector differences (a freeze is
@@ -443,19 +451,25 @@ unvested equity. The household then receives:
 * **LTD insurance**, if set: after a three-month elimination period,
   `replacement x base salary at onset`, fixed in nominal dollars (as most policies are),
   less the SSDI received (the usual offset), until `to_age`. Taxable (employer-paid
-  premiums assumed; no premium is charged). Paid through the other-income series.
-* **Recovery** with 3% a year: jobs resume with a 10% pay scar and the record is
-  released. A disabled person's jobs sit in an open-ended idle state, so layoffs,
+  premiums assumed; no premium is charged). Only job salary is insured: a
+self-employed person's profit earns no LTD. Paid through the other-income series.
+* **Recovery** with 3% a year, below full retirement age only (after it the benefit has
+  converted for good): jobs resume with a 10% pay scar and the record is released; a
+  planned claim age that passed during the disability becomes the next month. A disabled person's jobs sit in an open-ended idle state, so layoffs,
   unemployment insurance and mobility draws cannot occur; the idle months are not
   counted as unemployment in the summary.
 
 *Sources.* Verified: the Trustees' age-sex-adjusted ultimate disabled-worker incidence
 of 4.6 awards per 1,000 exposed a year (2025 Trustees Report, Alternative II; 4.8 in 2023
-and 4.5 in 2024); in the SSA Annual Statistical Report on the SSDI Program 2025, 15.8%
-of awards went to ages 55 to 59 and 12.9% to 50 to 54; the five-month wait; the
+and 4.5 in 2024); in the SSA Annual Statistical Report on the SSDI Program 2024, 16.2%
+of disabled-worker awards went to ages 50 to 54, 28.0% to 55 to 59 and 27.4% to 60 to
+full retirement age (read through search summaries); the five-month wait; the
 computation-year rule. The age-specific incidence tables (OACT) could not be retrieved
 (the SSA site refused automated access), so the age profile above is a judgement shaped
-to those facts, as are the recovery rate, scar, LTD wait and the insured-history rule
+to those facts (weighted by the age mix of employed people it averages about 5.2 onsets
+per 1,000 a year, some 13% above the Trustees' rate, and puts about 22% of onsets at 55
+to 59 and 29% from 60: too few at 55 to 59, too many after 62), as are the recovery
+rate, scar, LTD wait and the insured-history rule
 (5 recorded years standing in for 20 quarters in 40). All are named constants in
 `career_realism/disability.rs` and in `params.json` (`unverified_from_memory`). The
 hazard is an SSDI award hazard, so it covers the severe end of work limitation only.
@@ -487,9 +501,11 @@ adds, on top: a spell 1.3 times longer at 55 to 59, 1.6 times at 60 to 64, 1.8 t
 random part of the career model's scar can be a gain, which is left as drawn), and a
 probability of never working again of 15% at 55, rising 4 points a year to at most 60%
 (35% at 60, 51% at 64). Such a worker is retired on the spot with an "Involuntary
-retirement" event; if nobody else in the household is still working the household
-retires the next month on what it has, otherwise the partner keeps working under the
-plan. How often layoffs happen is still set by `level`; this changes what follows one.
+retirement" event and all their jobs end (their own self-employment, if any, carries on
+under its own settings); if nobody else in the household still has a job or
+self-employment (a disabled partner, 6.3, does not count) the household retires the next month on what it has, otherwise the
+partner keeps working under the plan. The spell multiplier applies to the whole spell
+the career model drew. How often layoffs happen is still set by `level`; this changes what follows one.
 It uses one extra uniform per job per month from the feature's own stream, whatever
 happens.
 
@@ -503,13 +519,15 @@ before. Those figures include exits for poor health and use a six-month or 50%-d
 threshold, so they do not give a per-layoff probability.
 
 *Measured* (dual-income-family with the two adults born in 1969 and 1970, 3,000 paths,
-seed 1, both jobs on `late_career: realistic`): success rate 80.9% off, 74.3% on; median
-terminal net worth $658k off, $525k on; 10th percentile $0 either way; share of retired
+seed 1, both jobs on `late_career: realistic`): success rate 80.9% off, 74.1% on; median
+terminal net worth $658k off, $520k on; 10th percentile $0 either way; share of retired
 paths with a year below 90% of planned spending 38.2% off, 45.5% on. (This couple is
 under-saved for its age; it works to 67 in both runs, so the effect is the lost pay and
 the unemployment spells, and a pushed-out person's contributions and wages stop.)
 
-*Not modelled:* health as the cause of the exit (disability is 6.3), a rise in the layoff
+*Not modelled:* unemployment insurance for a worker pushed into retirement (their job
+ends in the layoff month, so they collect at most that month's benefit; a real claimant
+would draw up to 26 weeks first), health as the cause of the exit (disability is 6.3), a rise in the layoff
 hazard itself with age beyond the career model's, partial retirement or bridge jobs
 after a layoff, employer retirement incentives and buyouts, and the age at which UI
 runs out differing by state.
@@ -535,7 +553,9 @@ economy. `typical` and `high` add, on top of that, three things:
   decades-old practice is treated as a start-up). A failed business pays nothing for
   good and counts as ended for the retirement planner and trigger. With `fallback_wage`
   the person, after `search_months`, earns that wage (today's dollars) as ordinary wages
-  with payroll tax until they retire; no retirement-plan contributions. A "Business
+  with payroll tax until they retire or reach the end date of the self-employment
+income, whichever is first, and not while disabled (6.3); no retirement-plan
+contributions. A "Business
   failed" event is logged.
 
 *Sources.* Verified: BLS Business Employment Dynamics: 79.6% of the March 1994 cohort of

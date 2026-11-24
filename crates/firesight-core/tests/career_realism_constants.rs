@@ -3,7 +3,7 @@
 //! reviewer can find them in one place (same convention as `unverified_constants.rs`).
 //! This test keeps the code and that list equal.
 
-use firesight_core::career_realism::{disability, late_career, mobility, recession_pay};
+use firesight_core::career_realism::{business, disability, late_career, mobility, recession_pay};
 use firesight_core::data::Data;
 
 fn numbers(v: &serde_json::Value) -> Vec<f64> {
@@ -126,4 +126,31 @@ fn late_career_constants_match_the_data_file() {
     );
     assert_eq!(late_career::NEVER_MAX, num("never_probability_max"));
     assert_eq!(late_career::SPELL_CAP_MONTHS, num("spell_cap_months"));
+}
+
+#[test]
+fn business_constants_match_the_data_file() {
+    let m = &section()["business"];
+    let num = |k: &str| m[k].as_f64().unwrap();
+    assert_eq!(
+        business::FAIL_HAZARD_BY_YEAR.to_vec(),
+        numbers(&m["fail_hazard_by_year"])
+    );
+    assert_eq!(business::FAIL_HAZARD_LATER, num("fail_hazard_later"));
+    assert_eq!(
+        business::RECESSION_HAZARD_MULTIPLIER,
+        num("recession_hazard_multiplier")
+    );
+    assert_eq!(business::REGIME_HAZARD_BETA, num("regime_hazard_beta"));
+    assert_eq!(
+        business::HIGH_HAZARD_MULTIPLIER,
+        num("high_hazard_multiplier")
+    );
+    assert_eq!(business::REGIME_PERSISTENCE, num("regime_persistence"));
+    assert_eq!(business::REGIME_SD.to_vec(), numbers(&m["regime_sd"]));
+    assert_eq!(
+        business::RECESSION_PROFIT_DROP.to_vec(),
+        numbers(&m["recession_profit_drop"])
+    );
+    assert_eq!(business::MAX_ANNUAL_FAILURE, num("max_annual_failure"));
 }

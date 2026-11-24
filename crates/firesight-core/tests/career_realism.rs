@@ -1016,3 +1016,299 @@ fn f20_profile_conserves_money_and_stays_finite() {
     }
     conserves_and_is_finite(&p, 200);
 }
+
+// ---------------------------------------------------------------------------
+// Edges and combinations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn f18_disability_also_stops_self_employment_income() {
+    let base = owner(60_000.0);
+    let mut on = base.clone();
+    on.household.people[0].disability_risk = DisabilityRisk::Typical;
+    let mut checked = 0;
+    for path in 0..800 {
+        let Some((m, recovered)) = onset_month(&on, path) else {
+            continue;
+        };
+        if recovered || !(12..200).contains(&m) {
+            continue;
+        }
+        let with = profit(&on, path);
+        let without = profit(&base, path);
+        assert_eq!(with[..m], without[..m], "path {path}");
+        assert!(without[m] > 0.0, "path {path}");
+        assert!(with[m..].iter().all(|x| *x == 0.0), "path {path}");
+        checked += 1;
+    }
+    // About 13% of owners aged 40 have an onset before 60.
+    assert!(checked > 30, "{checked} onsets checked");
+}
+
+#[test]
+fn f19_a_partner_without_work_does_not_keep_the_household_from_retiring() {
+    let mut p = older_worker();
+    let mut b = person("b", 50, Sex::Unspecified);
+    b.social_security.basis = SocialSecurityBasis::None;
+    p.household.people.push(b);
+    late(&mut p, LateCareer::Realistic);
+    let mut found = 0;
+    for path in 0..400 {
+        let pushed = event_months(&p, path, "Involuntary retirement");
+        let Some(first) = pushed.first() else {
+            continue;
+        };
+        assert_eq!(
+            event_months(&p, path, "Retired"),
+            vec![*first + 1],
+            "path {path}"
+        );
+        found += 1;
+    }
+    assert!(found > 20, "{found} involuntary retirements");
+}
+
+#[test]
+fn f19_spell_is_scaled_from_its_full_length() {
+    // A survived first layoff at 56 to 59 is 1.3 times as long as on the same path
+    // without the feature (whole spell, not the part left after the first month):
+    // summed over paths the ratio of idle months is close to 1.3.
+    let off = older_worker();
+    let mut on = off.clone();
+    late(&mut on, LateCareer::Realistic);
+    let (mut idle_off, mut idle_on, mut n) = (0.0, 0.0, 0);
+    for path in 0..500 {
+        let l_off = event_months(&off, path, "Laid off");
+        let Some(first) = l_off.first().copied() else {
+            continue;
+        };
+        // In the 55-59 band, and neither spell runs into another event.
+        if first >= 36 || !event_months(&on, path, "Involuntary retirement").is_empty() {
+            continue;
+        }
+        let back = |p: &Profile| {
+            event_months(p, path, "Back at work")
+                .into_iter()
+                .find(|m| *m >= first)
+        };
+        let (Some(a), Some(b)) = (back(&off), back(&on)) else {
+            continue;
+        };
+        idle_off += f64::from(a - first);
+        idle_on += f64::from(b - first);
+        n += 1;
+    }
+    assert!(n > 30, "{n} spells compared");
+    let ratio = idle_on / idle_off;
+    assert!((1.2..1.4).contains(&ratio), "spell ratio {ratio}");
+}
+
+#[test]
+fn f20_fallback_wage_stops_at_the_end_date_of_the_income() {
+    let mut p = owner(60_000.0);
+    p.incomes[0].end = Some(When::age(0, 50.0));
+    business(
+        &mut p,
+        BusinessRisk::High,
+        Some(FallbackWage {
+            annual: 36_000.0,
+            search_months: 0,
+        }),
+        0.0,
+    );
+    let mut checked = 0;
+    for path in 0..200 {
+        let Some(m) = event_months(&p, path, "Business failed").first().copied() else {
+            continue;
+        };
+        let m = m as usize;
+        if m >= 100 {
+            continue;
+        }
+        let w = column(&p, path, "income_wages");
+        assert!((w[m + 1] - 3_000.0).abs() < 1.0, "path {path}");
+        assert!((w[118] - 3_000.0).abs() < 1.0, "path {path}");
+        // The business was to stop at 50 (month 120): so does the job taken instead.
+        assert!(w[121..].iter().all(|x| *x == 0.0), "path {path}");
+        checked += 1;
+    }
+    assert!(checked > 30, "{checked} failures checked");
+}
+
+/// The demo household `slug` with a fixed retirement date.
+fn demo(slug: &str) -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == slug)
+        .unwrap()
+        .profile;
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 62.0,
+    };
+    p
+}
+
+const FEATURE_EVENTS: [&str; 7] = [
+    "Changed jobs",
+    "Pay freeze",
+    "Pay cut",
+    "becomes disabled",
+    "recovers",
+    "Involuntary retirement",
+    "Business failed",
+];
+
+#[test]
+fn streams_switching_the_features_on_leaves_markets_and_lifespans_untouched() {
+    use firesight_core::stats::PathScalar;
+    for slug in ["dual-income-family", "side-hustle-landlord"] {
+        let base = demo(slug);
+        let on = career_realism_on(base.clone());
+        let (plan_a, plan_b) = (compile(&base), compile(&on));
+        let mut feature_events = 0;
+        for path in 0..25 {
+            let a = sim::trace_path(&plan_a, SEED, path);
+            let b = sim::trace_path(&plan_b, SEED, path);
+            assert_eq!(a.months, b.months, "{slug} path {path}");
+            for s in [
+                PathScalar::DeathAge0,
+                PathScalar::DeathAge1,
+                PathScalar::Inflation,
+            ] {
+                let get = |t: &firesight_core::stats::PathTrace| {
+                    t.scalars.iter().find(|x| x.scalar == s).unwrap().value
+                };
+                assert_eq!(
+                    get(&a).to_bits(),
+                    get(&b).to_bits(),
+                    "{slug} path {path} {s:?}"
+                );
+            }
+            for key in [
+                "price_level",
+                "return_us_stocks",
+                "return_intl_stocks",
+                "return_bonds",
+                "return_cash",
+            ] {
+                assert_eq!(a.column(key), b.column(key), "{slug} path {path} {key}");
+            }
+            // The baseline has none of the features' events, the other run does.
+            assert!(!a
+                .events
+                .iter()
+                .any(|e| FEATURE_EVENTS.iter().any(|f| e.label.contains(f))));
+            feature_events += b
+                .events
+                .iter()
+                .filter(|e| FEATURE_EVENTS.iter().any(|f| e.label.contains(f)))
+                .count();
+        }
+        assert!(
+            feature_events > 25,
+            "{slug}: {feature_events} feature events"
+        );
+    }
+}
+
+#[test]
+fn streams_the_features_draws_do_not_depend_on_an_unrelated_decision() {
+    // Spending 30% less (with a fixed retirement date) must not move a single
+    // job change, freeze, cut, disability, involuntary retirement or business
+    // failure: the features draw a fixed number of variates a month from their own
+    // streams, whatever the household does.
+    for slug in ["dual-income-family", "side-hustle-landlord"] {
+        let base = career_realism_on(demo(slug));
+        let mut frugal = base.clone();
+        for item in &mut frugal.spending.items {
+            item.amount *= 0.7;
+        }
+        let (plan_a, plan_b) = (compile(&base), compile(&frugal));
+        let mut seen = 0;
+        for path in 0..40 {
+            let events = |plan: &sim::Plan| -> Vec<(YearMonth, String)> {
+                sim::trace_path(plan, SEED, path)
+                    .events
+                    .iter()
+                    .filter(|e| FEATURE_EVENTS.iter().any(|f| e.label.contains(f)))
+                    .map(|e| (e.month, e.label.clone()))
+                    .collect()
+            };
+            let (a, b) = (events(&plan_a), events(&plan_b));
+            assert_eq!(a, b, "{slug} path {path}");
+            seen += a.len();
+        }
+        assert!(seen > 40, "{slug}: {seen} feature events");
+    }
+}
+
+#[test]
+fn stream_ids_are_inside_the_reserved_range_and_distinct() {
+    use firesight_core::career_realism::{KIND_JOB, KIND_PERSON, KIND_SE};
+    use firesight_core::rng::Stream;
+    let mut ids = Vec::new();
+    for kind in [KIND_JOB, KIND_PERSON, KIND_SE] {
+        for index in [0usize, 1, 7, 63] {
+            let id = Stream::CareerExt(kind, index).id();
+            assert!((0x1400_0000..0x1480_0000).contains(&id), "{id:#x}");
+            ids.push(id);
+        }
+    }
+    let n = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), n);
+}
+
+#[test]
+fn every_feature_at_once_conserves_money_on_the_demo_households() {
+    for slug in ["dual-income-family", "side-hustle-landlord"] {
+        let mut p = career_realism_on(demo(slug));
+        p.retirement.trigger = Profile::examples(START)
+            .into_iter()
+            .find(|e| e.slug == slug)
+            .unwrap()
+            .profile
+            .retirement
+            .trigger;
+        conserves_and_is_finite(&p, 60);
+    }
+}
+
+#[test]
+fn f18_no_recovery_after_full_retirement_age_so_the_conversion_holds() {
+    // Aged 56 at the start, planning to work to 72: full retirement age (67) is month
+    // 132. A disability before then converts to the retirement benefit at 67 for
+    // good; a "recovery" after it would hand the planned claim age (67 here, but 70
+    // for many) back and stop the benefit.
+    let mut p = disability_worker(56, 72.0);
+    p.household.people[0].social_security.claim_age = 70.0;
+    disabled(&mut p, None);
+    let (mut checked, mut recoveries_before) = (0, 0);
+    for path in 0..1500 {
+        let Some((m, _)) = onset_month(&p, path) else {
+            continue;
+        };
+        if m + 6 >= 132 {
+            continue;
+        }
+        let ups = event_months(&p, path, "recovers");
+        assert!(ups.iter().all(|u| *u < 132), "path {path}: {ups:?}");
+        recoveries_before += usize::from(!ups.is_empty());
+        if !ups.is_empty() {
+            continue;
+        }
+        // Benefit paid without a break from the end of the wait to the end of the
+        // plan's working years and beyond.
+        let ss = column(&p, path, "income_social_security");
+        assert!(
+            ss[m + 6..ss.len().min(200)].iter().all(|x| *x > 500.0),
+            "path {path}"
+        );
+        checked += 1;
+    }
+    // About 11% of 56-year-olds have an onset before 67 at these rates.
+    assert!(checked > 50, "{checked} disabled paths");
+    assert!(recoveries_before < checked, "{recoveries_before}");
+}
