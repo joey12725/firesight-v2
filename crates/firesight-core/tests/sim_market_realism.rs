@@ -376,3 +376,53 @@ fn a_dynamic_yield_trace_announces_dividend_cuts() {
         .iter()
         .any(|e| e.label.contains("cut dividends")));
 }
+
+// ---------------------------------------------------------------------------------
+// Stream discipline on whole simulations.
+// ---------------------------------------------------------------------------------
+
+/// Switching all five refinements on changes markets only: every path's deaths
+/// (longevity and health streams) are the same, and a household decision (here the
+/// spending level) does not change the fat-tailed model's draws, so a comparison of
+/// two plans under it stays paired.
+#[test]
+fn the_refinements_leave_other_streams_and_pairing_alone() {
+    let base = example("dual-income-family");
+    let mut on = base.clone();
+    on.assumptions.market.kind = MarketKind::FatTailed;
+    on.assumptions.market.valuation = Some(Valuation::default());
+    on.assumptions.market.dynamic_yields = true;
+    on.assumptions.market.stress.push(Stress::LostGeneration {
+        start: When::retirement(0.0),
+        years: 20.0,
+    });
+    let n = 300;
+    for s in [PathScalar::DeathAge0, PathScalar::DeathAge1] {
+        let a = run(&compile(&base), SEED, 0..n).scalar_column(s).to_vec();
+        let b = run(&compile(&on), SEED, 0..n).scalar_column(s).to_vec();
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&a), bits(&b), "{s:?}");
+    }
+    // The economy is drawn before any decision: under two spending levels the
+    // traced path's price level (which the fat-tailed volatility state shapes
+    // through the turbulent correlations) is the same, bit for bit.
+    // (Without the retirement-dated stress, whose month the spending moves.)
+    let mut frugal = on.clone();
+    frugal.assumptions.market.stress.clear();
+    let mut lavish = frugal.clone();
+    for e in lavish.spending.items.iter_mut() {
+        e.amount *= 1.3;
+    }
+    let price = |p: &Profile| -> Vec<u64> {
+        let t = sim::trace_path(&compile(p), SEED, 4);
+        t.column("price_level")
+            .unwrap()
+            .iter()
+            .map(|x| x.to_bits())
+            .collect()
+    };
+    let (pf, pl) = (price(&frugal), price(&lavish));
+    let common = pf.len().min(pl.len());
+    assert!(common > 120);
+    assert_eq!(pf[..common], pl[..common]);
+}

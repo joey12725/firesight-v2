@@ -110,6 +110,11 @@ impl EconomyModel {
                 self.apply_lost_generation(out, from_month, months)
             }
         }
+        if let Some(v) = &self.valuation {
+            if let Some((from, end)) = super::valuation::stress_window(stress) {
+                v.after_stress(out, from, end, &self.stress_beta);
+            }
+        }
         if self.dividends.is_some() {
             self.refresh_dividends(out);
         }

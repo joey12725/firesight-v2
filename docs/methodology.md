@@ -294,7 +294,12 @@ left alone. The overlay applies to the bootstrap, regime and lognormal models, n
 to the historical replay. The model's mean is computed exactly for the bootstrap
 (the record's mean) and the lognormal model (its parameter), and for the regime
 model from 2,000 fixed-seed paths of 60 years, computed once per process. It draws
-no random numbers, so the sampled shocks and every other series are unchanged.
+no random numbers, so the sampled shocks and every other series are unchanged. A
+stress overlay (2.8) dictates US stock returns over its window, so no tilt applies
+inside it and the gap moves with the stressed prices alone; after the window the
+tilt is re-derived from the gap the stress left, so a crash at retirement from a CAPE
+of 40 brings valuations down and the returns that follow up, rather than the path
+carrying on as if the CAPE were still 40.
 
 Parameters (`data/actuarial/params.json`, `market_realism.valuation`): starting
 CAPE 40 (Shiller CAPE of the S&P 500, 38 to 42 through 2026: YCharts, Financer,
@@ -313,6 +318,10 @@ record as it was, `equity_premium_adjustment: 0`): success 90.4% to 88.4% and th
 median age of independence 38.7 to 39.7. Combined with the default -1.5 point
 adjustment, which partly counts the same high valuations twice (a validation warning
 says so), success falls from 83.7% to 80.8% and independence moves from 39.3 to 40.4.
+With a 40% crash at retirement as well (default adjustment, 4,000 paired paths) success
+is 64.9%, against 58.6% for the crash alone: by retirement much of the gap has
+closed, the crash takes the CAPE below normal, and the returns that follow are
+tilted up.
 
 Not modelled: earnings growth shocks separate from prices (all reversion goes
 through prices), valuations of international markets, and any link from valuation

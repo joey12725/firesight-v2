@@ -66,5 +66,27 @@ pub fn variants(base: &Profile) -> Vec<(String, Profile)> {
         recovery_years: 5.0,
     });
     out.push(("dynamic_yields valuation crash".to_string(), p));
+    // All five together, in both parametric families, with episodes before and at
+    // retirement and a lost generation after it.
+    for kind in [bootstrap, MarketKind::Regime, MarketKind::FatTailed] {
+        let mut p = base.clone();
+        p.assumptions.market.kind = kind;
+        p.assumptions.market.bond_pricing = BondPricing::FromYield;
+        p.assumptions.market.valuation = Some(Valuation::default());
+        p.assumptions.market.dynamic_yields = true;
+        p.assumptions.market.stress.push(Stress::HistoricalEpisode {
+            start: When::date(YearMonth::ym(2028, 6)),
+            episode: Episode::Financial2008,
+        });
+        p.assumptions.market.stress.push(Stress::HistoricalEpisode {
+            start: When::retirement(0.0),
+            episode: Episode::GreatDepression1929,
+        });
+        p.assumptions.market.stress.push(Stress::LostGeneration {
+            start: When::retirement(10.0),
+            years: 20.0,
+        });
+        out.push((format!("all five {kind:?}"), p));
+    }
     out
 }

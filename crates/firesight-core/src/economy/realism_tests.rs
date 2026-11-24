@@ -214,3 +214,69 @@ fn from_yield_bond_returns_are_plausible_over_long_horizons() {
         "from yield {r_on}, sampled {r_off}"
     );
 }
+
+// ---------------------------------------------------------------------------------
+// Stream discipline across all five refinements.
+// ---------------------------------------------------------------------------------
+
+/// Every refinement switched on at once (the episode stress only builds its tables;
+/// overlays are applied by the simulation).
+fn all_on(kind: MarketKind) -> MarketModel {
+    MarketModel {
+        bond_pricing: BondPricing::FromYield,
+        valuation: Some(crate::model::Valuation::default()),
+        dynamic_yields: true,
+        stress: vec![crate::model::Stress::HistoricalEpisode {
+            start: crate::model::When::date(YearMonth::ym(2040, 1)),
+            episode: crate::model::Episode::Stagflation1966,
+        }],
+        ..market(kind)
+    }
+}
+
+/// Switching the refinements on never changes how many numbers the `Market` and
+/// `Inflation` streams give out (so every later draw of a path is unchanged), and
+/// only the fat-tailed model touches `MarketTails`, exactly 3 a month.
+#[test]
+fn the_refinements_draw_nothing_from_existing_streams() {
+    for kind in [
+        bootstrap(),
+        MarketKind::Regime,
+        MarketKind::Lognormal,
+        MarketKind::FatTailed,
+        MarketKind::Historical,
+    ] {
+        let (off, on) = (build(&market(kind)), build(&all_on(kind)));
+        for (path, months) in [(0u64, 37usize), (9, 480)] {
+            let ends = |m: &EconomyModel| {
+                let mut a = Rng::stream(SEED, path, Stream::Market);
+                let mut b = Rng::stream(SEED, path, Stream::Inflation);
+                let mut c = Rng::stream(SEED, path, Stream::MarketTails);
+                let mut out = EconomyPath::new();
+                m.generate(
+                    &mut EconomyStreams {
+                        market: &mut a,
+                        inflation: &mut b,
+                        tails: &mut c,
+                    },
+                    path,
+                    months,
+                    &mut out,
+                );
+                (a.next_u64(), b.next_u64(), c.next_u64())
+            };
+            let (a, b) = (ends(&off), ends(&on));
+            assert_eq!(a, b, "{kind:?}");
+            let mut tails = Rng::stream(SEED, path, Stream::MarketTails);
+            let skip = if matches!(kind, MarketKind::FatTailed) {
+                3 * months
+            } else {
+                0
+            };
+            for _ in 0..skip {
+                tails.next_u64();
+            }
+            assert_eq!(a.2, tails.next_u64(), "{kind:?} tails");
+        }
+    }
+}

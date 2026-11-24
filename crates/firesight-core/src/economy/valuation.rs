@@ -25,6 +25,13 @@
 //! equities, whose valuations are not those of the US market, gold and crypto are
 //! left alone. No random numbers are drawn: the overlay rewrites the generated path
 //! before any stress overlay is applied.
+//!
+//! A stress overlay then dictates US equity returns over its window (a crash and its
+//! recovery, a lost decade, a replayed episode...). Inside the window no tilt is
+//! applied and the gap moves with the stressed prices alone; after it, the tilt of
+//! every later month is re-derived from the gap the stress left
+//! ([`ValuationTilt::after_stress`]), so a crash lowers the CAPE and raises the
+//! returns that follow instead of the path carrying on as if it had not happened.
 
 use super::stress::shifted;
 use super::EconomyPath;
@@ -80,6 +87,9 @@ impl ValuationTilt {
     pub(super) fn apply(&self, out: &mut EconomyPath, betas: &[f64; N_ASSETS]) {
         let n = out.months;
         out.valuation_gap.clear();
+        // Grow once to the workspace's capacity, so a longer later path does not
+        // reallocate.
+        out.valuation_gap.reserve(out.inflation.capacity().max(n));
         out.valuation_gap.resize(n, 0.0);
         let us = AssetClass::UsStocks.index();
         let k = 1.0 - self.keep;
@@ -98,6 +108,88 @@ impl ValuationTilt {
             out.valuation_gap[t] = v;
         }
     }
+
+    /// After a stress overlay rewrote months `from..end`: moves the gap with the
+    /// stressed returns through the window (no tilt inside it) and replaces the
+    /// tilt of every later month (the one the generated path got from the old gap)
+    /// by the tilt of the new gap. Months before `from` are untouched. Draws
+    /// nothing and allocates nothing.
+    pub(super) fn after_stress(
+        &self,
+        out: &mut EconomyPath,
+        from: usize,
+        end: usize,
+        betas: &[f64; N_ASSETS],
+    ) {
+        let n = out.months.min(out.valuation_gap.len());
+        if from >= n {
+            return;
+        }
+        let us = AssetClass::UsStocks.index();
+        let k = 1.0 - self.keep;
+        let gap_before = |t: usize, gaps: &[f64]| if t == 0 { self.gap0 } else { gaps[t - 1] };
+        // The gap the generated path had at the start of each month, before this
+        // month's entry is overwritten.
+        let mut old_prev = gap_before(from, &out.valuation_gap);
+        let mut v = old_prev;
+        for t in from..n {
+            let old_here = out.valuation_gap[t];
+            if t >= end {
+                // Undo the old tilt, apply the new one.
+                let r = out.returns[us][t];
+                let untilted = (1.0 + r) * math::exp(k * old_prev) - 1.0;
+                let new = (1.0 + untilted) * math::exp(-k * v) - 1.0;
+                let delta = new - r;
+                out.returns[us][t] = new;
+                for a in BETA_ASSETS {
+                    let i = a.index();
+                    out.returns[i][t] = shifted(out.returns[i][t], betas[i], delta);
+                }
+            }
+            v += math::ln_1p(out.returns[us][t])
+                - math::ln_1p(out.inflation[t])
+                - self.mean_real_log;
+            out.valuation_gap[t] = v;
+            old_prev = old_here;
+        }
+    }
+}
+
+/// Months `from..end` over which a resolved stress dictates US equity returns, or
+/// `None` when it changes nothing.
+pub(super) fn stress_window(s: &super::ResolvedStress) -> Option<(usize, usize)> {
+    use super::stress::{CRASH_MONTHS, LOST_DECADE_MONTHS};
+    use super::ResolvedStress as R;
+    Some(match *s {
+        R::Crash {
+            at_month,
+            drawdown,
+            recovery_months,
+        } => {
+            if !(drawdown.is_finite() && drawdown > 0.0) {
+                return None;
+            }
+            let len = CRASH_MONTHS.saturating_add(recovery_months.max(1));
+            (at_month, at_month.saturating_add(len))
+        }
+        R::LostDecade { from_month } => (from_month, from_month.saturating_add(LOST_DECADE_MONTHS)),
+        R::Stagflation {
+            from_month, months, ..
+        }
+        | R::LostGeneration { from_month, months } => {
+            if months == 0 {
+                return None;
+            }
+            (from_month, from_month.saturating_add(months))
+        }
+        R::HistoricalEpisode {
+            from_month,
+            episode,
+        } => (
+            from_month,
+            from_month.saturating_add(super::episodes::episode_months(episode)),
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -166,6 +258,46 @@ mod tests {
         let k = 1.0 - v.keep;
         assert!((math::ln_1p(us[1]) - (m - k * gap)).abs() < 1e-12);
         assert!(us[1] > g);
+    }
+
+    #[test]
+    fn a_stress_moves_the_gap_and_the_later_tilt() {
+        let m = 0.005;
+        let v = tilt(40.0, 20.0, 10.0, m);
+        let k = 1.0 - v.keep;
+        let g = math::exp(m) - 1.0;
+        let us = AssetClass::UsStocks.index();
+        let mut out = EconomyPath::with_capacity(40);
+        out.returns[us].fill(g);
+        v.apply(&mut out, &[0.0; N_ASSETS]);
+        let before = out.clone();
+        // With nothing rewritten, re-deriving the tilt changes nothing (to rounding).
+        v.after_stress(&mut out, 10, 10, &[0.0; N_ASSETS]);
+        for t in 0..40 {
+            assert!((out.returns[us][t] - before.returns[us][t]).abs() < 1e-15);
+            assert!((out.valuation_gap[t] - before.valuation_gap[t]).abs() < 1e-12);
+        }
+        // A stress sets months 10..16 to -10% each (zero inflation).
+        out.returns[us][10..16].fill(-0.1);
+        v.after_stress(&mut out, 10, 16, &[0.0; N_ASSETS]);
+        assert_eq!(
+            out.returns[us][..16],
+            {
+                let mut x = before.returns[us][..16].to_vec();
+                x[10..16].fill(-0.1);
+                x
+            }[..]
+        );
+        // Inside the window the gap moves with prices only.
+        let g15 = before.valuation_gap[9] + 6.0 * (math::ln(0.9) - m);
+        assert!((out.valuation_gap[15] - g15).abs() < 1e-12);
+        // After it, the month's log return is the mean less k times the new gap:
+        // the crash took the gap from about +0.68 to about +0.02, so the drag nearly
+        // vanishes.
+        assert!((math::ln_1p(out.returns[us][16]) - (m - k * g15)).abs() < 1e-12);
+        assert!(out.returns[us][16] > before.returns[us][16]);
+        let g16 = (1.0 - k) * g15;
+        assert!((out.valuation_gap[16] - g16).abs() < 1e-12);
     }
 
     #[test]

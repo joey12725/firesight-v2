@@ -82,6 +82,9 @@ impl DividendModel {
     pub(super) fn fill(&self, out: &mut EconomyPath) {
         let n = out.months;
         out.dividend_yields.clear();
+        // Grow once to the workspace's capacity, so a longer later path does not
+        // reallocate.
+        out.dividend_yields.reserve(out.inflation.capacity().max(n));
         out.dividend_yields.resize(n, [0.0; 2]);
         let (lo, hi) = (
             math::ln(DIVIDEND_YIELD_RANGE.0),

@@ -139,3 +139,32 @@ fn kitchen_sink_lite() -> Profile {
     });
     p
 }
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+/// The optional market refinements allocate nothing per path either, retirement-dated
+/// stresses included (they rewrite the path inside the month loop).
+#[test]
+fn the_market_refinements_simulate_paths_without_allocating() {
+    for example in Profile::examples(common::START) {
+        for (label, profile) in realism_profiles::variants(&example.profile) {
+            let plan = common::compile(&profile);
+            let mut ws = Workspace::new(&plan);
+            let mut sink = Sink::default();
+            for i in 0..20 {
+                sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+            }
+            let before = allocations();
+            for i in 20..220 {
+                sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+            }
+            let made = allocations() - before;
+            assert_eq!(
+                made, 0,
+                "{} ({label}): {made} allocations over 200 paths",
+                example.slug
+            );
+        }
+    }
+}
