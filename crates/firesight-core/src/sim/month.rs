@@ -139,6 +139,23 @@ impl State {
         for (i, age) in ages.iter_mut().enumerate().take(self.n) {
             *age = self.age(plan, i, t);
         }
+        // Which random streams anything will still read. A job that has ended
+        // and is inert never steps again (an ended job cannot restart, and a
+        // payout cannot become pending again), so it reads neither stream. The
+        // streams are private to this path and read only by the career steps
+        // here, so once no job or business will read a stream, advancing it to
+        // keep it aligned changes nothing and is skipped.
+        let mut career_read = [false; MAX_PEOPLE];
+        let mut equity_read = false;
+        for (rt, jp) in self.jobs.iter().zip(&plan.jobs) {
+            if !(rt.ended && jp.model.is_inert(&rt.st)) {
+                career_read[jp.owner] = true;
+                equity_read = true;
+            }
+        }
+        for sp in &plan.selfemp {
+            career_read[sp.owner] = true;
+        }
         let mut employer_coverage = false;
         for j in 0..self.jobs.len() {
             let jp = &plan.jobs[j];
@@ -147,8 +164,12 @@ impl State {
                 continue;
             }
             if jp.model.is_inert(&self.jobs[j].st) {
-                jp.model
-                    .skip(month == 1, &mut self.rng_career[p], &mut self.rng_equity);
+                if career_read[p] {
+                    jp.model.skip_career(month == 1, &mut self.rng_career[p]);
+                }
+                if equity_read {
+                    jp.model.skip_equity(&mut self.rng_equity);
+                }
                 continue;
             }
             let climate = CareerClimate {

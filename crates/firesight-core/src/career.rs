@@ -1281,9 +1281,21 @@ impl JobModel {
     /// this keeps both streams aligned at a fraction of the cost.
     #[inline]
     pub fn skip(&self, january: bool, career: &mut Rng, equity: &mut Rng) {
+        self.skip_career(january, career);
+        self.skip_equity(equity);
+    }
+
+    /// The career-stream half of [`JobModel::skip`].
+    #[inline]
+    pub fn skip_career(&self, january: bool, career: &mut Rng) {
         for _ in 0..if january { 7 } else { 5 } {
             career.next_u64();
         }
+    }
+
+    /// The equity-stream half of [`JobModel::skip`].
+    #[inline]
+    pub fn skip_equity(&self, equity: &mut Rng) {
         for _ in 0..4 {
             equity.next_u64();
         }
