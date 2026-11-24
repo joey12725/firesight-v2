@@ -10,8 +10,10 @@
 //! * Output goes into a caller-owned [`EconomyPath`] (struct of arrays) that is reused
 //!   across paths: `generate` does not allocate once the buffers have reached the
 //!   horizon length.
-//! * Draws come only from the `Market` and `Inflation` streams handed in, and their
-//!   number per month is fixed for a given model kind. Nothing about the household
+//! * `generate` draws only from the `Market` and `Inflation` streams handed in, and
+//!   their number per month is fixed for a given model kind. The opt-in per-path
+//!   overlays ([`EconomyModel::apply_path_overlays`], see [`overlay`]) draw from the
+//!   `MarketParams` and `Disaster` streams, a fixed number of words per path. Nothing about the household
 //!   influences the draws: all nine asset classes are always generated, and the
 //!   single-stock and custom-asset parameters only rescale draws that are taken
 //!   anyway. Two scenarios of one profile therefore see the same economy on the same
@@ -27,7 +29,9 @@
 //!   row: US equities, bills, bonds, CPI, home prices, the long yield, the mortgage
 //!   rate and the recession flag keep their cross-correlations and joint dynamics.
 //!   `from_year` restricts the rows. Levels (yields, mortgage rate) jump at block
-//!   seams along with everything else.
+//!   seams along with everything else. With `joins: matched` a restart goes to a row
+//!   that followed a similar economic state instead of a uniformly random one, using
+//!   the same word (see [`joins`]).
 //! * **Historical**: path `i` replays the rows starting at row `i mod cohort_count`,
 //!   wrapping to the first row when history runs out.
 //! * **Regime** and **Lognormal**: parametric models, see [`regime`].
@@ -79,15 +83,20 @@
 //! # Stress overlays
 //!
 //! See [`EconomyModel::apply_stress`].
+//!
+//! # Opt-in per-path overlays
+//!
+//! Uncertainty about the long-run averages and rare disasters are rewrites of the
+//! generated path with random streams of their own: see [`overlay`].
 
 mod fit;
 mod joins;
 mod overlay;
 mod regime;
-pub(crate) mod sampler;
-mod stress;
 #[cfg(test)]
 mod rich_tests;
+pub(crate) mod sampler;
+mod stress;
 #[cfg(test)]
 mod tests;
 
@@ -1215,7 +1224,7 @@ impl EconomyModel {
     ///
     /// Draws per month from the `Market` stream: bootstrap 8, historical 7, regime
     /// 17, lognormal 12 (plus one at the start of a lognormal path). From the `Inflation` stream: 1 in the regime and lognormal
-    /// models, none otherwise.
+    /// models, none otherwise. Matched bootstrap joins draw the same 8.
     pub fn generate(
         &self,
         streams: &mut EconomyStreams<'_>,

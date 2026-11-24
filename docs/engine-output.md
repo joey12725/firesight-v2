@@ -516,3 +516,21 @@ default `last_resort`); `debt_policy.refinance_mortgages` (boolean, default true
 `assumptions.market.equity_premium_adjustment` now defaults to `-0.015`. New
 validation warnings: `short_history` (a bootstrap `from_year` leaving under 50 years)
 and `adjusted_history` (the historical replay with a non-zero equity adjustment).
+
+## Additions made by the richer-distributions work
+
+Profile schema (inputs), all optional and off by default, so existing profiles
+give the same results:
+
+* `assumptions.market.kind.joins` on the bootstrap (`"uniform"` | `"matched"`,
+  default `uniform`): how the month a new block starts from is chosen.
+* `assumptions.market.equity_premium_uncertainty` and
+  `assumptions.market.inflation_uncertainty` (an uncertain number or null, default
+  null): a per-path shift of the long-run stock return and of inflation, mean zero.
+* `assumptions.market.disasters`: `{ annual_probability (0 = off), depth, years,
+  inflation_probability, inflation }`, where `depth`, `years` and `inflation` are
+  uncertain numbers.
+
+The `adjusted_history` warning is also raised, at the option's own path, when the
+historical replay is run with a long-run uncertainty or disasters switched on. No
+output document changes shape.

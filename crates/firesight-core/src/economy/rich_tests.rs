@@ -273,14 +273,32 @@ fn matched_joins_only_change_restarts() {
         from_year: None,
         joins,
     };
-    generate(&model(&market(kind(BootstrapJoins::Uniform))), 9, 4, months, &mut a);
-    generate(&model(&market(kind(BootstrapJoins::Matched))), 9, 4, months, &mut b);
+    generate(
+        &model(&market(kind(BootstrapJoins::Uniform))),
+        9,
+        4,
+        months,
+        &mut a,
+    );
+    generate(
+        &model(&market(kind(BootstrapJoins::Matched))),
+        9,
+        4,
+        months,
+        &mut b,
+    );
     assert_eq!(a.returns, b.returns);
     assert_eq!(a.inflation, b.inflation);
     // With ordinary blocks they differ, are finite, and a longer path has the
     // shorter one as its prefix.
     let m = model(&market(bootstrap(60, BootstrapJoins::Matched)));
-    generate(&model(&market(bootstrap(60, BootstrapJoins::Uniform))), 9, 4, 600, &mut a);
+    generate(
+        &model(&market(bootstrap(60, BootstrapJoins::Uniform))),
+        9,
+        4,
+        600,
+        &mut a,
+    );
     generate(&m, 9, 4, 600, &mut b);
     assert_ne!(a.returns[US], b.returns[US]);
     assert_eq!(a.returns[US][0], b.returns[US][0]);
@@ -349,7 +367,8 @@ fn long_run_shift_has_the_stated_spread_and_mean_zero() {
     // mean removed the support is [-0.008333, 0.011667].
     assert!(mean_i.abs() < 5e-5, "{mean_i}");
     assert!((sd_i - 0.004_249).abs() < 4e-5, "{sd_i}");
-    assert!(lo >= -0.008_334 && lo < -0.008 && hi <= 0.011_667 && hi > 0.0113);
+    assert!((-0.008_334..-0.008).contains(&lo), "{lo}");
+    assert!((0.0113..=0.011_667).contains(&hi), "{hi}");
     // The two shifts come from different words: uncorrelated.
     let corr = (cross / nf - mean_e * mean_i) / (sd_e * sd_i);
     assert!(corr.abs() < 0.01, "{corr}");
@@ -505,7 +524,10 @@ fn long_run_uncertainty_widens_long_horizon_returns_without_moving_their_centre(
         generate(&m0, SEED, path, months, &mut a);
         generate(&m1, SEED, path, months, &mut b);
         let cagr = |p: &EconomyPath| {
-            math::pow(growth(&p.returns[US], 0..months) / p.price_level[months], 1.0 / 30.0) - 1.0
+            math::pow(
+                growth(&p.returns[US], 0..months) / p.price_level[months],
+                1.0 / 30.0,
+            ) - 1.0
         };
         let (x, y) = (cagr(&a), cagr(&b));
         s0 += x;
@@ -627,9 +649,18 @@ fn disaster_words_are_fixed() {
                 continue;
             };
             let (eb, ec, ed) = (b[k].unwrap(), c[k].unwrap(), d[k].unwrap());
-            assert_eq!((e.start, e.months, e.depth), (eb.start, eb.months, eb.depth));
-            assert_eq!((e.start, e.months, e.depth), (ec.start, ec.months, ec.depth));
-            assert_eq!((e.start, e.months, e.inflation), (ed.start, ed.months, ed.inflation));
+            assert_eq!(
+                (e.start, e.months, e.depth),
+                (eb.start, eb.months, eb.depth)
+            );
+            assert_eq!(
+                (e.start, e.months, e.depth),
+                (ec.start, ec.months, ec.depth)
+            );
+            assert_eq!(
+                (e.start, e.months, e.inflation),
+                (ed.start, ed.months, ed.inflation)
+            );
             assert_eq!(eb.inflation, 0.0);
             assert!(ec.inflation > 0.0 && ed.depth == 0.9);
             if e.inflation > 0.0 {
@@ -719,16 +750,23 @@ fn a_disaster_takes_the_drawn_depth_from_equities_and_leaves_the_rest() {
             assert!((gold / math::pow(1.0 - e.depth, gold_beta) - 1.0).abs() < 1e-9);
             assert!(betas[CRYPTO] > 1.0);
             // Bonds: unchanged in nominal terms. Cash: half the burst.
-            let burst = a.price_level[end] / a.price_level[e.start]
+            let burst = a.price_level[end]
+                / a.price_level[e.start]
                 / (plain.price_level[end] / plain.price_level[e.start]);
             let want = math::pow(1.0 + e.inflation, e.months as f64 / 12.0).min(10.0);
-            assert!((burst / want - 1.0).abs() < 1e-9, "{name}: {burst} vs {want}");
+            assert!(
+                (burst / want - 1.0).abs() < 1e-9,
+                "{name}: {burst} vs {want}"
+            );
             let bonds = growth(&a.returns[BONDS], span.clone())
                 / growth(&plain.returns[BONDS], span.clone());
             assert!((bonds - 1.0).abs() < 1e-12);
             let cash =
                 growth(&a.returns[CASH], span.clone()) / growth(&plain.returns[CASH], span.clone());
-            assert!((cash / want.sqrt() - 1.0).abs() < 1e-9, "{name}: cash {cash}");
+            assert!(
+                (cash / want.sqrt() - 1.0).abs() < 1e-9,
+                "{name}: cash {cash}"
+            );
             if e.inflation > 0.0 {
                 with_burst += 1;
                 let mid = e.start + 1;
@@ -744,7 +782,9 @@ fn a_disaster_takes_the_drawn_depth_from_equities_and_leaves_the_rest() {
             }
             // The first third, at most 36 months, is a recession.
             let flagged = (e.months / 3).min(DISASTER_RECESSION_MONTHS);
-            assert!(a.recession[e.start..e.start + flagged].iter().all(|&r| r == 1));
+            assert!(a.recession[e.start..e.start + flagged]
+                .iter()
+                .all(|&r| r == 1));
             // Afterwards the generated months resume unchanged (until the next
             // episode), and prices stay where the burst left them.
             for t in end..end + 12 {
@@ -930,7 +970,17 @@ fn rich_report_join_cells() {
         .map(|r| table.cell_of(r).len())
         .collect();
     sizes.sort_unstable();
-    println!("{} rows, {} cells, sizes {sizes:?}", base.rows.len(), sizes.len());
-    println!("12-month blocks, uniform: {:?}", seam_statistics(BootstrapJoins::Uniform));
-    println!("12-month blocks, matched: {:?}", seam_statistics(BootstrapJoins::Matched));
+    println!(
+        "{} rows, {} cells, sizes {sizes:?}",
+        base.rows.len(),
+        sizes.len()
+    );
+    println!(
+        "12-month blocks, uniform: {:?}",
+        seam_statistics(BootstrapJoins::Uniform)
+    );
+    println!(
+        "12-month blocks, matched: {:?}",
+        seam_statistics(BootstrapJoins::Matched)
+    );
 }

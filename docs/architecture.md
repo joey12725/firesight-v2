@@ -187,11 +187,16 @@ RetirementPlan {
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
 }
 Assumptions {
-  market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal
+  market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option,
+                                         joins: Uniform (default) | Matched } | Regime | Lognormal
                               | Historical,       // every start month in history, in order: path i = cohort i
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,
-                        stress: Vec<Stress> },
+                        stress: Vec<Stress>,
+                        equity_premium_uncertainty: Option<Uncertain>,  // per-path shift of the long-run stock return, mean zero; None = known
+                        inflation_uncertainty: Option<Uncertain>,       // per-path shift of long-run inflation, mean zero; None = known
+                        disasters: Disasters { annual_probability (0 = off), depth: Uncertain, years: Uncertain,
+                                               inflation_probability, inflation: Uncertain } },
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },

@@ -2035,9 +2035,15 @@ impl Checker<'_> {
         if matches!(p.assumptions.market.kind, MarketKind::Historical) {
             let m = &p.assumptions.market;
             for (on, field) in [
-                (m.equity_premium_uncertainty.is_some(), "equity_premium_uncertainty"),
+                (
+                    m.equity_premium_uncertainty.is_some(),
+                    "equity_premium_uncertainty",
+                ),
                 (m.inflation_uncertainty.is_some(), "inflation_uncertainty"),
-                (m.disasters.annual_probability > 0.0, "disasters/annual_probability"),
+                (
+                    m.disasters.annual_probability > 0.0,
+                    "disasters/annual_probability",
+                ),
             ] {
                 if on {
                     self.r.warn("adjusted_history", &format!("/assumptions/market/{field}"), "The historical replay is being run with random changes laid over the record, so its paths are no longer history as it happened. Switch this off to replay history exactly.");
@@ -2536,22 +2542,22 @@ mod tests {
         // Sensible settings pass.
         let r = patched(&[
             PatchOp::set(
-                &format!("{base}/equity_premium_uncertainty"),
+                format!("{base}/equity_premium_uncertainty"),
                 json!({"type": "normal", "mean": 0.0, "sd": 0.01}),
             ),
             PatchOp::set(
-                &format!("{base}/inflation_uncertainty"),
+                format!("{base}/inflation_uncertainty"),
                 json!({"type": "triangular", "low": -0.005, "mode": 0.0, "high": 0.015}),
             ),
-            PatchOp::set(&format!("{base}/disasters/annual_probability"), json!(0.01)),
-            PatchOp::set(&format!("{base}/kind/joins"), json!("matched")),
+            PatchOp::set(format!("{base}/disasters/annual_probability"), json!(0.01)),
+            PatchOp::set(format!("{base}/kind/joins"), json!("matched")),
         ]);
         assert!(r.errors.is_empty(), "{:#?}", r.errors);
         assert!(r.warnings.is_empty(), "{:#?}", r.warnings);
         // A spread that reaches beyond 20 points a year (4 sd).
         assert_error(
             &[PatchOp::set(
-                &format!("{base}/equity_premium_uncertainty"),
+                format!("{base}/equity_premium_uncertainty"),
                 json!({"type": "normal", "mean": 0.0, "sd": 0.06}),
             )],
             "out_of_range",
@@ -2559,7 +2565,7 @@ mod tests {
         );
         assert_error(
             &[PatchOp::set(
-                &format!("{base}/inflation_uncertainty"),
+                format!("{base}/inflation_uncertainty"),
                 json!({"type": "uniform", "low": 0.02, "high": -0.02}),
             )],
             "dist_order",
@@ -2605,9 +2611,9 @@ mod tests {
         }
         // Random overlays on the historical replay get the adjusted-history warning.
         let r = patched(&[
-            PatchOp::set(&format!("{base}/kind"), json!({"type": "historical"})),
-            PatchOp::set(&format!("{base}/equity_premium_adjustment"), json!(0.0)),
-            PatchOp::set(&format!("{base}/disasters/annual_probability"), json!(0.01)),
+            PatchOp::set(format!("{base}/kind"), json!({"type": "historical"})),
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.0)),
+            PatchOp::set(format!("{base}/disasters/annual_probability"), json!(0.01)),
         ]);
         assert!(has(
             &r.warnings,

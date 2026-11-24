@@ -184,7 +184,10 @@ fn options_leave_the_other_random_streams_alone() {
     let mut changed = [0; 4];
     for path in 0..20 {
         let a = sim::trace_path(&plan_base, 77, path);
-        for (k, plan) in [&equity, &inflation, &disasters, &joined].iter().enumerate() {
+        for (k, plan) in [&equity, &inflation, &disasters, &joined]
+            .iter()
+            .enumerate()
+        {
             let b = sim::trace_path(plan, 77, path);
             assert_eq!(a.months, b.months, "option {k} path {path}");
             for s in [
@@ -277,7 +280,10 @@ fn effects_go_the_right_way_for_a_retiree() {
     // Uncertain inflation alone leaves real returns alone: a retiree with constant
     // real spending and no nominal income or debt is hardly affected.
     let (rate, _) = retiree_stats(&|m| m.inflation_uncertainty = normal(0.01), paths);
-    assert!((rate - base_rate).abs() < 0.02, "inflation: {rate} vs {base_rate}");
+    assert!(
+        (rate - base_rate).abs() < 0.02,
+        "inflation: {rate} vs {base_rate}"
+    );
 }
 
 /// The defaults and constants written in `data/actuarial/params.json`
@@ -297,19 +303,34 @@ fn defaults_match_the_data_file() {
     assert_eq!(defaults.depth, pert(&d["depth_pert"]));
     assert_eq!(defaults.years, pert(&d["years_pert"]));
     assert_eq!(defaults.inflation, pert(&d["inflation_pert"]));
-    assert_eq!(defaults.inflation_probability, num(&d["inflation_probability"]));
-    assert_eq!(economy::CASH_PASS_THROUGH, num(&d["cash_inflation_pass_through"]));
+    assert_eq!(
+        defaults.inflation_probability,
+        num(&d["inflation_probability"])
+    );
+    assert_eq!(
+        economy::CASH_PASS_THROUGH,
+        num(&d["cash_inflation_pass_through"])
+    );
     assert_eq!(0.0, num(&d["bond_inflation_pass_through"]));
     assert_eq!(
         economy::DISASTER_RECESSION_MONTHS as f64,
         num(&d["recession_months_max"])
     );
-    assert_eq!(economy::MAX_EPISODES as f64, num(&d["max_episodes_per_path"]));
+    assert_eq!(
+        economy::MAX_EPISODES as f64,
+        num(&d["max_episodes_per_path"])
+    );
     assert_eq!(economy::MAX_DISASTER_DEPTH, num(&d["max_depth"]));
     assert_eq!(economy::MAX_BURST_INFLATION, num(&d["max_burst_inflation"]));
-    assert_eq!(economy::MAX_BURST_PRICE_FACTOR, num(&d["max_burst_price_factor"]));
+    assert_eq!(
+        economy::MAX_BURST_PRICE_FACTOR,
+        num(&d["max_burst_price_factor"])
+    );
     let j = &section["bootstrap_joins"];
-    assert_eq!(economy::JOIN_TRAILING_MONTHS as f64, num(&j["trailing_months"]));
+    assert_eq!(
+        economy::JOIN_TRAILING_MONTHS as f64,
+        num(&j["trailing_months"])
+    );
     assert_eq!(economy::JOIN_MIN_CELL as f64, num(&j["min_cell_rows"]));
     // The default market model has every option off.
     let m = MarketModel::default();

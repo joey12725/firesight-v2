@@ -72,6 +72,35 @@ Two things are deliberately not copied from the sampled row:
   consistent with each other.
 * **The long-run level of international stocks and gold** (2.5).
 
+**Matched joins (opt-in, `kind.joins: "matched"`; the default is `"uniform"`, as
+described above).** A uniform restart can follow a deep-recession month with a boom
+month from another era, and cuts every inflation episode short at the seam. With
+matched joins every month of the record is classified, once, by its recession flag,
+by the tercile of inflation over the twelve months ending with it, and by the
+tercile of the real US stock return over the same twelve months: up to 18 cells,
+where a cell with fewer than 12 months is merged with its neighbours (15 cells of 12
+to 182 months on the full record). At a restart the path picks a month uniformly
+from the cell of the month it has just left and continues from the month after it:
+it goes on as history went on after some month that looked like this one. The pick
+uses the same random word as the uniform restart, so no other draw moves.
+
+Because the cells divide the record without overlap, a uniformly distributed month
+is followed by a uniformly distributed month under either rule: every month of
+history is used equally often and the average of every series is unchanged. What
+changes is what happens across a seam. Measured with 12-month blocks, where seams
+are frequent (1,500 paths of 40 years each): the recession flag changes in 2.7% of
+months against 4.8% with uniform joins, and the correlation between one year's
+inflation and the next rises from 0.32 to 0.52; mean monthly stock returns are 0.836%
+against 0.831% and mean monthly inflation 0.248% against 0.246%, the same within
+sampling error. At the default 60-month blocks (20,000 paths, default equity
+adjustment) the 30-year inflation rate is 0.7% / 2.9% / 5.4% a year at the 5th /
+50th / 95th percentile against 0.9% / 3.0% / 5.1%, and the 30-year real stock
+return 0.6% / 5.7% / 10.5% against 0.4% / 5.7% / 10.6%. Success moves by under a
+point on the three examples in either direction (early-career 84.2% against 83.7%,
+dual-income 91.5% against 91.8%, landlord 92.5% against 92.7%; 10,000 paths each).
+The state is three coarse features: the valuation level is not matched, and a thin
+cell means a restart often replays the same episode.
+
 ### 2.2 Regime switching
 
 A two-state hidden Markov model (calm and turbulent) fitted to the same data drives
@@ -209,6 +238,120 @@ Applied to every path on top of the random draws.
 
 A token or company that has collapsed (a return of exactly -100%) stays collapsed
 through a stress overlay.
+
+### 2.9 Uncertain long-run averages (opt-in)
+
+By default the long-run average return of stocks is one number on every path
+(history plus `equity_premium_adjustment`), and so is the average rate of
+inflation. The simulation then behaves as if those averages were known, and the
+only long-horizon risk is the luck of the draw around them. They are not known: the
+average of a hundred annual stock returns with a standard deviation near 18 points
+has a standard error of 1.8 points a year, before asking whether the next fifty
+years resemble the last hundred.
+
+`equity_premium_uncertainty` and `inflation_uncertainty` (both empty by default)
+each take a range written in the shared uncertain-number form, for example
+`{"type": "normal", "mean": 0, "sd": 0.01}`. When one is set, every path draws its
+own lasting shift, in points a year, at the start of the path from a stream of its
+own (two words, one per shift, always both). The average of the range is
+subtracted, so the shifts average zero across paths and the two adjustments remain
+the central case: only the spread and shape of the range are used. The generated
+path is then rewritten to what the generator would have produced with the
+adjustments moved by the shifts, in every market model:
+
+* the stock shift scales the monthly gross return of US and international stocks;
+  listed real estate moves by 0.70 of it and a single stock by its beta. Bonds,
+  bills, inflation, gold, crypto and the custom asset are untouched;
+* the inflation shift scales prices, home prices and every asset's gross return,
+  and is added to the 10-year yield and the mortgage rate, so every return after
+  inflation and every real rate is unchanged. What it changes is everything fixed
+  in dollars: mortgage payments, pensions without a cost-of-living rise, tax
+  thresholds that are not indexed.
+
+Checked: for all four models the rewritten path equals a path generated directly
+with the shifted adjustments to rounding error for stocks, bonds, bills, gold, the
+single stock, inflation and rates, and to within 0.2% of a month's gross return for
+real estate, crypto and the custom asset.
+
+Measured for a `normal` stock range with `sd` 0.01, the suggested setting (a
+judgement, `market_risk` in `data/actuarial/params.json`), bootstrap, 20,000 paths:
+the 30-year real stock return is 0.1% / 5.7% / 11.0% a year at the 5th / 50th / 95th
+percentile against 0.4% / 5.7% / 10.6% without it, the mean is unchanged (5.6%), and
+the chance of a real loss over 30 years rises from 3.8% to 4.6% (5.6% at `sd`
+0.015). Success on the examples moves little, because their outcomes turn mostly on
+other things (10,000 paths; `sd` 0.015): early-career 83.1% against 83.7%,
+dual-income 91.5% against 91.8%, landlord 92.5% against 92.7%; a 30-year retiree
+drawing 4% from 60/40 falls from 88.5% to 87.5%. The effect is on the spread: the
+average shift is zero, though compounding makes average wealth slightly higher and
+median wealth slightly lower.
+
+The range must stay within 20 points a year either side of zero for stocks and 10
+for inflation. Using this together with a cautious `equity_premium_adjustment`
+does not count the caution twice: the adjustment sets the centre, this sets how far
+from it the truth may lie.
+
+### 2.10 Rare disasters (opt-in)
+
+The generators can only rearrange what one country's century contained. Other
+countries' stock markets lost most of their value for a generation in wars,
+hyperinflations and long stagnations. `disasters.annual_probability` (default 0:
+off) adds such episodes at random. It is extra risk laid over the market model, not
+a re-estimate of it: it lowers average stock returns, and it should not be stacked
+without thought on a large negative `equity_premium_adjustment`, which plans for
+the same worry in another way.
+
+An episode arrives with a constant chance per year: the wait to the first, and from
+the end of one to the start of the next, is exponential. Each has a depth and a
+length drawn from the `depth` and `years` ranges (defaults: most likely 40% between
+20% and 75%; most likely 8 years between 3 and 20, both PERT), and with
+probability `inflation_probability` (0.3) an inflation burst drawn from `inflation`
+(most likely 5 points a year between 2 and 12). Everything is drawn at the start of
+the path from a stream of its own: five words for each of at most three episodes,
+used or not. The generated path is then rewritten, so the generator's own draws do
+not move:
+
+* **Stocks.** US and international stocks finish the episode at `1 - depth` times
+  where they would otherwise have stood, after inflation. The loss is front-loaded:
+  each month's gross return is multiplied by a factor whose strength falls in a
+  straight line to zero at the end, so about three quarters of the fall (in logs)
+  is over at half time. Nothing is given back afterwards: returns resume from the
+  lower level. Because a gross return is multiplied, no month returns less than
+  -100%.
+* **Other risky assets** get the same factor raised to their equity beta (the
+  betas the stress overlays use, limited to between 0 and 3): listed real estate
+  0.70, a single stock its beta, crypto its drawdown beta, gold close to nothing.
+* **Bonds, bills and home prices** keep the real returns the generator gave them,
+  unless there is an inflation burst.
+* **Inflation burst.** Prices rise by the drawn extra amount each year for the
+  whole episode and do not come back down (the extra rise is limited to tenfold
+  per episode). Stocks, real estate, gold and home prices rise with it, so the
+  burst itself costs them nothing after inflation. Bonds get none of it: their
+  real return falls by the full burst. Bills keep up with half, and the 10-year
+  yield and the mortgage rate rise by half the burst while it lasts.
+* **Recession.** The first third of the episode, at most 36 months, is flagged as
+  a recession, which raises layoff risk.
+
+Every number here is a judgement (`market_risk.rare_disasters` in
+`data/actuarial/params.json`, confidence low). Published cross-country estimates of
+how often economies suffer a disaster are of the order of 2% a year (recalled from
+memory, not re-verified, and measured on output, not on share prices); the US
+record already holds one, 1929 to 1933, which the generators resample. One percent
+a year is suggested for what the record lacks.
+
+Measured at 1% a year with the default shapes (bootstrap, default equity
+adjustment, 20,000 paths): 25.6% of 30-year horizons contain the start of an
+episode (1 - 0.99^30 = 26.0% expected); the mean 30-year real stock return falls
+from 5.6% to 5.1% a year, the 5th percentile from 0.4% to -0.4%, and the chance of a
+real loss over 30 years rises from 3.8% to 6.2% (5.0% at half a percent a year, 8.4%
+at 2%). The regime model goes from 9.0% to 11.1% and the lognormal from 5.0% to
+7.6%. Success (10,000 paths): early-career 80.4% against 83.7%, dual-income 90.5%
+against 91.8%, landlord 91.6% against 92.7%; a 30-year retiree drawing 4% from 60/40
+85.3% against 88.5% (82.2% at 2% a year).
+
+Not modelled: a recovery; default on government bonds; a fall in home prices;
+more than three episodes in one life (which matters only at hazards far above the
+suggested one); any link between a disaster and the household's own job beyond the
+recession flag.
 
 ## 3. Inflation and what follows it
 
@@ -681,7 +824,10 @@ longevity, expense shocks, each property, and life events. The opt-in models hav
 streams of their own (market parameters, rare disasters, extra asset draws, career
 shape and business outcomes, household health processes and personal frailty, event
 amounts, benefactors' lifespans, spending processes, policy, local housing markets),
-so switching one on never moves a draw of the default model. The number of draws from
+so switching one on never moves a draw of the default model (market parameters: two
+words a path when a long-run uncertainty is set; rare disasters: fifteen words a
+path when they are on; matched bootstrap joins reuse the restart word and draw
+nothing extra). The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
@@ -791,9 +937,11 @@ Stated plainly, roughly in order of how much they could move an answer.
 
 * The history is that of one country. The default 1.5-point reduction of stock
   returns is a judgement; so are the long-run levels of international stocks, gold
-  and crypto. There is no "lost generation" scenario beyond the stress overlays,
-  and the left tail of 30-year stock returns is thinner than the international
-  record suggests.
+  and crypto. By default there is no "lost generation" scenario beyond the stress
+  overlays, the long-run averages are treated as known, and the left tail of
+  30-year stock returns is thinner than the international record suggests. Two
+  opt-in settings address this (2.9 uncertain long-run averages, 2.10 rare
+  disasters); both are judgements, not estimates from other countries' data.
 * Bootstrap: bond returns and the yield level on a path are not mutually
   consistent; the pull of rates to their mean is a modelling device.
 * Regime model: real returns run above the calibration data (US stocks 7.5%
