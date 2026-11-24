@@ -148,7 +148,7 @@ impl State {
 
     /// This month's giving in nominal dollars: the budget lines of category
     /// `Giving` as the budget would charge them (same growth, retirement phase,
-    /// survivor factor and spending cuts as [`State::budget_as`]).
+    /// survivor factor, shock offset and spending cuts as [`State::budget_as`]).
     fn giving_now(&self, plan: &Plan, t: usize, price: f64) -> f64 {
         let ti = t as i32;
         let years = (t / 12) as i32;
@@ -156,6 +156,18 @@ impl State {
             plan.profile.spending.survivor_factor
         } else {
             1.0
+        };
+        // The budget takes the expected cost of spending shocks out of the
+        // discretionary lines (`budget_as`); giving shrinks with them, so a QCD is
+        // never larger than the gift the budget actually pays.
+        let offset = plan.shocks.mean_fraction / (1.0 - plan.shocks.mean_fraction).max(1e-9)
+            * (self.ess_real + self.disc_real);
+        let disc_kept = if offset <= 0.0 {
+            1.0
+        } else if self.disc_real > 0.0 {
+            self.disc_real / (self.disc_real + offset)
+        } else {
+            0.0
         };
         let mut total = 0.0;
         for (i, item) in plan.items.iter().enumerate() {
@@ -194,7 +206,7 @@ impl State {
                 amount *= self.smile;
             }
             if !item.essential {
-                amount *= self.creep * self.disc_mult;
+                amount *= self.creep * self.disc_mult * disc_kept;
             }
             total += amount;
         }

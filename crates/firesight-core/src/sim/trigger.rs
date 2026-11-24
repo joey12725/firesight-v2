@@ -307,6 +307,9 @@ impl State {
             }
         }
         let mut benefits = [0.0; MAX_PEOPLE];
+        // A policy-risk cut that has already happened is known to the household
+        // (exactly 1 before it, and without `policy_risk`).
+        let ss_cut = self.rz.policy.ss_scale((plan.start + ti).year());
         for i in 0..self.n {
             if !self.present[i] {
                 continue;
@@ -315,6 +318,7 @@ impl State {
                 continue;
             };
             let Some(pia) = c.pia_real else { continue };
+            let pia = pia * ss_cut;
             if self.ss_claimed[i] {
                 // Paid already: the benefit at its claimed level.
                 let fra = plan.ss.full_retirement_age_months(c.birth.year());

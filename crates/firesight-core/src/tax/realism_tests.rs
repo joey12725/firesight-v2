@@ -53,13 +53,49 @@ fn chained_cpi_slows_only_the_chained_thresholds() {
     assert_eq!(b.child_tax_credit, 2_800.0);
     assert_eq!(a.child_tax_credit, 2_900.0);
     assert!(b.capital_gains[0].lower[1] < a.capital_gains[0].lower[1]);
-    // Not chained by statute: contribution limits, wage base, IRMAA tiers, frozen
-    // thresholds.
-    assert_eq!(a.limits, b.limits);
+    // Also on the section 1(f)(3) adjustment: the IRA and HSA limits and the Roth and
+    // IRA-deduction income ranges. IRA 7,500 x 1.3 = 9,750 -> 10,000 against 7,500 x
+    // 1.27104 = 9,533 -> 9,500; HSA 4,400 x 1.3 = 5,720 -> 5,700 against 5,593 ->
+    // 5,600; Roth range 153,000 x 1.3 = 198,900 -> 199,000 against 194,469 -> 194,000.
+    assert_eq!((a.limits.ira, b.limits.ira), (10_000.0, 9_500.0));
+    assert_eq!((a.limits.hsa_self, b.limits.hsa_self), (5_700.0, 5_600.0));
+    assert_eq!(
+        (
+            a.limits.roth_ira_phaseout_start[0],
+            b.limits.roth_ira_phaseout_start[0]
+        ),
+        (199_000.0, 194_000.0)
+    );
+    assert!(b.limits.ira_deduction_phaseout_start[0] < a.limits.ira_deduction_phaseout_start[0]);
+    // Not chained by statute: the 401(k) limits (section 415(d)), wage base, IRMAA
+    // tiers, frozen thresholds.
+    assert_eq!(a.limits.k401_employee, b.limits.k401_employee);
+    assert_eq!(a.limits.k401_catch_up, b.limits.k401_catch_up);
+    assert_eq!(a.limits.k401_total, b.limits.k401_total);
+    assert_eq!(a.limits.compensation_limit, b.limits.compensation_limit);
     assert_eq!(a.oasdi_wage_base, b.oasdi_wage_base);
     assert_eq!(a.irmaa, b.irmaa);
     assert_eq!(a.niit_threshold, b.niit_threshold);
     assert_eq!(a.fpl_base, b.fpl_base);
+}
+
+#[test]
+fn chained_cpi_does_nothing_when_indexing_is_off() {
+    // With `index_brackets` off the thresholds stay at their 2026 dollars; the wedge
+    // must not shrink them below that.
+    let frozen = law_with(TaxModel {
+        index_brackets: false,
+        ..TaxModel::default()
+    });
+    let frozen_chained = law_with(TaxModel {
+        index_brackets: false,
+        chained_cpi: true,
+        ..TaxModel::default()
+    });
+    let idx = Indexation::from_cpi(2026, 2046, 1.8);
+    let p = frozen_chained.for_year(idx, TX).federal;
+    assert_eq!(frozen.for_year(idx, TX).federal, p);
+    assert_eq!(p.ordinary[0].lower[1], 12_400.0);
 }
 
 #[test]

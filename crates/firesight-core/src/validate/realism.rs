@@ -7,9 +7,22 @@ use crate::model::*;
 impl Checker<'_> {
     pub(super) fn realism(&mut self) {
         self.state_detail();
+        self.chained_cpi();
         self.policy_risk();
         self.qcd();
         self.tax_loss_harvesting();
+    }
+
+    /// `chained_cpi` slows indexing, so it needs indexing to be on.
+    fn chained_cpi(&mut self) {
+        let t = &self.p.assumptions.taxes;
+        if t.chained_cpi && !t.index_brackets {
+            self.r.warn(
+                "chained_cpi_no_effect",
+                "/assumptions/taxes/chained_cpi",
+                "chained_cpi is on but index_brackets is off, so thresholds are not indexed at all and chained_cpi changes nothing.",
+            );
+        }
     }
 
     /// `portfolio.tax_loss_harvesting` acts only on taxable holdings.
@@ -192,6 +205,21 @@ mod tests {
         let r = validate(&p);
         assert!(r.warnings.iter().any(|w| w.code == "qcd_no_giving"));
         assert!(r.warnings.iter().any(|w| w.code == "qcd_no_ira"));
+    }
+
+    #[test]
+    fn chained_cpi_warns_when_indexing_is_off() {
+        let mut p = Profile::example();
+        p.assumptions.taxes.chained_cpi = true;
+        let has = |p: &Profile| {
+            validate(p)
+                .warnings
+                .iter()
+                .any(|w| w.code == "chained_cpi_no_effect")
+        };
+        assert!(!has(&p));
+        p.assumptions.taxes.index_brackets = false;
+        assert!(has(&p));
     }
 
     #[test]

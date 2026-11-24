@@ -174,11 +174,13 @@ pub struct TaxModel {
     /// Leave empty to assume benefits are paid in full.
     pub social_security_haircut: Option<SocialSecurityHaircut>,
     /// Index the thresholds that current law ties to the chained CPI (income tax
-    /// brackets, the standard deduction, capital-gain thresholds, QBI thresholds and
-    /// the child credit amounts) at about a quarter of a point a year less than the
-    /// CPI-U that drives everything else. Off by default, which indexes them with the
-    /// CPI-U. Brackets creep up on real income by about 2.5% per decade when on.
-    /// Contribution limits, IRMAA tiers and state schedules stay on the CPI-U.
+    /// brackets, the standard deduction, capital-gain thresholds, QBI thresholds, the
+    /// child credit amounts, IRA and HSA limits and the Roth and IRA income ranges)
+    /// at about a quarter of a point a year less than the CPI-U that drives
+    /// everything else. Off by default, which indexes them with the CPI-U. Brackets
+    /// creep up on real income by about 2.5% per decade when on. 401(k) limits, IRMAA
+    /// tiers and state schedules stay on the CPI-U. No effect when `index_brackets`
+    /// is off.
     #[serde(skip_serializing_if = "is_false")]
     pub chained_cpi: bool,
     /// How much of the state rules to apply. `basic` (the default) is the schedule,

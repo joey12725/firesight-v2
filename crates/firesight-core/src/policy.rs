@@ -7,8 +7,9 @@
 //! own random stream ([`Stream::PolicyRisk`]) and always consumes the same four
 //! uniforms, so it does not depend on anything the household decides and does not
 //! disturb any other stream. The household does not foresee the change: its
-//! planning (funded test, withholding estimates for years already past) uses the law
-//! as it stands when each year starts, so a cut is a surprise.
+//! planning (funded test, withholding estimates) uses the law as it stands when
+//! each year starts, so a cut is a surprise. Once a cut has happened the funded
+//! test counts the reduced benefit (`sim/trigger.rs`).
 //!
 //! The cut multiplies the benefit the schedule pays (on top of any deterministic
 //! `social_security_haircut`). The tax increase adds points to every federal

@@ -1123,12 +1123,15 @@ impl TaxLaw {
             .iter_mut()
             .zip(&b.limits.ira_deduction_phaseout_spouse)
         {
-            *bound = index_rounded(*from, cpi, ROTH_PHASEOUT_INCREMENT);
+            *bound = index_rounded(*from, chained, ROTH_PHASEOUT_INCREMENT);
         }
-        f.limits.ira = index_rounded(b.limits.ira, cpi, IRA_INCREMENT);
-        f.limits.ira_catch_up = index_rounded(b.limits.ira_catch_up, cpi, IRA_CATCH_UP_INCREMENT);
-        f.limits.hsa_self = index_rounded(b.limits.hsa_self, cpi, HSA_INCREMENT);
-        f.limits.hsa_family = index_rounded(b.limits.hsa_family, cpi, HSA_INCREMENT);
+        // IRA and HSA limits take the section 1(f)(3) adjustment (IRC 219(b)(5)(C),
+        // 223(g)); the 401(k) limits above follow section 415(d), which does not.
+        f.limits.ira = index_rounded(b.limits.ira, chained, IRA_INCREMENT);
+        f.limits.ira_catch_up =
+            index_rounded(b.limits.ira_catch_up, chained, IRA_CATCH_UP_INCREMENT);
+        f.limits.hsa_self = index_rounded(b.limits.hsa_self, chained, HSA_INCREMENT);
+        f.limits.hsa_family = index_rounded(b.limits.hsa_family, chained, HSA_INCREMENT);
 
         // Calendar rules.
         let salt = salt_row(&base.salt_schedule, index.year);
@@ -1188,7 +1191,8 @@ impl TaxLaw {
     /// every year after `base_year + 1` (the figures published for `base_year + 1`
     /// are already on the chained index).
     fn chained_factor(&self, index: Indexation, cpi: f64) -> f64 {
-        if !self.chained_cpi {
+        // With indexing off nothing moves, the chained thresholds included.
+        if !self.chained_cpi || !self.index_brackets {
             return cpi;
         }
         let years = (index.year - self.base_year - 1).max(0);
@@ -1208,22 +1212,22 @@ impl TaxLaw {
         f.qbi_threshold[s] = bracket(b.qbi_threshold[s]);
         f.limits.roth_ira_phaseout_start[s] = index_rounded(
             b.limits.roth_ira_phaseout_start[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.roth_ira_phaseout_end[s] = index_rounded(
             b.limits.roth_ira_phaseout_end[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.ira_deduction_phaseout_start[s] = index_rounded(
             b.limits.ira_deduction_phaseout_start[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.ira_deduction_phaseout_end[s] = index_rounded(
             b.limits.ira_deduction_phaseout_end[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         let from = &b.irmaa[s];

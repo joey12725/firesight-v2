@@ -195,7 +195,7 @@ Assumptions {
          | Stagflation{ start: When, years, inflation },
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
                     social_security_haircut: Option<{ from_year, factor }>,
-                    chained_cpi: bool (false),     // bracket-type thresholds grow 0.25 points a year slower than CPI-U
+                    chained_cpi: bool (false),     // thresholds on the chained index (brackets, IRA/HSA limits) grow 0.25 points a year slower
                     state_detail: Basic | Full,    // Full: CA SDI on wages, NY bracket recapture, UT Social Security credit
                     policy_risk: Option<{ ss_haircut_probability, ss_haircut_factor, earliest_year,
                                           tax_increase_probability, tax_increase_points }> },  // per-path policy draw

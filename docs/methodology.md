@@ -311,24 +311,27 @@ rate instead of US federal, state and payroll tax (a simplification).
 ### Chained-CPI indexing (`assumptions.taxes.chained_cpi`, off by default)
 
 Since 2018 the income tax brackets, the standard deduction (and the additional
-amount at 65), the capital-gain thresholds, the QBI thresholds and the child credit
-amounts are indexed to the chained CPI-U (IRC 1(f)(3)), which rises more slowly than
+amount at 65), the capital-gain thresholds, the QBI thresholds, the child credit
+amounts, the IRA and HSA contribution limits and the Roth and IRA-deduction income
+ranges are indexed to the chained CPI-U (IRC 1(f)(3), which sections 219, 223 and
+408A cross-reference), which rises more slowly than
 the CPI-U that drives the engine's prices: CBO puts the gap at about 0.25 percentage
 points a year on average (CBO, "Using the Chained CPI to Index Social Security, Other
 Federal Programs, and the Tax Code for Inflation", testimony, 2013; the range in any
 single year is +0.1 to -0.5). With the option on, those thresholds are multiplied by
 `0.9975^(year - 2027)` on top of the simulated CPI-U factor; the figures published
-for 2027 are already on the chained index, so 2026 and 2027 do not change. Contribution
-limits, the IRMAA tiers, the poverty line and the wage base keep their own indexes
-(CPI-U, Medicare premiums, average wages), and state schedules stay on the CPI-U
-(states differ and the data does not say which follow the federal index). The Roth
-and IRA income phase-outs are left on the CPI-U as well, a judgement: whether their
-cross-reference reaches the chained index was not checked.
+for 2027 are already on the chained index, so 2026 and 2027 do not change. The
+401(k) limits (section 415(d), the Social Security adjustment), the IRMAA tiers, the
+poverty line and the wage base keep their own indexes (CPI-U, Medicare premiums,
+average wages), and state schedules stay on the CPI-U (states differ and the data
+does not say which follow the federal index). With `index_brackets` off nothing is
+indexed and the option does nothing (validation warns).
 Measured on 3,000 paths of the dual-income example (same seed, option on against
-off): median lifetime tax $963k to $1,001k (+3.9%), success rate 91.8% to 91.3%,
-median terminal net worth $1.726m to $1.721m. Not modelled: the CPI-U path is the
+off): median lifetime tax $963k to $1,004k (+4.2%), success rate 91.8% to 91.4%,
+median terminal net worth $1.726m to $1.720m. Not modelled: the CPI-U path is the
 simulated one, so the wedge is a fixed rate rather than something that varies with
-the inflation regime (the historical wedge is larger when inflation is high).
+the inflation regime (the historical wedge is larger when inflation is high); the
+QCD limit, also on the chained index by statute, follows the CPI-U.
 
 ### State detail (`assumptions.taxes.state_detail: full`, `basic` by default)
 
@@ -355,15 +358,18 @@ state's own form and stored under a `detail` key of the state in
   because that is all the data holds.
 * **Utah's Social Security benefits credit** (Utah Code 59-10-1042): a nonrefundable
   credit of the flat rate (4.45%) times the benefits included in federal AGI, reduced
-  by 2.5 cents per dollar of AGI above $54,000 single or $90,000 joint (2025
-  thresholds, not indexed). The text read was the introduced H.B. 130; whether the
-  enacted S.B. 71 measures income as federal AGI or state taxable income was not
-  confirmed, and the retirement credit it excludes is not modelled.
+  by 2.5 cents per dollar of income above $54,000 single or $90,000 joint and head of
+  household (not indexed). The rate, the 2.5 cents and the thresholds match the Tax
+  Commission's 2025 worksheet for the credit (code AH), which measures income as
+  Utah taxable income (TC-40 line 9: federal AGI plus additions less subtractions)
+  plus tax-exempt interest. The engine uses federal AGI, which is the same thing for
+  a household with no Utah additions or subtractions. The retirement credit it
+  excludes is not modelled.
 
-Measured on 2,000 paths of the dual-income example moved to each state (same seed,
-option on against off): lifetime tax in California $1.22m to $1.29m (+6.0%, the
-payroll tax on two salaries), New York $1.53m to $1.56m (+2.3%), Utah $1.345m to
-$1.327m (-1.4%, the credit once both are on benefits). Not modelled: other states'
+Measured on 3,000 paths of the dual-income example moved to each state (same seed,
+option on against off): median lifetime tax in California $1.21m to $1.29m (+6.5%,
+the payroll tax on two salaries), New York $1.52m to $1.56m (+2.3%), Utah $1.335m to
+$1.315m (-1.5%, the credit once both are on benefits). Not modelled: other states'
 recapture or phase-out rules (Connecticut's), New Jersey and other disability or
 family-leave payroll taxes, Washington's payroll programmes, Oregon's.
 
@@ -377,18 +383,27 @@ the path draws: whether Social Security benefits are cut (probability
 from `earliest_year`); and the same two things for a rise of `tax_increase_points`
 in every federal ordinary-income bracket rate. Capital gains, payroll and state tax do
 not change. The household does not foresee the change: planning uses the law of the
-year as it stands when the year starts. The cut multiplies the scheduled benefit
-(and stacks on `social_security_haircut` if both are set; validation warns).
+year as it stands when the year starts. Once a cut has happened it is known: the
+funded test that decides when to retire counts the reduced benefit from then on,
+and the spending rule sees the reduced income. The cut multiplies the scheduled
+benefit (and stacks on `social_security_haircut` if both are set; validation warns).
 
 Sources: the default factor 0.77 and `earliest_year` 2033 are the OASI trust fund's
 depletion year and payable share in the 2025 Social Security Trustees Report (SSA,
-2025; the combined funds are 81% in 2034). Everything else is a judgement, registered
+2025; the combined funds are 81% in 2034; the 2026 report is reported to move OASI
+depletion to late 2032 with 78% payable, which was not read at the source, so the
+defaults stay on the 2025 figures). Everything else is a judgement, registered
 in `data/actuarial/params.json` under `unverified_from_memory.policy_risk_defaults`:
 probability of a cut 0.5, probability of a tax rise 0.25, two points, a 15-year window.
 
-Measured on 2,000 paths of the dual-income example, defaults on against off: success
-92.5% to 88.8%, median terminal net worth $1.755m to $1.478m, median lifetime tax
-$971k to $983k. Not modelled: a cut that spares current retirees, a rise in the
+Measured on 3,000 paths of the dual-income example, defaults on against off: success
+91.8% to 91.8% (21 paths rescued, 19 harmed), median retirement age 53.4 to 53.7,
+median lifetime spending $7.35m to $7.26m, median lifetime tax $963k to $978k, median
+terminal net worth $1.726m to $1.845m. This household retires when funded, so it
+answers a cut that has happened by working a little longer and spending less, which
+protects the success rate and leaves more behind; a household already retired has
+no such margin and simply ends with less (the engine's tests check a retiree's
+benefit falls to exactly 77% from the drawn year). Not modelled: a cut that spares current retirees, a rise in the
 payroll-tax cap or the retirement age instead of a cut, rate changes that differ by
 bracket, changes to capital-gains or estate tax, and any link between policy and
 the economy on the same path.
@@ -411,18 +426,23 @@ erases the deferred gain. The 5% and $1,000 thresholds are judgements (registere
 `unverified_from_memory.tax_loss_harvesting`); no trading cost or tracking difference
 is charged.
 
-Measured on 2,000 paths, on against off (medians): dual-income lifetime tax $971.3k to
-$970.1k (-0.1%), early-career-saver $879.2k to $882.4k (+0.4%), side-hustle-landlord
-$600.5k to $599.9k; median terminal net worth moves -0.2%, +0.8% and +1.4%
-respectively. The effect is small because most of these
-households hold little in a taxable account that falls below basis. Not modelled: trading
+Measured on 3,000 paths, on against off (medians): dual-income lifetime tax $963.5k to
+$962.0k (-0.2%), early-career-saver $851.7k to $850.8k (-0.1%), side-hustle-landlord
+$591.7k to $594.0k (+0.4%); median terminal net worth moves +0.4%, -0.7% and +0.8%
+respectively, and success rates do not move beyond noise. The effect is small and
+mixed in sign: these households hold little in a taxable account that falls below
+basis, and the lower basis raises realised gains (and the income that health-insurance
+subsidies are tested on) in early retirement. In the year of a harvest the mechanism
+is exact: a worker who sells nothing sees $3,000 come off income and the rest of the
+loss carried forward (tested). Not modelled: trading
 costs, tracking difference against the replaced fund, wash sales through the household's
 other accounts or a spouse, harvesting individual lots rather than whole asset classes.
 
 ### Qualified charitable distributions (`retirement.qcd`, off by default)
 
 From age 70 and a half, the budget's Giving lines are paid straight from the person's
-traditional account up to the annual limit per person: $111,000 for 2026 (IRS Notice
+traditional account (the engine keeps one traditional balance per person, so a
+401(k) is treated as already rolled into an IRA) up to the annual limit per person: $111,000 for 2026 (IRS Notice
 2025-67, the SECURE 2.0 Act indexed amount, $108,000 in 2025), then indexed with prices
 and rounded to $1,000 (the rounding is an assumption). The money never enters taxable
 income, so it lowers the taxable share of Social Security, the Medicare income-related
@@ -431,9 +451,12 @@ the annual plan reduces by what it expects to give. The giving itself, its amoun
 timing, is the budget line unchanged; what changes is where the money comes from. With
 no Giving line or no traditional account nothing happens (validation warns).
 
-Measured on 2,000 paths, on against off: dual-income lifetime tax (median) $971.3k to
-$956.3k (-1.5%), median terminal net worth $1.755m to $1.772m; the other two examples
-have no giving and do not change. Not modelled: the one-time $55,000 split-interest
+The plan nets the year's expected gifts off the requirement at January prices, so
+in a year of high inflation slightly more than the requirement leaves the account.
+
+Measured on 3,000 paths, on against off: dual-income lifetime tax (median) $963.5k to
+$948.0k (-1.6%), median terminal net worth $1.726m to $1.747m, success rate unchanged
+within noise; the other two examples have no giving and do not change. Not modelled: the one-time $55,000 split-interest
 gift allowance, QCDs to donor-advised funds (not allowed), giving above the Giving
 lines, and a spouse's separate limit pooled across two IRAs (each person gives from their own).
 
