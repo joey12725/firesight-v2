@@ -256,8 +256,8 @@ impl Default for Longevity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct SimulationSettings {
-    /// Number of simulated lifetimes. More paths give smoother results; 10,000 is
-    /// plenty for most questions.
+    /// Number of simulated lifetimes. More paths give smoother results; the default,
+    /// 25,000, puts the sampling error of a success rate near 85% at about 0.2 points.
     pub paths: u32,
     /// Random seed. The same profile and seed always produce exactly the same results.
     /// Keep it below 9,007,199,254,740,992 so JavaScript can represent it exactly.
@@ -270,7 +270,7 @@ pub struct SimulationSettings {
 impl Default for SimulationSettings {
     fn default() -> Self {
         Self {
-            paths: 10_000,
+            paths: 25_000,
             seed: 1,
             end_age: 100,
         }

@@ -196,7 +196,7 @@ Assumptions {
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
 }
-SimulationSettings { paths: u32 (10_000), seed: u64, end_age: u32 (100) }
+SimulationSettings { paths: u32 (25_000), seed: u64, end_age: u32 (100) }
 ```
 
 `core::legacy` converts a v1 profile dict (the format in `examples/v1/*.json`) into this

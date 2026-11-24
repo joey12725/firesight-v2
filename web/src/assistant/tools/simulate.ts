@@ -7,7 +7,7 @@ export const runSimulation: ToolSpec<{ paths?: number }> = {
   name: 'run_simulation',
   description:
     "Simulate the user's current plan and get the engine's digest of the run: success, fi and depletion as {p, lo, hi} (a probability with its 95% interval); fi_age, retirement_age and terminal_net_worth as {p10, p50, p90}; fi_by_age and depletion_by_age (the cumulative share of all lives, p, by each age in ages); by_age (the share of households alive and the p10, p50 and p90 of net worth and of spending at six ages); spending_delivery (delivered_ratio: retirement spending delivered over planned; paths_below_90 and paths_below_75: the share of retired lives with at least one year below 90% or 75% of planned spending; years_below_90: the share of retirement years below 90%; worst_cut_p90: the single-year cut, as a fraction of plan, that 90% of retired lives never exceed); failure_causes (the top first causes as {cause, share}, share of the failed lives); trace_paths (path ids of representative lives for inspect_life); and notes, which states the units and definitions. Uses the session's fixed seed, so results are reproducible and comparable with every other run in this conversation. Identical inputs are served from memory.",
-  input_schema: { type: 'object', properties: { paths: PATHS_SCHEMA("the plan's setting, at most 10,000") }, additionalProperties: false },
+  input_schema: { type: 'object', properties: { paths: PATHS_SCHEMA("the plan's setting, at most 25,000") }, additionalProperties: false },
   pending: (input) => `Simulating ${input.paths ? `${count(input.paths)} lives` : 'the plan'}`,
   async run(input, ctx, call) {
     const profile = requireRunnable(ctx);
@@ -44,7 +44,7 @@ export const tryScenario: ToolSpec<TryScenarioInput> = {
       name: { type: 'string', minLength: 1, maxLength: 60, description: 'Short name for the scenario: "Retire at 55", "Move to Lisbon in 2030".' },
       ops: { type: 'array', minItems: 1, maxItems: 40, items: PATCH_OP_SCHEMA, description: 'Patch operations applied to a copy of the current plan.' },
       keep: { type: 'boolean', description: 'Save as a named scenario in the plan. Default false.' },
-      paths: PATHS_SCHEMA("the plan's setting, at most 10,000"),
+      paths: PATHS_SCHEMA("the plan's setting, at most 25,000"),
     },
     required: ['name', 'ops'],
     additionalProperties: false,

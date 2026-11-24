@@ -120,7 +120,7 @@ Variables for `solve` and `sweep`: `annual_spending`, `retirement_age`,
 `withdrawal_rate`, `salary_scale`, or any numeric field by patch path.
 
 Path counts: `run_simulation` and `try_scenario` default to the household's setting, at
-most 10,000; `rank_levers` and `solve` to 2,000; `sweep` to 1,000 per cell. Identical
+most 25,000; `rank_levers` and `solve` to 2,000; `sweep` to 1,000 per cell. Identical
 inputs are served from an in-memory registry, so a baseline is simulated once however
 many scenarios are compared with it.
 

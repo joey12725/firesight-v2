@@ -181,7 +181,7 @@ mod tests {
         let p = Profile::from_json("{}").unwrap();
         assert_eq!(p, Profile::default());
         assert_eq!(p.schema_version, 2);
-        assert_eq!(p.simulation.paths, 10_000);
+        assert_eq!(p.simulation.paths, 25_000);
         assert_eq!(
             Profile::from_json(&Profile::default().to_json_pretty()).unwrap(),
             p

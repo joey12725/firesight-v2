@@ -505,7 +505,7 @@
     "health_risk": true
   },
   "simulation": {
-    "paths": 10000,
+    "paths": 25000,
     "seed": 1,
     "end_age": 100
   }

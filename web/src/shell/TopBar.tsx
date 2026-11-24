@@ -6,7 +6,7 @@ import { useUi } from '@/state/ui-store';
 import { Button, Icon, IconButton, NumberInput, Popover, SegmentedControl, Select, Tooltip, count, countCompact, cx, useMediaQuery } from '@/ui';
 import { exportCurrentPlan } from './actions';
 
-const PATH_PRESETS = [2_000, 10_000, 50_000, 100_000, 250_000];
+const PATH_PRESETS = [2_000, 10_000, 25_000, 50_000, 100_000, 250_000];
 
 function Wordmark() {
   return (

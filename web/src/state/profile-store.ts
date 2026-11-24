@@ -180,7 +180,7 @@ export const useProfileStore = create<ProfileState>((set, get) => {
     scenarios: [],
     resolved: {},
     editTarget: 'base',
-    run: { paths: 10_000, seed: 1 },
+    run: { paths: 25_000, seed: 1 },
     past: [],
     future: [],
     revision: 0,

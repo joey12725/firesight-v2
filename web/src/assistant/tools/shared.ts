@@ -5,8 +5,8 @@ import type { JsonSchema } from '../agent/validate-input';
 import { ToolError, type ToolContext } from './types';
 
 /** Lives per run when the user's plan is simulated for an answer. */
-export const FULL_PATHS_MAX = 20_000;
-export const FULL_PATHS_DEFAULT_CAP = 10_000;
+export const FULL_PATHS_MAX = 50_000;
+export const FULL_PATHS_DEFAULT_CAP = 25_000;
 /** Lives per run when many variants are simulated at once (levers, solver probes). */
 export const REDUCED_PATHS = 2_000;
 export const SWEEP_PATHS = 1_000;
