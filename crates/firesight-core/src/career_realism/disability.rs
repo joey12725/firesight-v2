@@ -31,11 +31,19 @@
 //!
 //! The onset hazard is a JUDGEMENT. What was verified: the Trustees' age-sex-adjusted
 //! ultimate incidence rate is 4.6 disabled-worker awards per 1,000 exposed a year
-//! (2025 Trustees Report, Alternative II; 4.8 in 2023, 4.5 in 2024), and in the 2025
-//! SSA Annual Statistical Report on the SSDI Program 15.8% of awards went to workers
-//! aged 55 to 59 and 12.9% to those aged 50 to 54. The age-specific incidence tables
-//! (OACT long-range disability assumptions) could not be retrieved, so the shape here
-//! is a judgement made to be consistent with those two facts. Because an SSDI award
+//! (2025 Trustees Report, Alternative II; 4.8 in 2023, 4.5 in 2024), and in the 2024
+//! SSA Annual Statistical Report on the SSDI Program the age distribution of
+//! disabled-worker awards was: under 30 6.9%, 30-34 3.6%, 35-39 4.5%, 40-44 6.0%,
+//! 45-49 7.4%, 50-54 16.2%, 55-59 28.0%, 60-61 12.6%, 62 to full retirement age 14.8%
+//! (the table was read through search summaries; the SSA site refuses automated
+//! access). The age-specific incidence tables (OACT long-range disability
+//! assumptions) could not be retrieved, so the shape here is a judgement made to be
+//! roughly consistent with those facts. Weighted by the age mix of employed people the
+//! table below averages about 5.2 onsets per 1,000 a year, some 13% above the
+//! Trustees' rate (which also counts insured people who are not working), and gives
+//! award shares of about 17% at 50-54, 22% at 55-59 and 29% from 60: a little too few
+//! at 55-59 and too many after 62, where workers who could claim retirement benefits
+//! instead are in the data but not separated here. Because an SSDI award
 //! needs a severe, long-lasting impairment, the rates are *lower* than the share of
 //! people with some work limitation; this model covers the severe end only.
 //! Recovery (3% a year), the scar (a 10% pay loss on return), the minimum insured
@@ -143,7 +151,8 @@ impl DisabilityModel {
 
     /// One month. `at_risk` says the person could become disabled (alive, present,
     /// not retired, below full retirement age); `can_recover` that they could return
-    /// to work (not retired). Both uniforms are always drawn by the caller.
+    /// to work (the same conditions: past full retirement age the benefit has
+    /// converted to a retirement benefit for good). Both uniforms are always drawn by the caller.
     pub fn step(
         &self,
         state: &mut DisabilityState,

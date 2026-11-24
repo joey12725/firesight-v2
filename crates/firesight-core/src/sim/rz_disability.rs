@@ -28,17 +28,20 @@ impl State {
                     .full_retirement_age_months(plan.people[p].birth.year()),
             ) / 12.0;
             let working = self.alive[p] && self.present[p] && !self.person_retired[p];
+            // Below full retirement age only: onset, and recovery too, since at that
+            // age the disability benefit has converted to the retirement benefit for
+            // good.
             let at_risk = working && age < fra;
             let change = model.step(
                 &mut self.rz.dis[p],
                 age,
                 at_risk,
-                working,
+                at_risk,
                 (draw.u_onset, draw.u_recover),
             );
             match change {
                 Change::Onset => self.rz_disability_onset(plan, p, t, now, price, age, fra),
-                Change::Recovery => self.rz_disability_recovery(plan, p, now),
+                Change::Recovery => self.rz_disability_recovery(plan, p, now, age),
                 Change::None => {}
             }
         }
@@ -111,7 +114,13 @@ impl State {
         });
     }
 
-    fn rz_disability_recovery(&mut self, plan: &Plan, p: usize, now: crate::model::YearMonth) {
+    fn rz_disability_recovery(
+        &mut self,
+        plan: &Plan,
+        p: usize,
+        now: crate::model::YearMonth,
+        age: f64,
+    ) {
         for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
             if jp.owner == p
                 && matches!(rt.st.employment, Employment::Unemployed { .. })
@@ -125,7 +134,9 @@ impl State {
         let st = &mut self.rz.dis[p];
         if st.frozen {
             if let Some(c) = &mut self.claimants[p] {
-                c.claim_age = st.saved_claim_age;
+                // A planned claim age that has passed during the disability becomes
+                // the next month: benefits are not claimed retroactively.
+                c.claim_age = st.saved_claim_age.max(age + 1.0 / 12.0);
             }
         }
         st.frozen = false;

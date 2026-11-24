@@ -2457,7 +2457,19 @@
         "ltd_wait_months": 3,
         "min_insured_years": 5,
         "min_onset_age": 20,
-        "evidence": "The age profile, recovery rate, scar, LTD wait and insured-history rule are judgements. Verified: SSA Trustees Report 2025 age-sex-adjusted ultimate disabled-worker incidence 4.6 awards per 1,000 exposed a year (Alternative II; 4.8 in 2023, 4.5 in 2024); SSA Annual Statistical Report on the SSDI Program 2025: 15.8% of disabled-worker awards at ages 55-59 and 12.9% at 50-54; SSDI waiting period of five full months; computation years for disability AIME: elapsed years after age 21, one dropout year per five elapsed years up to five, minimum two (SSA POMS RS 00605.016). The OACT age-specific incidence tables could not be retrieved."
+        "evidence": "The age profile, recovery rate, scar, LTD wait and insured-history rule are judgements. Verified: SSA Trustees Report 2025 age-sex-adjusted ultimate disabled-worker incidence 4.6 awards per 1,000 exposed a year (Alternative II; 4.8 in 2023, 4.5 in 2024); SSA Annual Statistical Report on the SSDI Program 2024 (read through search summaries, the SSA site refuses automated access): disabled-worker awards by age 50-54 16.2%, 55-59 28.0%, 60-61 12.6%, 62-FRA 14.8%; the table here averages about 5.2 per 1,000 under the age mix of employed people (about 13% above the Trustees' rate); SSDI waiting period of five full months; computation years for disability AIME: elapsed years after age 21, one dropout year per five elapsed years up to five, minimum two (SSA POMS RS 00605.016). The OACT age-specific incidence tables could not be retrieved."
+      },
+      "business": {
+        "fail_hazard_by_year": [0.204, 0.15, 0.12, 0.10, 0.09],
+        "fail_hazard_later": 0.07,
+        "recession_hazard_multiplier": 1.3,
+        "regime_hazard_beta": 0.25,
+        "high_hazard_multiplier": 1.5,
+        "regime_persistence": 0.7,
+        "regime_sd": [0.20, 0.35],
+        "recession_profit_drop": [0.10, 0.20],
+        "max_annual_failure": 0.95,
+        "evidence": "Verified: BLS Business Employment Dynamics via The Economics Daily: 79.6% of establishments born in March 1994 were open a year later (TED 2018); the survival rate of the March 2013 cohort fell 20.4 points in its first year and 34.7% of it was open in March 2023 (TED 2024). The first-year hazard is that figure; the hazards for years 2 to 5 and later are judgements fitted so that ten-year survival is about 34%. The regime, recession and level multipliers are judgements. Establishment data: sole proprietors are not separately measured."
       }
     },
     "irs_single_life_table": {
