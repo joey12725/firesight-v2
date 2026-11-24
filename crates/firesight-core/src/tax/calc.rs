@@ -558,13 +558,8 @@ fn federal_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
         let capped = without + super::UNRECAPTURED_1250_MAX_RATE * recapture;
         w.tax_ordinary = w.tax_ordinary.min(capped);
     }
-    // With no preferential income taxable, `ordinary_taxable` is `taxable_income`
-    // exactly (`x - 0.0`), so the difference of the two schedule taxes is +0.0.
-    w.tax_pref = if w.pref_taxable == 0.0 {
-        0.0
-    } else {
-        f.capital_gains[s].tax(w.taxable_income) - f.capital_gains[s].tax(w.ordinary_taxable)
-    };
+    w.tax_pref =
+        f.capital_gains[s].tax(w.taxable_income) - f.capital_gains[s].tax(w.ordinary_taxable);
     w.niit = f.niit_rate * w.nii.min((w.agi - f.niit_threshold[s]).max(0.0));
     // While ordinary income is still below the deductions, one more dollar of it is
     // not taxed at ordinary rates (it can still push gains up their own schedule).
