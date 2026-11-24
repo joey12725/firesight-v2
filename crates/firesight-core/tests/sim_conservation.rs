@@ -229,6 +229,7 @@ pub fn kitchen_sink() -> Profile {
                     rate: 0.045,
                     remaining_months: 280,
                     payment: None,
+                    ..Mortgage::default()
                 }),
                 hoa_monthly: 120.0,
                 ..Property::default()
@@ -250,6 +251,7 @@ pub fn kitchen_sink() -> Profile {
                     rate: 0.06,
                     remaining_months: 300,
                     payment: None,
+                    ..Mortgage::default()
                 }),
                 ..Property::default()
             },

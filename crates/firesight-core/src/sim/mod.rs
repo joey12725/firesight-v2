@@ -57,6 +57,7 @@ use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
 mod events;
 mod family;
+mod housing_ext;
 mod month;
 mod plan;
 mod preview;

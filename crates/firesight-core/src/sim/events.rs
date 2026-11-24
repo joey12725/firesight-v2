@@ -73,11 +73,29 @@ impl State {
         cost_fraction: f64,
         then_rent: f64,
     ) -> f64 {
+        self.sell_slot_discounted(plan, t, slot, cost_fraction, then_rent, 1.0)
+    }
+
+    /// [`State::sell_slot`] at `price_factor` times the market price (slow sales:
+    /// one less the discount of a weak market).
+    pub(crate) fn sell_slot_discounted(
+        &mut self,
+        plan: &Plan,
+        t: usize,
+        slot: usize,
+        cost_fraction: f64,
+        then_rent: f64,
+        price_factor: f64,
+    ) -> f64 {
         let before = self.props[slot];
         let exclusion = plan.home_exclusion[self.filing.index()];
-        let sale = plan.props[slot]
-            .model
-            .sell(&mut self.props[slot], t, cost_fraction, exclusion);
+        let sale = plan.props[slot].model.sell_discounted(
+            &mut self.props[slot],
+            t,
+            cost_fraction,
+            exclusion,
+            price_factor,
+        );
         if sale.net_proceeds >= 0.0 {
             self.recv(YearSeries::PropertySale, sale.net_proceeds);
         } else {
@@ -135,6 +153,16 @@ impl State {
                 } else {
                     0.0
                 };
+                if plan.hx.liquidity {
+                    // The sale takes months: list it, and count what it will bring
+                    // against the shortfall so that no more is listed than needed.
+                    self.hx_list_sale(plan, t, slot, LAST_RESORT_SELLING_COST, rent, true);
+                    missing -= net;
+                    if missing <= 0.0 {
+                        return;
+                    }
+                    continue;
+                }
                 let got = self.sell_slot(plan, t, slot, LAST_RESORT_SELLING_COST, rent);
                 if self.home_sale_month == i32::MAX {
                     self.home_sale_month = t as i32;
@@ -217,6 +245,9 @@ impl State {
                 if !self.props[slot].owned {
                     // Not bought yet (the purchase was postponed): wait for it.
                     return self.events[e].retries >= PURCHASE_RETRY_MONTHS;
+                }
+                if self.hx_list_sale(plan, t, slot, *cost_fraction, *then_rent, false) {
+                    return true;
                 }
                 let net = self.sell_slot(plan, t, slot, *cost_fraction, *then_rent);
                 self.event(now, TraceEventKind::SoldHome, Some(net / price), || {

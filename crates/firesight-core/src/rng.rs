@@ -87,6 +87,15 @@ pub enum Stream {
     /// Whether, when and for how long an adult child needs support: three draws per
     /// child with `adult_support` (index into `household.children`).
     ChildSupport(usize),
+    /// Major-repair timing of one property (lumpy maintenance), per property slot.
+    Maintenance(usize),
+    /// The path's homeowner's-insurance premium index (drift and repricing jumps),
+    /// shared by every property with stochastic insurance growth.
+    InsuranceDrift,
+    /// The path's local rent market (market-rent budget lines).
+    RentMarket,
+    /// Time to close and discount of home sales (realistic housing liquidity).
+    Liquidity,
 }
 
 impl Stream {
@@ -111,6 +120,10 @@ impl Stream {
             // The two share one per-index base: even ids for college, odd for support.
             Stream::ChildCollege(i) => 0x1280_0000 + 2 * i as u64,
             Stream::ChildSupport(i) => 0x1280_0000 + 2 * i as u64 + 1,
+            Stream::RentMarket => 1300,
+            Stream::Liquidity => 1301,
+            Stream::Maintenance(i) => 0x1300_0000 + i as u64,
+            Stream::InsuranceDrift => 1302,
         }
     }
 }
@@ -501,6 +514,22 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::Vehicle(0),
+            Stream::Vehicle(1),
+            Stream::CategoryPrices,
+            Stream::DetailedShocks,
+            Stream::ChildArrival(0),
+            Stream::ChildArrival(1),
+            Stream::CollegePrices,
+            Stream::ChildCollege(0),
+            Stream::ChildCollege(1),
+            Stream::ChildSupport(0),
+            Stream::ChildSupport(1),
+            Stream::Maintenance(0),
+            Stream::Maintenance(1),
+            Stream::InsuranceDrift,
+            Stream::RentMarket,
+            Stream::Liquidity,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

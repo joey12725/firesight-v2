@@ -643,6 +643,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             rate: 0.0425,
             remaining_months: 312,
             payment: None,
+            ..Mortgage::default()
         }),
         property_tax_rate: Some(0.011),
         insurance_rate: 0.011,
