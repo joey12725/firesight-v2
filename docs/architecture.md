@@ -170,7 +170,8 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   emergency_months: f64 (6),          // of current spending, recomputed every year
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
                   custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
-                  single_stock: SingleStock{ volatility, beta } }
+                  single_stock: SingleStock{ volatility, beta },
+                  tax_loss_harvesting: bool (false) }   // realise losses, stay invested, reset basis
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 
@@ -218,6 +219,7 @@ RetirementPlan {
                   | TaxAware{ fill_to_bracket: f64, roth_conversions: bool, mind_aca: bool },
   early_access: Auto | PayPenalty,               // Auto: taxable, Roth basis, seasoned conversions, 72(t)
   bequest_target: f64,
+  qcd: bool (false),                              // pay Giving lines from the IRA as QCDs from 70.5
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
 }
 Assumptions {
@@ -230,7 +232,11 @@ Assumptions {
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
-                    social_security_haircut: Option<{ from_year, factor }> },
+                    social_security_haircut: Option<{ from_year, factor }>,
+                    chained_cpi: bool (false),     // thresholds on the chained index (brackets, IRA/HSA limits) grow 0.25 points a year slower
+                    state_detail: Basic | Full,    // Full: CA SDI on wages, NY bracket recapture, UT Social Security credit
+                    policy_risk: Option<{ ss_haircut_probability, ss_haircut_factor, earliest_year,
+                                          tax_increase_probability, tax_increase_points }> },  // per-path policy draw
   longevity: Stochastic{ improvement: bool } | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
   housing_liquidity: Instant | Realistic (Instant),  // Realistic: sales take months and may close at a discount

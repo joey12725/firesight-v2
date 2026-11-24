@@ -296,6 +296,8 @@ pub(crate) struct State {
     pub chk_debt_flow: f64,
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
+    /// Per-path state of the tax and policy realism options.
+    pub trz: super::tax_realism::TaxRealismState,
     pub tax_details: Vec<(i32, TaxDetail)>,
 }
 
@@ -483,6 +485,7 @@ impl State {
             chk_mort_flow: 0.0,
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
+            trz: super::tax_realism::TaxRealismState::default(),
             tax_details: Vec::new(),
         }
     }
@@ -547,6 +550,7 @@ impl State {
             months,
             econ,
         );
+        self.realism_begin(plan, seed, path);
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
         if plan.rz.any {
             self.rz.begin(&plan.rz, seed, path);

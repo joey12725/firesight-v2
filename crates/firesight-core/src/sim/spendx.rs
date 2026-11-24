@@ -569,6 +569,33 @@ impl State {
         (ess, disc, keep)
     }
 
+    /// The multiplier this calendar `month` puts on the lines of category `c`
+    /// (seasonality times the path's price wedge of its group), as
+    /// [`State::sx_factors`] weighs it into the month's budget. Read after
+    /// `sx_factors` has run for the month; exactly 1 when no monthly feature is on.
+    pub(crate) fn sx_category_factor(&self, plan: &Plan, c: Category, month: u32) -> f64 {
+        let sx = &plan.sx;
+        if !sx.monthly || !(sx.wedge.is_some() || sx.seasonal) {
+            return 1.0;
+        }
+        let ci = c.index();
+        let wedge = if GROUP_OF[ci] < N_GROUPS {
+            self.sx.wedge[GROUP_OF[ci]]
+        } else {
+            1.0
+        };
+        sx.season[ci][(month - 1) as usize] * wedge
+    }
+
+    /// The share of discretionary spending kept after the unemployment cut this
+    /// month (the third value of [`State::sx_factors`]); 1 when the cut is off.
+    pub(crate) fn sx_discretionary_keep(&self, plan: &Plan) -> f64 {
+        if !plan.sx.monthly || plan.sx.unemployment_cut <= 0.0 {
+            return 1.0;
+        }
+        1.0 - self.sx.cut_level
+    }
+
     /// What the vehicles the household is still replacing cost a year on average, in
     /// today's dollars: each one's price net of trade-in spread over its cycle. The
     /// funded test adds it to the annual need, like a home's running costs: the

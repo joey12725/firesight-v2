@@ -377,7 +377,8 @@ impl State {
             // fraction), at an age threshold, or when someone dies or joins; in
             // between they rise with prices, so the last result is rescaled.
             if month == 1 || self.ss_dirty || ti >= self.ss_next_change {
-                self.ss_cache = plan.ss.monthly(now, &self.claimants, price);
+                self.ss_cache =
+                    self.policy_benefits(now, plan.ss.monthly(now, &self.claimants, price));
                 self.ss_cache_price = price;
                 self.ss_dirty = false;
                 self.ss_next_change = self.next_ss_threshold(plan, t);
@@ -649,6 +650,10 @@ impl State {
             self.pay_tax_due();
         }
 
+        if plan.profile.retirement.qcd {
+            self.qcd_month(plan, t, price, now);
+        }
+
         // 9. Cash settlement.
         self.settle(plan, t, price);
 
@@ -667,6 +672,9 @@ impl State {
         self.ty.interest += inc.interest;
         self.ty.ordinary_dividends += inc.ordinary_dividends;
         self.ty.qualified_dividends += inc.qualified_dividends;
+        if plan.profile.portfolio.tax_loss_harvesting {
+            self.harvest_losses(now, price);
+        }
         self.led[YearSeries::InvestmentIncome.index()] =
             inc.interest + inc.ordinary_dividends + inc.qualified_dividends;
         self.led[YearSeries::InvestmentReturn.index()] = inc.net_change;

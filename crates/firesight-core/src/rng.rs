@@ -100,6 +100,9 @@ pub enum Stream {
     /// subsystem (0 job, 1 person, 2 self-employment income) and `index` the job,
     /// person or income within it. Ids 0x1400_0000 and up are reserved for these.
     CareerExt(u8, usize),
+    /// Which policy changes (a Social Security cut, a tax increase) happen on a path,
+    /// and from when: four uniforms per path, drawn only when `policy_risk` is set.
+    PolicyRisk,
 }
 
 impl Stream {
@@ -112,6 +115,7 @@ impl Stream {
             Stream::EquityComp => 3,
             Stream::Shocks => 4,
             Stream::Events => 5,
+            Stream::PolicyRisk => 1500,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -539,6 +543,7 @@ mod tests {
             Stream::CareerExt(0, 1),
             Stream::CareerExt(1, 0),
             Stream::CareerExt(2, 0),
+            Stream::PolicyRisk,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

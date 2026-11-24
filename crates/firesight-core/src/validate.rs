@@ -21,6 +21,7 @@ use crate::model::*;
 
 mod family;
 mod housing_realism;
+mod realism;
 mod spending_realism;
 
 /// One finding.
@@ -195,6 +196,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.retirement();
     c.assumptions();
     c.family();
+    c.realism();
     if c.r.errors.is_empty() {
         // Lints read the profile as a whole and assume it is structurally sound.
         c.plausibility();

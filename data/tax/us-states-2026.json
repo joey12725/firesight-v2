@@ -44,6 +44,9 @@
    "https://www.marylandcomptroller.gov/content/dam/mdcomp/tax/instructions/withholding/2026/withholding-guide.pdf",
    "https://mgaleg.maryland.gov/mgawebsite/Laws/StatuteText?article=gtg&section=10-217&enactments=false",
    "https://www.tax.ny.gov/pdf/current_forms/it/it2105i.pdf",
+   "https://tax.ny.gov/pdf/2024/inc/it201i_2024.pdf",
+   "https://edd.ca.gov/en/Payroll_taxes/Rates_and_withholding",
+   "https://le.utah.gov/Session/2025/bills/introduced/HB0130.pdf",
    "See SOURCES-states.md for the full list and judgement calls."
   ]
  },
@@ -323,6 +326,14 @@
  },
  "CA": {
   "name": "California",
+  "detail": {
+   "sdi": {
+    "rate": 0.013,
+    "applies_to": "wages",
+    "wage_cap": null,
+    "note": "State Disability Insurance withholding, employee-paid, 1.3% of all wages for 2026 with no taxable-wage ceiling (SB 951 removed it from 2024). Not on self-employment profit (elective coverage). Deductible as a state income tax for itemisers (IRS Topic 503). EDD, 'Rates and withholding' and Information Sheet DE 231."
+   }
+  },
   "has_income_tax": true,
   "taxes_wages": true,
   "brackets": {
@@ -2565,6 +2576,19 @@
  },
  "NY": {
   "name": "New York",
+  "detail": {
+   "benefit_recapture": {
+    "agi_start": 107650,
+    "phase_in_width": 50000,
+    "agi_top": 25000000,
+    "first_tier_bracket_index": {
+     "single": 4,
+     "married_joint": 3,
+     "head_of_household": 4
+    },
+    "note": "Tax Law 601(d)-(e) as printed in the IT-201-I tax computation worksheets. Above NY AGI of 107,650 the benefit of the lower brackets is taken back over $50,000 of AGI, tier by tier: tier 0 is taxable income up to the top of bracket first_tier_bracket_index (the 6% bracket for single in 2024, the 5.5% bracket for joint), tax = table tax + (rate of that bracket x taxable income - table tax) x (AGI - 107,650)/50,000; for taxable income in a higher bracket m, tax = table tax + recapture base + increment x min(1, (AGI - lower[m])/50,000), where the base is rate[m-1] x lower[m] - table tax(lower[m]) and the increment is rate[m] x lower[m+1] - table tax(lower[m+1]) - base. Above AGI of 25,000,000 every dollar pays the top rate. The thresholds are the 2024 statutory figures; the 2026 rates in this file are the post-2025 cut, applied to the same structure (not checked against a 2026 worksheet)."
+   }
+  },
   "has_income_tax": true,
   "taxes_wages": true,
   "brackets": {
@@ -3352,6 +3376,18 @@
  },
  "UT": {
   "name": "Utah",
+  "detail": {
+   "social_security_credit": {
+    "rate": 0.0445,
+    "phase_out_per_dollar": 0.025,
+    "phase_out_start": {
+     "single": 54000,
+     "married_joint": 90000,
+     "head_of_household": 90000
+    },
+    "note": "Utah Code 59-10-1042: a nonrefundable credit equal to the flat income tax rate times the Social Security benefits included in federal AGI, reduced by $0.025 per dollar of modified AGI above 54,000 (single) or 90,000 (joint, head of household); thresholds raised from 45,000 / 75,000 for tax years from 2025 (H.B. 130 / S.B. 71, 2025). The rate is the 2026 flat rate of 4.45%. Modified AGI is taken as federal AGI. The credit is not available together with the retirement credit (59-10-1019), which is not modelled."
+   }
+  },
   "has_income_tax": true,
   "taxes_wages": true,
   "brackets": {

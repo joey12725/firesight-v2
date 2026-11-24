@@ -12,7 +12,14 @@ use super::{
     MAX_BRACKETS, MAX_IRMAA_TIERS,
 };
 use crate::data::{Data, DataError};
-use crate::model::TaxModel;
+use crate::model::{StateDetail, TaxModel};
+
+/// How much more slowly the chained CPI-U rises than the CPI-U, per year, as a
+/// fraction. CBO, "Using the Chained CPI to Index Social Security, Other Federal
+/// Programs, and the Tax Code for Inflation" (testimony, April 2013): about 0.25
+/// percentage points a year lower on average (CBO's 2010 brief gave 0.3; any single
+/// year ranges from +0.1 to -0.5). Applied only with `assumptions.taxes.chained_cpi`.
+pub const CHAINED_CPI_WEDGE: f64 = 0.0025;
 
 const FEDERAL_FILE: &str = "data/tax/us-federal-2026.json";
 const STATES_FILE: &str = "data/tax/us-states-2026.json";
@@ -617,6 +624,7 @@ fn parse_state(
     node: &Node,
     full_retirement_age: f64,
     retirement_age: f64,
+    detail: bool,
 ) -> Result<StateBase, DataError> {
     let mut y = StateYear {
         code,
@@ -832,6 +840,12 @@ fn parse_state(
         }
     }
 
+    if detail {
+        if let Some(detail) = node.opt("detail") {
+            parse_state_detail(&detail, &mut y)?;
+        }
+    }
+
     Ok(StateBase {
         year: y,
         brackets_indexed: node.get("inflation_indexed")?.boolean()?,
@@ -843,11 +857,46 @@ fn parse_state(
     })
 }
 
+/// The `detail` block of a state (`assumptions.taxes.state_detail: full`): payroll
+/// disability insurance, high-income bracket recapture and a Social Security credit.
+fn parse_state_detail(detail: &Node, y: &mut StateYear) -> Result<(), DataError> {
+    if let Some(sdi) = detail.opt("sdi") {
+        y.sdi_rate = sdi.get_rate("rate")?;
+    }
+    if let Some(r) = detail.opt("benefit_recapture") {
+        y.recapture_agi_start = r.get_amount("agi_start")?;
+        y.recapture_phase_width = r.get_amount("phase_in_width")?;
+        y.recapture_agi_top = r.get_amount("agi_top")?;
+        if y.recapture_phase_width <= 0.0 {
+            return Err(r.err("phase_in_width must be positive"));
+        }
+        let first = r.get("first_tier_bracket_index")?;
+        for status in FilingStatus::ALL {
+            let index = first.get_amount(status.key())?;
+            let len = y.brackets[status.index()].len;
+            if index < 0.0 || index.fract() != 0.0 || (index as usize) + 1 >= len {
+                return Err(
+                    first.err("bracket index must be a whole number below the last bracket")
+                );
+            }
+            y.recapture_first_bracket[status.index()] = index as usize;
+        }
+    }
+    if let Some(c) = detail.opt("social_security_credit") {
+        y.ss_credit_rate = c.get_rate("rate")?;
+        y.ss_credit_phase_out_rate = c.get_rate("phase_out_per_dollar")?;
+        let start = c.get("phase_out_start")?;
+        y.ss_credit_phase_out_start = start.by_status(true)?;
+    }
+    Ok(())
+}
+
 fn parse_states(
     states: &Value,
     base_year: i32,
     full_retirement_age: f64,
     retirement_age: f64,
+    detail: bool,
 ) -> Result<Vec<StateBase>, DataError> {
     let root = Node::root(states, STATES_FILE);
     let map = states
@@ -868,6 +917,7 @@ fn parse_states(
             &node,
             full_retirement_age,
             retirement_age,
+            detail,
         )?);
     }
     if out.is_empty() {
@@ -957,6 +1007,7 @@ impl TaxLaw {
             base_year,
             full_retirement_age,
             retirement_age,
+            model.state_detail == StateDetail::Full,
         )?;
         let national_property_tax_rate =
             states.iter().map(|s| s.year.property_tax_rate).sum::<f64>() / states.len() as f64;
@@ -965,6 +1016,7 @@ impl TaxLaw {
             base_year,
             kind: model.kind,
             index_brackets: model.index_brackets,
+            chained_cpi: model.chained_cpi,
             published_next_year: parse_published_next_year(&root, base_year)?,
             rmd: parse_rmd(&data.tax_federal)?,
             federal,
@@ -1049,9 +1101,13 @@ impl TaxLaw {
             }
         }
 
-        f.child_tax_credit = index_rounded(b.child_tax_credit, cpi, CHILD_CREDIT_INCREMENT);
-        f.child_credit_refundable_max =
-            index_rounded(b.child_credit_refundable_max, cpi, CHILD_CREDIT_INCREMENT);
+        let chained = self.chained_factor(index, cpi);
+        f.child_tax_credit = index_rounded(b.child_tax_credit, chained, CHILD_CREDIT_INCREMENT);
+        f.child_credit_refundable_max = index_rounded(
+            b.child_credit_refundable_max,
+            chained,
+            CHILD_CREDIT_INCREMENT,
+        );
         f.oasdi_wage_base = index_rounded(b.oasdi_wage_base, wage, WAGE_BASE_INCREMENT);
 
         f.limits.k401_employee = index_rounded(b.limits.k401_employee, cpi, K401_INCREMENT);
@@ -1067,12 +1123,15 @@ impl TaxLaw {
             .iter_mut()
             .zip(&b.limits.ira_deduction_phaseout_spouse)
         {
-            *bound = index_rounded(*from, cpi, ROTH_PHASEOUT_INCREMENT);
+            *bound = index_rounded(*from, chained, ROTH_PHASEOUT_INCREMENT);
         }
-        f.limits.ira = index_rounded(b.limits.ira, cpi, IRA_INCREMENT);
-        f.limits.ira_catch_up = index_rounded(b.limits.ira_catch_up, cpi, IRA_CATCH_UP_INCREMENT);
-        f.limits.hsa_self = index_rounded(b.limits.hsa_self, cpi, HSA_INCREMENT);
-        f.limits.hsa_family = index_rounded(b.limits.hsa_family, cpi, HSA_INCREMENT);
+        // IRA and HSA limits take the section 1(f)(3) adjustment (IRC 219(b)(5)(C),
+        // 223(g)); the 401(k) limits above follow section 415(d), which does not.
+        f.limits.ira = index_rounded(b.limits.ira, chained, IRA_INCREMENT);
+        f.limits.ira_catch_up =
+            index_rounded(b.limits.ira_catch_up, chained, IRA_CATCH_UP_INCREMENT);
+        f.limits.hsa_self = index_rounded(b.limits.hsa_self, chained, HSA_INCREMENT);
+        f.limits.hsa_family = index_rounded(b.limits.hsa_family, chained, HSA_INCREMENT);
 
         // Calendar rules.
         let salt = salt_row(&base.salt_schedule, index.year);
@@ -1127,33 +1186,48 @@ impl TaxLaw {
         }
     }
 
+    /// The factor for thresholds indexed to the chained CPI: `cpi` itself unless
+    /// `chained_cpi` is on, otherwise `cpi` less [`CHAINED_CPI_WEDGE`] a year for
+    /// every year after `base_year + 1` (the figures published for `base_year + 1`
+    /// are already on the chained index).
+    fn chained_factor(&self, index: Indexation, cpi: f64) -> f64 {
+        // With indexing off nothing moves, the chained thresholds included.
+        if !self.chained_cpi || !self.index_brackets {
+            return cpi;
+        }
+        let years = (index.year - self.base_year - 1).max(0);
+        cpi * crate::math::powi(1.0 - CHAINED_CPI_WEDGE, years)
+    }
+
     /// The federal tables of filing status `s`, from the base-year law.
     fn index_federal_status(&self, index: Indexation, cpi: f64, f: &mut FederalYear, s: usize) {
         let b = &self.federal.year;
-        let bracket = |x: f64| index_rounded(x, cpi, BRACKET_INCREMENT);
-        f.ordinary[s] = b.ordinary[s].indexed_rounded(cpi, BRACKET_INCREMENT);
-        f.capital_gains[s] = b.capital_gains[s].indexed_rounded(cpi, BRACKET_INCREMENT);
+        // Items the statute indexes to the chained CPI (IRC 1(f)(3)).
+        let chained = self.chained_factor(index, cpi);
+        let bracket = |x: f64| index_rounded(x, chained, BRACKET_INCREMENT);
+        f.ordinary[s] = b.ordinary[s].indexed_rounded(chained, BRACKET_INCREMENT);
+        f.capital_gains[s] = b.capital_gains[s].indexed_rounded(chained, BRACKET_INCREMENT);
         f.standard_deduction[s] = bracket(b.standard_deduction[s]);
         f.additional_deduction_65[s] = bracket(b.additional_deduction_65[s]);
         f.qbi_threshold[s] = bracket(b.qbi_threshold[s]);
         f.limits.roth_ira_phaseout_start[s] = index_rounded(
             b.limits.roth_ira_phaseout_start[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.roth_ira_phaseout_end[s] = index_rounded(
             b.limits.roth_ira_phaseout_end[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.ira_deduction_phaseout_start[s] = index_rounded(
             b.limits.ira_deduction_phaseout_start[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         f.limits.ira_deduction_phaseout_end[s] = index_rounded(
             b.limits.ira_deduction_phaseout_end[s],
-            cpi,
+            chained,
             ROTH_PHASEOUT_INCREMENT,
         );
         let from = &b.irmaa[s];
