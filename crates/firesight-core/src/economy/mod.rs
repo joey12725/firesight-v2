@@ -125,7 +125,10 @@ use crate::rng::Rng;
 use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
-pub use joins::{MIN_CELL as JOIN_MIN_CELL, TRAILING_MONTHS as JOIN_TRAILING_MONTHS};
+pub use joins::{
+    MIN_BOOTSTRAP_CELLS as JOIN_MIN_CELLS, MIN_CELL as JOIN_MIN_CELL,
+    TRAILING_MONTHS as JOIN_TRAILING_MONTHS,
+};
 pub use overlay::{
     Episode, CASH_PASS_THROUGH, DISASTER_MONTHS_RANGE, DISASTER_RECESSION_MONTHS,
     DISASTER_WORDS_PER_EPISODE, MAX_BURST_INFLATION, MAX_BURST_PRICE_FACTOR, MAX_DISASTER_DEPTH,
@@ -1131,25 +1134,26 @@ impl EconomyModel {
     /// Applies the profile's single-stock and custom-asset parameters. Call after
     /// [`EconomyModel::new`]; without it the defaults of those types are used. Only
     /// the scaling of those two asset classes changes: the random draws, and every
-    /// other series, are identical.
+    /// other series, are identical. Every sleeve is set from `portfolio` alone, so
+    /// calling it again replaces what an earlier call set, whatever the order.
     pub fn with_assets(mut self, portfolio: &PortfolioPolicy) -> EconomyModel {
         let custom = portfolio.custom_asset.clone().unwrap_or_default();
-        // Crypto: rebuilt only when the profile departs from the defaults that
-        // `new` has already applied.
-        if portfolio.crypto != CryptoAssumptions::default() {
-            let spec = sleeves::crypto_spec(
-                self.base.crypto,
-                &self.base.crypto_presets,
-                &portfolio.crypto,
-            );
-            let crypto = sleeves::crypto_setup(&self.base, &spec, portfolio.crypto.dynamics);
-            self.assets.crypto_beta = crypto.beta;
-            self.assets.crypto_beta_extra = crypto.beta_extra;
-            self.assets.crypto_norm = crypto.norm;
-            self.assets.crypto_ruin = crypto.ruin;
-            self.crypto_shock = Arc::new(crypto.shock);
-            self.ext.cycles = crypto.cycles.map(Arc::new);
-        }
+        // Crypto: rebuilt on every call, so that a model that already carries one
+        // portfolio's sleeve takes this one's whole, defaults included. With the
+        // default assumptions the spec is `base.crypto` untouched and these are the
+        // operations `new` ran, so the result is the same bits.
+        let spec = sleeves::crypto_spec(
+            self.base.crypto,
+            &self.base.crypto_presets,
+            &portfolio.crypto,
+        );
+        let crypto = sleeves::crypto_setup(&self.base, &spec, portfolio.crypto.dynamics);
+        self.assets.crypto_beta = crypto.beta;
+        self.assets.crypto_beta_extra = crypto.beta_extra;
+        self.assets.crypto_norm = crypto.norm;
+        self.assets.crypto_ruin = crypto.ruin;
+        self.crypto_shock = Arc::new(crypto.shock);
+        self.ext.cycles = crypto.cycles.map(Arc::new);
         self.with_asset_params(&portfolio.single_stock, &custom)
     }
 

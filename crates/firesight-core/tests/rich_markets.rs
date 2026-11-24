@@ -108,36 +108,144 @@ fn every_option_on_conserves_money_and_stays_finite_under_every_market_kind() {
     }
 }
 
-/// The hardest settings the validator accepts, each kind: the engine still neither
-/// panics nor produces a non-finite number.
+/// The hardest disasters the validator accepts.
+fn hardest_disasters() -> Disasters {
+    Disasters {
+        annual_probability: 0.1,
+        depth: Uncertain::point(0.95),
+        years: Uncertain::Uniform {
+            low: 1.0,
+            high: 40.0,
+        },
+        inflation_probability: 1.0,
+        inflation: Uncertain::point(0.25),
+    }
+}
+
+/// The corners of what the validator accepts for the long-run ranges, as
+/// `(stock adjustment, stock range, inflation adjustment, inflation range)`. The
+/// adjustment plus the furthest shift must stay within -0.1..0.1 for stocks and
+/// -0.05..0.15 for inflation, so each corner touches one or both ends.
+fn long_run_corners() -> Vec<(f64, Option<Uncertain>, f64, Option<Uncertain>)> {
+    let uniform = |half: f64| {
+        Some(Uncertain::Uniform {
+            low: -half,
+            high: half,
+        })
+    };
+    // A lopsided range: low, mode, high of 0, 0, 0.06 has mean 0.02, so the shift
+    // runs from -0.02 to +0.04; mirrored, from -0.04 to +0.02.
+    let skewed = |low: f64, mode: f64, high: f64| Some(Uncertain::Triangular { low, mode, high });
+    vec![
+        // Both ends for both: stocks -0.1..0.1, inflation -0.05..0.15.
+        (0.0, uniform(0.1), 0.05, uniform(0.1)),
+        // The widest normal the default stock adjustment has room for (-0.015 - 4 x
+        // 0.02 = -0.095), and the widest for inflation at zero (4 x 0.0125 = 0.05).
+        (
+            DEFAULT_EQUITY_PREMIUM_ADJUSTMENT,
+            normal(0.02),
+            0.0,
+            normal(0.0125),
+        ),
+        // Near the highest adjustments (the reviewer's corner; at the very highest
+        // only a range with no spread fits): stocks 0.04..0.1, inflation 0.09..0.15.
+        (0.08, skewed(-0.06, 0.0, 0.0), 0.13, skewed(-0.06, 0.0, 0.0)),
+        // Near the lowest: stocks -0.1..-0.04, inflation -0.05..0.01.
+        (-0.08, skewed(0.0, 0.0, 0.06), -0.03, skewed(0.0, 0.0, 0.06)),
+        // High stocks (-0.05..0.1) with low inflation reached by the shift.
+        (0.0, skewed(0.0, 0.0, 0.15), 0.0, uniform(0.05)),
+    ]
+}
+
+/// The hardest settings the validator accepts, each kind and each example: the
+/// engine neither panics nor produces a non-finite number, money is conserved, and
+/// nothing reaches 1e13 (`Finite` asserts it). The corners include the highest
+/// adjustments, where an earlier, looser validation let a lifetime shift of 20
+/// points a year through and a balance reached 2e13.
 #[test]
 fn the_most_extreme_valid_settings_stay_finite() {
-    for kind in kinds() {
-        let mut profile = with_market(Profile::example(), kind);
-        let m = &mut profile.assumptions.market;
-        m.equity_premium_uncertainty = normal(0.05);
-        m.inflation_uncertainty = normal(0.025);
-        m.disasters = Disasters {
-            annual_probability: 0.1,
-            depth: Uncertain::point(0.95),
-            years: Uncertain::Uniform {
-                low: 1.0,
-                high: 40.0,
-            },
-            inflation_probability: 1.0,
-            inflation: Uncertain::point(0.25),
-        };
-        let report = firesight_core::validate::validate(&profile);
-        assert!(report.errors.is_empty(), "{:#?}", report.errors);
-        let plan = compile(&profile);
-        run_checked(&plan, 5, 0..60);
-        let mut ws = Workspace::new(&plan);
-        let mut rec = Finite {
-            inner: plan.new_accumulator(),
-        };
-        for i in 0..300 {
-            sim::run_path(&plan, 6, i, &mut ws, &mut rec);
+    for example in Profile::examples(START) {
+        for kind in kinds() {
+            for (equity, equity_range, inflation, inflation_range) in long_run_corners() {
+                let mut profile = with_market(example.profile.clone(), kind);
+                let m = &mut profile.assumptions.market;
+                m.equity_premium_adjustment = equity;
+                m.equity_premium_uncertainty = equity_range;
+                m.inflation_adjustment = inflation;
+                m.inflation_uncertainty = inflation_range;
+                m.disasters = hardest_disasters();
+                let report = firesight_core::validate::validate(&profile);
+                assert!(report.errors.is_empty(), "{:#?}", report.errors);
+                let plan = compile(&profile);
+                run_checked(&plan, 5, 0..40);
+                let mut ws = Workspace::new(&plan);
+                let mut rec = Finite {
+                    inner: plan.new_accumulator(),
+                };
+                for i in 0..300 {
+                    sim::run_path(&plan, 6, i, &mut ws, &mut rec);
+                }
+            }
         }
+    }
+}
+
+/// The same corners without disasters (which lower balances): the long-run shifts
+/// alone, at their validated extremes, stay below 1e13.
+#[test]
+fn the_widest_valid_long_run_ranges_stay_below_the_size_limit() {
+    for example in Profile::examples(START) {
+        for kind in kinds() {
+            for (equity, equity_range, inflation, inflation_range) in long_run_corners() {
+                let mut profile = with_market(example.profile.clone(), kind);
+                let m = &mut profile.assumptions.market;
+                m.equity_premium_adjustment = equity;
+                m.equity_premium_uncertainty = equity_range;
+                m.inflation_adjustment = inflation;
+                m.inflation_uncertainty = inflation_range;
+                let report = firesight_core::validate::validate(&profile);
+                assert!(report.errors.is_empty(), "{:#?}", report.errors);
+                let plan = compile(&profile);
+                let mut ws = Workspace::new(&plan);
+                let mut rec = Finite {
+                    inner: plan.new_accumulator(),
+                };
+                for i in 0..300 {
+                    sim::run_path(&plan, 6, i, &mut ws, &mut rec);
+                }
+            }
+        }
+    }
+}
+
+/// No shift takes the total outside the limits of the fixed adjustments, whatever
+/// the path: the validator's promise, checked on the drawn shifts themselves.
+#[test]
+fn drawn_shifts_keep_the_adjustments_within_their_validated_limits() {
+    let data = Data::embedded();
+    for (equity, equity_range, inflation, inflation_range) in long_run_corners() {
+        let market = MarketModel {
+            equity_premium_adjustment: equity,
+            equity_premium_uncertainty: equity_range,
+            inflation_adjustment: inflation,
+            inflation_uncertainty: inflation_range,
+            ..MarketModel::default()
+        };
+        let model = economy::EconomyModel::new(&market, data);
+        let (mut low, mut high) = ((0.0f64, 0.0f64), (0.0f64, 0.0f64));
+        for path in 0..20_000 {
+            let (de, di) = model.long_run_shift(3, path);
+            // The validator's rounding allowance is a millionth.
+            assert!((-0.1 - 1e-6..=0.1 + 1e-6).contains(&(equity + de)), "{de}");
+            assert!(
+                (-0.05 - 1e-6..=0.15 + 1e-6).contains(&(inflation + di)),
+                "{di}"
+            );
+            low = (low.0.min(de), low.1.min(di));
+            high = (high.0.max(de), high.1.max(di));
+        }
+        // The corners are real: the shifts do spread.
+        assert!(high.0 - low.0 > 0.05 && high.1 - low.1 > 0.05);
     }
 }
 

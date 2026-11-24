@@ -22,7 +22,14 @@ use crate::model::*;
 // The shared check for a user-supplied distribution lives beside its sampler; it is
 // re-exported here so validation code calls it like any other check:
 // `check_uncertain(&mut self.r, &path, "Windfall amount", &dist, Bounds::MONEY)`.
+use crate::dist::CompiledDist;
 pub use crate::dist::{check_uncertain, Bounds};
+
+/// Accepted `equity_premium_adjustment`, and accepted adjustment plus the furthest
+/// per-path shift of `equity_premium_uncertainty`, as annual decimals.
+const EQUITY_ADJUSTMENT_RANGE: (f64, f64) = (-0.1, 0.1);
+/// The same for `inflation_adjustment` and `inflation_uncertainty`.
+const INFLATION_ADJUSTMENT_RANGE: (f64, f64) = (-0.05, 0.15);
 
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1616,25 +1623,88 @@ impl Checker<'_> {
     }
 
     /// Long-run uncertainty and rare disasters (`assumptions.market`).
+    /// A long-run uncertainty moves an adjustment for a whole simulated life, so
+    /// the adjustment plus the furthest shift either way (the range less its
+    /// average) must itself be an adjustment the validator would accept. `dist` has
+    /// passed `check_uncertain`. The error goes to the field that sets the
+    /// offending end of the range.
+    fn shifted_adjustment(
+        &mut self,
+        path: &str,
+        what: &str,
+        dist: &Uncertain,
+        (name, adjustment): (&str, f64),
+        (lo, hi): (f64, f64),
+    ) {
+        // An adjustment outside its own range is reported at its own path.
+        if !(lo..=hi).contains(&adjustment) {
+            return;
+        }
+        let compiled = CompiledDist::new(dist);
+        let mean = compiled.mean();
+        let (lowest, highest) = (
+            adjustment + (compiled.min() - mean),
+            adjustment + (compiled.max() - mean),
+        );
+        // Room for rounding: the average is that of the compiled sampler, which
+        // differs from the textbook one in about the eighth decimal.
+        const SLACK: f64 = 1e-6;
+        let (low_field, high_field) = match dist {
+            Uncertain::Uniform { .. } | Uncertain::Triangular { .. } | Uncertain::Pert { .. } => {
+                ("low", "high")
+            }
+            Uncertain::Normal { .. } => ("sd", "sd"),
+            Uncertain::Lognormal { .. } => ("p90", "p90"),
+            Uncertain::Quantiles { .. } => ("p10", "p90"),
+        };
+        let (too_low, too_high) = (lowest < lo - SLACK, highest > hi + SLACK);
+        // Six decimals are plenty for a rate and hide the rounding of the sums.
+        let shown = |x: f64| (x * 1e6).round() / 1e6;
+        let (mean, lowest, highest) = (shown(mean), shown(lowest), shown(highest));
+        let mut report = |field: &str, reached: f64, side: &str| {
+            self.r.error(
+                "out_of_range",
+                &format!("{path}/{field}"),
+                format!(
+                    "{what}: with {name} at {adjustment}, the furthest shift {side} (the range less its average of {mean}) takes it to {reached} a year for a whole simulated life; {name} plus the shift must stay between {lo} and {hi}. Narrow the range."
+                ),
+            );
+        };
+        if too_low {
+            report(low_field, lowest, "down");
+        }
+        if too_high {
+            report(high_field, highest, "up");
+        }
+    }
+
     fn market_risk(&mut self) {
         let m = &self.p.assumptions.market;
         if let Some(dist) = &m.equity_premium_uncertainty {
-            check_uncertain(
-                &mut self.r,
-                "/assumptions/market/equity_premium_uncertainty",
-                "Uncertainty about the long-run stock return",
-                dist,
-                Bounds::new(-0.2, 0.2),
-            );
+            let path = "/assumptions/market/equity_premium_uncertainty";
+            let what = "Uncertainty about the long-run stock return";
+            if check_uncertain(&mut self.r, path, what, dist, Bounds::new(-0.2, 0.2)) {
+                self.shifted_adjustment(
+                    path,
+                    what,
+                    dist,
+                    ("equity_premium_adjustment", m.equity_premium_adjustment),
+                    EQUITY_ADJUSTMENT_RANGE,
+                );
+            }
         }
         if let Some(dist) = &m.inflation_uncertainty {
-            check_uncertain(
-                &mut self.r,
-                "/assumptions/market/inflation_uncertainty",
-                "Uncertainty about long-run inflation",
-                dist,
-                Bounds::new(-0.1, 0.1),
-            );
+            let path = "/assumptions/market/inflation_uncertainty";
+            let what = "Uncertainty about long-run inflation";
+            if check_uncertain(&mut self.r, path, what, dist, Bounds::new(-0.1, 0.1)) {
+                self.shifted_adjustment(
+                    path,
+                    what,
+                    dist,
+                    ("inflation_adjustment", m.inflation_adjustment),
+                    INFLATION_ADJUSTMENT_RANGE,
+                );
+            }
         }
         let d = &m.disasters;
         let base = "/assumptions/market/disasters";
@@ -1707,15 +1777,15 @@ impl Checker<'_> {
             "/assumptions/market/equity_premium_adjustment",
             "Equity premium adjustment",
             a.market.equity_premium_adjustment,
-            -0.1,
-            0.1,
+            EQUITY_ADJUSTMENT_RANGE.0,
+            EQUITY_ADJUSTMENT_RANGE.1,
         );
         self.r.range(
             "/assumptions/market/inflation_adjustment",
             "Inflation adjustment",
             a.market.inflation_adjustment,
-            -0.05,
-            0.15,
+            INFLATION_ADJUSTMENT_RANGE.0,
+            INFLATION_ADJUSTMENT_RANGE.1,
         );
         self.market_risk();
         for (i, s) in a.market.stress.iter().enumerate() {
@@ -2627,6 +2697,86 @@ mod tests {
             "dist_order",
             &format!("{base}/inflation_uncertainty/high"),
         );
+        // The adjustment plus the furthest shift must itself be a valid adjustment:
+        // each range alone is inside its own limits (20 and 10 points), but lasts a
+        // lifetime on top of the adjustment. Default stock adjustment -0.015 and a
+        // normal with sd 0.025 reaches -0.015 - 4 x 0.025 = -0.115, below -0.1.
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.025}),
+            )],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/sd"),
+        );
+        // sd 0.02 reaches -0.095 and +0.065: accepted.
+        let r = patched(&[PatchOp::set(
+            format!("{base}/equity_premium_uncertainty"),
+            json!({"type": "normal", "mean": 0.0, "sd": 0.02}),
+        )]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        // Only the spread counts, not where the range is centred: 0.30 to 0.40 is a
+        // shift of -0.05 to +0.05, which a zero adjustment has room for; but at the
+        // highest adjustment (0.1) the upward half does not fit.
+        let centred_high = json!({"type": "uniform", "low": 0.0, "high": 0.1});
+        let r = patched(&[
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.0)),
+            PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                centred_high.clone(),
+            ),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert_error(
+            &[
+                PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.1)),
+                PatchOp::set(format!("{base}/equity_premium_uncertainty"), centred_high),
+            ],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/high"),
+        );
+        // Inflation: a uniform -0.1..0.1 fits an adjustment of 0.05 exactly
+        // (-0.05..0.15) and no other; at the default 0 the low end reaches -0.1.
+        let widest = json!({"type": "uniform", "low": -0.1, "high": 0.1});
+        let r = patched(&[
+            PatchOp::set(format!("{base}/inflation_adjustment"), json!(0.05)),
+            PatchOp::set(format!("{base}/inflation_uncertainty"), widest.clone()),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/inflation_uncertainty"),
+                widest.clone(),
+            )],
+            "out_of_range",
+            &format!("{base}/inflation_uncertainty/low"),
+        );
+        // The reviewer's corner: the highest adjustments with the widest ranges.
+        let r = patched(&[
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.1)),
+            PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "uniform", "low": -0.2, "high": 0.2}),
+            ),
+            PatchOp::set(format!("{base}/inflation_adjustment"), json!(0.15)),
+            PatchOp::set(format!("{base}/inflation_uncertainty"), widest),
+        ]);
+        // The upward halves do not fit (0.1 + 0.2 and 0.15 + 0.1); the downward
+        // halves do (0.1 - 0.2 = -0.1 and 0.15 - 0.1 = 0.05).
+        for (at, rejected) in [
+            ("equity_premium_uncertainty/high", true),
+            ("inflation_uncertainty/high", true),
+            ("equity_premium_uncertainty/low", false),
+            ("inflation_uncertainty/low", false),
+        ] {
+            assert_eq!(
+                has(&r.errors, "out_of_range", &format!("{base}/{at}")),
+                rejected,
+                "{at}: {:#?}",
+                r.errors
+            );
+        }
+        assert!(r.errors[0].message.contains("takes it to 0.3 a year"));
         for (field, value) in [
             ("annual_probability", json!(0.2)),
             ("annual_probability", json!(-0.01)),

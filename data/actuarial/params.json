@@ -2463,7 +2463,7 @@
       "confidence": "judgement; the grid is deliberately coarse"
     },
     "rare_disasters": {
-      "summary": "Defaults of assumptions.market.disasters and the fixed constants of the disaster overlay (economy/overlay.rs). annual_probability defaults to 0 (off); suggested_annual_probability is what the documentation proposes when it is switched on.",
+      "summary": "Defaults of assumptions.market.disasters and the fixed constants of the disaster overlay (economy/overlay.rs). annual_probability defaults to 0 (off); suggested_annual_probability is what the documentation proposes when it is switched on. cash_inflation_pass_through is a share in logs: a burst of p a year adds (1 + p)^share - 1 a year to bill returns, the long yield and the mortgage rate.",
       "suggested_annual_probability": 0.01,
       "depth_pert": {"low": 0.2, "mode": 0.4, "high": 0.75},
       "years_pert": {"low": 3.0, "mode": 8.0, "high": 20.0},

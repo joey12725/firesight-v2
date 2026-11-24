@@ -79,7 +79,12 @@ matched joins every month of the record is classified, once, by its recession fl
 by the tercile of inflation over the twelve months ending with it, and by the
 tercile of the real US stock return over the same twelve months: up to 18 cells,
 where a cell with fewer than 12 months is merged with its neighbours (15 cells of 12
-to 182 months on the full record). At a restart the path picks a month uniformly
+to 182 months on the full record). When `from_year` leaves fewer than 12 recession
+months altogether (from 2010 there are two), those months join the other months of
+their inflation and stock-return terciles: the recession flag is then not matched,
+the other two features still are (9 cells of 15 to 27 months from 2010; 3 cells,
+the inflation terciles, from 2014 or later). No accepted `from_year` leaves fewer
+than 3 cells, so matched joins never quietly become uniform ones. At a restart the path picks a month uniformly
 from the cell of the month it has just left and continues from the month after it:
 it goes on as history went on after some month that looked like this one. The pick
 uses the same random word as the uniform restart, so no other draw moves.
@@ -291,8 +296,16 @@ drawing 4% from 60/40 falls from 88.5% to 87.5%. The effect is on the spread: th
 average shift is zero, though compounding makes average wealth slightly higher and
 median wealth slightly lower.
 
-The range must stay within 20 points a year either side of zero for stocks and 10
-for inflation. Using this together with a cautious `equity_premium_adjustment`
+A shift lasts a whole simulated life, so the limits are those of the adjustments
+themselves: the adjustment plus the furthest shift either way (the range less its
+average) must stay between -10 and +10 points a year for stocks and between -5 and
++15 for inflation, and the range itself within 20 points of zero for stocks and 10
+for inflation. With the default stock adjustment of -1.5 points a `normal` range,
+which reaches 4 standard deviations, can have an `sd` of up to 0.021. Without the
+combined limit a profile at the highest adjustments with the widest ranges compounded
+30 points a year of extra return for 60 years and passed 10^13 dollars; at the
+limits now accepted the largest balance seen is the one the adjustments alone
+already allowed (about 2 x 10^11 over 300 paths of the early-career example). Using this together with a cautious `equity_premium_adjustment`
 does not count the caution twice: the adjustment sets the centre, this sets how far
 from it the truth may lie.
 
@@ -332,8 +345,10 @@ not move:
   whole episode and do not come back down (the extra rise is limited to tenfold
   per episode). Stocks, real estate, gold and home prices rise with it, so the
   burst itself costs them nothing after inflation. Bonds get none of it: their
-  real return falls by the full burst. Bills keep up with half, and the 10-year
-  yield and the mortgage rate rise by half the burst while it lasts.
+  real return falls by the full burst. Bills keep up with half of it, counted the
+  way returns compound: for a burst of `p` a year, bill returns, the 10-year yield
+  and the mortgage rate all rise by `(1 + p)^0.5 - 1` a year while it lasts (2.5
+  points for a burst of 5, 11.8 for a burst of 25).
 * **Recession.** The first third of the episode, at most 36 months, is flagged as
   a recession, which raises layoff risk.
 

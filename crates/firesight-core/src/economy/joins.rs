@@ -14,7 +14,14 @@
 //!
 //! That gives up to 18 cells. A cell with fewer than [`MIN_CELL`] rows is merged
 //! with its neighbours: first the three equity terciles of its recession-and-inflation
-//! group become one cell, then the whole recession state, then everything.
+//! group become one cell, then the whole recession state. If a recession state is
+//! still too thin as one cell (a window from 2010 holds two recession months), its
+//! rows join the cells of the other state that share their inflation and equity
+//! terciles: the recession flag is then not matched at all, but inflation and the
+//! stock market still are. Only when that leaves a thin cell too does everything
+//! become one cell, which is the same as uniform joins; no window validation
+//! accepts gets that far (at least [`MIN_BOOTSTRAP_CELLS`] cells remain, a test
+//! checks every starting year).
 //!
 //! At a restart after row `i` the generator picks a row `p` uniformly from the cell
 //! of `i` (which contains `i` itself) and continues from `p + 1`, wrapping from the
@@ -43,6 +50,40 @@ use super::Core;
 pub const MIN_CELL: usize = 12;
 /// Months in the trailing window of the two continuous features.
 pub const TRAILING_MONTHS: usize = 12;
+
+/// Fewest cells a window that validation accepts is left with (three inflation
+/// terciles), so matched joins never silently become uniform ones.
+pub const MIN_BOOTSTRAP_CELLS: usize = 3;
+
+/// Rows per cell id.
+fn counts(cell: &[usize]) -> [usize; 18] {
+    let mut count = [0usize; 18];
+    for &c in cell {
+        count[c] += 1;
+    }
+    count
+}
+
+/// For each width in turn, collapses every group of `width` consecutive ids onto
+/// its first id when any occupied member of the group has fewer than [`MIN_CELL`]
+/// rows.
+fn merge_thin(cell: &mut [usize], widths: &[usize]) {
+    for &width in widths {
+        let count = counts(cell);
+        for group in (0..18).step_by(width) {
+            let thin = count[group..group + width]
+                .iter()
+                .any(|&k| k > 0 && k < MIN_CELL);
+            if thin {
+                for c in cell.iter_mut() {
+                    if (group..group + width).contains(c) {
+                        *c = group;
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// For each row, the slice of `members` holding the rows of its cell.
 #[derive(Clone, Debug)]
@@ -85,33 +126,51 @@ impl JoinTable {
         };
         let (inf_class, eq_class) = (tercile(&inflation), tercile(&equity));
         // Cell ids: recession * 9 + inflation tercile * 3 + equity tercile.
-        let mut cell: Vec<usize> = (0..n)
+        let original: Vec<usize> = (0..n)
             .map(|i| {
                 usize::from(rows[i].recession.min(1)) * 9
                     + usize::from(inf_class[i]) * 3
                     + usize::from(eq_class[i])
             })
             .collect();
+        let mut cell = original.clone();
         // Merge thin cells: a group of `width` consecutive ids collapses onto its
         // first id when any occupied member of it is below the minimum.
-        for width in [3usize, 9, 18] {
-            let mut count = [0usize; 18];
-            for &c in &cell {
-                count[c] += 1;
+        merge_thin(&mut cell, &[3, 9]);
+        // A recession state that is too thin even as one cell is folded into the
+        // other state, tercile by tercile, so that the two continuous features are
+        // still matched. `original` is each row's id before any merging; `merged`
+        // says where rows of an original id now are.
+        let mut merged = [usize::MAX; 18];
+        for (&id, &c) in original.iter().zip(&cell) {
+            merged[id] = c;
+        }
+        let count = counts(&cell);
+        for state in [0usize, 9] {
+            let thin = count[state..state + 9]
+                .iter()
+                .any(|&k| k > 0 && k < MIN_CELL);
+            if !thin {
+                continue;
             }
-            for group in (0..18).step_by(width) {
-                let thin = count[group..group + width]
-                    .iter()
-                    .any(|&k| k > 0 && k < MIN_CELL);
-                if thin {
-                    for c in &mut cell {
-                        if (group..group + width).contains(c) {
-                            *c = group;
-                        }
-                    }
+            let other = 9 - state;
+            for (c, &id) in cell.iter_mut().zip(&original) {
+                if (state..state + 9).contains(&id) {
+                    let twin = merged[id - state + other];
+                    // No row of the other state in that tercile pair: the row
+                    // starts that cell (and the pass below merges it if thin).
+                    *c = if twin == usize::MAX {
+                        id - state + other
+                    } else {
+                        twin
+                    };
                 }
             }
+            // One state at most can be folded: the other must receive its rows.
+            break;
         }
+        // Whatever is still thin merges as before, in the end into one cell.
+        merge_thin(&mut cell, &[3, 9, 18]);
         let mut start = [0u32; 19];
         for &c in &cell {
             start[c + 1] += 1;

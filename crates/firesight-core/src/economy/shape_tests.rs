@@ -616,6 +616,77 @@ fn the_cycle_chain_has_the_stated_spells_and_clusters_volatility() {
     println!("lag-one correlation of absolute log moves: {lag1:.3}");
 }
 
+/// `with_assets` sets every sleeve from the portfolio it is given, so a model
+/// that already carries another portfolio's sleeves ends up the same bits as one
+/// built fresh: a believer's cycling small token followed by the defaults leaves
+/// nothing behind (once, the crypto sleeve was only rebuilt for a non-default
+/// portfolio, and survived), and two different portfolios applied in turn give
+/// the second.
+#[test]
+fn with_assets_replaces_every_sleeve_whatever_was_applied_before() {
+    let loud = PortfolioPolicy {
+        single_stock: stock(0.6, TailShape::Fat, Some(0.05)).single_stock,
+        custom_asset: custom(
+            0.3,
+            TailShape::Fat,
+            Some(LossEvent {
+                annual_probability: 0.05,
+                ..LossEvent::default()
+            }),
+        )
+        .custom_asset,
+        ..crypto(
+            CryptoOutlook::Believer,
+            CryptoToken::OtherTokens,
+            CryptoDynamics::cycles(),
+        )
+    };
+    let other = PortfolioPolicy {
+        single_stock: stock(0.4, TailShape::Normal, None).single_stock,
+        ..crypto(
+            CryptoOutlook::Skeptic,
+            CryptoToken::BitcoinOrEther,
+            CryptoDynamics::Steady,
+        )
+    };
+    for (name, kind) in KINDS {
+        let fresh_loud = model(kind, &loud);
+        assert!(fresh_loud.has_asset_ext(), "{name}");
+        for target in [&PortfolioPolicy::default(), &other, &loud] {
+            let fresh = model(kind, target);
+            for first in [&loud, &other, &PortfolioPolicy::default()] {
+                let reused = model(kind, first).with_assets(target);
+                assert_eq!(reused.has_asset_ext(), fresh.has_asset_ext(), "{name}");
+                assert_eq!(reused.assets.crypto_ruin, fresh.assets.crypto_ruin);
+                for (a, b) in [
+                    (reused.assets.crypto_norm, fresh.assets.crypto_norm),
+                    (reused.assets.crypto_beta, fresh.assets.crypto_beta),
+                    (
+                        reused.assets.crypto_beta_extra,
+                        fresh.assets.crypto_beta_extra,
+                    ),
+                ] {
+                    assert_eq!(a.to_bits(), b.to_bits(), "{name}");
+                }
+                let (mut a, mut b) = (EconomyPath::new(), EconomyPath::new());
+                for path in 0..6 {
+                    generate(&reused, SEED, path, 480, &mut a);
+                    generate(&fresh, SEED, path, 480, &mut b);
+                    for i in 0..N_ASSETS {
+                        assert!(a.returns[i] == b.returns[i], "{name}: asset {i}");
+                    }
+                }
+            }
+        }
+        // The settings are not vacuous: the loud portfolio's crypto differs from
+        // the default's, which is what used to survive.
+        let default = model(kind, &PortfolioPolicy::default());
+        assert!(!default.has_asset_ext());
+        assert_ne!(fresh_loud.assets.crypto_ruin, default.assets.crypto_ruin);
+        assert_ne!(fresh_loud.assets.crypto_norm, default.assets.crypto_norm);
+    }
+}
+
 /// In the generator: three `AssetExt` words a month in every market kind, nothing
 /// but crypto moves, the same months collapse, a longer path extends a shorter
 /// one, and the long-run volatility of the sleeve is the steady model's.

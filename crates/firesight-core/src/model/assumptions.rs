@@ -61,6 +61,8 @@ pub struct MarketModel {
     /// is subtracted, so `equity_premium_adjustment` stays the average across
     /// futures. A typical setting is a `normal` with `mean` 0 and `sd` 0.01 (the
     /// true average could easily be a point a year above or below the plan).
+    /// `equity_premium_adjustment` plus the furthest shift either way must stay
+    /// between -0.1 and 0.1.
     pub equity_premium_uncertainty: Option<Uncertain>,
     /// How unsure you are about the long-run average rate of inflation. Leave empty
     /// to treat it as known (the default). When set, each simulated future draws its
@@ -68,7 +70,8 @@ pub struct MarketModel {
     /// year, and interest rates and investment returns move with it, so returns
     /// after inflation are unchanged. Only the spread and shape are used: the
     /// average is subtracted, so `inflation_adjustment` stays the average. A typical
-    /// setting is a `normal` with `mean` 0 and `sd` 0.005.
+    /// setting is a `normal` with `mean` 0 and `sd` 0.005. `inflation_adjustment`
+    /// plus the furthest shift either way must stay between -0.05 and 0.15.
     pub inflation_uncertainty: Option<Uncertain>,
     /// Rare market disasters beyond anything in the US record. Off by default.
     pub disasters: Disasters,

@@ -60,10 +60,14 @@
 //! of `p` extra points a year for its whole length: `1 + cpi`, home prices and every
 //! risky asset's gross return are multiplied by `(1 + p)^(1/12)` (so the burst
 //! itself costs them nothing after inflation); bonds get none of it, so their real
-//! return falls by the full burst; cash gets [`CASH_PASS_THROUGH`] of it, and the
-//! long yield and the mortgage rate rise by the same share of `p`. The extra rise in
-//! prices over one episode is limited to [`MAX_BURST_PRICE_FACTOR`]. Prices do not
-//! come back down afterwards.
+//! return falls by the full burst; cash gets the share `s =` [`CASH_PASS_THROUGH`]
+//! of it, compounded: its gross return is multiplied by `(1 + p)^(s/12)`, which is
+//! `q = (1 + p)^s - 1` a year (11.8 points for a burst of 25 at a half, not 12.5).
+//! The long yield and the mortgage rate rise by that same `q`, and the bill yield,
+//! recomputed from the cash return `c` as `(1 + c)^12 - 1`, by `q` times one plus
+//! its old level. The extra rise in prices over one episode is limited to
+//! [`MAX_BURST_PRICE_FACTOR`], and `p` here is the burst after that limit. Prices
+//! do not come back down afterwards.
 //!
 //! Simplifications: the fall has one fixed shape; there is no recovery and no
 //! default on bonds; home prices are not hit; at most [`MAX_EPISODES`] episodes
@@ -81,7 +85,8 @@ pub const MAX_EPISODES: usize = 3;
 /// Words drawn from the `Disaster` stream per possible episode.
 pub const DISASTER_WORDS_PER_EPISODE: usize = 5;
 /// Share of an inflation burst that cash returns (and with them the bill yield, the
-/// long yield and the mortgage rate) keep up with. A judgement between the 1940s,
+/// long yield and the mortgage rate) keep up with, applied in logs: a burst of `p`
+/// a year adds `(1 + p)^share - 1` a year to each of them. A judgement between the 1940s,
 /// when bill rates were pegged and kept up with none of it, and the 1970s, when
 /// they kept up with most (`rare_disasters` in `data/actuarial/params.json`).
 pub const CASH_PASS_THROUGH: f64 = 0.5;
@@ -394,11 +399,13 @@ impl EconomyModel {
         let (g, g_cash, rate_shift) = if burst {
             let cap = math::ln(MAX_BURST_PRICE_FACTOR) / n as f64;
             let log_g = (math::ln_1p(episode.inflation) / 12.0).min(cap);
-            let annual = math::exp_m1(12.0 * log_g);
+            // One definition of the share for cash and for the yields: the
+            // compounded one, `(1 + p)^share - 1` a year.
+            let log_cash = CASH_PASS_THROUGH * log_g;
             (
                 math::exp(log_g),
-                math::exp(CASH_PASS_THROUGH * log_g),
-                CASH_PASS_THROUGH * annual,
+                math::exp(log_cash),
+                math::exp_m1(12.0 * log_cash),
             )
         } else {
             (1.0, 1.0, 0.0)

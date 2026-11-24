@@ -147,6 +147,123 @@ fn join_cells_partition_the_history() {
     }
 }
 
+/// Checks that a table's cells divide `rows` without overlap and that each holds
+/// at least `MIN_CELL` rows. Returns the number of cells.
+fn assert_partition(table: &JoinTable, rows: &[Core], what: &str) -> usize {
+    let n = rows.len();
+    let mut seen = vec![0u32; n];
+    for row in 0..n {
+        let cell = table.cell_of(row);
+        assert!(cell.contains(&(row as u32)), "{what}");
+        assert!(
+            cell.len() >= MIN_CELL.min(n),
+            "{what}: cell of {row} has {}",
+            cell.len()
+        );
+        if cell[0] == row as u32 {
+            for &member in cell {
+                assert_eq!(table.cell_of(member as usize), cell, "{what}");
+                seen[member as usize] += 1;
+            }
+        }
+    }
+    assert!(seen.iter().all(|&k| k == 1), "{what}: cells overlap");
+    table.cell_count()
+}
+
+/// A window with too few recession months to form a cell (two since 2010) keeps
+/// matching on inflation and the stock market: its recession months join the
+/// other state's cells, they do not drag every row into one cell. (They once did:
+/// from 2010 the table had a single cell and matched joins were uniform joins.)
+/// Every starting year validation accepts leaves at least three cells.
+#[test]
+fn a_window_with_few_recession_months_still_matches_on_the_other_features() {
+    let mut fewest = usize::MAX;
+    for year in 1871..=2020 {
+        let base = model(&market(MarketKind::Bootstrap {
+            mean_block_months: 60,
+            from_year: Some(year),
+            joins: BootstrapJoins::Matched,
+        }))
+        .base;
+        let rows = &base.rows;
+        let table = JoinTable::new(rows);
+        let cells = assert_partition(&table, rows, &format!("from {year}"));
+        assert!(cells >= JOIN_MIN_CELLS, "from {year}: {cells} cells");
+        fewest = fewest.min(cells);
+        let recession = rows.iter().filter(|r| r.recession != 0).count();
+        if recession >= MIN_CELL {
+            // Enough recession months: they are only matched with each other.
+            for (row, r) in rows.iter().enumerate() {
+                assert!(table
+                    .cell_of(row)
+                    .iter()
+                    .all(|&m| rows[m as usize].recession == r.recession));
+            }
+        } else {
+            // Too few: no cell is all recession, and no restart is uniform over
+            // the window.
+            assert!(recession > 0 || year > 2020, "from {year}");
+            for row in 0..rows.len() {
+                let cell = table.cell_of(row);
+                assert!(cell.len() < rows.len(), "from {year}");
+                assert!(cell.iter().any(|&m| rows[m as usize].recession == 0));
+            }
+        }
+    }
+    assert!(fewest >= JOIN_MIN_CELLS);
+    // The window from 2010 is one of the thin ones, and a restart there is not a
+    // uniform pick: from one row, 4,096 evenly spaced picks reach only its cell.
+    let base = model(&market(MarketKind::Bootstrap {
+        mean_block_months: 60,
+        from_year: Some(2010),
+        joins: BootstrapJoins::Matched,
+    }))
+    .base;
+    let table = JoinTable::new(&base.rows);
+    let n = base.rows.len();
+    assert!(base.rows.iter().filter(|r| r.recession != 0).count() < MIN_CELL);
+    let mut reached = vec![false; n];
+    for k in 0..4096u64 {
+        reached[table.restart(0, k << 20)] = true;
+    }
+    let reached = reached.iter().filter(|&&r| r).count();
+    assert_eq!(reached, table.cell_of(0).len());
+    assert!(reached * 2 < n, "{reached} of {n}");
+}
+
+/// The merging rules on made-up records: whatever the recession flags (none, a
+/// handful, most, all) and however short the record, the cells are a partition
+/// with no thin cell, so a uniform row stays uniform.
+#[test]
+fn join_cells_are_a_partition_for_any_recession_pattern() {
+    let full = model(&market(bootstrap(60, BootstrapJoins::Matched))).base;
+    let mut rng = Rng::from_seed(77);
+    let mut one_cell = 0;
+    for case in 0..400 {
+        let n = [1, 5, 13, 30, 120, 240, 600][case % 7];
+        let first = (rng.next_u64() % (full.rows.len() - n) as u64) as usize;
+        let mut rows: Vec<Core> = full.rows[first..first + n].to_vec();
+        // Share of recession months: 0, 1/64, ..., 63/64, 1.
+        let share = [0u64, 1, 2, 8, 32, 56, 62, 63, 64][case % 9];
+        for r in &mut rows {
+            r.recession = u8::from(rng.next_u64() % 64 < share);
+        }
+        let table = JoinTable::new(&rows);
+        let cells = assert_partition(&table, &rows, &format!("case {case}"));
+        one_cell += usize::from(cells == 1);
+        // Whichever state is the rare one, a long record keeps several cells.
+        if n >= 240 {
+            assert!(cells >= JOIN_MIN_CELLS, "case {case}: {cells} cells");
+        }
+        for row in 0..n {
+            assert!(table.restart(row, rng.next_u64() >> 32) < n);
+        }
+    }
+    // Short records do fall back to one cell.
+    assert!(one_cell > 0);
+}
+
 /// From a uniformly distributed row, a matched restart lands on a uniformly
 /// distributed row: each row is the target of exactly `len` of the `len` equally
 /// likely picks of each of the `len` rows of one cell, so its total inflow is
@@ -773,6 +890,31 @@ fn a_disaster_takes_the_drawn_depth_from_equities_and_leaves_the_rest() {
                 let mid = e.start + 1;
                 assert!(a.long_yield[mid] > plain.long_yield[mid]);
                 assert!(a.mortgage_rate[mid] > plain.mortgage_rate[mid]);
+                // One share for cash and for the yields. The burst after the cap is
+                // `want^(12 / months) - 1` a year; half of it, compounded, is `q =
+                // want^(6 / months) - 1`: without the cap sqrt(1 + p) - 1, so 2.47
+                // points for a burst of 5 and 11.8 for 25 (not 12.5).
+                let q = math::pow(want, 6.0 / e.months as f64) - 1.0;
+                if want < 10.0 {
+                    assert!((q - ((1.0 + e.inflation).sqrt() - 1.0)).abs() < 1e-12);
+                }
+                for t in [e.start, mid, end - 1] {
+                    assert!(
+                        (a.long_yield[t] - plain.long_yield[t] - q).abs() < 1e-12,
+                        "{name}: long yield"
+                    );
+                    assert!(
+                        (a.mortgage_rate[t] - plain.mortgage_rate[t] - q).abs() < 1e-12,
+                        "{name}: mortgage rate"
+                    );
+                    // Cash earns the same `q` a year more, compounded monthly, and
+                    // the bill yield is that return annualised.
+                    let cash_annual = math::powi(1.0 + plain.returns[CASH][t], 12);
+                    assert!(
+                        ((1.0 + a.tbill[t]) / cash_annual - (1.0 + q)).abs() < 1e-9,
+                        "{name}: bill yield"
+                    );
+                }
                 assert!(
                     (a.tbill[mid] - (math::powi(1.0 + a.returns[CASH][mid], 12) - 1.0)).abs()
                         < 1e-15
@@ -976,6 +1118,26 @@ fn rich_report_join_cells() {
         base.rows.len(),
         sizes.len()
     );
+    for year in [1950, 1980, 2000, 2010, 2014, 2020] {
+        let base = model(&market(MarketKind::Bootstrap {
+            mean_block_months: 60,
+            from_year: Some(year),
+            joins: BootstrapJoins::Matched,
+        }))
+        .base;
+        let table = JoinTable::new(&base.rows);
+        let mut sizes: Vec<usize> = (0..base.rows.len())
+            .filter(|&r| table.cell_of(r)[0] == r as u32)
+            .map(|r| table.cell_of(r).len())
+            .collect();
+        sizes.sort_unstable();
+        println!(
+            "from {year}: {} rows ({} recession), {} cells, sizes {sizes:?}",
+            base.rows.len(),
+            base.rows.iter().filter(|r| r.recession != 0).count(),
+            sizes.len()
+        );
+    }
     println!(
         "12-month blocks, uniform: {:?}",
         seam_statistics(BootstrapJoins::Uniform)

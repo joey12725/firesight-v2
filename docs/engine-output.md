@@ -527,6 +527,9 @@ give the same results:
 * `assumptions.market.equity_premium_uncertainty` and
   `assumptions.market.inflation_uncertainty` (an uncertain number or null, default
   null): a per-path shift of the long-run stock return and of inflation, mean zero.
+  The adjustment plus the furthest shift must stay within the adjustment's own
+  limits (-0.1..0.1 and -0.05..0.15), or the range gets an `out_of_range` error at
+  the field that sets the offending end (`low`, `high`, `sd`, `p10` or `p90`).
 * `assumptions.market.disasters`: `{ annual_probability (0 = off), depth, years,
   inflation_probability, inflation }`, where `depth`, `years` and `inflation` are
   uncertain numbers.
