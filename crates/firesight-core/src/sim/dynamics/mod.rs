@@ -161,8 +161,12 @@ impl State {
         let mut replan = false;
         if ti == self.dynamics.divorce_month {
             if let Some(h) = &plan.dynamics.hazard {
-                let terms = h.terms;
-                replan |= self.divorce(plan, &terms, "Divorce", price, t);
+                // A drawn divorce does not happen while either partner is in a
+                // long-term-care episode (a planned `divorce` event still does).
+                if !(self.n > 1 && (self.in_care(0, t) || self.in_care(1, t))) {
+                    let terms = h.terms;
+                    replan |= self.divorce(plan, &terms, "Divorce", price, t);
+                }
             }
         }
         if !plan.dynamics.parents.is_empty() {

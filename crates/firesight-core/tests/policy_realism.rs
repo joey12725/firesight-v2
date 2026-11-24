@@ -206,12 +206,12 @@ fn a_certain_social_security_cut_takes_23_percent_of_the_benefit_from_its_year()
             ta.column("income_social_security").unwrap(),
             tb.column("income_social_security").unwrap(),
         );
-        // The same benefit to the dollar before the cut, 77% of it from then on
-        // (whole-dollar rounding in the trace: 2,500 x 0.77 = 1,925).
+        // The same benefit to the dollar before the cut, 78% of it from then on
+        // (whole-dollar rounding in the trace: 2,500 x 0.78 = 1,950).
         assert_eq!(full[..at], paid[..at], "path {path}");
         for m in at..full.len() {
             assert!(
-                (paid[m] - 0.77 * full[m]).abs() <= 1.0,
+                (paid[m] - 0.78 * full[m]).abs() <= 1.0,
                 "path {path} month {m}: {} against {}",
                 paid[m],
                 full[m]
@@ -328,7 +328,7 @@ fn the_trace_shows_when_policy_changed() {
     assert_eq!(labels.len(), 2, "{labels:?}");
     assert!(labels
         .iter()
-        .any(|l| l.contains("Social Security benefits cut to 77%")));
+        .any(|l| l.contains("Social Security benefits cut to 78%")));
     assert!(labels
         .iter()
         .any(|l| l.contains("tax rates rise 2.0 points")));

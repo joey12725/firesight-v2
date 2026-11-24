@@ -378,13 +378,15 @@ pub struct PolicyRisk {
     /// forecast: 0.5 says the shortfall is as likely to be paid for with other
     /// changes (taxes, retirement age) as to fall on benefits.
     pub ss_haircut_probability: f64,
-    /// Share of scheduled benefits still paid once the cut has happened (0.77 = a 23%
-    /// cut: the 2025 Trustees Report says 77% of scheduled benefits are payable from
-    /// the OASI depletion date in 2033, 81% for the combined funds in 2034).
+    /// Share of scheduled benefits still paid once the cut has happened (0.78 = a 22%
+    /// cut: the 2026 Trustees Reports say 78% of scheduled benefits are payable once
+    /// the OASI trust fund is depleted late in 2032, 83% for the combined funds from
+    /// 2034).
     pub ss_haircut_factor: f64,
     /// First calendar year in which a change can begin. The year is then drawn
     /// uniformly from the following fifteen years (this year included). The Trustees
-    /// project the OASI trust fund to run short in 2033.
+    /// project the OASI trust fund to run short in the last quarter of 2032, so 2033
+    /// is the first whole year of reduced benefits.
     pub earliest_year: i32,
     /// Chance, on each path, that federal ordinary income tax rates are raised at
     /// some point at or after `earliest_year`.

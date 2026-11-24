@@ -306,9 +306,10 @@ pub struct PortfolioPolicy {
     #[serde(skip_serializing_if = "InvestorBehavior::is_disciplined")]
     pub behavior: InvestorBehavior,
     /// Pause retirement saving in months of financial distress (paying
-    /// early-withdrawal penalties, cutting essentials, carrying high-interest debt or
-    /// short of the emergency fund): payroll deferrals drop to what earns the
-    /// employer match and the surplus stays in cash or pays the debt. Default false.
+    /// early-withdrawal penalties, cutting essentials or carrying high-interest
+    /// debt; being short of the emergency fund alone is not distress): payroll
+    /// deferrals drop to what earns the employer match and the surplus stays in
+    /// cash or pays the debt. Default false.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub pause_deferrals_in_distress: bool,
     /// What a pause keeps and what counts as high-interest debt (used only with

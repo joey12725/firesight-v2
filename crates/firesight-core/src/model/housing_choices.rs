@@ -156,7 +156,9 @@ pub enum DownsizeWhen {
         /// Age in years.
         age: f64,
     },
-    /// When the youngest child leaves home: at 18, or at 22 if college is planned.
+    /// When the last child leaves home: at 18, or at 22 if college is planned. With
+    /// uncertain births the date follows the children who actually arrive (never,
+    /// if none does).
     WhenChildrenLeave,
     /// A year after the first death in a couple.
     WhenWidowed,

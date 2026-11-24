@@ -495,11 +495,15 @@ household paid an early-withdrawal penalty within the last three months (a retir
 household draws a quarter at a time; the three is a judgement), cut essential
 spending, carries a non-mortgage debt at `distress.high_interest_rate` or more
 (default 8%: credit cards averaged 21.6% in 2024, Federal Reserve G.19; the line
-itself is a judgement), or, while working, holds less cash than its emergency-fund
-target. In such a month, cash above the month's cash target first pays down the
-high-interest debts, dearest first; then nothing else is invested (no IRA, HSA,
-after-tax 401(k) or taxable contribution from the surplus), so the remainder
-rebuilds the emergency fund. In the next month's pay the employee deferral drops
+itself is a judgement). Cash below the emergency-fund target is not distress: a
+working household's cash sits a little under that target in a large share of
+months (the target grows with prices and spending), the engine already keeps the
+surplus in cash until the fund is full, and counting it would hold the payroll
+deferral at the match for most of a career. In a month of distress, cash above
+the month's cash target first pays down the high-interest debts, dearest first;
+then nothing else is invested (no IRA, HSA, after-tax 401(k) or taxable
+contribution from the surplus), so the remainder stays in cash. In the next
+month's pay the employee deferral drops
 to what earns the full employer match (`distress.keep_match`, default true; false
 stops it) and the after-tax route closes. Saving resumes the month after a month
 without distress. Pauses and resumptions are trace events; the debt paid shows
@@ -509,10 +513,13 @@ Measured on a test household (35, $100,000, 15% into a 401(k) with a 50% match o
 6%, $25,000 on a 22% card, no tax): the card is gone within a year instead of
 dragging on at minimum payments, the deferral is $500 a month instead of $1,250
 while it lasts, and terminal net worth is higher on paired paths. With the CLI
-(3,000 paired paths) the shipped examples barely move, because their debts are
-small or cheap: `dual-income-family` median terminal net worth +$30,000 (success
-91.8% -> 91.7%, within noise), `early-career-saver` -$21,000, `side-hustle-landlord`
--$4,000; each within noise on success.
+(3,000 paired paths) the shipped examples barely move, because they are seldom in
+distress in this sense: they carry no debt at 8% or more, so saving pauses only
+when savings have run out or a penalty is being paid, which is late in life and
+on a minority of paths. `dual-income-family`: success 91.8% -> 91.7% (3 paths
+rescued, 5 harmed), median terminal net worth +$600; `early-career-saver`: no path
+changes its outcome, median terminal net worth unchanged; `side-hustle-landlord`:
+92.2% -> 92.1% (4 paths harmed), median terminal net worth +$100.
 
 Not modelled: solo 401(k) and HSA payroll contributions continue, as do the
 employer's own; there are no hardship withdrawals or 401(k) loans; the household
@@ -695,22 +702,24 @@ funded test that decides when to retire counts the reduced benefit from then on,
 and the spending rule sees the reduced income. The cut multiplies the scheduled
 benefit (and stacks on `social_security_haircut` if both are set; validation warns).
 
-Sources: the default factor 0.77 and `earliest_year` 2033 are the OASI trust fund's
-depletion year and payable share in the 2025 Social Security Trustees Report (SSA,
-2025; the combined funds are 81% in 2034; the 2026 report is reported to move OASI
-depletion to late 2032 with 78% payable, which was not read at the source, so the
-defaults stay on the 2025 figures). Everything else is a judgement, registered
+Sources: the default factor 0.78 is the share of scheduled benefits payable once
+the OASI trust fund is depleted, in the fourth quarter of 2032, in the Summary of
+the 2026 Trustees Reports (SSA; `data/tax/us-federal-2026.json`,
+`social_security.trust_fund`, and `data/tax/SOURCES-federal.md`; the combined funds
+are 83% from 2034; the 2025 report had 77% from 2033). The default `earliest_year`
+2033 is the first whole calendar year after that date, since a cut starts in a
+January. Everything else is a judgement, registered
 in `data/actuarial/params.json` under `unverified_from_memory.policy_risk_defaults`:
 probability of a cut 0.5, probability of a tax rise 0.25, two points, a 15-year window.
 
 Measured on 3,000 paths of the dual-income example, defaults on against off: success
-91.8% to 91.8% (21 paths rescued, 19 harmed), median retirement age 53.4 to 53.7,
-median lifetime spending $7.35m to $7.26m, median lifetime tax $963k to $978k, median
-terminal net worth $1.726m to $1.845m. This household retires when funded, so it
+91.8% to 92.0% (23 paths rescued, 16 harmed, within noise), median retirement age 53.4
+to 53.7, median lifetime spending $7.35m to $7.27m, median lifetime tax $963k to $979k,
+median terminal net worth $1.726m to $1.832m. This household retires when funded, so it
 answers a cut that has happened by working a little longer and spending less, which
 protects the success rate and leaves more behind; a household already retired has
 no such margin and simply ends with less (the engine's tests check a retiree's
-benefit falls to exactly 77% from the drawn year). Not modelled: a cut that spares current retirees, a rise in the
+benefit falls to exactly 78% from the drawn year). Not modelled: a cut that spares current retirees, a rise in the
 payroll-tax cap or the retirement age instead of a cut, rate changes that differ by
 bracket, changes to capital-gains or estate tax, and any link between policy and
 the economy on the same path.
@@ -1928,7 +1937,9 @@ principal limit (or the mandatory obligations plus 10%) can be disbursed (ML 201
 Each month the balance and the unused line both grow at the bill yield plus the margin
 (default 2 points, a judgement) plus the 0.5% annual insurance premium. Nothing is
 repaid while the household lives in the home; property tax, insurance and upkeep go on
-as before. The loan is non-recourse: the liability booked in the `mortgage` series is
+as before. The borrower must live in the home: no loan is opened, and no more is drawn
+on an open one, while every adult of the household lives in a care facility (assisted
+living or a nursing home). The loan is non-recourse: the liability booked in the `mortgage` series is
 never more than the home is worth, and a sale repays at most the proceeds. A draw is
 cash from property (`property_sale`), the financed costs and accrued interest raise the
 balance (and lower net worth) rather than spending. Measured on the family example
@@ -1941,13 +1952,19 @@ the youngest adult present, and the loan continues for the survivor), the HECM-f
 purchase, tenure or term payment plans, the eighth-of-a-point rounding and full
 whole-age table of the principal limit factors, the financial assessment and
 set-asides for property charges, the deduction of interest when it is finally paid,
-and default when property taxes go unpaid.
+the loan falling due once the last borrower has spent twelve months in a care facility
+(an open loan keeps accruing until the home is sold or the path ends), and default when
+property taxes go unpaid.
 
 **Planned downsizing** (opt-in, `retirement.downsize`; code in `sim/downsize.rs`).
 Once, when its condition is met, the household sells its main home and moves to one
 worth `to_value_fraction` of the old home's market value (default 0.6, a judgement).
-Conditions: `at_age` (a person reaches an age), `when_children_leave` (the youngest
-child turns 18, or 22 if a college is planned), `when_widowed` (a year after the first
+Conditions: `at_age` (a person reaches an age), `when_children_leave` (the last
+child to leave turns 18, or finishes college if one is planned: 22, or 18 plus the
+years drawn when college is stochastic; the date follows the births of the path,
+so a hoped-for child who arrives late moves it, one who does not arrive is not
+waited for, and a household whose children never arrive does not move),
+`when_widowed` (a year after the first
 death in a couple, a judgement), and `when_funded_ratio_below` (in a January of
 retirement, investable savings less debts fall below `ratio` times the funded test's
 requirement, recomputed then). The sale is an ordinary sale: `selling_cost_fraction`
@@ -2241,7 +2258,13 @@ constant hazard inside each band; after 15 years it is 1% a year while the first
 person is under 65 (Brown and Lin 2012 report 10 divorces per 1,000 married people
 over 50 in 2010; applying it to younger long marriages is a judgement) and 0.6%
 from 65 (NCFMR, Carlson 2021: about 6 per 1,000 married people aged 65 and over in
-2019). The marriage
+2019). That last figure is an average dominated by people aged 65 to 74; applied
+flat to the end of life it would divorce about one couple in six between 65 and
+95. So the hazard fades in a straight line from the first person's 75th birthday
+to nothing at 80 (a judgement), which leaves about a 7% chance of divorcing after
+65. A drawn divorce also does not happen if, in its month, either partner is in a
+long-term-care episode (a judgement; it is dropped, not postponed). A `divorce`
+life event is not subject to either rule. The marriage
 date `household.married` sets where on that curve the couple starts.
 
 At the divorce the second person leaves with `asset_split` (default half) of the
@@ -2262,8 +2285,8 @@ dies; after a shorter one both are lost. The path ends when the first person
 dies.
 
 Measured on the dual-income example (married in June 2019, 4,000 paired paths):
-success falls from 91.5% to 84.0%, the FI rate from 96.4% to 81.5%, the median
-terminal net worth from $1.73 million to $1.25 million. Setting only the marriage
+success falls from 91.5% to 84.2%, the FI rate from 96.4% to 81.5%, the median
+terminal net worth from $1.73 million to $1.27 million. Setting only the marriage
 date changes nothing.
 
 Not modelled: remarriage, the departing partner's later life (they are no longer
@@ -3070,7 +3093,19 @@ thing. They are checked by `tests/sim_richness.rs`.
   mortgage. A reverse mortgage repays the mortgage it replaces. A home-equity line
   or reverse mortgage is repaid from the proceeds of any sale, and counts against
   the home's equity for Medicaid and for a divorce settlement. A planned
-  downsizing lapses if the home is already listed for sale.
+  downsizing lapses if the home is already listed for sale. Downsizing "when the
+  children leave" is timed from the births that happen on the path (uncertain
+  arrival, stochastic college length), not from the planned dates.
+* *Long-term care and the home.* A reverse mortgage needs a borrower living in
+  the home: none is opened, and no more is drawn on one, while every adult of the
+  household lives in a care facility. In a month in which Medicaid pays for a
+  nursing-home resident with no spouse at home, the safety net covers the
+  shortfall and nothing is borrowed on a home-equity line either. Otherwise a
+  home-equity line can still be drawn by a household in care. (Unit tests in
+  `sim/housing_decisions.rs`.)
+* *Drawn divorce.* `divorce_risk: typical` produces no divorce from the first
+  person's 80th birthday, and none in a month in which either partner is in a
+  long-term-care episode.
 * *Repairs are counted once.* With detailed irregular expenses, home repairs come
   out of the home's maintenance rate; lumpy maintenance then spreads what is left;
   a rental with realistic dynamics and lumpy maintenance takes its large repairs

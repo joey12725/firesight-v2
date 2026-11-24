@@ -259,13 +259,21 @@ impl State {
         self.event(
             now,
             TraceEventKind::LongTermCare,
-            Some(paid * 12.0 / price),
+            (paid > 0.0).then_some(paid * 12.0 / price),
             || {
-                let mut s = format!(
-                    "{} needs care for {years:.1} years; the household pays ${:.0}k a year",
-                    p.name,
-                    paid * 12.0 / price / 1000.0
-                );
+                let mut s = format!("{} needs care for {years:.1} years", p.name);
+                if paid > 0.0 {
+                    // Nothing is said about money when the household pays none.
+                    let annual = paid * 12.0 / price;
+                    if annual >= 1000.0 {
+                        s.push_str(&format!(
+                            "; the household pays ${:.0}k a year",
+                            annual / 1000.0
+                        ));
+                    } else {
+                        s.push_str(&format!("; the household pays ${annual:.0} a year"));
+                    }
+                }
                 if cut {
                     s.push_str(&format!(
                         "; person {} works {:.0}% less",

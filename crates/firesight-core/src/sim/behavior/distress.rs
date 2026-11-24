@@ -8,13 +8,18 @@
 //! * it paid an early-withdrawal penalty (its penalised early distributions for the
 //!   year grew) within the last [`PENALTY_MONTHS`] months;
 //! * it cut essential spending (savings exhausted);
-//! * it carries a debt (not a mortgage) at `distress.high_interest_rate` or more;
-//! * its cash is below the emergency-fund target.
+//! * it carries a debt (not a mortgage) at `distress.high_interest_rate` or more.
+//!
+//! Cash below the emergency-fund target is *not* distress. A household whose cash
+//! sits a little under six months of spending (most working households in most
+//! months, since the target grows with prices and spending) is not in trouble, and
+//! the month loop already keeps its surplus in cash until the fund is full. Counting
+//! it would hold the payroll deferral at the match for most of a career.
 //!
 //! In distress, first any cash above the month's cash target pays down the
 //! high-interest debts, highest rate first. Then nothing more is invested that month
 //! (no IRA, HSA, after-tax 401(k) or taxable contribution from the surplus): the
-//! remaining surplus stays in cash and rebuilds the emergency fund. In the following
+//! remaining surplus stays in cash. In the following
 //! month's pay, the employee's payroll deferral is cut to what earns the full
 //! employer match (`distress.keep_match`, the default) or to nothing, and the
 //! after-tax "mega backdoor" route is closed. Saving resumes in the first month after
@@ -80,15 +85,13 @@ impl DistressPlan {
 }
 
 /// Why a month was one of distress (for the trace).
-pub(crate) fn reason(penalty: bool, cut: bool, debt: bool, low_cash: bool) -> &'static str {
+pub(crate) fn reason(penalty: bool, cut: bool, debt: bool) -> &'static str {
     if penalty {
         "paying early-withdrawal penalties"
     } else if cut {
         "cutting essential spending"
     } else if debt {
         "carrying high-interest debt"
-    } else if low_cash {
-        "rebuilding the emergency fund"
     } else {
         ""
     }
@@ -163,10 +166,9 @@ impl State {
             .debts
             .iter()
             .any(|x| x.balance > 0.0 && x.rate >= d.high_interest_rate);
-        let low_cash = self.acc.cash < self.efund_target - DUST && !self.retired;
-        let distress = penalty || cut || debt || low_cash;
+        let distress = penalty || cut || debt;
         if distress != self.beh.distress {
-            let why = reason(penalty, cut, debt, low_cash);
+            let why = reason(penalty, cut, debt);
             self.event(now, TraceEventKind::Other, None, || {
                 if distress {
                     format!("Saving paused: {why}")
@@ -228,17 +230,12 @@ mod tests {
     #[test]
     fn the_reason_names_the_most_serious_sign() {
         assert_eq!(
-            reason(true, true, true, true),
+            reason(true, true, true),
             "paying early-withdrawal penalties"
         );
-        assert_eq!(
-            reason(false, false, true, true),
-            "carrying high-interest debt"
-        );
-        assert_eq!(
-            reason(false, false, false, true),
-            "rebuilding the emergency fund"
-        );
+        assert_eq!(reason(false, true, true), "cutting essential spending");
+        assert_eq!(reason(false, false, true), "carrying high-interest debt");
+        assert_eq!(reason(false, false, false), "");
     }
 
     #[test]

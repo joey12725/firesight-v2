@@ -2860,7 +2860,7 @@
       "Retirement earnings test (before full retirement age): $1 withheld per $2 of earnings above $24,480 in 2026 ($1 per $3 above $65,160 in the year FRA is reached). Withheld months are credited back at FRA, so it is a deferral, not a tax.",
       "Windfall Elimination Provision and Government Pension Offset were repealed by the Social Security Fairness Act (effective for benefits after December 2023); no need to model them.",
       "Taxation thresholds for benefits ($25,000 / $34,000 single, $32,000 / $44,000 joint) are not indexed, so the taxable share rises over a long nominal simulation (tax module).",
-      "Trust fund risk: the 2025 Trustees Report projected OASI reserve depletion in 2033 with 77% of scheduled benefits payable (combined OASDI 2034, 81%); the 2026 report was not checked for this file. Offer a scenario switch: full scheduled benefits (default) versus a 20-23% cut from 2033.",
+      "Trust fund risk: the 2025 Trustees Report projected OASI reserve depletion in 2033 with 77% of scheduled benefits payable (combined OASDI 2034, 81%); the Summary of the 2026 Trustees Reports moves it to the fourth quarter of 2032 with 78% payable (combined OASDI 2034, 83%; data/tax/us-federal-2026.json, social_security.trust_fund). Offer a scenario switch: full scheduled benefits (default) versus a 20-23% cut from 2033.",
       "PIA is rounded down to the next lower dime and the monthly benefit to the next lower dollar; Medicare Part B is normally deducted from the benefit (hold-harmless limits the Part B increase to the COLA for most people not paying IRMAA)."
     ],
     "sources": [
@@ -3012,7 +3012,7 @@
       "arm_initial_discount_to_fixed": 0.0075
     },
     "policy_risk_defaults": {
-      "note": "Defaults and window of assumptions.taxes.policy_risk (policy::DEFAULT_* and POLICY_WINDOW_YEARS). All judgements, not forecasts. window_years: the year a change begins is drawn uniformly from this many years from earliest_year. ss_haircut_probability: even odds that a depletion is closed with a benefit cut. tax_increase_probability and tax_increase_points: some chance of a two-point rise in every ordinary rate. The sourced defaults (factor 0.77 and earliest year 2033) are the 2025 Social Security Trustees Report's OASI depletion year and payable share, https://www.ssa.gov/OACT/TR/2025/II_A_highlights.html and https://www.ssa.gov/OACT/TRSUM/2025/index.html.",
+      "note": "Defaults and window of assumptions.taxes.policy_risk (policy::DEFAULT_* and POLICY_WINDOW_YEARS). All judgements, not forecasts. window_years: the year a change begins is drawn uniformly from this many years from earliest_year. ss_haircut_probability: even odds that a depletion is closed with a benefit cut. tax_increase_probability and tax_increase_points: some chance of a two-point rise in every ordinary rate. The sourced defaults are the OASI figures of the Summary of the 2026 Trustees Reports (https://www.ssa.gov/oact/TRSUM/index.html, as in data/tax/us-federal-2026.json, social_security.trust_fund): factor 0.78, the share payable after depletion, and earliest year 2033, the first whole year after depletion in the fourth quarter of 2032.",
       "window_years": 15,
       "ss_haircut_probability": 0.5,
       "tax_increase_probability": 0.25,

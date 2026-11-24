@@ -33,12 +33,15 @@ pub const POLICY_WINDOW_YEARS: i32 = 15;
 /// not legislated away before benefits are cut). Registered in `unverified_from_memory`.
 pub const DEFAULT_SS_HAIRCUT_PROBABILITY: f64 = 0.5;
 
-/// Default `ss_haircut_factor`: 77% of scheduled benefits are payable from the year
-/// the OASI trust fund is depleted, 2033 (2025 Social Security Trustees Report,
-/// summary table; the combined OASDI figure is 81% in 2034).
-pub const DEFAULT_SS_HAIRCUT_FACTOR: f64 = 0.77;
+/// Default `ss_haircut_factor`: 78% of scheduled benefits are payable once the OASI
+/// trust fund is depleted, in the fourth quarter of 2032 (Summary of the 2026
+/// Trustees Reports, as in `data/tax/us-federal-2026.json`,
+/// `social_security.trust_fund`; the combined OASDI figure is 83% from 2034).
+pub const DEFAULT_SS_HAIRCUT_FACTOR: f64 = 0.78;
 
-/// Default `earliest_year`: the 2025 Trustees Report's OASI depletion year.
+/// Default `earliest_year`: the first whole calendar year after the OASI depletion
+/// date of the 2026 Trustees Reports (the fourth quarter of 2032). A cut starts in a
+/// January.
 pub const DEFAULT_EARLIEST_YEAR: i32 = 2033;
 
 /// Default `tax_increase_probability`: a judgement. Registered in
@@ -168,6 +171,20 @@ mod tests {
             num("tax_increase_probability")
         );
         assert_eq!(DEFAULT_TAX_INCREASE_POINTS, num("tax_increase_points"));
+    }
+
+    #[test]
+    fn sourced_defaults_follow_the_trustees_figures_in_the_data_file() {
+        let fund = &crate::data::Data::embedded().tax_federal["social_security"]["trust_fund"];
+        assert_eq!(
+            fund["oasi_payable_fraction_after_depletion"].as_f64(),
+            Some(DEFAULT_SS_HAIRCUT_FACTOR)
+        );
+        assert_eq!(fund["oasi_depletion"].as_str(), Some("2032-Q4"));
+        assert_eq!(
+            fund["oasi_depletion_year"].as_i64(),
+            Some(i64::from(DEFAULT_EARLIEST_YEAR) - 1)
+        );
     }
 
     #[test]

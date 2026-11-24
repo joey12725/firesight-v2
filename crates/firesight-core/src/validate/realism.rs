@@ -128,7 +128,7 @@ impl Checker<'_> {
             r.warn(
                 "policy_risk_deep_cut",
                 &format!("{base}/ss_haircut_factor"),
-                "A cut that leaves under half of scheduled benefits is far beyond what the Trustees project (77% to 81% payable); check the value is a share, 0.77 for a 23% cut.",
+                "A cut that leaves under half of scheduled benefits is far beyond what the Trustees project (78% to 83% payable); check the value is a share, 0.78 for a 22% cut.",
             );
         }
         if risk.tax_increase_points > 0.1 {

@@ -40,7 +40,8 @@
 use crate::math;
 use crate::model::{
     Category, DivorceTerms, PropertyUse, SupportDirection, YearMonth, DISSOLUTION_BY_DURATION,
-    LATE_DIVORCE_RATE_65_PLUS, LATE_DIVORCE_RATE_UNDER_65,
+    DIVORCE_HAZARD_ENDS, DIVORCE_HAZARD_TAPER_FROM, LATE_DIVORCE_RATE_65_PLUS,
+    LATE_DIVORCE_RATE_UNDER_65,
 };
 use crate::stats::{TraceEventKind, YearSeries};
 use crate::{model::Profile, MAX_PEOPLE, N_ASSETS};
@@ -52,7 +53,22 @@ use super::super::state::State;
 /// benefits on the former partner's record (ten years, 42 U.S.C. 416(d)).
 pub const SOCIAL_SECURITY_MARRIAGE_MONTHS: i32 = 120;
 
-/// Annual divorce hazard for a marriage of `years` when the first person is `age`.
+/// Share of the hazard that applies when the first person is `age`: all of it up
+/// to [`DIVORCE_HAZARD_TAPER_FROM`], none from [`DIVORCE_HAZARD_ENDS`], a straight
+/// line by whole years of age in between.
+pub(crate) fn old_age_taper(age: f64) -> f64 {
+    let age = age.floor();
+    if age < DIVORCE_HAZARD_TAPER_FROM {
+        1.0
+    } else if age >= DIVORCE_HAZARD_ENDS {
+        0.0
+    } else {
+        (DIVORCE_HAZARD_ENDS - age) / (DIVORCE_HAZARD_ENDS - DIVORCE_HAZARD_TAPER_FROM)
+    }
+}
+
+/// Annual divorce hazard for a marriage of `years` when the first person is `age`,
+/// before the old-age taper.
 pub(crate) fn annual_divorce_hazard(years: f64, age: f64) -> f64 {
     let mut below = 0.0;
     let mut from = 0.0;
@@ -105,10 +121,14 @@ impl MarriageHazard {
             if t >= from {
                 let years = f64::from((t - married_month).max(0) / 12);
                 let age = f64::from(age0 + t) / 12.0;
-                let key = (years as i32, if age < 65.0 { 0.0 } else { 1.0 });
+                let key = (years as i32, age.floor());
                 if key != cached {
                     cached = key;
+                    let taper = old_age_taper(age);
                     let h = annual_divorce_hazard(years, age);
+                    // Below the taper the hazard is used as it is (not multiplied
+                    // by one), so those months are unchanged to the last bit.
+                    let h = if taper < 1.0 { h * taper } else { h };
                     monthly = -math::exp_m1(math::ln_1p(-h) / 12.0);
                 }
                 s *= 1.0 - monthly;

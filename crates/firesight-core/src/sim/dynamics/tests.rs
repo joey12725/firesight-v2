@@ -1,6 +1,6 @@
 //! Unit tests of the household-dynamics mechanisms, with hand-computed values.
 
-use super::divorce::annual_divorce_hazard;
+use super::divorce::{annual_divorce_hazard, old_age_taper};
 use super::*;
 use crate::accounts::Accounts;
 use crate::model::{DivorceRisk, DivorceTerms, Example, EXAMPLE_START};
@@ -41,6 +41,29 @@ fn the_late_hazard_depends_on_age() {
     // Second band: (1 - h)^5 = 0.67 / 0.8.
     let h = annual_divorce_hazard(7.0, 30.0);
     assert!((crate::math::powi(1.0 - h, 5) - 0.67 / 0.8).abs() < 1e-12);
+}
+
+#[test]
+fn the_hazard_fades_to_nothing_by_80() {
+    assert_eq!(old_age_taper(74.9), 1.0);
+    assert_eq!(old_age_taper(75.0), 1.0);
+    assert!((old_age_taper(77.5) - 0.6).abs() < 1e-12);
+    assert_eq!(old_age_taper(80.0), 0.0);
+    assert_eq!(old_age_taper(101.0), 0.0);
+    // A couple of 70 married 40 years: 0.6% a year to 76, fading after, and no
+    // divorce at all once the first person is 80.
+    let mut p = dual_income();
+    let age70 = EXAMPLE_START - 70 * 12;
+    p.household.people[0].birth = age70;
+    p.household.married = Some(EXAMPLE_START - 480);
+    p.household.divorce_risk = DivorceRisk::Typical(DivorceTerms::default());
+    let h = MarriageHazard::compile(&p, EXAMPLE_START, -480, 0, 30 * 12).unwrap();
+    assert!((h.survival[12] - 0.994).abs() < 1e-12);
+    let at80 = h.survival[10 * 12];
+    assert!(at80 < h.survival[9 * 12]);
+    assert_eq!(h.survival[30 * 12], at80);
+    // Ever divorcing from 70 on: about 5%, not the 14% of a flat 0.6% to 100.
+    assert!((0.04..0.06).contains(&(1.0 - at80)), "{}", 1.0 - at80);
 }
 
 #[test]

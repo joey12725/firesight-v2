@@ -16,8 +16,11 @@
 //! Triggers, checked every month in step 7 after the properties have stepped:
 //!
 //! * `at_age`: the first month the person is alive and at least that old;
-//! * `when_children_leave`: the month the youngest child turns 18, or 22 if a
-//!   college is planned for that child (never, without children);
+//! * `when_children_leave`: the month the last child to leave turns 18, or leaves
+//!   college if one is planned for that child (22, or 18 plus the years the child
+//!   spends there when college is stochastic). It follows the births of this path:
+//!   a hoped-for child who arrives late moves the date, one who does not arrive is
+//!   not waited for, and a household whose children never arrive does not move;
 //! * `when_widowed`: twelve months after the first death in a couple;
 //! * `when_funded_ratio_below`: in a January of retirement, when investable savings
 //!   less debts fall below `ratio` times the funded test's requirement (the same
@@ -53,10 +56,9 @@ pub(crate) struct DownsizePlan {
 pub(crate) enum Trigger {
     /// Person `person` at least `age` years old.
     AtAge { person: usize, age: f64 },
-    /// From this month index (the youngest child leaves home).
-    FromMonth(i32),
-    /// Never (children were asked for but there are none).
-    Never,
+    /// The month the last of this path's children leaves home
+    /// ([`State::hd_children_leave`]).
+    ChildrenLeave,
     /// Twelve months after the first death in a couple.
     Widowed,
     /// In a January of retirement, wealth below `ratio` x the requirement.
@@ -80,25 +82,10 @@ pub const DOWNSIZE_MIN_DOWN: f64 = 0.20;
 pub const DOWNSIZE_LOAN_MONTHS: u32 = 360;
 
 impl DownsizePlan {
-    pub(crate) fn compile(profile: &crate::model::Profile, d: &Downsize) -> DownsizePlan {
-        // Compiled only from `Plan::compile`, which requires a start month.
-        let start = profile.start.unwrap_or_default();
+    pub(crate) fn compile(d: &Downsize) -> DownsizePlan {
         let trigger = match d.when {
             DownsizeWhen::AtAge { person, age } => Trigger::AtAge { person, age },
-            DownsizeWhen::WhenChildrenLeave => profile
-                .household
-                .children
-                .iter()
-                .map(|c| {
-                    let leave = if matches!(c.college, College::None) {
-                        LEAVE_AGE
-                    } else {
-                        LEAVE_AGE_COLLEGE
-                    };
-                    (c.birth - start) + 12 * leave
-                })
-                .max()
-                .map_or(Trigger::Never, Trigger::FromMonth),
+            DownsizeWhen::WhenChildrenLeave => Trigger::ChildrenLeave,
             DownsizeWhen::WhenWidowed => Trigger::Widowed,
             DownsizeWhen::WhenFundedRatioBelow { ratio } => Trigger::FundedBelow(ratio),
         };
@@ -112,7 +99,40 @@ impl DownsizePlan {
     }
 }
 
+/// Which children have a college planned (they leave home when it ends), in the
+/// profile's order.
+pub(crate) fn college_planned(profile: &crate::model::Profile) -> Vec<bool> {
+    profile
+        .household
+        .children
+        .iter()
+        .map(|c| !matches!(c.college, College::None))
+        .collect()
+}
+
 impl State {
+    /// Month index in which the last of the children born on this path leaves home:
+    /// at [`LEAVE_AGE`], or after college if one is planned (four years, so
+    /// [`LEAVE_AGE_COLLEGE`], unless the path drew another length). `None` when no
+    /// child arrives on this path.
+    pub(crate) fn hd_children_leave(&self, plan: &Plan) -> Option<i32> {
+        let mut last: Option<i32> = None;
+        for (k, college) in plan.hd.college_planned.iter().enumerate() {
+            let birth = self.fam.birth[k];
+            if birth >= super::family::NEVER {
+                continue;
+            }
+            let years = if *college {
+                LEAVE_AGE + i32::from(self.fam.college_years[k])
+            } else {
+                LEAVE_AGE
+            };
+            let leave = birth + 12 * years;
+            last = Some(last.map_or(leave, |m| m.max(leave)));
+        }
+        last
+    }
+
     /// Step 7 hook: moves if the plan's condition is met this month and the
     /// household still owns its main home. Runs at most once per path.
     pub(crate) fn hd_downsize(
@@ -130,8 +150,7 @@ impl State {
             Trigger::AtAge { person, age } => {
                 person < self.n && self.alive[person] && self.age(plan, person, t) >= age
             }
-            Trigger::FromMonth(m) => t as i32 >= m,
-            Trigger::Never => false,
+            Trigger::ChildrenLeave => self.hd_children_leave(plan).is_some_and(|m| t as i32 >= m),
             Trigger::Widowed => {
                 self.survivor && {
                     let mut first = u32::MAX;
@@ -254,7 +273,7 @@ mod tests {
     use crate::model::{Child, Profile};
 
     #[test]
-    fn children_leave_at_18_or_22_with_college() {
+    fn children_leave_is_compiled_as_a_rule_not_a_date() {
         let mut p = Profile::example();
         let start = p.start.unwrap_or(crate::model::EXAMPLE_START);
         p.household.children = vec![
@@ -271,13 +290,10 @@ mod tests {
                 ..Child::default()
             },
         ];
-        let d = DownsizePlan::compile(&p, &Downsize::default());
-        // The first leaves at 18, in 8 years; the second at 22, in 17: the later.
-        assert_eq!(d.trigger, Trigger::FromMonth(17 * 12));
-        p.household.children.clear();
-        assert_eq!(
-            DownsizePlan::compile(&p, &Downsize::default()).trigger,
-            Trigger::Never
-        );
+        let d = DownsizePlan::compile(&Downsize::default());
+        assert_eq!(d.trigger, Trigger::ChildrenLeave);
+        assert_eq!(college_planned(&p), vec![false, true]);
+        // Four years of college is the schema's "22".
+        assert_eq!(LEAVE_AGE + 4, LEAVE_AGE_COLLEGE);
     }
 }

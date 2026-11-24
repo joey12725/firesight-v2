@@ -41,6 +41,13 @@ pub const LATE_DIVORCE_RATE_UNDER_65: f64 = 0.010;
 /// Profile FP-21-16, Bowling Green State University).
 pub const LATE_DIVORCE_RATE_65_PLUS: f64 = 0.006;
 
+/// Ages of the first person between which the drawn divorce hazard fades to zero,
+/// in a straight line by whole years of age. A judgement: the 65-and-over rate
+/// above is an average dominated by people aged 65 to 74, and applied flat to the
+/// end of life it would divorce about one couple in six between 65 and 95.
+pub const DIVORCE_HAZARD_TAPER_FROM: f64 = 75.0;
+pub const DIVORCE_HAZARD_ENDS: f64 = 80.0;
+
 /// What happens when the couple divorces.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -116,7 +123,9 @@ pub enum DivorceRisk {
     Off,
     /// Divorce at US rates by length of marriage and age: about 20% of first
     /// marriages end within 5 years, 33% within 10 and 43% within 15 (NCHS,
-    /// Bramlett and Mosher 2001), then about 1% a year to 65 and 0.6% after. Needs
+    /// Bramlett and Mosher 2001), then about 1% a year to 65 and 0.6% after, fading
+    /// to nothing between 75 and 80; no divorce is drawn while either partner is in
+    /// long-term care. Needs
     /// `household.married`. These rates include separations and are for first
     /// marriages; a long, stable marriage may be at lower risk.
     Typical(DivorceTerms),

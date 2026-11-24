@@ -1030,7 +1030,13 @@ fn full_life(start: YearMonth) -> Profile {
                     estate: 520_000.0,
                     share: 0.5,
                     inherited_ira_fraction: 0.4,
-                    care_support: Some(CareSupport::default()),
+                    // Elena pays about what family caregivers spend on average
+                    // (AARP 2021: $7,242 a year) and works a fifth less meanwhile.
+                    care_support: Some(CareSupport {
+                        annual_cost: 7_000.0,
+                        hours: 0.2,
+                        ..CareSupport::default()
+                    }),
                     ..parent("elena_mother", "Elena's mother", 0, 67, Sex::Female)
                 },
                 Parent {

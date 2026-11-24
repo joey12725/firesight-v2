@@ -40,7 +40,11 @@ and reported the median of the lucky ones.
 
 ## Identities (the enums the simulation fills)
 
-Keys are stable: never renamed, only appended (with a bump of `Accumulator::VERSION`).
+Keys are stable and never renamed. The enums the accumulator stores by position
+(`Status`, `YearSeries`, `PathScalar`, the histogram series) are only appended to, with
+a bump of `Accumulator::VERSION`. `TraceEventKind` is written by key, not by position,
+so a new kind may sit next to its relatives (`tax_loss_harvest`,
+`qualified_charitable_distribution` and `policy_change` come before `market`).
 
 ### `Status` (year-end state of a living household)
 
@@ -467,8 +471,9 @@ As in `docs/architecture.md` section 6. Beyond the original list: `Engine.warnin
 bytes() }`, `compare(aBytes, bBytes, baselineProfileJson)` (the `Comparison` JSON, B
 minus A), `digest(accBytes, profileJson)`, `planPreview(profileJson)` and
 `exampleProfiles()`. Every function returning a document returns a JSON string.
-`Accumulator::VERSION` is 5 (nine more scalars, a sixth histogram series and the
-per-year shortfall sums); bytes from an older build do not decode.
+`Accumulator::VERSION` is 6 (version 5 added nine scalars, a sixth histogram series
+and the per-year shortfall sums; version 6 appends the 37th scalar, `medicaid_age`);
+bytes from an older build do not decode.
 
 ## Sizes and timings
 

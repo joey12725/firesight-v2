@@ -20,6 +20,19 @@
 //! * any sale (`sell_slot`): [`State::hd_repay_at_sale`] repays the line out of the
 //!   proceeds.
 //!
+//! # Long-term care
+//!
+//! A reverse mortgage requires the borrower to live in the home (a HECM falls due
+//! once the last borrower has been in a care facility for twelve months), so none is
+//! opened and no more is drawn on one while every adult of the household lives in a
+//! care facility ([`State::hd_nobody_home`]). In a month in which Medicaid pays for
+//! a nursing-home resident with no spouse at home, the shortfall is covered by the
+//! safety net (`care.rs`), so nothing is borrowed on a home-equity line either.
+//! A home-equity line may otherwise be drawn by a household in care: its lender does
+//! not ask who lives in the home. An existing reverse mortgage is not called in when
+//! its borrower moves to a facility: it keeps accruing until the home is sold or the
+//! path ends (not modelled: the twelve-month due date).
+//!
 //! # Accounting
 //!
 //! A draw is cash received from property: it is booked in `property_sale` ("net cash
@@ -84,6 +97,8 @@ pub(crate) struct HdPlan {
     pub surplus: bool,
     /// A planned downsizing (`retirement.downsize`).
     pub downsize: Option<DownsizePlan>,
+    /// Per child, whether a college is planned (for `when_children_leave`).
+    pub college_planned: Vec<bool>,
     /// Cash-out refinancing (`debt_policy.cash_out_refinance`, `cash_out.rs`).
     pub cash_out: Option<CashOutPlan>,
     /// Mortgage prepayment (`debt_policy.mortgage_prepayment`).
@@ -119,7 +134,7 @@ impl HdPlan {
             .retirement
             .downsize
             .as_ref()
-            .map(|d| DownsizePlan::compile(profile, d));
+            .map(DownsizePlan::compile);
         let cash_out = profile
             .debt_policy
             .cash_out_refinance
@@ -156,6 +171,7 @@ impl HdPlan {
             monthly: lines || downsize.is_some() || cash_out.is_some() || prepaying,
             surplus: lines || prepaying,
             downsize,
+            college_planned: super::downsize::college_planned(profile),
             cash_out,
             prepay,
             rentals,
@@ -416,9 +432,25 @@ impl State {
         youngest
     }
 
+    /// True when nobody lives in the home: every adult present is in a care
+    /// facility. False for an empty household.
+    pub(crate) fn hd_nobody_home(&self) -> bool {
+        let mut anyone = false;
+        for i in 0..self.n {
+            if self.present[i] && self.alive[i] {
+                if !self.in_facility[i] {
+                    return false;
+                }
+                anyone = true;
+            }
+        }
+        anyone
+    }
+
     /// Opens a reverse mortgage on property `slot` if it is the owned main home, has
-    /// no line yet, the youngest adult is at least 62 and the principal limit covers
-    /// the costs and any mortgage (which it repays). Returns true if one was opened.
+    /// no line yet, an adult still lives in it, the youngest adult is at least 62 and
+    /// the principal limit covers the costs and any mortgage (which it repays).
+    /// Returns true if one was opened.
     fn hd_open_hecm(
         &mut self,
         plan: &Plan,
@@ -429,6 +461,9 @@ impl State {
     ) -> bool {
         let st = &self.props[slot];
         if !st.owned || !matches!(st.usage, PropertyUse::Primary) || self.hd.lines[slot].is_open() {
+            return false;
+        }
+        if self.hd_nobody_home() {
             return false;
         }
         let Some(age) = self.hd_youngest_age(plan, t) else {
@@ -475,6 +510,11 @@ impl State {
         if missing <= 0.0 {
             return 0.0;
         }
+        if plan.care.active && self.care_safety_net(t) {
+            // Medicaid's safety net covers this month: nothing is borrowed for it.
+            return 0.0;
+        }
+        let nobody_home = self.hd_nobody_home();
         let now = plan.start + t as i32;
         let mut raised = 0.0;
         for slot in 0..self.props.len() {
@@ -510,6 +550,11 @@ impl State {
                         .min(missing - raised)
                 }
                 Borrow::Hecm(terms) => {
+                    if nobody_home {
+                        // A reverse mortgage pays out only to a borrower living in
+                        // the home.
+                        continue;
+                    }
                     if !self.hd.lines[slot].is_open()
                         && !self.hd_open_hecm(plan, &terms, t, price, slot)
                     {
@@ -583,5 +628,77 @@ impl State {
         self.hd.lines[slot] = EquityLine::default();
         self.hd_book(slot);
         net - repaid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::economy::EconomyPath;
+    use crate::model::{ReverseMortgage, EXAMPLE_START};
+
+    /// The full-life couple with a reverse mortgage as a last resort, at the start
+    /// of path 0, with the mortgage on their home cleared.
+    fn reverse_mortgage_household() -> (Plan, State, usize) {
+        let mut p = Profile::examples(EXAMPLE_START)
+            .into_iter()
+            .find(|e| e.slug == "full-life")
+            .unwrap()
+            .profile;
+        p.retirement.home_equity_borrowing =
+            HomeEquityBorrowing::ReverseMortgage(ReverseMortgage::default());
+        p.spending.healthcare.medicaid = true;
+        let plan = Plan::compile(&p, crate::data::Data::embedded()).unwrap();
+        let mut st = State::new(&plan);
+        let mut econ = EconomyPath::with_capacity(plan.horizon_months() as usize);
+        st.begin(&plan, 3, 0, &mut econ, false, false);
+        let slot = (0..st.props.len())
+            .find(|&s| st.props[s].owned && st.props[s].usage == PropertyUse::Primary)
+            .unwrap();
+        st.props[slot].mortgage = None;
+        st.hd.long_yield = 0.04;
+        (plan, st, slot)
+    }
+
+    #[test]
+    fn no_reverse_mortgage_once_nobody_lives_in_the_home() {
+        let (plan, mut st, slot) = reverse_mortgage_household();
+        // A month in which both are past 62.
+        let t = 45 * 12;
+        assert!(st.present[0] && st.present[1] && !st.hd_nobody_home());
+        // Both in a care facility: no reverse mortgage is opened.
+        st.in_facility = [true, true];
+        assert!(st.hd_nobody_home());
+        assert_eq!(st.hd_borrow(&plan, t, 1.0, 5_000.0), 0.0);
+        assert!(!st.hd.lines[slot].is_open());
+        // One of them at home: it is, and pays the shortfall.
+        st.in_facility = [true, false];
+        assert!(!st.hd_nobody_home());
+        assert_eq!(st.hd_borrow(&plan, t, 1.0, 5_000.0), 5_000.0);
+        assert!(st.hd.lines[slot].is_open());
+        // The second moves to a facility too: nothing more is drawn.
+        st.in_facility = [true, true];
+        assert_eq!(st.hd_borrow(&plan, t, 1.0, 5_000.0), 0.0);
+        // A widow in a facility is nobody at home; a widow at home is somebody.
+        st.present[0] = false;
+        st.alive[0] = false;
+        assert!(st.hd_nobody_home());
+        st.in_facility[1] = false;
+        assert!(!st.hd_nobody_home());
+        assert_eq!(st.hd_borrow(&plan, t, 1.0, 5_000.0), 5_000.0);
+    }
+
+    #[test]
+    fn nothing_is_borrowed_in_a_month_the_safety_net_covers() {
+        let (plan, mut st, slot) = reverse_mortgage_household();
+        let t = 45 * 12;
+        assert!(plan.care.active);
+        // Medicaid pays this month for a nursing-home resident with no spouse at
+        // home (`care.rs` sets the month): the shortfall is not borrowed.
+        st.care.safety_net_month = t as i32;
+        assert_eq!(st.hd_borrow(&plan, t, 1.0, 5_000.0), 0.0);
+        assert!(!st.hd.lines[slot].is_open());
+        // The month after, with someone at home, it is.
+        assert_eq!(st.hd_borrow(&plan, t + 1, 1.0, 5_000.0), 5_000.0);
     }
 }

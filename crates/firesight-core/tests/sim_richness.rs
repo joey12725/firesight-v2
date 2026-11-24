@@ -1621,3 +1621,58 @@ fn a_disability_is_not_an_unemployment_spell() {
     assert!(count.disabled > 20, "{}", count.disabled);
     assert_eq!(count.cuts, 0);
 }
+
+/// A divorce drawn from `divorce_risk: typical` does not come at the very end of
+/// life or once a partner needs care: none from the first person's 80th birthday,
+/// and none in or after the month either partner's long-term care begins.
+#[test]
+fn a_drawn_divorce_spares_the_very_old_and_those_in_care() {
+    #[derive(Default)]
+    struct Seen {
+        birth: YearMonth,
+        care: bool,
+        divorces: u64,
+        after_65: u64,
+        care_first: u64,
+    }
+    impl Recorder for Seen {
+        fn begin_path(&mut self, _: u64) {
+            self.care = false;
+        }
+        fn record_year(&mut self, _: usize, _: &YearRecord) {}
+        fn end_path(&mut self, _: &PathEnd) {}
+        fn wants_detail(&self) -> bool {
+            true
+        }
+        fn record_event(&mut self, e: TraceEvent) {
+            if e.label.contains("begins long-term care") {
+                self.care = true;
+            }
+            if e.label.starts_with("Divorce after") {
+                let age = f64::from(e.month - self.birth) / 12.0;
+                assert!(age < 80.0, "divorce at {age}: {}", e.label);
+                assert!(!self.care, "divorce during care: {}", e.label);
+                self.divorces += 1;
+                self.after_65 += u64::from(age >= 65.0);
+            } else if e.label.contains("dies") && self.care {
+                self.care_first += 1;
+            }
+        }
+    }
+    let mut p = furnished("dual-income-family");
+    p.household.divorce_risk = DivorceRisk::Typical(DivorceTerms::default());
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    let mut seen = Seen {
+        birth: p.household.people[0].birth,
+        ..Seen::default()
+    };
+    for i in 0..2_000 {
+        sim::run_path(&plan, SEED, i, &mut ws, &mut seen);
+    }
+    // The cases the rule is about did come up: divorces, some of them late, and
+    // care episodes.
+    assert!(seen.divorces > 400, "{}", seen.divorces);
+    assert!(seen.after_65 > 10, "{}", seen.after_65);
+    assert!(seen.care_first > 400, "{}", seen.care_first);
+}

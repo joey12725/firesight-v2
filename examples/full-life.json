@@ -156,8 +156,8 @@
         "care_erodes_estate": true,
         "care_support": {
           "probability": 1.0,
-          "annual_cost": 0.0,
-          "hours": 0.0
+          "annual_cost": 7000.0,
+          "hours": 0.2
         }
       },
       {
@@ -709,7 +709,7 @@
       "state_detail": "full",
       "policy_risk": {
         "ss_haircut_probability": 0.5,
-        "ss_haircut_factor": 0.77,
+        "ss_haircut_factor": 0.78,
         "earliest_year": 2033,
         "tax_increase_probability": 0.25,
         "tax_increase_points": 0.02

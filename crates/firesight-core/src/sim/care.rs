@@ -371,7 +371,7 @@ impl State {
     }
 
     /// True while person `j` is in a paid care episode in month `t`.
-    fn in_care(&self, j: usize, t: usize) -> bool {
+    pub(crate) fn in_care(&self, j: usize, t: usize) -> bool {
         let h = &self.health[j];
         h.ltc_start_month != u32::MAX && (h.ltc_start_month..h.ltc_end_month).contains(&(t as u32))
     }

@@ -412,6 +412,35 @@ fn a_household_never_in_distress_saves_as_before() {
     assert_eq!(a.to_bytes(), b.to_bytes());
 }
 
+/// Cash below the emergency-fund target is not distress: a saver who starts with
+/// next to no cash spends months filling the fund (and dips under it again whenever
+/// the target outgrows it), and the payroll deferral is never cut for that.
+#[test]
+fn a_thin_emergency_fund_is_not_distress() {
+    let mut base = saver_with_card(0.0);
+    base.accounts[0].balance = 500.0;
+    base.portfolio.emergency_months = 6.0;
+    let mut pausing = base.clone();
+    pausing.portfolio.pause_deferrals_in_distress = true;
+    // The fund really is short at the start: nothing is invested from the surplus
+    // in the first months.
+    let trace = sim::trace_path(&compile(&pausing), SEED, 0);
+    assert_eq!(trace.column("save_taxable").unwrap()[1], 0.0);
+    assert!((trace.column("save_traditional").unwrap()[1] - 1_250.0).abs() < 1.0);
+    for path in 0..40 {
+        let t = sim::trace_path(&compile(&pausing), SEED, path);
+        assert!(
+            !t.events
+                .iter()
+                .any(|e| e.label.starts_with("Saving paused")),
+            "path {path}"
+        );
+    }
+    let a = run(&compile(&base), SEED, 0..200);
+    let b = run(&compile(&pausing), SEED, 0..200);
+    assert_eq!(a.to_bytes(), b.to_bytes());
+}
+
 #[test]
 fn pausing_to_clear_a_credit_card_pays_it_off_sooner_and_ends_richer() {
     let base = saver_with_card(25_000.0);

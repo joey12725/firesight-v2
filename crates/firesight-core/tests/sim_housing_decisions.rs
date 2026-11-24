@@ -592,6 +592,73 @@ fn downsize_triggers_fire_when_they_should() {
     assert!(o < b - 0.1, "{o} vs {b}");
 }
 
+/// "When the children leave" follows the births that happen on the path: a
+/// hoped-for child who does not arrive is not waited for, and one who arrives late
+/// is 18 when the household moves.
+#[test]
+fn downsizing_when_children_leave_follows_the_births_of_the_path() {
+    let hoped = |probability: f64, delay_mean_months: f64| {
+        let mut p = house_rich_retiree();
+        p.household.children = vec![Child {
+            id: "kid".into(),
+            name: "kid".into(),
+            birth: START + 12,
+            college: College::None,
+            arrival: Arrival::Uncertain {
+                probability,
+                delay_mean_months,
+                twins_probability: 0.0,
+            },
+            ..Child::default()
+        }];
+        p.accounts[0].balance = 3_000_000.0;
+        p.accounts[0].cost_basis = Some(3_000_000.0);
+        p.retirement.downsize = downsize(DownsizeWhen::WhenChildrenLeave, 0.6);
+        p
+    };
+    // The child never arrives: the household never moves for it.
+    let plan = compile(&hoped(0.0, 0.0));
+    run_checked(&plan, SEED, 0..40);
+    for path in 0..40 {
+        assert_eq!(
+            labels(&plan, path, "Planned child kid does not arrive").len(),
+            1
+        );
+        assert!(labels(&plan, path, "Downsized").is_empty(), "path {path}");
+    }
+    // The child arrives, three years late on average: the move is 18 years after
+    // the birth, not after the planned date.
+    let plan = compile(&hoped(1.0, 36.0));
+    run_checked(&plan, SEED, 0..40);
+    let (mut moved, mut late) = (0, 0);
+    for path in 0..40 {
+        let born = labels(&plan, path, "kid born");
+        assert_eq!(born.len(), 1, "path {path}");
+        late += usize::from(born[0] > START + 12);
+        let last = sim::trace_path(&plan, SEED, path).start + (95 - 66) * 12 - 1;
+        let downsized = labels(&plan, path, "Downsized");
+        if born[0] + 18 * 12 <= last {
+            assert_eq!(downsized, vec![born[0] + 18 * 12], "path {path}");
+            moved += 1;
+        } else {
+            assert!(downsized.is_empty(), "path {path}");
+        }
+    }
+    assert!(moved > 20 && late > 30, "{moved} {late}");
+    // With one child born and one who does not arrive, the born child sets the date.
+    let mut p = hoped(0.0, 0.0);
+    p.household.children.push(Child {
+        id: "first".into(),
+        name: "first".into(),
+        birth: START - 16 * 12,
+        college: College::None,
+        ..Child::default()
+    });
+    let plan = compile(&p);
+    run_checked(&plan, SEED, 0..20);
+    assert_eq!(labels(&plan, 0, "Downsized"), vec![START + 24]);
+}
+
 #[test]
 fn downsize_with_a_mortgage_finances_what_the_proceeds_do_not_cover() {
     // $400,000 still owed on the $600,000 house: the sale leaves about $164,000,
