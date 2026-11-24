@@ -436,6 +436,35 @@ fn the_wedge_adds_dispersion_not_drift() {
     assert!((1_100.0..2_400.0).contains(&sd), "sd {sd}");
 }
 
+#[test]
+fn the_shelter_wedge_leaves_a_market_rent_line_alone() {
+    // A market rent (`rent_growth: market`) already moves against CPI through its own
+    // rent index, so the shelter wedge must not move it a second time; a fixed-growth
+    // rent line still carries the wedge.
+    let rent = |growth: RentGrowth| {
+        let mut p = retiree_base();
+        let mut line = item("rent", Category::Rent, 2_000.0, true);
+        line.rent_growth = growth;
+        p.spending.items = vec![line, item("other", Category::Other, 1_000.0, true)];
+        p
+    };
+    let series = [YearSeries::SpendEssential];
+    for (growth, wedged) in [(RentGrowth::Market, false), (RentGrowth::Fixed, true)] {
+        let off = rent(growth);
+        let mut on = off.clone();
+        on.spending.category_inflation = CategoryInflation::Stochastic;
+        let a = monthly(&compile(&off), 6, 0, &series);
+        let b = monthly(&compile(&on), 6, 0, &series);
+        assert_eq!(a.months.len(), b.months.len());
+        let moved = a
+            .months
+            .iter()
+            .zip(&b.months)
+            .any(|(x, y)| (x.1[0] - y.1[0]).abs() > 1e-6);
+        assert_eq!(moved, wedged, "{growth:?}");
+    }
+}
+
 // ----------------------------------------------------------------------------------
 // F04 detailed shocks
 // ----------------------------------------------------------------------------------

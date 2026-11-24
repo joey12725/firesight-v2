@@ -1162,12 +1162,20 @@ impl State {
             if item.essential {
                 ess += amount;
                 if let Some(tl) = tally.as_deref_mut() {
-                    tl.e[item.category.index()] += amount;
+                    if item.market_rent {
+                        tl.market_rent[0] += amount;
+                    } else {
+                        tl.e[item.category.index()] += amount;
+                    }
                 }
             } else {
                 disc += amount * self.creep;
                 if let Some(tl) = tally.as_deref_mut() {
-                    tl.d[item.category.index()] += amount * self.creep;
+                    if item.market_rent {
+                        tl.market_rent[1] += amount * self.creep;
+                    } else {
+                        tl.d[item.category.index()] += amount * self.creep;
+                    }
                 }
             }
         }

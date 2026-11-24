@@ -373,6 +373,11 @@ fn vehicle_annual_cost(vehicles: &[VehiclePlan]) -> f64 {
 pub(crate) struct Tally {
     pub e: [f64; Category::COUNT],
     pub d: [f64; Category::COUNT],
+    /// Rent lines that follow the path's rent market (`rent_growth: market`),
+    /// essential and discretionary. Kept out of `e` and `d` because their rent index
+    /// already moves against CPI, so the shelter wedge must not act on them again;
+    /// they still take the rent category's seasonal factor.
+    pub market_rent: [f64; 2],
 }
 
 /// The wedge process of one group after `steps` Januaries: its mean-correction needs the
@@ -513,6 +518,11 @@ impl State {
                 fd += self.sx.tally.d[c] * f;
                 wd += self.sx.tally.d[c];
             }
+            let f = sx.season[Category::Rent.index()][m];
+            fe += self.sx.tally.market_rent[0] * f;
+            we += self.sx.tally.market_rent[0];
+            fd += self.sx.tally.market_rent[1] * f;
+            wd += self.sx.tally.market_rent[1];
             if we > 0.0 {
                 ess = fe / we;
             }

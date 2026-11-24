@@ -455,7 +455,8 @@ per year, so paired comparisons stay paired. The category's long-run real growth
 separate. The draws are not truncated (the limit of 8.5 sd in the code is beyond what the
 generator can produce and only guards its last value). The wedge acts on the budget
 lines; the modelled healthcare costs, children's costs and owned-home costs keep their
-own price paths.
+own price paths, and so do rent lines that follow the market rent index
+(`rent_growth: market`, below), which already moves against CPI.
 
 Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.5%
 (-0.3 points, 95% interval -0.6 to +0.1, within noise; 11 paths rescued, 19 harmed),
@@ -901,7 +902,9 @@ at year 10 and 1.006 at year 29, with a spread of 5 to 6% between paths. Measure
 success 91.7% (unchanged; 24 rescued, 25 harmed), 10th-percentile terminal net
 worth $7,000 lower. Not modelled: metro-level indices, rent control, moving
 costs, and the rent taken on after a home sale (`then_rent_monthly`), which keeps
-the fixed growth.
+the fixed growth. A market-rent line is not also given the shelter price wedge of
+`spending.category_inflation`, which would count the same risk twice; it does take
+the rent category's seasonal factor.
 
 **Slow home sales** (`assumptions.housing_liquidity: realistic`). A planned or
 last-resort sale is listed and closes two months later plus the whole months of an
