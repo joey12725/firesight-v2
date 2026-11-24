@@ -48,6 +48,14 @@ impl Checker<'_> {
             }
             self.divorce_terms("/household/divorce_risk", terms);
         }
+        let hc = &p.spending.healthcare;
+        if hc.spousal_care && (self.n_people != 2 || !hc.long_term_care) {
+            self.r.warn(
+                "spousal_care_unused",
+                "/spending/healthcare/spousal_care",
+                "spousal_care needs two people and long_term_care on; as set it changes nothing.",
+            );
+        }
         self.parents();
         self.life_insurance();
     }
@@ -346,6 +354,12 @@ mod tests {
         let w = validate(&odd).warnings;
         assert!(codes(&w).contains(&"divorce_asset_split"));
         assert!(codes(&w).contains(&"divorce_spending_factor"));
+
+        let mut care = dual();
+        care.spending.healthcare.spousal_care = true;
+        assert!(!codes(&validate(&care).warnings).contains(&"spousal_care_unused"));
+        care.spending.healthcare.long_term_care = false;
+        assert!(codes(&validate(&care).warnings).contains(&"spousal_care_unused"));
 
         let mut early = p;
         early.household.married = Some(YearMonth::ym(1995, 1));

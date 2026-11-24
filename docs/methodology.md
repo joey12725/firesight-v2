@@ -451,7 +451,9 @@ more than the care costs; the estate pays the rest, so the inheritance is that
 much larger), and the caregiver (the parent's child unless stated) works
 `hours` less for the length of the spell: their pay, their workplace
 contributions and their Social Security record fall by that share, and they
-return to the job at the end. A reference figure: family caregivers spend $7,242
+return to the job at the end. The household takes part only while the parent's
+child is in it (not before a partner joins, after a divorce or after the child's
+death). A reference figure: family caregivers spend $7,242
 a year out of pocket on average (AARP, Caregiving Out-of-Pocket Costs Study,
 2021).
 
@@ -548,7 +550,8 @@ years, 33% within 10 and 43% within 15 (Bramlett and Mosher 2001), with a
 constant hazard inside each band; after 15 years it is 1% a year while the first
 person is under 65 (Brown and Lin 2012 report 10 divorces per 1,000 married people
 over 50 in 2010; applying it to younger long marriages is a judgement) and 0.6%
-from 65 (NCFMR, Carlson 2021: 5.6 per 1,000 at 65 and over in 2019). The marriage
+from 65 (NCFMR, Carlson 2021: about 6 per 1,000 married people aged 65 and over in
+2019). The marriage
 date `household.married` sets where on that curve the couple starts.
 
 At the divorce the second person leaves with `asset_split` (default half) of the
@@ -592,8 +595,9 @@ death, length, type; section 7) and, by default, paid out of the estate before
 anything is left: the household receives `share` of what remains of `estate`,
 which is held constant in real terms until then (a judgement: the parent's own
 spending and returns are not modelled). Nothing comes from the parents of a
-partner who has left in a divorce; after the child's death it goes to the
-partner who stays.
+partner who has left in a divorce or has not yet joined; after the child's death
+it goes to the partner who stays. An inherited IRA keeps its dollar value when
+accounts are merged (a divorce's rollover, a death).
 
 The `inherited_ira_fraction` of the inheritance is an inherited IRA. It is put in
 the heir's traditional account and paid out each December of the ten years after

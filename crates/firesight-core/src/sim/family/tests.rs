@@ -525,3 +525,102 @@ fn a_policy_lapses_when_money_runs_out_or_the_insured_leaves() {
     assert!(!st.fam.in_force[0]);
     assert_eq!(st.acc.cash, cash);
 }
+
+#[test]
+fn nothing_comes_from_the_parent_of_a_partner_who_has_not_joined() {
+    use crate::model::{CareSupport, Parent};
+    let profile = with_parent(Parent {
+        id: "dad".into(),
+        child: 1,
+        birth: EXAMPLE_START - 85 * 12,
+        estate: 300_000.0,
+        share: 1.0,
+        care_support: Some(CareSupport {
+            annual_cost: 12_000.0,
+            ..CareSupport::default()
+        }),
+        ..Parent::default()
+    });
+    let plan = Plan::compile(&profile, crate::data::Data::embedded()).unwrap();
+    let mut st = State::new(&plan);
+    st.present = [true, false];
+    st.alive = [true, true];
+    st.acc = Accounts::default();
+    st.fam = FamilyState::default();
+    st.fam.parents[0] = super::parents::ParentPath {
+        death: 6,
+        care_start: 2,
+        care_end: 6,
+        care_monthly: 5_000.0,
+        household_monthly: 1_000.0,
+        helps: true,
+        ..Default::default()
+    };
+    // The care spell: the household does not pay while the child is not in it.
+    assert!(!st.parents_month(&plan, 1.0, 2));
+    assert_eq!(st.acc.cash, 0.0);
+    // The death: the estate goes to the child's own household.
+    assert!(!st.parents_month(&plan, 1.0, 6));
+    assert_eq!(st.acc.cash, 0.0);
+    // Once the child has died, their share passes to the partner who stays.
+    st.fam.parents[0] = super::parents::ParentPath {
+        death: 7,
+        ..Default::default()
+    };
+    st.alive = [true, false];
+    assert!(st.parents_month(&plan, 1.0, 7));
+    assert!((st.acc.cash - 300_000.0).abs() < 1e-6);
+}
+
+#[test]
+fn inherited_iras_keep_their_value_when_accounts_are_merged() {
+    use super::parents::InheritedIra;
+    let profile = with_parent(crate::model::Parent {
+        id: "mom".into(),
+        birth: EXAMPLE_START - 80 * 12,
+        estate: 100_000.0,
+        ..crate::model::Parent::default()
+    });
+    let plan = Plan::compile(&profile, crate::data::Data::embedded()).unwrap();
+    let mut st = State::new(&plan);
+    st.present = [true, true];
+    st.alive = [true, true];
+    st.acc = Accounts::default();
+    st.fam = FamilyState::default();
+    st.acc.person[0].traditional[0] = 100.0;
+    st.acc.person[1].traditional[0] = 300.0;
+    let slot = |heir, share| InheritedIra {
+        heir,
+        share,
+        years_left: 5,
+        first_year: 2030,
+        value: 0.0,
+    };
+    st.fam.ira[0] = slot(0, 0.5);
+    st.fam.ira[1] = slot(1, 1.0 / 3.0);
+    // A divorce's rollover: person 0 now holds both, each still worth $50 and $100.
+    st.merge_person_keeping_inherited(1, 0);
+    assert_eq!(st.acc.person[0].traditional[0], 400.0);
+    assert_eq!(st.fam.ira[0].heir, 0);
+    assert_eq!(st.fam.ira[1].heir, 0);
+    assert!((st.fam.ira[0].share * 400.0 - 50.0).abs() < 1e-9);
+    assert!((st.fam.ira[1].share * 400.0 - 100.0).abs() < 1e-9);
+
+    // A death: person 1's accounts pass to person 0 before the month's step, which
+    // then re-bases both inherited IRAs on what they were worth a month ago.
+    st.acc.person[0].traditional[0] = 100.0;
+    st.acc.person[1].traditional[0] = 300.0;
+    st.fam.ira[0] = slot(0, 0.5);
+    st.fam.ira[1] = slot(1, 1.0 / 3.0);
+    st.parents_month(&plan, 1.0, 0);
+    assert!((st.fam.ira[0].value - 50.0).abs() < 1e-9);
+    assert!((st.fam.ira[1].value - 100.0).abs() < 1e-9);
+    st.acc.person[0].traditional[0] = 400.0;
+    st.acc.person[1].traditional[0] = 0.0;
+    st.present[1] = false;
+    st.alive[1] = false;
+    st.parents_month(&plan, 1.0, 1);
+    assert_eq!(st.fam.ira[1].heir, 0);
+    assert!((st.fam.ira[0].share * 400.0 - 50.0).abs() < 1e-9);
+    assert!((st.fam.ira[1].share * 400.0 - 100.0).abs() < 1e-9);
+}

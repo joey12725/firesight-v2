@@ -549,3 +549,87 @@ fn a_permanent_policy_counts_toward_the_bequest() {
     }
     assert!(estate > 5 && cut > 2, "{estate} {cut}");
 }
+
+// ------------------------------------------------------- stream discipline
+
+/// Months and labels of the household-dynamics events on a trace.
+fn family_events(t: &PathTrace) -> Vec<(i32, String)> {
+    t.events
+        .iter()
+        .filter(|e| {
+            e.label.starts_with("Divorce")
+                || e.label.starts_with("Inheritance from")
+                || e.label.contains("dies; the estate")
+                || e.label.contains("needs care for")
+                || (e.label.starts_with("Person") && e.label.contains("cares for person"))
+        })
+        .map(|e| {
+            // What happens, without what the household does about it (whether the
+            // caregiver was in a job then depends on its decisions).
+            let what = e.label.split([':', ';', ',']).next().unwrap();
+            (e.month - START, what.to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn the_features_draw_only_on_their_own_streams() {
+    // Every feature on, without the scheduled divorce event (its probability is
+    // drawn on the shared events stream, like any event's).
+    let mut on = household_dynamics();
+    on.events
+        .retain(|e| !matches!(e.kind, EventKind::Divorce(_)));
+    let base = example("dual-income-family");
+    let a = traces(&base, 61, 40);
+    let b = traces(&on, 61, 40);
+    let (mut divorces, mut inheritances) = (0, 0);
+    for (x, y) in a.iter().zip(&b) {
+        // Switching the features on leaves the market, inflation and the people's
+        // lifetimes as they were.
+        for key in ["price_level", "return_us_stocks"] {
+            let (cx, cy) = (column(x, key), column(y, key));
+            let n = cx.len().min(cy.len());
+            assert_eq!(cx[..n], cy[..n], "path {} {key}", x.path_index);
+        }
+        let died = |t: &PathTrace| {
+            t.events
+                .iter()
+                .filter(|e| e.kind == TraceEventKind::Died)
+                .map(|e| (e.month, e.label.clone()))
+                .collect::<Vec<_>>()
+        };
+        // The partner's death is not reported after a divorce (they have left);
+        // the first person's is the same whenever it is in both.
+        let (dx, dy) = (died(x), died(y));
+        for d in &dy {
+            assert!(dx.contains(d), "path {} {d:?}", x.path_index);
+        }
+        let ev = family_events(y);
+        divorces += ev.iter().filter(|e| e.1.starts_with("Divorce")).count();
+        inheritances += ev.iter().filter(|e| e.1.starts_with("Inheritance")).count();
+    }
+    assert!(
+        divorces > 5 && inheritances > 20,
+        "{divorces} {inheritances}"
+    );
+    // A household decision (how withdrawals are ordered, how much is saved) does
+    // not move a divorce, a parent's death or a care spell.
+    let mut other = on.clone();
+    other.retirement.withdrawal_order = WithdrawalOrder::Proportional;
+    other.retirement.bequest_target = 500_000.0;
+    let c = traces(&other, 61, 40);
+    let mut differ = 0;
+    for (y, z) in b.iter().zip(&c) {
+        let (ey, ez) = (family_events(y), family_events(z));
+        // Events can only be cut off by a path that ends sooner (a depletion does
+        // not end a path, so the lists are equal unless the paths differ in length).
+        if y.months == z.months {
+            assert_eq!(ey, ez, "path {}", y.path_index);
+        }
+        if y.events.len() != z.events.len() {
+            differ += 1;
+        }
+    }
+    // The decision did change something on some paths, so the check is not empty.
+    assert!(differ > 0);
+}

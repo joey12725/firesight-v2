@@ -219,8 +219,9 @@ impl State {
         let p = &plan.family.parents[i];
         let pp = self.fam.parents[i];
         let child = p.child.min(self.n.saturating_sub(1));
-        // Only while the parent's child is in this household (not after a divorce).
-        if self.fam.left[child] || (!self.present[child] && !(0..self.n).any(|o| self.present[o])) {
+        // Only while the parent's child is in this household: not before a partner
+        // joins, not after a divorce and not after the child's death.
+        if !self.present[child] {
             return false;
         }
         let growth = plan
@@ -290,10 +291,11 @@ impl State {
         let now = plan.start + t as i32;
         let child = p.child.min(self.n.saturating_sub(1));
         // The child's household, if it is still this one: the child, or after the
-        // child's death the partner who stays.
+        // child's death the partner who stays. Nothing comes from the parent of a
+        // partner who has left or has not yet joined.
         let heir = if self.present[child] {
             Some(child)
-        } else if self.fam.left[child] {
+        } else if self.fam.left[child] || self.alive[child] {
             None
         } else {
             (0..self.n).find(|&o| self.present[o])
@@ -364,29 +366,35 @@ impl State {
     /// distributions.
     pub(super) fn inherited_ira_month(&mut self, plan: &Plan, price: f64, t: usize) {
         let now = plan.start + t as i32;
+        // The heir died (their accounts passed to the partner): the partner now
+        // holds it. Their traditional holdings grew by the heir's, so every
+        // inherited IRA they hold is re-based on its value of a month ago, the last
+        // one seen, before any is valued this month.
         for k in 0..self.fam.ira.len() {
             let slot = self.fam.ira[k];
-            if slot.years_left == 0 {
+            if slot.years_left == 0 || self.present[slot.heir] {
                 continue;
             }
-            if !self.present[slot.heir] {
-                // The heir died (their accounts passed to the partner) or left: the
-                // partner now holds it, valued as it was a month ago.
-                match (0..self.n).find(|&o| self.present[o]) {
-                    Some(o) => {
-                        let trad = self.traditional_of(o);
-                        self.fam.ira[k].heir = o;
-                        self.fam.ira[k].share = if trad > 0.0 {
-                            (slot.value / trad).min(1.0)
-                        } else {
-                            0.0
-                        };
-                    }
-                    None => {
-                        self.fam.ira[k].years_left = 0;
-                        continue;
-                    }
+            let Some(o) = (0..self.n).find(|&o| self.present[o]) else {
+                self.fam.ira[k].years_left = 0;
+                continue;
+            };
+            let trad = self.traditional_of(o);
+            for s in self.fam.ira.iter_mut() {
+                if s.years_left == 0 || (s.heir != o && s.heir != slot.heir) {
+                    continue;
                 }
+                s.heir = o;
+                s.share = if trad > 0.0 {
+                    (s.value / trad).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+            }
+        }
+        for k in 0..self.fam.ira.len() {
+            if self.fam.ira[k].years_left == 0 {
+                continue;
             }
             let slot = self.fam.ira[k];
             let trad = self.traditional_of(slot.heir);
@@ -445,6 +453,32 @@ impl State {
             }
             s.share = if after > 0.0 {
                 (value / after).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+        }
+    }
+
+    /// Moves person `from`'s retirement accounts into person `to`'s (a divorce:
+    /// the rollover of what is left after the split) and keeps the dollar value of
+    /// every inherited IRA either of them holds.
+    pub(super) fn merge_person_keeping_inherited(&mut self, from: usize, to: usize) {
+        let mut values = [0.0; MAX_PARENTS];
+        for (k, s) in self.fam.ira.iter().enumerate() {
+            if s.years_left > 0 {
+                values[k] = s.share * self.traditional_of(s.heir);
+            }
+        }
+        self.acc.merge_person(from, to);
+        let trad = self.traditional_of(to);
+        for (k, s) in self.fam.ira.iter_mut().enumerate() {
+            if s.years_left == 0 || (s.heir != from && s.heir != to) {
+                continue;
+            }
+            s.heir = to;
+            s.value = values[k];
+            s.share = if trad > 0.0 {
+                (values[k] / trad).clamp(0.0, 1.0)
             } else {
                 0.0
             };

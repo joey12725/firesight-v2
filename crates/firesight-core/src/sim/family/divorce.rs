@@ -199,7 +199,7 @@ impl State {
         if self.check {
             self.chk_other_start -= invested_out;
         }
-        self.acc.merge_person(1, 0);
+        self.merge_person_keeping_inherited(1, 0);
 
         // 3. The partner leaves the household.
         self.present[1] = false;
