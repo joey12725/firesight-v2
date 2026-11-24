@@ -174,6 +174,11 @@ impl State {
         let (ess, disc, _) = self.budget_as(plan, t, true, retire_month);
         let mut need = (ess + disc) * 12.0;
         let mut lumps = 0.0;
+        if plan.family.active {
+            let (annual, lump) = self.family_requirement(plan, t, price);
+            need += annual;
+            lumps += lump;
+        }
 
         // Homes cost money to run for ever; their mortgages are a debt to clear.
         // A rental is income (possibly negative) that continues.

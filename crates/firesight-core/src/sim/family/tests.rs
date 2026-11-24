@@ -624,3 +624,27 @@ fn inherited_iras_keep_their_value_when_accounts_are_merged() {
     assert!((st.fam.ira[0].share * 400.0 - 50.0).abs() < 1e-9);
     assert!((st.fam.ira[1].share * 400.0 - 100.0).abs() < 1e-9);
 }
+
+#[test]
+fn commitments_raise_the_funded_test_requirement() {
+    use crate::model::PolicyKind;
+    // Term: 60 premiums of $100 still to pay at month 60, at a price level of 2.
+    let plan = insured_plan(PolicyKind::Term {
+        years_remaining: 10.0,
+    });
+    let mut st = insured_state(&plan);
+    assert_eq!(st.family_requirement(&plan, 60, 2.0), (0.0, 3_000.0));
+    st.fam.in_force[0] = false;
+    assert_eq!(st.family_requirement(&plan, 60, 2.0), (0.0, 0.0));
+    // Support still owed: 24 months of $500 nominal.
+    st.fam.support_monthly = 500.0;
+    st.fam.support_until = 84;
+    assert_eq!(st.family_requirement(&plan, 60, 1.0), (0.0, 12_000.0));
+    // Received support is not a cost.
+    st.fam.support_monthly = -500.0;
+    assert_eq!(st.family_requirement(&plan, 60, 1.0), (0.0, 0.0));
+    // Permanent: $1,200 a year for life, in today's dollars.
+    let plan = insured_plan(PolicyKind::Permanent);
+    let st = insured_state(&plan);
+    assert_eq!(st.family_requirement(&plan, 60, 2.0), (600.0, 0.0));
+}

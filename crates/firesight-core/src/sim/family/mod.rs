@@ -200,6 +200,30 @@ impl State {
         };
         support + self.parent_support_rate(plan, t) * price + self.premium_rate(plan, t)
     }
+
+    /// What the household's commitments add to the funded test, today's dollars:
+    /// a yearly cost that lasts for life (premiums of permanent policies) and a lump
+    /// for those that end (the premiums left on term policies, support still to
+    /// pay). Both are level in nominal dollars, so they are valued at today's
+    /// prices without discounting, a small overstatement.
+    pub(crate) fn family_requirement(&self, plan: &Plan, t: usize, price: f64) -> (f64, f64) {
+        let ti = t as i32;
+        let (mut annual, mut lump) = (0.0, 0.0);
+        for (k, pol) in plan.family.policies.iter().enumerate() {
+            if !self.fam.in_force[k] || !self.present[pol.insured] {
+                continue;
+            }
+            if pol.end_month == i32::MAX {
+                annual += pol.premium * 12.0 / price;
+            } else {
+                lump += pol.premium * f64::from((pol.end_month - ti).max(0)) / price;
+            }
+        }
+        if self.fam.support_monthly > 0.0 && ti < self.fam.support_until {
+            lump += self.fam.support_monthly * f64::from(self.fam.support_until - ti) / price;
+        }
+        (annual, lump)
+    }
 }
 
 use super::plan::Plan;

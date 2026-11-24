@@ -645,14 +645,21 @@ $500,000 20-year term policy for a healthy 30-year-old (Policygenius 2024); the
 validator warns when a premium exceeds 10% of the benefit a year (a judgement: a
 likely typing error) and when a term exceeds 40 years.
 
+The funded test (section 11) counts the premiums: those of
+a permanent policy as a cost for life, those left on a term policy as a lump, at
+today's prices without discounting. Support still owed after a divorce is counted
+the same way.
+
 Measured on the dual-income example (4,000 paired paths, seed 1) with a $1 million
-20-year term policy on each partner at $800 a year: success 91.5% to 91.6%, the FI
+20-year term policy on each partner at $800 a year: success 91.5% to 91.5%, the FI
 rate from 96.4% to 97.8% (an early death no longer stops the survivor reaching
 independence), the median terminal net worth from $1.73 million to $1.81 million
-and the tenth percentile from $104k to $128k. With a $250,000 permanent policy on
-each at $3,000 a year instead: success falls to 90.8% and the median terminal net
-worth barely moves ($1.74 million): a lifetime of premiums buys a benefit that is
-worth less in real terms by the time it is paid.
+and the tenth percentile from $104k to $124k. With a $250,000 permanent policy on
+each at $3,000 a year instead: the funded test asks for more, so the median
+retirement age rises from 53.4 to 54.5 and the FI rate falls from 96.4% to 95.2%;
+success rises to 92.8%, the median terminal net worth to $1.96 million and the
+tenth percentile to $247k (working longer, and the last death pays $250,000 into
+the estate).
 
 Not modelled: cash value of permanent policies (loans, surrender, dividends),
 premiums that rise at renewal or with age (term premiums here are level for the
