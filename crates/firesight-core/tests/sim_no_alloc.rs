@@ -123,6 +123,11 @@ fn family_features() -> Profile {
                 twins_probability: 0.2,
             };
             c.parental_leave = Some(ParentalLeave::default());
+            c.second_parental_leave = Some(ParentalLeave {
+                person: 1,
+                months: 2,
+                pay_fraction: 0.5,
+            });
         }
     }
     p

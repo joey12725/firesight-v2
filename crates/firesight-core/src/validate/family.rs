@@ -35,15 +35,36 @@ impl Checker<'_> {
             self.arrival(&path, child);
             self.college_cost(&path, child);
             self.adult_support(&path, child);
-            self.parental_leave(&path, child);
+            self.parental_leave(&path, child, "parental_leave", child.parental_leave);
+            self.parental_leave(
+                &path,
+                child,
+                "second_parental_leave",
+                child.second_parental_leave,
+            );
+            if let (Some(a), Some(b)) = (child.parental_leave, child.second_parental_leave) {
+                if a.person == b.person {
+                    self.r.error(
+                        "leave_same_person",
+                        &format!("{path}/second_parental_leave/person"),
+                        "The second parental leave names the same person as the first; it is for the other parent. Lengthen the first leave instead.",
+                    );
+                }
+            }
         }
     }
 
-    fn parental_leave(&mut self, path: &str, child: &Child) {
-        let Some(l) = child.parental_leave else {
+    fn parental_leave(
+        &mut self,
+        path: &str,
+        child: &Child,
+        field: &str,
+        leave: Option<ParentalLeave>,
+    ) {
+        let Some(l) = leave else {
             return;
         };
-        let at = format!("{path}/parental_leave");
+        let at = format!("{path}/{field}");
         let people = self.p.household.people.len();
         if l.person >= people {
             self.r.error(
@@ -113,6 +134,17 @@ impl Checker<'_> {
                 &format!("{at}/annual"),
                 "Support of more than $60,000 a year for an adult child is far above typical help (the extra cost of an adult living at home is $10,000 to $15,000 a year).",
             );
+        }
+        if let Some(start) = self.p.start {
+            // School ends at 22 for a four-year student and a spell starts within the
+            // six years after that.
+            if start - child.birth >= 28 * 12 {
+                self.r.warn(
+                    "support_window_passed",
+                    &at,
+                    "Adult support is drawn as a spell that starts within six years of the end of school; this child is already past that window, so only the tail of a spell that would already be under way is charged (usually nothing). Enter support you are paying now as a spending item.",
+                );
+            }
         }
     }
 

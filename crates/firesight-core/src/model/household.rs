@@ -195,9 +195,15 @@ pub struct Child {
     /// Opt-in: when this child is born during the plan (a child already born has no
     /// leave), the named person's wages drop to a fraction of pay for some months.
     /// Retirement deferrals, payroll tax and Social Security earnings follow the pay
-    /// actually received. Twins are one leave. Empty (the default) means no leave.
+    /// actually received. Twins are one leave. State paid-family-leave programmes are
+    /// not modelled. Empty (the default) means no leave.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parental_leave: Option<ParentalLeave>,
+    /// Opt-in: a second leave at the same birth, for the other parent (name a different
+    /// `person` than `parental_leave` does). It starts in the birth month too, with
+    /// its own length and pay fraction. Empty (the default) means no second leave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_parental_leave: Option<ParentalLeave>,
 }
 
 fn one() -> f64 {
@@ -218,6 +224,7 @@ impl Default for Child {
             college_cost: CollegeCost::Fixed,
             adult_support: None,
             parental_leave: None,
+            second_parental_leave: None,
         }
     }
 }

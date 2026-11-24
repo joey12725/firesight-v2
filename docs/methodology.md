@@ -435,7 +435,12 @@ is `college cost x college_share x tuition index x (1 - aid discount)`.
   published $72,000, net $25,000 below $50,000 (65% off) and at most $53,000, reached at
   about $200,000 (26% off). Averaging the sectors and reading the 2023-dollar incomes as
   today's dollars are judgements. Income is the household's MAGI two tax years earlier
-  (the FAFSA's prior-prior year), in today's dollars; `aid_scale` multiplies the whole
+  (the FAFSA's prior-prior year), in today's dollars, plus 12% of its cash and taxable
+  investments today: the asset conversion rate for parents in the federal Student Aid
+  Index formula (Higher Education Act section 475; the Department of Education's 2026-27
+  SAI guide, with an asset protection allowance of zero), which leaves out retirement
+  accounts and the family home. So a household that retires early on a taxable portfolio
+  is not given the aid of a low-income family. `aid_scale` multiplies the whole
   discount. The discount is applied after `college_share`: a share below 1 that already
   stands for aid counts aid twice, and validation warns (set `aid_scale` to 0).
 * **Duration and attendance.** The child attends with probability 0.95 (judgement) and
@@ -450,19 +455,21 @@ The mean of the tuition index is not exactly the fixed path: the random part is 
 so the expected price 15 years out is about 0.7% above `(1 + growth)^15`.
 
 Measured on `dual-income-family` with both children stochastic at the defaults (3,000
-paired paths, seed 7): success 92.2% to 93.3%, median terminal net worth up $114,000.
-The direction comes from aid: this household retires at about 53, before its children
-reach college, so its MAGI two years before each college year is low and the schedule
-gives it a large discount (and the example's 75% parental share is discounted again).
-With `aid_scale: 0` the same run gives success unchanged at 92.2% and median terminal
-net worth down $13,000, the cost of the longer average stay and of price risk.
+paired paths, seed 7): success 92.2% to 93.1%, median terminal net worth up $119,000.
+The direction comes from aid, not from uncertainty: the fixed plan charges the published
+price, and the schedule takes at least 21% off it even at high incomes (the discounts
+on a dozen traced paths ranged from 3% to 51% and averaged about 25%), on top of the
+example's 75% parental share, and the saving compounds over the rest of the plan. With
+`aid_scale: 0` the same run gives success unchanged at 92.2% and median terminal net
+worth down $8,000, the cost of the longer average stay and of price risk.
 
-Not modelled: aid does not depend on assets (the FAFSA and CSS Profile count them, so the
-aid of an early retiree with a large portfolio is overstated: use a lower `aid_scale`),
-one schedule serves public and private colleges, merit aid is only in the average,
-students who leave without a degree, loans and 529 plans are not modelled, the funded
-test sets aside the fixed four-year cost, and tuition shocks are independent of inflation
-and markets.
+Not modelled: the asset test is the federal formula's conversion rate only (no CSS
+Profile, which also counts home equity; rental property and business equity are left
+out; the conversion is added to income rather than run through the formula's
+allowances and assessment brackets), one schedule serves public and private colleges,
+merit aid is only in the average, students who leave without a degree, loans and 529
+plans are not modelled, the funded test sets aside the fixed four-year cost, and tuition
+shocks are independent of inflation and markets.
 
 ### Adult children who need support (opt-in)
 
@@ -470,20 +477,23 @@ and markets.
 With probability 0.3 (judgement; 18% of 25 to 34 year olds lived in a parent's home in
 2023, Pew Research Center 2025 from Census data, and more do at some point) the child
 needs support for one spell. The spell starts at a uniformly random month in the six years
-after school ends (the realised college years, so it follows stochastic college costs) and
+after school ends (18 plus the realised college years under stochastic college costs,
+otherwise 22, also for a child with no college plan) and
 lasts an exponential number of months with the given mean (default 2 years, a judgement),
 at least one month. Support is `annual` (default $12,000 in today's dollars, a judgement)
 for each child of the birth (twins need it together) and is added to the child spending
 of those months, so it flows into the existing child-cost ledger category and year
 series. The probability, amount, mean length and six-year window are listed under
 `unverified_from_memory.family` in `params.json`. Three draws per child from stream
-`ChildSupport` (0x1210_0000 + i), always taken. The trace shows when a spell starts and
+`ChildSupport` (0x1280_0000 + 2i + 1, sharing the base with `ChildCollege` on the
+even ids), always taken. The trace shows when a spell starts and
 ends.
 
 Measured on `dual-income-family` with both children at the defaults (3,000 paired paths,
-seed 7): success 92.2% to 92.1%, median terminal net worth down $19,000. The effect is
-small because the household's wealth is large relative to about $14,000 expected extra
-spending.
+seed 7): success unchanged at 92.2%, median terminal net worth down $14,000, the tenth
+percentile down $16,000. The effect is small because the household's wealth is large
+relative to about $14,000 of expected extra spending (2 children x 0.3 x $12,000 x 2
+years).
 
 Not modelled: support does not depend on the household's wealth or the child's income,
 only one spell per child, the funded test does not set money aside for it, and no
@@ -491,7 +501,10 @@ grandchildren.
 
 ### Parental leave (opt-in)
 
-`parental_leave: {"person", "months", "pay_fraction"}` on a child (default absent: none).
+`parental_leave: {"person", "months", "pay_fraction"}` on a child (default absent: none),
+and `second_parental_leave` with the same fields for the other parent's leave at the
+same birth (validation rejects the same person twice). There is no household-level
+setting: leave is entered per child.
 When the child is born during the plan, in the month of the realised birth (so a late,
 absent or twin birth under uncertain arrival follows the draw; twins are one leave), the
 named person's employed jobs go onto the engine's existing career break for `months`
@@ -509,12 +522,15 @@ Measured on `dual-income-family` with unpaid three-month leave for the first per
 the second child's birth (3,000 paired paths, seed 7): about $32,500 of wages lost per
 path; median terminal net worth down $14,000 (1,740,552 to 1,726,222), success 92.2% to
 92.4%, which is inside the 95% interval and is a change of who retires when, not a gain
-(the leave lowers early savings, so some paths retire a little later).
+(the leave lowers early savings, so some paths retire a little later). With both parents on
+three months at 60% of pay (`parental_leave` and `second_parental_leave`): median
+terminal net worth down $8,000, success 92.2% to 92.3%, again within noise.
 
 Not modelled: state paid family leave programmes (enter their effect in `pay_fraction`),
-leave for adoption or for children already born, a split of one leave between two
-parents (give each parent's leave to a different child, or use a career-break event),
-loss of promotion or wage growth after leave, and leave before the job begins.
+leave for adoption or for children already born, leave taken in separate blocks or
+starting after the birth month (both parents' leaves start in the birth month; use a
+career-break event for a later block), loss of promotion or wage growth after leave,
+and leave before the job begins.
 
 ### Healthcare
 

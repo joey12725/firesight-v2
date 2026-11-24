@@ -30,8 +30,10 @@
 //! Dollar amounts in `data/` carry their own year (2026 for employer and Medicare,
 //! the latest published plan year for the ACA benchmark, 2025 for care costs). They
 //! are used as today's dollars without rolling them to the profile's start month.
-//! Children's health costs are not modelled here: the USDA-style child cost in the
-//! spending module already includes them.
+//! Children's health costs are not modelled here by default: the USDA-style child cost
+//! in the spending module already includes them. The opt-in
+//! `spending.healthcare.cover_children` charges them by coverage phase instead (see
+//! [`children`]).
 
 pub mod children;
 

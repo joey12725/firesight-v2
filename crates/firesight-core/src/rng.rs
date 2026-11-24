@@ -99,8 +99,9 @@ impl Stream {
             Stream::Housing(i) => 0x0400_0000 + i as u64,
             Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
             Stream::CollegePrices => 1200,
-            Stream::ChildCollege(i) => 0x1280_0000 + i as u64,
-            Stream::ChildSupport(i) => 0x1210_0000 + i as u64,
+            // The two share one per-index base: even ids for college, odd for support.
+            Stream::ChildCollege(i) => 0x1280_0000 + 2 * i as u64,
+            Stream::ChildSupport(i) => 0x1280_0000 + 2 * i as u64 + 1,
         }
     }
 }

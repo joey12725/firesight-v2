@@ -91,7 +91,8 @@ Child     { id, name, birth: YearMonth (may be in the future = planned),
             college_cost: Fixed | Stochastic{ attend_probability (0.95), real_tuition_growth (0.01),
                                               tuition_volatility (0.012), aid_scale (1) },
             adult_support: Option<{ probability (0.3), annual (12000), mean_years (2) }>,
-            parental_leave: Option<{ person (0), months (3), pay_fraction (0.6) }> }
+            parental_leave: Option<{ person (0), months (3), pay_fraction (0.6) }>,
+            second_parental_leave: Option<{ person, months, pay_fraction }> }   // the other parent
                                                     // Uncertain: planned children only; random births per path
 Location  { country (default "US"), state: Option<String> (2-letter), city: Option<String>,
             foreign_tax_rate: Option<f64> }         // flat effective income tax when not in the US

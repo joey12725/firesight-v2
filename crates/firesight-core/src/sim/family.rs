@@ -11,7 +11,9 @@ use crate::data::Data;
 use crate::health::children::{ACA_CHILD_RATING_AGE, ACA_MAX_CHILDREN_CHARGED};
 use crate::health::CoveragePhase;
 use crate::math;
-use crate::model::{Arrival, ChildCosts, College, CollegeCost, HealthcareMode, Profile, YearMonth};
+use crate::model::{
+    AccountKind, Arrival, ChildCosts, College, CollegeCost, HealthcareMode, Profile, YearMonth,
+};
 use crate::rng::{Rng, Stream};
 
 use super::plan::{ChildPlan, Plan};
@@ -61,6 +63,22 @@ pub(crate) const AID_SD: f64 = 0.10;
 
 /// Largest discount: aid does not cover more than 90% of the published price.
 pub(crate) const AID_MAX: f64 = 0.9;
+
+/// Share of the parents' reportable assets counted as if it were income when aid is
+/// assessed: the asset conversion rate of the federal Student Aid Index formula for
+/// the parents of a dependent student (Higher Education Act section 475, 20 U.S.C.
+/// 1087oo; 12% of net worth in the Department of Education's 2026-27 SAI guide, with
+/// an asset protection allowance of zero). Reportable assets are cash and taxable
+/// investments; retirement accounts and the family home are excluded by the formula.
+/// Without it a household that retires early on a large portfolio would be given the
+/// aid of a low-income family.
+pub(crate) const AID_ASSET_CONVERSION: f64 = 0.12;
+
+/// The income the aid schedule is read at: household income plus the converted share
+/// of reportable assets (both in today's dollars).
+pub(crate) fn aid_assessed_income(income: f64, reportable_assets: f64) -> f64 {
+    income + AID_ASSET_CONVERSION * reportable_assets.max(0.0)
+}
 
 /// Mean aid discount at a household income (today's dollars a year).
 pub(crate) fn aid_mean_discount(income: f64) -> f64 {
@@ -134,8 +152,8 @@ pub(crate) struct FamilyPlan {
     pub support: Vec<Option<SupportPlan>>,
     /// Some child may need adult support.
     pub any_support: bool,
-    /// Per child: parental leave at the birth.
-    pub leave: Vec<Option<LeavePlan>>,
+    /// Per child: parental leave at the birth, and the second parent's.
+    pub leave: Vec<[Option<LeavePlan>; 2]>,
     /// Some child carries a parental leave.
     pub any_leave: bool,
     /// Something needs the monthly family calendar (births to announce, leave to
@@ -382,19 +400,23 @@ pub(crate) fn compile(profile: &Profile, start: YearMonth) -> FamilyPlan {
         })
         .collect();
     let any_support = support.iter().any(Option::is_some);
-    let leave: Vec<Option<LeavePlan>> = profile
+    let leave_plan = |l: crate::model::ParentalLeave| LeavePlan {
+        person: l.person.min(1),
+        months: l.months,
+        fraction: l.pay_fraction.clamp(0.0, 1.0),
+    };
+    let leave: Vec<[Option<LeavePlan>; 2]> = profile
         .household
         .children
         .iter()
         .map(|c| {
-            c.parental_leave.map(|l| LeavePlan {
-                person: l.person.min(1),
-                months: l.months,
-                fraction: l.pay_fraction.clamp(0.0, 1.0),
-            })
+            [
+                c.parental_leave.map(leave_plan),
+                c.second_parental_leave.map(leave_plan),
+            ]
         })
         .collect();
-    let any_leave = leave.iter().any(Option::is_some);
+    let any_leave = leave.iter().flatten().any(Option::is_some);
     FamilyPlan {
         cover_children: hc.cover_children && hc.mode == HealthcareMode::Modeled,
         cover_until_age: hc.children_coverage_end_age,
@@ -623,13 +645,18 @@ impl State {
 
     /// Household income for aid, today's dollars a year: the income of two tax years
     /// ago once known (the FAFSA's prior-prior year), else the latest, else the
-    /// starting income.
+    /// starting income; plus the converted share of today's cash and taxable
+    /// investments (the FAFSA reports assets as of the day it is filed).
     fn aid_income(&self, plan: &Plan) -> f64 {
-        match self.magi_known {
+        let income = match self.magi_known {
             2.. => self.fam.income_real[0],
             1 => self.fam.income_real[1],
             _ => plan.income_rate0,
-        }
+        };
+        let kinds = self.acc.by_kind();
+        let reportable = kinds[AccountKind::Cash.index()].max(0.0)
+            + kinds[AccountKind::Taxable.index()].max(0.0);
+        aid_assessed_income(income, reportable / self.fam.price)
     }
 
     /// Records the household income of the tax year just closed (nominal MAGI).
@@ -678,24 +705,27 @@ impl State {
     fn start_parental_leave(&mut self, plan: &Plan, t: usize, now: YearMonth) {
         let ti = t as i32;
         for k in 0..plan.children.len() {
-            let Some(l) = plan.family.leave[k] else {
-                continue;
-            };
             if self.fam.birth[k] != ti {
                 continue;
             }
-            let mut started = false;
-            for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
-                if jp.owner == l.person && rt.st.employment == Employment::Employed {
-                    jp.model.start_break(&mut rt.st, l.months, l.fraction);
-                    started = l.months > 0;
+            for l in plan.family.leave[k].into_iter().flatten() {
+                let mut started = false;
+                for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
+                    if jp.owner == l.person && rt.st.employment == Employment::Employed {
+                        jp.model.start_break(&mut rt.st, l.months, l.fraction);
+                        started = l.months > 0;
+                    }
                 }
-            }
-            if started {
-                let name = &plan.profile.household.children[k].name;
-                self.event(now, TraceEventKind::CareerBreak, None, || {
-                    format!("Parental leave for {name} ({} months)", l.months)
-                });
+                if started {
+                    let name = &plan.profile.household.children[k].name;
+                    self.event(now, TraceEventKind::CareerBreak, None, || {
+                        format!(
+                            "Parental leave for {name}: person {} ({} months)",
+                            l.person + 1,
+                            l.months
+                        )
+                    });
+                }
             }
         }
     }
@@ -850,6 +880,21 @@ mod tests {
         assert!((aid_mean_discount(162_500.0) - 0.26).abs() < 1e-12);
         assert_eq!(aid_mean_discount(200_000.0), 0.21);
         assert_eq!(aid_mean_discount(900_000.0), 0.21);
+    }
+
+    #[test]
+    fn assets_count_toward_aid_at_the_federal_conversion_rate() {
+        // $60,000 of income and $500,000 of cash and taxable investments are assessed
+        // like $60,000 + 0.12 x $500,000 = $120,000 of income.
+        assert_eq!(aid_assessed_income(60_000.0, 500_000.0), 120_000.0);
+        assert_eq!(aid_assessed_income(60_000.0, 0.0), 60_000.0);
+        // An overdrawn household has no assets, not negative ones.
+        assert_eq!(aid_assessed_income(60_000.0, -5_000.0), 60_000.0);
+        // 0.57 - (70 / 75) x 0.26 = 0.3273 at $120,000 against
+        // 0.57 - (10 / 75) x 0.26 = 0.5353 at $60,000.
+        let with = aid_mean_discount(aid_assessed_income(60_000.0, 500_000.0));
+        assert!((with - 0.327_333).abs() < 1e-5, "{with}");
+        assert!((aid_mean_discount(60_000.0) - 0.535_333).abs() < 1e-5);
     }
 
     #[test]

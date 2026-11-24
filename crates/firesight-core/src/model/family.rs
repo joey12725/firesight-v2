@@ -80,7 +80,8 @@ pub enum CollegeCost {
     /// The cost of the college plan is uncertain: real tuition growth above CPI is
     /// random and persistent (it comes in runs of fast and slow years), the aid the
     /// family receives is a random discount on the published price that shrinks as
-    /// household income (its income two years earlier) rises, the child may not attend,
+    /// household income (its income two years earlier, plus 12% of its cash and taxable
+    /// investments, as the federal aid formula counts assets) rises, the child may not attend,
     /// and the child takes 4, 5 or 6 years. Needs a `college` plan. The cost the
     /// parents pay is the published price times the tuition index times one minus the
     /// aid discount, times `college_share`, for each year enrolled.
@@ -98,7 +99,8 @@ pub enum CollegeCost {
         /// Scale on the aid discount: 1 uses the schedule fitted to net prices from
         /// NPSAS 2019-20 as reported by Brookings (about 57% off the published price
         /// below $50,000 of household income, 31% at $125,000, 21% from $200,000,
-        /// the average of public and private colleges), 0 means no aid, and 0.5 half
+        /// the average of public and private colleges; cash and taxable investments
+        /// count as income at 12% a year), 0 means no aid, and 0.5 half
         /// of the schedule. Use 0 when the college cost entered is already a net
         /// price, or when `college_share` already allows for aid. Default 1.
         #[serde(default = "one")]

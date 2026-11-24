@@ -451,6 +451,47 @@ fn not_attending_removes_the_college_bill_and_aid_lowers_it() {
 }
 
 #[test]
+fn assets_reduce_aid_as_the_federal_formula_counts_them() {
+    // One earner on $60,000 with modest savings: the schedule gives 0.57 at $50,000
+    // and 0.31 at $125,000, so about 0.5 at $60,000 plus 12% of a few tens of
+    // thousands of cash and taxable savings. With $1,500,000 more in a taxable
+    // account the assessed income is at least $60,000 + 0.12 x $1,500,000 =
+    // $240,000, above the $200,000 at which the schedule is flat at 0.21.
+    let household = |extra_taxable: f64, cost: CollegeCost| {
+        let mut p = college_household(cost, College::PublicInState);
+        p.incomes = vec![job("job_a", 0, 60_000.0)];
+        p.spending.items = vec![item("living", Category::Other, 2_000.0, true)];
+        p.accounts = vec![
+            account("cash", 0, AccountKind::Cash, 20_000.0),
+            account("k401", 0, AccountKind::Traditional, 200_000.0),
+            account(
+                "brokerage",
+                0,
+                AccountKind::Taxable,
+                20_000.0 + extra_taxable,
+            ),
+        ];
+        p
+    };
+    let paths = 200;
+    let cut = |extra: f64| {
+        let mut no_college = household(extra, CollegeCost::Fixed);
+        no_college.household.children[0].college = College::None;
+        let none = child_spending(&no_college, paths);
+        let bill = |aid_scale: f64| {
+            child_spending(
+                &household(extra, stochastic(1.0, 0.01, 0.0, aid_scale)),
+                paths,
+            ) - none
+        };
+        1.0 - bill(1.0) / bill(0.0)
+    };
+    let (poor, rich) = (cut(0.0), cut(1_500_000.0));
+    assert!(poor > 0.38 && poor < 0.54, "little savings: cut {poor}");
+    assert!(rich > 0.19 && rich < 0.23, "large portfolio: cut {rich}");
+}
+
+#[test]
 fn tuition_volatility_widens_the_spread_of_costs() {
     let sd = |vol: f64| {
         let plan = compile(&college_household(
@@ -714,6 +755,68 @@ fn parental_leave_follows_realised_births_and_twins_take_one_leave() {
 }
 
 #[test]
+fn both_parents_can_take_leave_at_the_same_birth() {
+    // Each parent's unpaid months come off their own pay: the loss with both leaves
+    // is the sum of the two separate losses (flat wages, no job risk), about
+    // 3 x 130,000 / 12 + 2 x 80,000 / 12 = 32,500 + 13,333 before inflation.
+    let base = wages(&leave_household(12, None));
+    let first = base - wages(&leave_household(12, leave(0, 3, 0.0)));
+    let mut second_only = leave_household(12, None);
+    second_only.household.children[0].second_parental_leave = leave(1, 2, 0.0);
+    let second = base - wages(&second_only);
+    assert!(second > 13_000.0 && second < 15_500.0, "second {second}");
+    let mut both = leave_household(12, leave(0, 3, 0.0));
+    both.household.children[0].second_parental_leave = leave(1, 2, 0.0);
+    let loss = base - wages(&both);
+    assert!(
+        (loss - (first + second)).abs() < 1e-6,
+        "{loss} vs {first} + {second}"
+    );
+    assert!(firesight_core::validate::validate(&both).errors.is_empty());
+    // The trace names each parent.
+    let plan = compile(&both);
+    let t = sim::trace_path_in(&plan, 3, 0, &mut Workspace::new(&plan));
+    let leaves: Vec<&str> = t
+        .events
+        .iter()
+        .filter(|e| e.label.contains("Parental leave"))
+        .map(|e| e.label.as_str())
+        .collect();
+    assert_eq!(leaves.len(), 2, "{leaves:?}");
+    assert!(leaves[0].contains("person 1 (3 months)"), "{leaves:?}");
+    assert!(leaves[1].contains("person 2 (2 months)"), "{leaves:?}");
+    // The same person twice is an error: the second leave would be ignored.
+    both.household.children[0].second_parental_leave = leave(0, 2, 0.0);
+    let r = firesight_core::validate::validate(&both);
+    assert!(r.errors.iter().any(|e| e.code == "leave_same_person"));
+}
+
+#[test]
+fn adult_support_for_a_child_past_the_window_warns() {
+    let mut p = support_household(Some(AdultSupport {
+        probability: 1.0,
+        ..AdultSupport::default()
+    }));
+    let r = firesight_core::validate::validate(&p);
+    assert!(!r.warnings.iter().any(|w| w.code == "support_window_passed"));
+    // A ten-year-old with certain support: 12,000 x 2 years on average.
+    let mut none = p.clone();
+    none.household.children[0].adult_support = None;
+    let fresh = child_spending(&p, 300) - child_spending(&none, 300);
+    assert!(fresh > 20_000.0 && fresh < 28_000.0, "fresh {fresh}");
+    // A 31-year-old left school nine years ago: the spell started three to nine years
+    // ago, and only what is left of it is charged. With an exponential length of mean
+    // 24 months that is 24 x mean(exp(-s / 24)) for s from 36 to 108 months,
+    // 8 x (exp(-1.5) - exp(-4.5)) = 1.7 months: about $1,700.
+    p.household.children[0].birth = START - 31 * 12;
+    none.household.children[0].birth = START - 31 * 12;
+    let r = firesight_core::validate::validate(&p);
+    assert!(r.warnings.iter().any(|w| w.code == "support_window_passed"));
+    let late = child_spending(&p, 300) - child_spending(&none, 300);
+    assert!((0.0..4_000.0).contains(&late), "late {late}");
+}
+
+#[test]
 fn parental_leave_conserves_money_and_leaves_an_event() {
     let p = leave_household(12, leave(0, 6, 0.5));
     for kind in MARKETS {
@@ -825,6 +928,11 @@ fn everything_on(leave: bool) -> Profile {
             };
             if leave {
                 c.parental_leave = Some(ParentalLeave::default());
+                c.second_parental_leave = Some(ParentalLeave {
+                    person: 1,
+                    months: 1,
+                    pay_fraction: 1.0,
+                });
             }
         }
     }
