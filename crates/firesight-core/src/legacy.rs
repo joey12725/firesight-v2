@@ -661,6 +661,7 @@ impl Migration<'_> {
                 rent_real_growth: 0.0,
                 land_fraction: 0.2,
                 years_in_service: 0.0,
+                dynamics: RentalDynamics::Simple,
             }),
             value,
             basis: None,

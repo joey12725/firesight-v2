@@ -65,6 +65,9 @@ use serde_json::Value;
 use crate::data::Data;
 use crate::math;
 use crate::model::{BuyHome, Property, PropertyUse};
+use crate::rental_market::{
+    self, RentalDraws, RentalMarketParams, RentalMarketState, RentalOutcome,
+};
 use crate::rng::{normal_from_bits, Rng};
 
 /// Residential rental property is depreciated over 27.5 years (IRC section
@@ -711,6 +714,55 @@ impl PropertyModel {
         }
         state.value = value * growth;
         out
+    }
+
+    /// [`PropertyModel::step`] for a rental with realistic dynamics
+    /// (`rental_market.rs`): the same three words from `rng` and the same costs,
+    /// mortgage and appreciation, but occupancy and the rent come from the rental's
+    /// market (`market`, advanced here with this month's `draws`), part of the
+    /// maintenance comes as large repairs, and evictions cost rent. For a slot that
+    /// is not a rental it is `step`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step_realistic(
+        &self,
+        state: &mut PropertyState,
+        home_national: f64,
+        price_level: f64,
+        rng: &mut Rng,
+        params: &RentalMarketParams,
+        market: &mut RentalMarketState,
+        draws: &RentalDraws,
+        recession: bool,
+    ) -> (HousingMonth, RentalOutcome) {
+        let rent_growth = state.rent_growth;
+        let value = state.value;
+        let owned = state.owned;
+        let mut out = self.step(state, home_national, price_level, rng);
+        let o = rental_market::month(params, market, draws, recession, owned);
+        let Some(r) = &self.rental else {
+            return (out, o);
+        };
+        if !owned {
+            return (out, o);
+        }
+        state.rental_year_to_date -= out.rental_taxable_income;
+        state.vacant = market.vacant;
+        let trend = r.rent_real * rent_growth * price_level;
+        out.gross_rent = trend * o.rent_factor;
+        out.vacancy_loss = out.gross_rent * o.vacant_share;
+        out.rent = out.gross_rent - out.vacancy_loss;
+        out.management = out.rent * r.management_fee;
+        let smooth = value * self.maintenance_rate / 12.0;
+        let repair = if o.repair {
+            smooth * rental_market::CAPEX_SHARE / rental_market::CAPEX_MONTHLY_PROBABILITY
+        } else {
+            0.0
+        };
+        out.maintenance =
+            smooth * (1.0 - rental_market::CAPEX_SHARE) + repair + o.eviction_months * trend;
+        out.rental_taxable_income = out.rental_taxable();
+        state.rental_year_to_date += out.rental_taxable_income;
+        (out, o)
     }
 
     /// Sells the property in month `t` at its value times the transaction shock.

@@ -161,3 +161,34 @@ fn cash_out_constants_match_the_data_file() {
     );
     assert_eq!(c::CASH_OUT_MIN_CASH, value(&h["min_cash"]));
 }
+
+#[test]
+fn rental_dynamics_constants_match_the_data_file() {
+    use firesight_core::model::RentalDynamics;
+    use firesight_core::rental_market as r;
+    let h = &section()["rental_dynamics"];
+    let d: RentalDynamics = serde_json::from_str(r#"{"type":"realistic"}"#).unwrap();
+    assert_eq!(
+        d,
+        RentalDynamics::Realistic {
+            annual_turnover: value(&h["default_annual_turnover"])
+        }
+    );
+    assert_eq!(
+        r::RECESSION_SPELL_FACTOR,
+        value(&h["recession_spell_factor"])
+    );
+    assert_eq!(r::RECESSION_SHARE, value(&h["recession_share"]));
+    assert_eq!(
+        r::RENT_INDEX_ANNUAL_PERSISTENCE,
+        value(&h["rent_index_annual_persistence"])
+    );
+    assert_eq!(r::RENT_INDEX_SD, value(&h["rent_index_sd"]));
+    assert_eq!(r::EVICTION_ANNUAL, value(&h["eviction_annual"]));
+    assert_eq!(r::EVICTION_COST_MONTHS, value(&h["eviction_cost_months"]));
+    assert_eq!(r::CAPEX_SHARE, value(&h["capex_share"]));
+    assert_eq!(
+        r::CAPEX_MONTHLY_PROBABILITY,
+        value(&h["capex_monthly_probability"])
+    );
+}

@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{Mortgage, RentalTerms};
+use crate::model::{Mortgage, RentalDynamics, RentalTerms};
 use crate::rng::Stream;
 
 fn data() -> &'static Data {
@@ -426,6 +426,7 @@ fn terms() -> RentalTerms {
         rent_real_growth: 0.0,
         land_fraction: 0.2,
         years_in_service: 0.0,
+        dynamics: RentalDynamics::Simple,
     }
 }
 
@@ -784,4 +785,53 @@ fn buying_a_replacement_home_into_an_existing_slot() {
     m.sell(&mut s, 40, 0.06, 250_000.0);
     m.buy_at(&mut s, 40, 200_000.0, 0.0, 0.0, 0.06, 360);
     assert!(s.mortgage.is_none());
+}
+
+#[test]
+fn realistic_rental_month_uses_the_market_outcome() {
+    use crate::rental_market::{RentalDraws, RentalMarketParams, RentalMarketState};
+    let m = PropertyModel::from_property(&rental(terms()), 0.03, data());
+    let params = RentalMarketParams::new(0.05, 0.25);
+    let mut s = m.initial_state();
+    let mut market = RentalMarketState::default();
+    let mut r = rng(5);
+    // A large repair falls due and the tenant leaves (an eviction): rent 2,500 is
+    // collected this month; maintenance is half the usual 250 plus the repair,
+    // 125 x 60 = 7,500, plus three months of rent, 7,500.
+    let d = RentalDraws {
+        leave: 0.0,
+        fill: 0.99,
+        evict: 0.0,
+        repair: 0.0,
+        z: 0.0,
+    };
+    let (f, o) = m.step_realistic(&mut s, 0.0, 1.0, &mut r, &params, &mut market, &d, false);
+    assert!(o.moved_out && o.repair && market.vacant);
+    close(f.rent, 2_500.0, 1e-9);
+    close(f.maintenance, 125.0 + 7_500.0 + 7_500.0, 1e-9);
+    close(f.rental_taxable_income, f.rental_taxable(), 1e-9);
+    close(s.rental_year_to_date, f.rental_taxable_income, 1e-9);
+    // Empty next month: no rent, no management fee; the simple chain's own draws
+    // are still consumed (three words from the housing stream each month).
+    let quiet = RentalDraws { repair: 0.99, ..d };
+    let (f, _) = m.step_realistic(
+        &mut s,
+        0.0,
+        1.0,
+        &mut r,
+        &params,
+        &mut market,
+        &quiet,
+        false,
+    );
+    assert_eq!(f.rent, 0.0);
+    assert_eq!(f.management, 0.0);
+    close(f.vacancy_loss, 2_500.0, 1e-9);
+    assert!(s.vacant);
+    close(f.maintenance, 125.0, 1e-9);
+    let mut twin = rng(5);
+    for _ in 0..6 {
+        twin.next_u64();
+    }
+    assert_eq!(r.next_u64(), twin.next_u64());
 }

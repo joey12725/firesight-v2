@@ -833,3 +833,105 @@ fn prepayment_goes_to_the_mortgage_only_while_its_rate_beats_safe_returns() {
     eprintln!("prepaid in ten years: on a 7% loan {at_seven}, on a 2% loan {extra}");
     assert!(extra < at_seven / 10, "{extra} vs {at_seven}");
 }
+
+// ---------------------------------------------------------------------------------
+// F30: rentals that behave like rentals.
+
+/// A retired landlord with a $300,000 rental let at $2,000 a month (5% vacancy, 1%
+/// maintenance) and plenty of savings.
+fn landlord() -> Profile {
+    let mut p = house_rich_retiree();
+    p.accounts[0].balance = 2_000_000.0;
+    p.accounts[0].cost_basis = Some(2_000_000.0);
+    p.properties.push(Property {
+        id: "flat".into(),
+        name: "flat".into(),
+        value: 300_000.0,
+        property_tax_rate: Some(0.01),
+        maintenance_rate: 0.01,
+        usage: PropertyUse::Rental(RentalTerms {
+            monthly_rent: 2_000.0,
+            vacancy: 0.05,
+            ..RentalTerms::default()
+        }),
+        ..Property::default()
+    });
+    p
+}
+
+/// Per path and year: rental income less housing spending. A month in which the
+/// rental loses money books the loss as housing spending, and the home's own costs
+/// are the same with either dynamics, so differences are the rental's.
+fn rental_years(plan: &sim::Plan, paths: u64, years: usize) -> Vec<f64> {
+    let mut out = Vec::new();
+    for path in 0..paths {
+        let trace = sim::trace_path(plan, SEED, path);
+        let col = |s: YearSeries| {
+            trace
+                .annual
+                .columns
+                .iter()
+                .find(|c| c.key == s.key())
+                .unwrap()
+                .values
+                .clone()
+        };
+        let (rent, housing) = (col(YearSeries::IncomeRental), col(YearSeries::SpendHousing));
+        out.extend((1..=years).map(|y| rent[y] - housing[y]));
+    }
+    out
+}
+
+#[test]
+fn realistic_rentals_keep_the_average_and_add_lumps() {
+    let simple_p = landlord();
+    let real_p = realistic_rentals(simple_p.clone());
+    // Explicitly simple is the default.
+    let mut explicit = simple_p.clone();
+    if let PropertyUse::Rental(t) = &mut explicit.properties[1].usage {
+        t.dynamics = RentalDynamics::Simple;
+    }
+    let base = run(&compile(&simple_p), SEED, 0..PATHS);
+    assert_eq!(
+        base.to_bytes(),
+        run(&compile(&explicit), SEED, 0..PATHS).to_bytes()
+    );
+    let real_plan = compile(&real_p);
+    let real = run_checked(&real_plan, SEED, 0..PATHS);
+    // Social Security is untouched path by path: the rental's randomness is its own.
+    assert_eq!(
+        series_total(&base, YearSeries::IncomeSocialSecurity),
+        series_total(&real, YearSeries::IncomeSocialSecurity)
+    );
+    // Same average over 20 years and all paths: vacancy is still 5% in the long run
+    // and repairs keep the maintenance budget; evictions (2% of tenancy-years at
+    // three months' rent, about $120 a year) are the only new cost. Within 3%.
+    let years = 20;
+    let simple = rental_years(&compile(&simple_p), 60, years);
+    let lumpy = rental_years(&real_plan, 60, years);
+    let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+    let (ms, mr) = (mean(&simple), mean(&lumpy));
+    eprintln!("mean annual rental income less housing costs: simple {ms:.0}, realistic {mr:.0}");
+    // Gross rent is $24,000 a year: within 3% of it.
+    assert!((mr - ms).abs() < 0.03 * 24_000.0, "{mr} vs {ms}");
+    // Lumpier: paired year by year (the home's costs cancel), the realistic rental
+    // is often a quarter of a year's rent ($5,000) or more away from the simple one:
+    // a long vacancy, an eviction or a large repair.
+    let far = simple
+        .iter()
+        .zip(&lumpy)
+        .filter(|(a, b)| (*b - *a).abs() > 5_000.0)
+        .count();
+    eprintln!("years $5,000 or more apart: {far} of {}", simple.len());
+    assert!(far as f64 > 0.05 * simple.len() as f64, "{far}");
+    // And it shows in the trace.
+    let mut seen = (false, false);
+    for path in 0..20 {
+        let trace = sim::trace_path(&real_plan, SEED, path);
+        for e in &trace.events {
+            seen.0 |= e.label.starts_with("Tenant moved out of flat");
+            seen.1 |= e.label.starts_with("Large repair on flat");
+        }
+    }
+    assert!(seen.0 && seen.1, "{seen:?}");
+}

@@ -2248,6 +2248,53 @@
         "source": "Judgement: a cash-out below $10,000 (today's dollars) is not worth its closing costs.",
         "confidence": "judgement"
       }
+    },
+    "rental_dynamics": {
+      "default_annual_turnover": {
+        "value": 0.25,
+        "source": "Invitation Homes, full-year 2024 results (February 2025): same-store annual turnover 22.6% (24.3% in 2023), average length of stay about 38 months, about 40 days empty between residents (Form 10-K FY2024); single-family rentals. Apartments turn over faster.",
+        "confidence": "medium"
+      },
+      "recession_spell_factor": {
+        "value": 1.5,
+        "source": "Judgement: vacancy spells taken as half again as long in a recession; the Census Housing Vacancy Survey's rental vacancy rate rose by about a tenth to a quarter around 2008-09. HVS duration tables (e.g. 1999-2001: 27-28% of vacant for-rent units empty under a month, 22-24% six months or more) are consistent with mean spells of a few months.",
+        "confidence": "judgement"
+      },
+      "recession_share": {
+        "value": 0.13,
+        "source": "Judgement: about the share of postwar US months in NBER recessions, used only to keep the long-run vacancy at the entered rate.",
+        "confidence": "judgement"
+      },
+      "rent_index_annual_persistence": {
+        "value": 0.8,
+        "source": "Judgement: market rents deviate from trend for years (the 2021-23 surge took about three years to fade).",
+        "confidence": "judgement"
+      },
+      "rent_index_sd": {
+        "value": 0.05,
+        "source": "Judgement informed by the Zillow Observed Rent Index, whose year-over-year growth peaked at 17.2% in February 2022 (Zillow Research) after near zero in 2020: market rents within about 10% of trend most of the time.",
+        "confidence": "judgement"
+      },
+      "eviction_annual": {
+        "value": 0.02,
+        "source": "Judgement informed by the Eviction Lab: 3.6 million eviction cases filed in 2018, a filing rate of 7.8% of renter homes, about 6 in 100 renter households threatened; fewer end with a judgement and a lost tenant.",
+        "confidence": "judgement"
+      },
+      "eviction_cost_months": {
+        "value": 3.0,
+        "source": "Judgement: rent lost while the case runs, legal fees and damage, in months of rent.",
+        "confidence": "judgement"
+      },
+      "capex_share": {
+        "value": 0.5,
+        "source": "Judgement: half of a rental's maintenance budget comes as large repairs (roof, heating, appliances), the rest as routine upkeep.",
+        "confidence": "judgement"
+      },
+      "capex_monthly_probability": {
+        "value": 0.016666666666666666,
+        "source": "Judgement: a large repair every five years on average.",
+        "confidence": "judgement"
+      }
     }
   },
   "equity_compensation": {

@@ -147,7 +147,8 @@ Property { id, name, use: Primary | Rental{..RentalTerms} | Vacation,
            value, basis: Option<f64>, mortgage: Option<Mortgage{ balance, rate, remaining_months, payment: Option }>,
            property_tax_rate: Option<f64> (default from state), insurance_rate, maintenance_rate, hoa_monthly,
            appreciation_vs_national: f64, idiosyncratic_volatility: f64 }
-RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_fraction }
+RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_fraction,
+              dynamics: Simple (default) | Realistic{ annual_turnover (0.25) } }
 
 Debt { id, name, kind: Student|Auto|CreditCard|Personal|Other, balance, rate,
        payment: Option<f64>, remaining_months: Option<u32> }

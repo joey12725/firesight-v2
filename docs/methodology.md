@@ -590,6 +590,38 @@ noise (91.5% to 91.2%). Not modelled: the mortgage interest deduction in the
 comparison, rental mortgages, the liquidity lost by prepaying, and expectations of
 future rates.
 
+**Rentals that behave like rentals** (opt-in per rental, `use: {type: rental, ...,
+dynamics: {type: realistic, annual_turnover}}`; code in `rental_market.rs`, applied by
+`PropertyModel::step_realistic`). By default a rental is empty in short random spells
+at the entered vacancy and its rent follows its trend. With realistic dynamics a
+tenancy ends each month with probability `annual_turnover / 12` (default 0.25:
+Invitation Homes reported 22.6% annual turnover and stays of about 38 months in 2024,
+and 24.3% in 2023); the unit then stands empty for a geometric number
+of months whose mean, `v / (1 - v)` tenancies-worth divided by the move-out rate, keeps
+the long-run vacant share at the entered `vacancy` (when that mean is under a month it
+is re-let within the month and loses that fraction of the rent). Spells are 1.5 times
+longer in a recession and slightly shorter otherwise so that the average holds at 13%
+of months in recession (judgements). The market rent is the trend times
+`exp(x - S^2/2)`, with `x` an AR(1) of persistence 0.8 a year and long-run sd 5%
+(judgements informed by the Zillow Observed Rent Index, whose yearly growth peaked at
+17.2% in February 2022); new leases and yearly renewals reset the rent to the market.
+A share of move-outs (2% of tenancy-years, a judgement informed by the Eviction Lab's
+filing rate of about 8% of renter homes) are evictions costing three months of rent.
+Half of the maintenance rate comes as large repairs, one every five years on average,
+sized to keep the expected maintenance unchanged (judgements). The rental draws five
+values a month from its own stream (`RentalMarket(slot)`, base 0x1600_0000) whether
+owned or not; the property's own stream is drawn exactly as before. Costs go through
+the rental's operating costs, so they are deductible and reported as before; trace
+events mark move-outs, evictions and large repairs. Measured: a $2,000-a-month rental
+kept its average income less costs within 1% of the simple model's over 20 years, while
+a quarter of its years were $5,000 or more away from it; on the side-hustle landlord
+(4,000 paired paths) success moves from 92.1% to 91.8% (within noise) and the 10th
+percentile of terminal net worth from $143,000 to $126,000. Not modelled: rents that
+move with the local house price or the economy (the index is the rental's own),
+correlation between rentals, rent control and lagged renewals, security deposits,
+turnover make-ready costs beyond maintenance, and capitalisation (rather than
+expensing) of large repairs.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus

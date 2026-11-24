@@ -633,6 +633,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             rent_real_growth: 0.0,
             land_fraction: 0.25,
             years_in_service: 4.0,
+            dynamics: RentalDynamics::Simple,
         }),
         value: 385_000.0,
         basis: Some(310_000.0),

@@ -33,6 +33,7 @@ pub mod legacy;
 pub mod math;
 pub mod model;
 pub mod patch;
+pub mod rental_market;
 pub mod rng;
 pub mod scenario;
 pub mod sim;

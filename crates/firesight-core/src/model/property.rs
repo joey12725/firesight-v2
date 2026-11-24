@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::RentalDynamics;
+
 /// A home, rental or vacation property owned today. Future purchases are events.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -101,6 +103,13 @@ pub struct RentalTerms {
     /// Years the property has already been a rental, which decides how much
     /// depreciation is left (residential rentals depreciate over 27.5 years).
     pub years_in_service: f64,
+    /// How tenants and rents behave over time: "simple" (default: short random
+    /// vacancies at the entered rate, rent on its trend) or "realistic" (tenants move
+    /// out at random and the unit takes months to re-let, longer in recessions;
+    /// rents follow a market index; occasional evictions and large repairs; the same
+    /// long-run vacancy).
+    #[serde(skip_serializing_if = "RentalDynamics::is_simple")]
+    pub dynamics: RentalDynamics,
 }
 
 impl Default for RentalTerms {
@@ -112,6 +121,7 @@ impl Default for RentalTerms {
             rent_real_growth: 0.0,
             land_fraction: 0.2,
             years_in_service: 0.0,
+            dynamics: RentalDynamics::Simple,
         }
     }
 }

@@ -2,7 +2,7 @@
 //! home, downsizing, cash-out refinancing, prepayment and rental dynamics.
 
 use crate::model::{
-    Downsize, DownsizeWhen, HomeEquityBorrowing, MortgagePrepayment, PropertyUse,
+    Downsize, DownsizeWhen, HomeEquityBorrowing, MortgagePrepayment, PropertyUse, RentalDynamics,
     ReverseMortgageOpen,
 };
 
@@ -121,6 +121,47 @@ impl Checker<'_> {
             self.downsize(d, has_home);
         }
         self.refinancing(has_home);
+        self.rental_dynamics();
+    }
+
+    fn rental_dynamics(&mut self) {
+        let p = self.p;
+        let props = p
+            .properties
+            .iter()
+            .enumerate()
+            .map(|(i, x)| (format!("/properties/{i}/use"), x.usage));
+        let buys = p
+            .events
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| match &e.kind {
+                crate::model::EventKind::BuyHome(b) => {
+                    Some((format!("/events/{i}/kind/use"), b.usage))
+                }
+                _ => None,
+            });
+        for (path, usage) in props.chain(buys) {
+            let PropertyUse::Rental(terms) = usage else {
+                continue;
+            };
+            if let RentalDynamics::Realistic { annual_turnover } = terms.dynamics {
+                let at = format!("{path}/dynamics/annual_turnover");
+                if annual_turnover <= 0.0 || !annual_turnover.is_finite() || annual_turnover > 2.0 {
+                    self.r.error(
+                        "out_of_range",
+                        &at,
+                        format!("Annual turnover is {annual_turnover}; it must be above 0 and at most 2 (tenancies ending per unit and year)."),
+                    );
+                } else if !(0.1..=0.6).contains(&annual_turnover) {
+                    self.r.warn(
+                        "rental_turnover_unusual",
+                        &at,
+                        "Landlords report a quarter to a half of tenancies ending each year (single-family rentals about 0.25).",
+                    );
+                }
+            }
+        }
     }
 
     fn refinancing(&mut self, has_home: bool) {
@@ -534,6 +575,57 @@ mod tests {
         ));
         let json = serde_json::to_string(&Profile::example()).unwrap();
         assert!(!json.contains("cash_out") && !json.contains("prepayment"));
+    }
+
+    #[test]
+    fn rental_dynamics_are_checked_and_round_trip() {
+        let mut p = Profile::example();
+        p.properties.push(Property {
+            id: "flat".into(),
+            value: 300_000.0,
+            usage: PropertyUse::Rental(RentalTerms {
+                monthly_rent: 2_000.0,
+                dynamics: RentalDynamics::Realistic {
+                    annual_turnover: 0.25,
+                },
+                ..RentalTerms::default()
+            }),
+            ..Property::default()
+        });
+        let i = p.properties.len() - 1;
+        let at = format!("/properties/{i}/use/dynamics/annual_turnover");
+        let (errors, warnings) = codes(&p);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!warnings.iter().any(|(c, _)| c == "rental_turnover_unusual"));
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(
+            json.contains(r#""dynamics":{"type":"realistic","annual_turnover":0.25}"#),
+            "{json}"
+        );
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
+        let set = |p: &mut Profile, x: f64| {
+            if let PropertyUse::Rental(t) = &mut p.properties[i].usage {
+                t.dynamics = RentalDynamics::Realistic { annual_turnover: x };
+            }
+        };
+        set(&mut p, 0.0);
+        assert!(has(&codes(&p).0, "out_of_range", &at));
+        set(&mut p, 0.9);
+        assert!(has(&codes(&p).1, "rental_turnover_unusual", &at));
+        // The default is left out, and a missing turnover takes 0.25.
+        set(&mut p, 0.25);
+        if let PropertyUse::Rental(t) = &mut p.properties[i].usage {
+            t.dynamics = RentalDynamics::Simple;
+        }
+        assert!(!serde_json::to_string(&p).unwrap().contains("dynamics"));
+        let d: RentalDynamics = serde_json::from_str(r#"{"type":"realistic"}"#).unwrap();
+        assert_eq!(
+            d,
+            RentalDynamics::Realistic {
+                annual_turnover: 0.25
+            }
+        );
     }
 
     #[test]

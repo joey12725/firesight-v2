@@ -36,7 +36,11 @@
 
 use crate::economy::EconomyPath;
 use crate::home_equity::{self, EquityLine, HelocTerms, LineKind, HOUSING_SLUMP_DRAWDOWN};
-use crate::model::{HomeEquityBorrowing, Profile, PropertyUse, ReverseMortgageOpen};
+use crate::housing::HousingMonth;
+use crate::model::{
+    EventKind, HomeEquityBorrowing, Profile, PropertyUse, RentalDynamics, ReverseMortgageOpen,
+};
+use crate::rental_market::{RentalDraws, RentalMarketParams, RentalMarketState};
 use crate::rng::{Rng, Stream};
 use crate::stats::{TraceEventKind, YearSeries};
 
@@ -84,10 +88,14 @@ pub(crate) struct HxPlan {
     pub cash_out: Option<CashOutPlan>,
     /// Mortgage prepayment (`debt_policy.mortgage_prepayment`).
     pub prepay: Prepay,
+    /// Realistic rental dynamics, per property slot.
+    pub rentals: Vec<Option<RentalMarketParams>>,
+    /// True when some slot has realistic rental dynamics.
+    pub live_rentals: bool,
 }
 
 impl HxPlan {
-    pub(crate) fn compile(profile: &Profile, _props: &[PropPlan]) -> HxPlan {
+    pub(crate) fn compile(profile: &Profile, props: &[PropPlan]) -> HxPlan {
         let borrow = match profile.retirement.home_equity_borrowing {
             HomeEquityBorrowing::None => Borrow::None,
             HomeEquityBorrowing::Heloc(h) => Borrow::Heloc(HelocTerms {
@@ -119,6 +127,29 @@ impl HxPlan {
             .map(CashOutPlan::compile);
         let prepay = Prepay::compile(&profile.debt_policy.mortgage_prepayment);
         let prepaying = !matches!(prepay, Prepay::Never);
+        // Slots: the profile's properties, then one per purchase event (plan.rs).
+        let usages =
+            profile
+                .properties
+                .iter()
+                .map(|p| p.usage)
+                .chain(profile.events.iter().filter_map(|e| match &e.kind {
+                    EventKind::BuyHome(b) => Some(b.usage),
+                    _ => None,
+                }));
+        let mut rentals: Vec<Option<RentalMarketParams>> = usages
+            .map(|u| match u {
+                PropertyUse::Rental(terms) => match terms.dynamics {
+                    RentalDynamics::Simple => None,
+                    RentalDynamics::Realistic { annual_turnover } => {
+                        Some(RentalMarketParams::new(terms.vacancy, annual_turnover))
+                    }
+                },
+                _ => None,
+            })
+            .collect();
+        rentals.resize(props.len(), None);
+        let live_rentals = rentals.iter().any(Option::is_some);
         HxPlan {
             borrow,
             lines,
@@ -127,6 +158,8 @@ impl HxPlan {
             downsize,
             cash_out,
             prepay,
+            rentals,
+            live_rentals,
         }
     }
 }
@@ -157,6 +190,9 @@ pub(crate) struct HxState {
     pub mortgage_rate: f64,
     /// Month of the last cash-out refinance.
     pub last_cash_out: i32,
+    /// Market state and stream of each rental with realistic dynamics.
+    pub rentals: Vec<RentalMarketState>,
+    pub rental_rng: Vec<Rng>,
 }
 
 impl HxState {
@@ -174,6 +210,8 @@ impl HxState {
             downsized: false,
             mortgage_rate: 0.0,
             last_cash_out: NEVER_CASHED_OUT,
+            rentals: vec![RentalMarketState::default(); plan.props.len()],
+            rental_rng: vec![Rng::from_seed(0); plan.props.len()],
         }
     }
 
@@ -190,6 +228,12 @@ impl HxState {
         self.downsized = false;
         self.mortgage_rate = 0.0;
         self.last_cash_out = NEVER_CASHED_OUT;
+        self.rentals.fill(RentalMarketState::default());
+        for (i, r) in plan.hx.rentals.iter().enumerate() {
+            if r.is_some() {
+                self.rental_rng[i] = Rng::stream(seed, path, Stream::RentalMarket(i));
+            }
+        }
         if let Borrow::Heloc(_) = plan.hx.borrow {
             self.rng = Rng::stream(seed, path, Stream::HomeEquityCredit);
         }
@@ -211,6 +255,65 @@ impl HxState {
 }
 
 impl State {
+    /// Step 7 for property `i` when some rental has realistic dynamics: draws the
+    /// rental's market month (five values, owned or not) and steps the property with
+    /// it; other slots step as usual.
+    pub(crate) fn hx_property_step(
+        &mut self,
+        plan: &Plan,
+        i: usize,
+        t: usize,
+        home_national: f64,
+        price: f64,
+        recession: bool,
+    ) -> HousingMonth {
+        let model = &plan.props[i].model;
+        let Some(params) = plan.hx.rentals[i] else {
+            return model.step(
+                &mut self.props[i],
+                home_national,
+                price,
+                &mut self.rng_housing[i],
+            );
+        };
+        let draws = RentalDraws::draw(&mut self.hx.rental_rng[i]);
+        let (hm, o) = model.step_realistic(
+            &mut self.props[i],
+            home_national,
+            price,
+            &mut self.rng_housing[i],
+            &params,
+            &mut self.hx.rentals[i],
+            &draws,
+            recession,
+        );
+        if self.detail && self.props[i].owned {
+            let now = plan.start + t as i32;
+            let name = &plan.props[i].name;
+            if o.eviction_months > 0.0 {
+                self.event(
+                    now,
+                    TraceEventKind::LifeEvent,
+                    Some(hm.maintenance / price),
+                    || format!("Evicted a tenant from {name}"),
+                );
+            } else if o.moved_out {
+                self.event(now, TraceEventKind::LifeEvent, None, || {
+                    format!("Tenant moved out of {name}")
+                });
+            }
+            if o.repair {
+                self.event(
+                    now,
+                    TraceEventKind::MajorExpense,
+                    Some(hm.maintenance / price),
+                    || format!("Large repair on {name}"),
+                );
+            }
+        }
+        hm
+    }
+
     /// Books the liability of the line on `slot` after any change to it or to the
     /// home's value: the change is a mortgage flow for the conservation check.
     pub(crate) fn hx_book(&mut self, slot: usize) {

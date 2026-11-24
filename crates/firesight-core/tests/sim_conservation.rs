@@ -242,6 +242,7 @@ pub fn kitchen_sink() -> Profile {
                     rent_real_growth: 0.005,
                     land_fraction: 0.25,
                     years_in_service: 4.0,
+                    dynamics: RentalDynamics::Simple,
                 }),
                 value: 300_000.0,
                 basis: Some(240_000.0),

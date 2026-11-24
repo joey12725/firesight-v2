@@ -177,6 +177,26 @@ pub fn with_housing_decisions(mut p: Profile) -> Profile {
     });
     p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
     p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
+    realistic_rentals(p)
+}
+
+/// Every rental (owned or bought later) with realistic dynamics.
+pub fn realistic_rentals(mut p: Profile) -> Profile {
+    let realistic = |u: &mut PropertyUse| {
+        if let PropertyUse::Rental(t) = u {
+            t.dynamics = RentalDynamics::Realistic {
+                annual_turnover: 0.25,
+            };
+        }
+    };
+    for prop in &mut p.properties {
+        realistic(&mut prop.usage);
+    }
+    for e in &mut p.events {
+        if let EventKind::BuyHome(b) = &mut e.kind {
+            realistic(&mut b.usage);
+        }
+    }
     p
 }
 

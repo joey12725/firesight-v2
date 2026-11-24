@@ -516,12 +516,17 @@ impl State {
             let rental = matches!(st.usage, PropertyUse::Rental(_));
             let value_before = st.value;
             let balance = st.mortgage_balance();
-            let hm = plan.props[i].model.step(
-                &mut self.props[i],
-                home_national,
-                price,
-                &mut self.rng_housing[i],
-            );
+            let hm = if plan.hx.live_rentals {
+                let recession = econ.recession[t] != 0;
+                self.hx_property_step(plan, i, t, home_national, price, recession)
+            } else {
+                plan.props[i].model.step(
+                    &mut self.props[i],
+                    home_national,
+                    price,
+                    &mut self.rng_housing[i],
+                )
+            };
             if !owned {
                 continue;
             }
