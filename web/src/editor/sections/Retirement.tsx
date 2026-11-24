@@ -1,7 +1,8 @@
 import type { RetirementPlan } from '@/engine/types';
-import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SegmentField, SliderField, ToggleField } from '../fields';
+import { ChoiceField, Group, MoneyField, NumField, Optional, PercentField, PersonField, Realism, Row, SegmentField, SliderField, ToggleField } from '../fields';
 import { usePeople, useProfile } from '../hooks';
 import { MonthField } from '../MonthField';
+import { MAKE, homeRealism, timingRealism } from '../realism';
 
 type Trigger = RetirementPlan['trigger'];
 type Rule = RetirementPlan['spending_rule'];
@@ -76,6 +77,8 @@ export function RetirementSection() {
   const t = '/retirement/trigger';
   const r = '/retirement/spending_rule';
   const o = '/retirement/withdrawal_order';
+  const b = '/retirement/home_equity_borrowing';
+  const { home_equity_borrowing: borrowing, downsize, return_to_work: work } = retirement;
   return (
     <>
       <Group title="When work stops">
@@ -97,6 +100,17 @@ export function RetirementSection() {
               ]}
             />
             <ToggleField path={`${t}/count_future_income`} label="Count pensions and Social Security still to come" />
+            <Realism summary="Not retiring into a crash" on={timingRealism(trigger)}>
+              <Optional path={`${t}/confirmation`} label="Wait until the plan stays funded" present={trigger.confirmation !== null} make={MAKE.confirmation}>
+                <Row>
+                  <NumField path={`${t}/confirmation/months`} label="Funded for" kind="months" suffix="mo in a row" />
+                  <PercentField path={`${t}/confirmation/max_equity_drawdown`} label="Stocks no more than this below their peak" />
+                </Row>
+              </Optional>
+              <Optional path={`${t}/one_more_year`} label="May work one more year" present={trigger.one_more_year !== null} make={MAKE.oneMoreYear}>
+                <SliderField path={`${t}/one_more_year/probability`} label="Chance, each time retirement comes up" kind="percent" min={0} max={0.9} step={0.05} />
+              </Optional>
+            </Realism>
           </>
         )}
         {trigger.type === 'at_age' && (
@@ -122,6 +136,31 @@ export function RetirementSection() {
         {people.length > 1 && trigger.type !== 'already_retired' && (
           <NumField path="/retirement/partner_offset_years" label="Second earner keeps working for" kind="years" suffix="more yrs" hint="Negative if they stop earlier." />
         )}
+        <Realism summary="Going back to work" on={work ? 1 : 0}>
+          <Optional path="/retirement/return_to_work" label="Look for work again if savings fall short" present={work !== null} make={MAKE.returnToWork}>
+            <Row>
+              <PercentField path="/retirement/return_to_work/funded_ratio_below" label="When savings cover less than" />
+              <NumField path="/retirement/return_to_work/until_age" label="Not from age" kind="years" />
+            </Row>
+            <Row>
+              <PercentField path="/retirement/return_to_work/pay_fraction" label="Pay, of former pay" />
+              <MoneyField path="/retirement/return_to_work/former_annual_pay" label="Former pay" nullable placeholder="Pay at retirement" suffix="/yr" />
+            </Row>
+            <Row>
+              <ChoiceField
+                path="/retirement/return_to_work/search"
+                label="Finding a job takes"
+                options={[
+                  { value: 'typical', label: 'A typical search' },
+                  { value: 'fixed', label: 'A set time' },
+                ]}
+                read={(v) => (v as NonNullable<typeof work>['search']).type}
+                write={MAKE.jobSearch}
+              />
+              {work?.search.type === 'fixed' && <NumField path="/retirement/return_to_work/search/months" label="Months" kind="months" suffix="mo" />}
+            </Row>
+          </Optional>
+        </Realism>
       </Group>
 
       <Group title="Spending in retirement">
@@ -173,10 +212,13 @@ export function RetirementSection() {
             { value: 'pay_penalty', label: 'Pay the 10% penalty' },
           ]}
         />
+        <Realism summary="Giving from the IRA" on={retirement.qcd ? 1 : 0}>
+          <ToggleField path="/retirement/qcd" label="Pay Giving lines from the IRA from 70½ (QCDs)" />
+        </Realism>
       </Group>
 
       {(properties.length > 0 || events.some((e) => e.kind.type === 'buy_home')) && (
-        <Group title="The home as a last resort">
+        <Group title="The home">
           <SegmentField
             path="/retirement/home_equity"
             label="If savings run out"
@@ -190,6 +232,80 @@ export function RetirementSection() {
               ? 'When every account is empty, property is sold before essentials are cut: a vacation home first, then a rental, then the home, after which the household rents. Such a life counts as the plan holding, so the results always show how often it happens beside the success figure.'
               : 'Property is never sold to fund spending. A life whose savings run out cuts spending to its income and counts as running short, whatever the home is worth.'}
           </Explain>
+          <Realism summary="Borrowing against the home and downsizing" on={homeRealism(retirement)}>
+            <ChoiceField
+              path={b}
+              label="Borrow against the home first"
+              options={[
+                { value: 'none', label: 'Never borrow' },
+                { value: 'heloc', label: 'Home-equity line of credit' },
+                { value: 'reverse_mortgage', label: 'Reverse mortgage, from 62' },
+              ]}
+              read={(v) => (v as typeof borrowing).type}
+              write={(type) => ({ type })}
+            />
+            {borrowing.type === 'heloc' && (
+              <>
+                <Row cols={3}>
+                  <PercentField path={`${b}/max_combined_ltv`} label="Limit, of value" />
+                  <PercentField path={`${b}/spread`} label="Rate above bills" />
+                  <PercentField path={`${b}/freeze_probability`} label="Chance of a freeze" />
+                </Row>
+                <Row>
+                  <NumField path={`${b}/draw_years`} label="Interest-only for" kind="years" suffix="yrs" />
+                  <NumField path={`${b}/repay_years`} label="Then repaid over" kind="years" suffix="yrs" />
+                </Row>
+              </>
+            )}
+            {borrowing.type === 'reverse_mortgage' && (
+              <>
+                <Row>
+                  <ChoiceField
+                    path={`${b}/open_when`}
+                    label="Opened"
+                    options={[
+                      { value: 'last_resort', label: 'When savings run out' },
+                      { value: 'savings_below', label: 'When savings run low' },
+                    ]}
+                    read={(v) => (v as typeof borrowing.open_when).type}
+                    write={MAKE.reverseOpen}
+                  />
+                  {borrowing.open_when.type === 'savings_below' && <NumField path={`${b}/open_when/years`} label="Below this many years of spending" step={1} suffix="yrs" />}
+                </Row>
+                <Row>
+                  <PercentField path={`${b}/lender_margin`} label="Lender’s margin" />
+                  <MoneyField path={`${b}/other_closing_costs`} label="Other closing costs" />
+                </Row>
+              </>
+            )}
+            <Optional path="/retirement/downsize" label="Plan to downsize" present={downsize !== null} make={MAKE.downsize}>
+              <ChoiceField
+                path="/retirement/downsize/when"
+                label="When"
+                options={[
+                  { value: 'when_children_leave', label: 'When the children leave' },
+                  { value: 'at_age', label: 'At an age' },
+                  { value: 'when_widowed', label: 'After being widowed' },
+                  { value: 'when_funded_ratio_below', label: 'When savings fall behind the plan' },
+                ]}
+                read={(v) => (v as NonNullable<typeof downsize>['when']).type}
+                write={MAKE.downsizeWhen}
+              />
+              {downsize?.when.type === 'at_age' && (
+                <Row>
+                  <PersonField path="/retirement/downsize/when/person" label="Whose age" />
+                  <NumField path="/retirement/downsize/when/age" label="Age" kind="years" />
+                </Row>
+              )}
+              {downsize?.when.type === 'when_funded_ratio_below' && <PercentField path="/retirement/downsize/when/ratio" label="Savings below this share of what the plan needs" />}
+              <SliderField path="/retirement/downsize/to_value_fraction" label="New home, as a share of the old one’s value" kind="percent" min={0.2} max={1} step={0.05} />
+              <ToggleField path="/retirement/downsize/rent_instead" label="Rent the new home instead of buying" />
+              <Row>
+                <PercentField path="/retirement/downsize/selling_cost_fraction" label="Selling costs" />
+                <PercentField path="/retirement/downsize/buying_cost_fraction" label="Buying costs" />
+              </Row>
+            </Optional>
+          </Realism>
         </Group>
       )}
 

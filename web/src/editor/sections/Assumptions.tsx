@@ -1,8 +1,9 @@
 import type { Assumptions, Stress } from '@/engine/types';
 import { append, remove, set } from '@/state/patches';
 import { Button, IconButton, Popover } from '@/ui';
-import { ChoiceField, Group, NumField, PercentField, Row, SliderField, ToggleField } from '../fields';
+import { ChoiceField, Group, NumField, Optional, PercentField, Realism, Row, SegmentField, SliderField, ToggleField } from '../fields';
 import { useEdit, useProfile } from '../hooks';
+import { MAKE, lifeRealism, marketRealism, taxRealism } from '../realism';
 import { WhenField } from '../WhenField';
 
 type Market = Assumptions['market']['kind'];
@@ -28,6 +29,12 @@ const MODELS: { value: Market['type']; label: string; explain: string; make: () 
     make: () => ({ type: 'lognormal' }),
   },
   {
+    value: 'fat_tailed',
+    label: 'Random walk with fat tails',
+    explain: 'The textbook model with the same averages, plus what it leaves out: rare extreme months, volatile spells that cluster and fade, and markets that fall together in a sell-off. Crashes are deeper and more frequent than in the plain random walk.',
+    make: () => ({ type: 'fat_tailed' }),
+  },
+  {
     value: 'historical',
     label: 'History, replayed',
     explain: 'Each path starts in a different real month and lives through what followed, in order. Easy to audit, but there are only so many decades of history, and the recent starts run out of future.',
@@ -39,7 +46,16 @@ const STRESSES: { type: Stress['type']; label: string; note: string; make: () =>
   { type: 'crash_at_retirement', label: 'Crash at retirement', note: 'Stocks fall hard in the year you retire', make: () => ({ type: 'crash_at_retirement' }) },
   { type: 'lost_decade', label: 'Lost decade', note: 'Ten years in which stocks return nothing after inflation', make: () => ({ type: 'lost_decade', start: { type: 'retirement', offset_years: 0 } }) },
   { type: 'stagflation', label: 'Stagflation', note: 'High inflation with weak stock and bond returns', make: () => ({ type: 'stagflation', start: { type: 'retirement', offset_years: 0 } }) },
+  { type: 'historical_episode', label: 'A historical episode', note: '1929, 1966, 2000 or 2008, replayed as it happened', make: MAKE.historicalEpisode },
+  { type: 'lost_generation', label: 'Lost generation', note: 'Decades of flat stocks, falling prices and near-zero rates', make: MAKE.lostGeneration },
 ];
+
+const EPISODES = [
+  { value: 'great_depression1929', label: 'Great Depression, 1929 to 1945' },
+  { value: 'stagflation1966', label: 'Stagflation, 1966 to 1982' },
+  { value: 'dot_com2000', label: 'Dot-com bust and after, 2000 to 2013' },
+  { value: 'financial2008', label: 'Financial crisis, 2007 to 2013' },
+] as const;
 
 function StressRow({ stress, index }: { stress: Stress; index: number }) {
   const path = `/assumptions/market/stress/${index}`;
@@ -67,12 +83,24 @@ function StressRow({ stress, index }: { stress: Stress; index: number }) {
           </Row>
         </>
       )}
+      {stress.type === 'historical_episode' && (
+        <>
+          <ChoiceField path={`${path}/episode`} label="Episode" options={EPISODES} />
+          <WhenField path={`${path}/start`} label="Starts" kinds={['retirement', 'date', 'age', 'start']} />
+        </>
+      )}
+      {stress.type === 'lost_generation' && (
+        <>
+          <WhenField path={`${path}/start`} label="Starts" kinds={['retirement', 'date', 'age', 'start']} />
+          <NumField path={`${path}/years`} label="Lasts" kind="years" suffix="yrs" />
+        </>
+      )}
     </li>
   );
 }
 
 export function AssumptionsSection() {
-  const { assumptions } = useProfile();
+  const { assumptions, household } = useProfile();
   const edit = useEdit();
   const m = '/assumptions/market';
   const model = assumptions.market.kind;
@@ -117,6 +145,28 @@ export function AssumptionsSection() {
           )}
         </p>
         <SliderField path={`${m}/inflation_adjustment`} label="Inflation versus history" kind="percent" min={-0.02} max={0.03} step={0.0025} hint="Per year, added to simulated inflation." />
+        <Realism summary="Valuations, bond pricing and dividend yields" on={marketRealism(assumptions.market)}>
+          {model.type !== 'historical' && (
+            <Optional path={`${m}/valuation`} label="Start from today’s stock valuation" present={assumptions.market.valuation !== null} make={MAKE.valuation}>
+              <Row cols={3}>
+                <NumField path={`${m}/valuation/starting_cape`} label="CAPE today" step={1} />
+                <NumField path={`${m}/valuation/fair_cape`} label="Normal CAPE" step={0.5} />
+                <NumField path={`${m}/valuation/half_life_years`} label="Half-life" step={1} suffix="yrs" />
+              </Row>
+            </Optional>
+          )}
+          {model.type === 'bootstrap' && (
+            <SegmentField
+              path={`${m}/bond_pricing`}
+              label="Bond returns"
+              options={[
+                { value: 'sampled', label: 'From history' },
+                { value: 'from_yield', label: 'Priced from the yield' },
+              ]}
+            />
+          )}
+          <ToggleField path={`${m}/dynamic_yields`} label="Dividend and interest yields move with the market" />
+        </Realism>
       </Group>
 
       <Group title="Stress tests">
@@ -177,6 +227,32 @@ export function AssumptionsSection() {
         </Row>
         {taxes.kind.type === 'us_current_law' && <ToggleField path="/assumptions/taxes/index_brackets" label="Brackets keep up with inflation" />}
         <p className="text-xs leading-snug text-ink-3">The Social Security benefit cut is set under Income.</p>
+        <Realism summary="Chained CPI, state detail and policy risk" on={taxRealism(taxes)}>
+          {taxes.kind.type === 'us_current_law' && (
+            <>
+              <ToggleField path="/assumptions/taxes/chained_cpi" label="Index thresholds to the chained CPI" />
+              <SegmentField
+                path="/assumptions/taxes/state_detail"
+                label="State rules"
+                options={[
+                  { value: 'basic', label: 'Basic' },
+                  { value: 'full', label: 'Full (CA, NY, UT extras)' },
+                ]}
+              />
+            </>
+          )}
+          <Optional path="/assumptions/taxes/policy_risk" label="Policy may change along the way" present={taxes.policy_risk !== null} make={MAKE.policyRisk}>
+            <Row cols={3}>
+              <PercentField path="/assumptions/taxes/policy_risk/ss_haircut_probability" label="Chance of a benefit cut" />
+              <PercentField path="/assumptions/taxes/policy_risk/ss_haircut_factor" label="Share still paid" />
+              <NumField path="/assumptions/taxes/policy_risk/earliest_year" label="Not before" kind="integer" />
+            </Row>
+            <Row>
+              <PercentField path="/assumptions/taxes/policy_risk/tax_increase_probability" label="Chance of a tax rise" />
+              <PercentField path="/assumptions/taxes/policy_risk/tax_increase_points" label="Points added to each rate" />
+            </Row>
+          </Optional>
+        </Realism>
       </Group>
 
       <Group title="Lifespan and risks">
@@ -200,6 +276,46 @@ export function AssumptionsSection() {
         {assumptions.longevity.type === 'stochastic' && <ToggleField path="/assumptions/longevity/improvement" label="People keep living longer" />}
         <ToggleField path="/assumptions/career_risk" label="Career risk: layoffs and pay shocks" />
         <ToggleField path="/assumptions/health_risk" label="Health risk: medical and care costs vary" />
+        <Realism summary="Linked lifespans, health states and slow home sales" on={lifeRealism(assumptions)}>
+          {assumptions.longevity.type === 'stochastic' && (
+            <>
+              {household.people.length > 1 && (
+                <SegmentField
+                  path="/assumptions/longevity/couple_dependence"
+                  label="Partners’ lifespans"
+                  options={[
+                    { value: 'independent', label: 'Independent' },
+                    { value: 'linked', label: 'Linked' },
+                  ]}
+                  read={(v) => (v as { type: 'independent' | 'linked' }).type}
+                  write={(type) => ({ type })}
+                />
+              )}
+              <ToggleField path="/assumptions/longevity/income_gradient" label="Higher incomes live longer" />
+              {assumptions.longevity.income_gradient && (
+                <PercentField path="/assumptions/longevity/income_percentile" label="Household income percentile" nullable placeholder="From the plan’s income" />
+              )}
+            </>
+          )}
+          <SegmentField
+            path="/assumptions/health_model"
+            label="Health over time"
+            options={[
+              { value: 'independent', label: 'Independent draws' },
+              { value: 'states', label: 'Health states' },
+            ]}
+            read={(v) => (v as typeof assumptions.health_model).type}
+            write={(type) => ({ type })}
+          />
+          <SegmentField
+            path="/assumptions/housing_liquidity"
+            label="Selling a home"
+            options={[
+              { value: 'instant', label: 'Closes at once' },
+              { value: 'realistic', label: 'Takes time' },
+            ]}
+          />
+        </Realism>
       </Group>
     </>
   );

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { join } from '@/state/pointer';
 import { set } from '@/state/patches';
 import {
+  Disclosure,
   Field,
   NumberInput,
   SegmentedControl,
@@ -168,6 +169,49 @@ export function OwnerField({ path, label = 'Owner', nullable, className }: { pat
       read={(v) => (v === null || v === undefined ? 'shared' : String(v))}
       write={(v) => (v === 'shared' ? null : Number(v))}
     />
+  );
+}
+
+/** One of the household's adults, stored as an index. Hidden when there is only one. */
+export function PersonField({ path, label, className }: { path: string; label: string; className?: string }) {
+  const people = usePeople();
+  if (people.length < 2) return null;
+  return <ChoiceField path={path} label={label} className={className} options={people} read={(v) => String(v ?? 0)} write={(v) => Number(v)} />;
+}
+
+/** A sub-object that is either present or null, with a switch to add or remove it. */
+export function Optional({ path, label, present, make, hint, children }: { path: string; label: string; present: boolean; make: () => unknown; hint?: ReactNode; children?: ReactNode }) {
+  const edit = useEdit();
+  const help = useHelp(path);
+  const issues = useIssues(path);
+  return (
+    <div data-path={path} className="space-y-3">
+      <Field inline label={label} help={help} hint={hint} issues={issues}>
+        {({ id }) => <Switch id={id} checked={present} onChange={(on) => edit(set(path, on ? make() : null), { label: `${on ? 'Add' : 'Remove'} ${label.toLowerCase()}` })} />}
+      </Field>
+      {present && children && <div className="space-y-3 border-l border-line pl-3">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Optional realism, folded away so the everyday form stays short. Every option inside is
+ * off in a new plan; `on` is how many this plan has switched on, shown beside the title
+ * so a plan that uses some says so while closed.
+ */
+export function Realism({ summary, on = 0, children }: { summary: string; on?: number; children: ReactNode }) {
+  return (
+    <Disclosure
+      className="realism"
+      summary={
+        <span data-realism={summary}>
+          {summary}
+          {on > 0 && <span className="num ml-1.5 rounded-full bg-accent-soft px-1.5 py-px text-2xs font-medium text-accent-ink">{on} on</span>}
+        </span>
+      }
+    >
+      <div className="space-y-3">{children}</div>
+    </Disclosure>
   );
 }
 
