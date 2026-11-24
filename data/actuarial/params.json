@@ -1406,7 +1406,7 @@
         "healthy": 1.0,
         "chronic": 1.73,
         "frail": 2.79,
-        "source": "chronic: Nunes et al., Multimorbidity and mortality in older adults: a systematic review and meta-analysis, Arch Gerontol Geriatr 2016;67:130-138 (pooled HR 1.73 for two or more morbidities). frail: NHANES frail vs robust, adjusted HR 2.79 (95% CI 2.35-3.30), as reported in the frailty literature (NHATS estimates 2.7 to 4.0). Applied relative to healthy at the same age; normalised every year so that the person's mortality, averaged over the states of the survivors, equals the life table exactly.",
+        "source": "chronic: Nunes et al., Multimorbidity and mortality in older adults: a systematic review and meta-analysis, Arch Gerontol Geriatr 2016;67:130-138 (pooled HR 1.73 for two or more morbidities). frail: Crow et al., Mortality risk along the frailty spectrum: data from NHANES 1999-2004, J Am Geriatr Soc 2018;66(3):496-502, fully adjusted HR 2.79 (95% CI 2.35-3.30) frail vs robust, adults 60+ (NHATS estimates 2.7 to 4.0). Applied relative to healthy at the same age; normalised every year so that the person's mortality, averaged over the states of the survivors, equals the life table exactly.",
         "confidence": "medium"
       },
       "out_of_pocket_multiplier": {

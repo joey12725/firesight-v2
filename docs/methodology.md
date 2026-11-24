@@ -436,7 +436,8 @@ The state multiplies three things, each normalised so that the population
 average is unchanged:
 
 * **Mortality**: hazard ratios 1.73 for chronic (Nunes et al. 2016 meta-analysis,
-  two or more morbidities) and 2.79 for frail (NHANES, frail against robust),
+  two or more morbidities) and 2.79 for frail (Crow et al. 2018, NHANES
+  1999-2004, frail against robust),
   relative to healthy at the same age, scaled every year so that the hazard
   averaged over the survivors' states equals the person's own life-table rate
   exactly. Deaths are therefore not redrawn: the age at death comes from the
@@ -476,7 +477,8 @@ and spousal impoverishment standards; 42 U.S.C. 1396a(q), 1396r-5 and 1396p):
 * **Spend-down.** Care is paid privately while countable assets (every account,
   plus the equity in property other than the home) are above the $2,000 asset
   limit, a dollar figure fixed since 1989 and not indexed. In the month they no
-  longer cover the cost above the limit, Medicaid starts paying. A single person
+  longer cover the cost above the limit, Medicaid starts paying (the month's
+  income counts toward the liability below, not also as an asset). A single person
   with home equity above $752,000 is not eligible; the home is otherwise exempt.
 * **Patient liability.** The person then pays all of their own income (Social
   Security and the pensions, annuities and other streams they own) less a
@@ -495,23 +497,30 @@ and spousal impoverishment standards; 42 U.S.C. 1396a(q), 1396r-5 and 1396p):
   lowers the estate tested against the bequest target. A path that ends with
   someone alive at the horizon has nothing recovered yet.
 
-A month in which Medicaid pays for someone with no spouse at home is covered by
-the safety net and is not counted as depletion, even though spending is cut to
-the allowance; such paths are reported on their own (`medicaid_rate` in the
+A month in which Medicaid pays for a nursing-home resident with no spouse at
+home is covered by the safety net and is not counted as depletion: the nursing
+home provides room and board and the person lives on the personal needs
+allowance, so the household budget the engine still charges is not a real need.
+Medicaid paying for care at home or in assisted living does not cover rent and
+food, so a shortfall there is still depletion. Such paths are reported on their own (`medicaid_rate` in the
 headline, `medicaid_age` per path, and "medicaid" trace events for the start of
 coverage and for the estate recovery), as `home_sale_rate` is for a home sold.
 A spouse at home who runs out is still depleted. Care that Medicaid pays is not
 in `long_term_care_cost`, which is what the household paid.
 
 Measured (simulation tests): for a widow of 78 with $150,000 and Social Security
-covering her budget (3,000 paths), depletion falls from 34% to 8% of paths and
+covering her budget (3,000 paths), depletion falls from 34% to 15% of paths and
 Medicaid pays on 32%; paths on which it never pays are identical bit for bit;
 every Medicaid path that ends with her death has its cost recovered from her
-home. For a couple, Medicaid begins with at least the protected allowance still
-held. On the dual-income example (4,000 paired paths) success rises from 91.5%
-to 98.4% and depletion falls from 8.5% to 1.6%; Medicaid pays on 13.9% of paths,
-more than were depleted without it, because a couple qualifies while the spouse
-at home keeps up to $162,660.
+home. Most of the remaining depletion is care at home: Medicaid pays the care
+but her Social Security, less her Medicare premiums and out-of-pocket costs
+(which Medicaid would partly cover in reality, not modelled), falls short of her
+budget. For a couple, Medicaid begins with at least the protected allowance
+still held. On the dual-income example (4,000 paired paths) success rises from
+91.5% to 97.5% (95% interval of the change +5.3 to +6.8 points) and depletion
+falls from 8.5% to 2.5%; Medicaid pays on 14.4% of paths, more than were
+depleted without it, because a couple qualifies while the spouse at home keeps
+up to $162,660.
 
 Not modelled: state rules (asset limits, income caps, medically needy
 spend-down, more generous allowances, which settings a state's waivers pay for:
@@ -563,7 +572,7 @@ three years, 90 days, 3% compound rider) bought at the start (4,000 paired
 paths): success rises from 91.5% to 93.0% (95% interval of the change +1.1 to
 +2.1 points), depletion falls from 8.5% to 7.0%, median retirement age is 0.3
 years later (the premiums are budgeted), and the 10th percentile of terminal net
-worth rises by $142k; with Medicaid also on, success is 98.5%.
+worth rises by $142k; with Medicaid also on, success is 98.1%.
 
 Not modelled: premiums that depend on the age and health at purchase (the user
 enters the premium), underwriting and buying a policy later in the plan,
@@ -653,7 +662,9 @@ as above:
   association 7.065, the estimate of Dufresne, Hashorva, Ratovomirija and
   Toukourou (2018, Table 4.1, IFM, no age-difference term) on the joint-and-last-
   survivor annuity data of a large Canadian insurer analysed by Frees, Carriere
-  and Valdez (1996). Kendall's tau 0.56; the Pearson correlation of the two
+  and Valdez (1996). Frees, Carriere and Valdez's own Frank fit to the same data
+  was weaker (association about 3.4, Spearman's rho about 0.5), so the strength
+  of the link is uncertain by a factor of about two. Kendall's tau 0.56; the Pearson correlation of the two
   simulated death ages of a couple of 66 and 64 is about 0.75.
 * **Bereavement.** The survivor's risk of dying in the six months after the
   partner's death is raised by the relative risk 1.41 of the Moon, Kondo, Glymour

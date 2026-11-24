@@ -119,8 +119,9 @@ pub(crate) struct CareState {
     pub medicaid_month: i32,
     /// True while person `i` is on Medicaid (for the event log).
     pub on_medicaid: [bool; MAX_PEOPLE],
-    /// The month in which Medicaid paid for someone with no spouse at home: the
-    /// safety net then covers the household, which is not counted as depleted.
+    /// The month in which Medicaid paid for a nursing-home resident with no spouse
+    /// at home: the safety net then covers the household, which is not counted as
+    /// depleted.
     pub safety_net_month: i32,
     /// Community spouse's protected assets fixed in the first month of person
     /// `i`'s care (`None` before it).
@@ -252,6 +253,14 @@ impl State {
                 }
             }
         }
+        if let Some(rules) = &care.medicaid {
+            // The spousal snapshot is taken in the first month of care, even when an
+            // insurance policy pays that month's cost.
+            if hm.long_term_care > 0.0 && self.care.snapshot[i].is_none() {
+                let (countable, _) = self.medicaid_assets();
+                self.care.snapshot[i] = Some(rules.protected(countable, price));
+            }
+        }
         if care.ltc.iter().any(Option::is_some) {
             self.ltc_insurance_month(plan, i, t, price, hm);
         }
@@ -381,6 +390,23 @@ impl State {
         x
     }
 
+    /// The household's countable assets for Medicaid (investable accounts plus the
+    /// equity in property other than the home) and its home equity, nominal.
+    fn medicaid_assets(&self) -> (f64, f64) {
+        let (mut home_equity, mut other_property) = (0.0, 0.0);
+        for p in &self.props {
+            if p.owned {
+                let equity = (p.value - p.mortgage_balance()).max(0.0);
+                if matches!(p.usage, PropertyUse::Primary) {
+                    home_equity += equity;
+                } else {
+                    other_property += equity;
+                }
+            }
+        }
+        (self.acc.investable() + other_property, home_equity)
+    }
+
     /// Medicaid's share of person `i`'s care this month (`medicaid.rs`): the
     /// household pays what is above the asset limit (the spend-down) and, once
     /// eligible, the person's income less the allowances; Medicaid the rest.
@@ -398,26 +424,19 @@ impl State {
         }
         let spouse = (0..self.n)
             .find(|&j| j != i && self.alive[j] && self.present[j] && !self.in_care(j, t));
-        let (mut home_equity, mut other_property) = (0.0, 0.0);
-        for p in &self.props {
-            if p.owned {
-                let equity = (p.value - p.mortgage_balance()).max(0.0);
-                if matches!(p.usage, PropertyUse::Primary) {
-                    home_equity += equity;
-                } else {
-                    other_property += equity;
-                }
-            }
-        }
-        let countable = self.acc.investable() + other_property;
+        let (countable, home_equity) = self.medicaid_assets();
         let snapshot = *self.care.snapshot[i].get_or_insert(rules.protected(countable, price));
+        let own_income = self.own_income(plan, i, t, price);
+        let spouse_income = spouse.map_or(0.0, |j| self.own_income(plan, j, t, price));
         let month = CareMonth {
             cost: hm.long_term_care,
-            countable,
+            // This month's income is already in the cash balance; Medicaid counts it
+            // as income (the liability below), not also as a resource.
+            countable: countable - own_income - spouse_income,
             home_equity,
             spouse: spouse.is_some(),
-            own_income: self.own_income(plan, i, t, price),
-            spouse_income: spouse.map_or(0.0, |j| self.own_income(plan, j, t, price)),
+            own_income,
+            spouse_income,
             own_health: hm.premium + hm.out_of_pocket + self.irmaa_m[i],
             nursing_home: self.health[i].ltc_care == CareType::NursingHome,
             price,
@@ -431,7 +450,11 @@ impl State {
         }
         hm.long_term_care = split.household;
         self.care.medicaid_paid += split.medicaid;
-        if spouse.is_none() {
+        if spouse.is_none() && month.nursing_home {
+            // Only a nursing home covers room and board: someone on Medicaid there
+            // with no spouse at home lives on the safety net. Medicaid paying for
+            // care at home or in assisted living leaves rent and food to the
+            // household, so running short there is still depletion.
             self.care.safety_net_month = t as i32;
         }
         if self.care.medicaid_month == i32::MAX {
@@ -455,7 +478,8 @@ impl State {
     }
 
     /// Settlement: true when this month's shortfall is covered by the safety net
-    /// (Medicaid paying for someone with no spouse at home) and so is not depletion.
+    /// (Medicaid paying for a nursing-home resident with no spouse at home) and so
+    /// is not depletion.
     #[inline]
     pub(crate) fn care_safety_net(&self, t: usize) -> bool {
         self.care.safety_net_month == t as i32

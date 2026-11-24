@@ -279,6 +279,20 @@ mod tests {
     }
 
     #[test]
+    fn rate_path_draws_exactly_two_uniforms_a_year() {
+        for years in [1usize, 7, 128] {
+            let mut a = Rng::stream(4, 2, Stream::LtcPremiumRates);
+            let mut out = vec![0.0; years];
+            rate_path(&mut a, &mut out);
+            let mut b = Rng::stream(4, 2, Stream::LtcPremiumRates);
+            for _ in 0..2 * years {
+                b.uniform();
+            }
+            assert_eq!(a.uniform().to_bits(), b.uniform().to_bits(), "{years}");
+        }
+    }
+
+    #[test]
     fn rate_increases_match_the_calibration() {
         // Over 17 policy years a policy sees about 28% of increases (the post-2001
         // record is 31%): E[ln factor] = 17 x 0.08 x E[ln(1 + U(0.1, 0.3))]

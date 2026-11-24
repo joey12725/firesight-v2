@@ -143,6 +143,17 @@ impl Checker<'_> {
                     "The income gradient is on but no earnings run at the start, so the household is placed at the 50th income percentile. Set income_percentile to the household's rank during its working years.",
                 );
             }
+            if income_gradient {
+                for (i, person) in p.household.people.iter().enumerate() {
+                    if person.health == HealthStatus::Excellent {
+                        self.r.warn(
+                            "income_gradient_excellent_health",
+                            &format!("/household/people/{}/health", super::seg(&person.id, i)),
+                            "Excellent health already uses the mortality of healthy, high-income people; with the income gradient on as well, the income advantage is counted twice. Use good or average health with the gradient.",
+                        );
+                    }
+                }
+            }
             if income_percentile.is_some() && !income_gradient {
                 self.r.warn(
                     "income_percentile_unused",
@@ -204,6 +215,18 @@ mod tests {
         assert!(e.is_empty() && !w.contains(&"income_percentile_unused".to_string()));
         let (_, w) = codes(&[stochastic(json!({"income_percentile": 90.0}))]);
         assert!(w.contains(&"income_percentile_unused".to_string()));
+        // Excellent health already carries the high-income mortality.
+        let excellent = PatchOp::set("/household/people/0/health", json!("excellent"));
+        let (_, w) = codes(&[
+            stochastic(json!({"income_gradient": true, "income_percentile": 90.0})),
+            excellent.clone(),
+        ]);
+        assert!(
+            w.contains(&"income_gradient_excellent_health".to_string()),
+            "{w:?}"
+        );
+        let (_, w) = codes(&[excellent]);
+        assert!(!w.contains(&"income_gradient_excellent_health".to_string()));
         // The default example is a single adult.
         let (e, w) = codes(&[stochastic(json!({"couple_dependence": {"type": "linked"}}))]);
         assert!(e.is_empty(), "{e:?}");

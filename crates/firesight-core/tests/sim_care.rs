@@ -701,4 +701,131 @@ fn ltc_premiums_rise_and_unaffordable_policies_lapse() {
         }
     }
     assert!(lapsed > 85, "{lapsed}");
+
+    // A retiree with $3,000 a month of Social Security and $100,000: her
+    // resources are 36,000 + 4,000 a year, so a $2,500 premium (6%) is
+    // affordable and never lapses (her benefit counts as income, not only wages).
+    let mut modest = retiree_70(Sex::Female);
+    modest.household.people[0].social_security.basis = SocialSecurityBasis::KnownBenefit {
+        monthly_at_fra: 3_000.0,
+    };
+    modest.accounts = vec![account("cash", 0, AccountKind::Cash, 100_000.0)];
+    modest.spending.items = vec![item("living", Category::Other, 1_500.0, true)];
+    let plan = compile(&insured(
+        modest,
+        LtcInsurance {
+            annual_premium: 2_500.0,
+            premium_increase_risk: false,
+            ..policy_3y()
+        },
+    ));
+    for path in 0..60 {
+        let trace = sim::trace_path(&plan, 2, path);
+        let lapse = trace
+            .events
+            .iter()
+            .find(|e| e.kind == kind && e.label.contains("lapses"));
+        // Only running short of essentials (a long care episode after the
+        // benefits) could make it lapse, and never in the first years.
+        if let Some(e) = lapse {
+            assert!(e.month - trace.start > 36, "path {path}");
+        }
+    }
+}
+
+/// Events of the given kinds on a traced path, as (month, label).
+fn events_of(
+    plan: &sim::Plan,
+    path: u64,
+    kinds: &[firesight_core::stats::TraceEventKind],
+) -> Vec<(YearMonth, String)> {
+    sim::trace_path(plan, 8, path)
+        .events
+        .into_iter()
+        .filter(|e| kinds.contains(&e.kind))
+        .map(|e| (e.month, e.label))
+        .collect()
+}
+
+#[test]
+fn the_features_draw_only_from_their_own_streams() {
+    use firesight_core::stats::TraceEventKind as K;
+    // Every feature on except the two that change lifetimes by design.
+    let mut on = couple(CoupleDependence::Independent);
+    on.accounts = vec![account("brokerage", 0, AccountKind::Taxable, 5_000_000.0)];
+    on.spending.healthcare = Healthcare::default();
+    on.assumptions.health_risk = true;
+    let off = on.clone();
+    on.spending.healthcare.medicaid = true;
+    for person in &mut on.household.people {
+        person.ltc_insurance = Some(policy_3y());
+    }
+    let mut states = on.clone();
+    states.assumptions.health_model = HealthModelKind::States;
+    let (plan_off, plan_on, plan_states) = (compile(&off), compile(&on), compile(&states));
+    let mut care = 0;
+    for path in 0..40 {
+        let (a, b, c) = (
+            sim::trace_path(&plan_off, 8, path),
+            sim::trace_path(&plan_on, 8, path),
+            sim::trace_path(&plan_states, 8, path),
+        );
+        // Same lives, same markets and prices: switching the features on touches
+        // none of those draws.
+        assert_eq!(a.months, b.months, "path {path}");
+        assert_eq!(a.months, c.months, "path {path}");
+        let prices = a.column("price_level");
+        assert_eq!(prices, b.column("price_level"), "path {path}");
+        assert_eq!(prices, c.column("price_level"), "path {path}");
+        // Medicaid and insurance leave the care episodes (the health stream) as
+        // they were. Health states reweight an episode's probability by the state
+        // at death, by design, so they are not compared here.
+        let starts = |t: &firesight_core::stats::PathTrace| -> Vec<YearMonth> {
+            t.events
+                .iter()
+                .filter(|e| e.kind == K::LongTermCare)
+                .map(|e| e.month)
+                .collect()
+        };
+        assert_eq!(starts(&a), starts(&b), "path {path}");
+        care += usize::from(!starts(&a).is_empty());
+    }
+    assert!(care > 5, "{care}");
+
+    // A household decision (spending half as much again) leaves the features'
+    // own draws where they were: the health-state path and the premium increases
+    // (no policy lapses with $5 million).
+    let (on, plan_on) = (states, plan_states);
+    let mut richer = on.clone();
+    richer.spending.items = vec![item("living", Category::Other, 9_000.0, true)];
+    let plan_richer = compile(&richer);
+    let kinds = [K::HealthState, K::LtcInsurance, K::LongTermCare];
+    let mut raised = 0;
+    for path in 0..40 {
+        let (a, b) = (
+            events_of(&plan_on, path, &kinds),
+            events_of(&plan_richer, path, &kinds),
+        );
+        assert_eq!(a, b, "path {path}");
+        raised += usize::from(a.iter().any(|(_, l)| l.contains("raised")));
+    }
+    assert!(raised > 5, "{raised}");
+
+    // Linked lifespans: the couple stream is drawn whatever the household does.
+    let mut linked = on.clone();
+    linked.assumptions.longevity = Longevity::Stochastic {
+        improvement: true,
+        couple_dependence: CoupleDependence::Linked,
+        income_gradient: false,
+        income_percentile: None,
+    };
+    let mut linked_richer = linked.clone();
+    linked_richer.spending.items = richer.spending.items.clone();
+    let (x, y) = (
+        run(&compile(&linked), 8, 0..300),
+        run(&compile(&linked_richer), 8, 0..300),
+    );
+    for s in [PathScalar::DeathAge0, PathScalar::DeathAge1] {
+        assert_eq!(column(&x, s), column(&y, s));
+    }
 }
