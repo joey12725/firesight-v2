@@ -107,14 +107,25 @@ IncomeKind =
         equity: Vec<EquityGrant>,
         plan: Option<EmployerPlan>, hsa_contribution: f64, hsa_employer: f64,
         ends_at_retirement: bool (true) }
-  SelfEmployment { net_annual, volatility, real_growth, ends_at_retirement, solo_401k_fraction }
+  SelfEmployment { net_annual, volatility, real_growth, ends_at_retirement, solo_401k_fraction,
+                   failure: Never                                   // default Never
+                          | Hazard{ young_annual_probability, mature_annual_probability, young_years,
+                                    years_in_business: Option<f64>, recession_multiplier,
+                                    then: Stops | Restart{ gap_months, income_fraction } },
+                   monthly_lumpiness: f64 }                         // default 0: equal months
   Pension  { annual, cola: Full|None|Partial{rate}, survivor_fraction }
   Annuity  { annual, real: bool }
   Other    { annual, taxable: bool, real_growth, ends_at_retirement }
 EmployerPlan { employee_fraction (of salary, or) employee_max: bool, roth_fraction,
                match_rate, match_up_to (fraction of salary), after_tax_mega: bool(false) }
 EquityGrant { id, kind: Rsu | Option{ strike_fraction },     // strike as fraction of current price
-              company: Public{ volatility, beta } | Private{ liquidity_hazard, fail_prob, .. },
+              company: Public{ volatility, beta,
+                               tails: Normal | Fat,                             // default Normal
+                               ruin: Never | ByVolatility | Stated{ annual_probability },  // default Never
+                               layoff_link: bool }                              // default false
+                     | Private{ liquidity_hazard, fail_prob, ..,
+                                exit_timing: ConstantHazard | Lognormal{ median_years, sigma },  // default ConstantHazard
+                                exit_size: Classes | ParetoTail },              // default Classes
               unvested_value, vest_months_remaining, cliff_months,
               refresh_annual_value,                // new grants each year while employed
               sell_on_vest: bool }
@@ -297,7 +308,7 @@ for each month t:
 | `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise; opt-in sleeve shapes (fat tails, crypto cycles, custom loss events; 3 words a month from `AssetExt` when cycles or loss events are on) |
 | `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
 | `benefits` | Social Security: indexed earnings record -> AIME -> PIA -> claim adjustment, spousal and survivor, trust-fund haircut |
-| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation; opt-in shapes in `career/shape.rs` (fat-tailed wage shocks, two-part pay cut, monthly job search), which reuse words the job already draws |
+| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation; opt-in shapes in `career/shape.rs` (fat-tailed wage shocks, two-part pay cut, monthly job search), which reuse words the job already draws; opt-in business closure and monthly lumpiness in `career/business.rs` (two words a month from `Stream::Business(income)`); opt-in employer-stock shapes in `career/equity.rs` (fat tails, ruin, the link to the job's layoff hazard, lognormal exit timing, Pareto exit size), which also reuse words the job already draws |
 | `health` | Premiums by phase (employer, ACA, Medicare), out-of-pocket, long-term care, mortality draws |
 | `housing` | Properties, mortgages, PMI, purchase and sale, rentals, depreciation |
 | `accounts` | Buckets (cash, taxable with basis, traditional, Roth with basis and conversion tranches, HSA) x asset classes; contributions waterfall; withdrawals; rebalancing; glide path |

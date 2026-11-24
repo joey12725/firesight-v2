@@ -11,7 +11,8 @@
 //! * One [`JobModel`] per job income is compiled once; one [`JobState`] per job lives
 //!   in the path state. Stepping never allocates.
 //! * Each person's jobs draw only from `Stream::Career(person)`; equity price paths
-//!   and outcomes draw only from `Stream::EquityComp`. The number of draws per month
+//!   and outcomes draw only from `Stream::EquityComp`; the opt-in closure risk and
+//!   lumpiness of a self-employment income draw only from its `Stream::Business`. The number of draws per month
 //!   depends only on the calendar (two extra normals every January), never on the
 //!   state of the job: draw, then decide. A scenario change such as retiring earlier
 //!   therefore does not shift later draws.
@@ -71,6 +72,37 @@
 //! and the spell word, which the default reads only in the month of a layoff). They
 //! do nothing when `assumptions.career_risk` is false or `risk.level` is `none`.
 //!
+//! # Opt-in business and employer-stock risks
+//!
+//! Off by default, and with them off the arithmetic is untouched. The mechanisms
+//! and their maths are in [`business`] and [`equity`]; their numbers are judgements
+//! or come from the `equity_compensation` section (`business_and_equity` in
+//! params.json).
+//!
+//! * `failure: hazard` on a self-employment income: a monthly chance that the
+//!   business closes (higher while it is young and in recession months), after
+//!   which the income stops, or restarts after a gap at a share of the old
+//!   profit. Deliberately not mean-preserving: it lowers expected profit.
+//! * `monthly_lumpiness`: a unit-mean monthly factor on profit, so the expected
+//!   total of a year is unchanged.
+//!   These two draw two words a month from the income's own `Stream::Business`,
+//!   whatever the state of the business, and only when one of them is on.
+//! * `tails: fat` on a listed employer: the company-specific factor is `exp` of a
+//!   Student-t(4), with the lognormal factor's mean and standard deviation.
+//! * `ruin`: a monthly chance that a listed employer's shares become worthless for
+//!   good, with the return of the other months raised so that the expected price
+//!   is unchanged. Grants from that employer stop.
+//! * `layoff_link`: the job's layoff chance is tripled while the employer's stock
+//!   has lost more than 40% over twelve months for reasons of its own, and a ruin
+//!   ends the job. Not mean-preserving: it adds layoffs.
+//! * `exit_timing: lognormal` on a private employer: the monthly chance of the
+//!   outcome follows a lognormal wait in place of a constant.
+//! * `exit_size: pareto_tail`: the large outcome class pays a truncated Pareto
+//!   multiple with the mean of the log-uniform one it replaces.
+//!   The five equity options read words [`JobModel::step`] draws anyway (the
+//!   stock word, and for a listed company the liquidity word, which the default
+//!   discards) and draw nothing more.
+//!
 //! # Simplifications
 //!
 //! * The schema has no education field. `Typical` is the average of the CGM
@@ -91,9 +123,18 @@
 //! * A private company's paper value is constant in real terms until its liquidity
 //!   event. After a successful exit the stock follows the default public-company
 //!   dynamics. `exit_volatility` is not used: the payout multiple comes from the
-//!   research's outcome classes (modest, good, large), log-uniform inside the class.
+//!   research's outcome classes (modest, good, large), log-uniform inside the class
+//!   (the large class has a Pareto tail with `exit_size: pareto_tail`). The wait
+//!   for the event is memoryless unless `exit_timing` is `lognormal`.
 //! * Vested private shares are kept after leaving the employer.
-//! * The employer-stock-crash-raises-layoff-hazard link in the research is left out.
+//! * The employer-stock-crash-raises-layoff-hazard link in the research is off
+//!   unless `layoff_link` is set. With it on, the link reads only the listed
+//!   employer's own price: the shares already vested and kept follow the
+//!   portfolio's single-stock sleeve, which is a separate process and does not
+//!   know about a ruin here.
+//! * Self-employment income has no closure risk and is the same every month of a
+//!   year unless `failure` or `monthly_lumpiness` is set. A closed business pays
+//!   no unemployment insurance, and a closure does not turn into a job.
 
 use serde_json::Value;
 
@@ -1120,7 +1161,10 @@ impl JobModel {
     /// wage shock). From `equity`: stock, liquidity event, outcome class, multiple.
     /// The opt-in shapes read the same words and draw nothing more: with
     /// `job_search: monthly` the spell word decides each month out of work and the
-    /// scar word is read in the month the search ends.
+    /// scar word is read in the month the search ends. The opt-in equity shapes
+    /// read the stock word (`tails: fat`), the liquidity word of a listed company
+    /// (`ruin`, and `layoff_link` in the layoff test) and the multiple word
+    /// (`exit_size: pareto_tail`), and draw nothing more either.
     pub fn step(
         &self,
         state: &mut JobState,

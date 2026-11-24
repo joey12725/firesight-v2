@@ -67,8 +67,12 @@ fn equity_job(id: &str, salary: f64, level: RiskLevel, company: EquityCompany) -
 }
 
 fn public(tails: TailShape, ruin: StockRuin, layoff_link: bool) -> EquityCompany {
+    listed(0.6, tails, ruin, layoff_link)
+}
+
+fn listed(volatility: f64, tails: TailShape, ruin: StockRuin, layoff_link: bool) -> EquityCompany {
     EquityCompany::Public {
-        volatility: 0.6,
+        volatility,
         beta: 1.2,
         tails,
         ruin,
@@ -990,36 +994,38 @@ fn report_measured_effects() {
             quantile(b.iter().map(|b| b.terminal).collect(), 0.5),
         );
     }
-    println!("employee, 30 years, $100,000 typical risk, $80,000 grant and $20,000 a year of refreshes, stock volatility 60% beta 1.2");
-    for (label, company) in [
-        (
-            "default",
-            public(TailShape::Normal, StockRuin::Never, false),
-        ),
-        ("fat tails", public(TailShape::Fat, StockRuin::Never, false)),
-        (
-            "ruin by volatility",
-            public(TailShape::Normal, StockRuin::ByVolatility, false),
-        ),
-        (
-            "ruin and link",
-            public(TailShape::Normal, StockRuin::ByVolatility, true),
-        ),
-        (
-            "all three",
-            public(TailShape::Fat, StockRuin::ByVolatility, true),
-        ),
-    ] {
-        let e = employees(&employee(RiskLevel::Typical, company), 2026, paths);
-        let total: Vec<f64> = e.iter().map(|p| p.1.iter().sum::<f64>() / 3.0e6).collect();
-        println!(
-            "  {label:22} layoffs per career {:.3}; lifetime pay and equity / 30 salaries: mean {:.3} p5 {:.3} p50 {:.3} p95 {:.3}",
-            mean(e.iter().map(|p| p.0 as f64)),
-            mean(total.iter().copied()),
-            quantile(total.clone(), 0.05),
-            quantile(total.clone(), 0.5),
-            quantile(total.clone(), 0.95),
-        );
+    for volatility in [0.35, 0.6] {
+        println!("employee, 30 years, $100,000 typical risk, $80,000 grant and $20,000 a year of refreshes, stock volatility {volatility} beta 1.2");
+        for (label, tails, ruin, link) in [
+            ("default", TailShape::Normal, StockRuin::Never, false),
+            ("fat tails", TailShape::Fat, StockRuin::Never, false),
+            (
+                "ruin by volatility",
+                TailShape::Normal,
+                StockRuin::ByVolatility,
+                false,
+            ),
+            ("link only", TailShape::Normal, StockRuin::Never, true),
+            (
+                "ruin and link",
+                TailShape::Normal,
+                StockRuin::ByVolatility,
+                true,
+            ),
+            ("all three", TailShape::Fat, StockRuin::ByVolatility, true),
+        ] {
+            let company = listed(volatility, tails, ruin, link);
+            let e = employees(&employee(RiskLevel::Typical, company), 2026, paths);
+            let total: Vec<f64> = e.iter().map(|p| p.1.iter().sum::<f64>() / 3.0e6).collect();
+            println!(
+                "  {label:22} layoffs per career {:.3}; lifetime pay and equity / 30 salaries: mean {:.3} p5 {:.3} p50 {:.3} p95 {:.3}",
+                mean(e.iter().map(|p| p.0 as f64)),
+                mean(total.iter().copied()),
+                quantile(total.clone(), 0.05),
+                quantile(total.clone(), 0.5),
+                quantile(total.clone(), 0.95),
+            );
+        }
     }
     println!("employee of a private company, no wage risk, $80,000 grant, fail 50%");
     for (label, company) in [
@@ -1115,11 +1121,12 @@ fn report_measured_effects() {
         ] {
             let s = summary(&set(&example.profile, on), 2026, 10_000);
             println!(
-                "{:22} {:18} success {:5.1}%  median terminal net worth {:>10.0}",
+                "{:22} {:18} success {:5.1}%  median terminal net worth {:>10.0}  median FI age {:.1}",
                 example.slug,
                 label,
                 s.headline.success_rate.value * 100.0,
                 s.headline.median_terminal_net_worth,
+                s.headline.median_fi_age,
             );
         }
     }

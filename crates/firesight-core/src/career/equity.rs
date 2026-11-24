@@ -46,10 +46,13 @@
 //! volatility, as the single-stock sleeve does), each month the price goes to zero
 //! for good with probability `q = 1 - (1 - h)^(1/12)`, and otherwise the month's
 //! return is multiplied by `1 / (1 - q)`. The expected price is unchanged; the
-//! typical price is higher in the paths that survive. After a ruin unvested grants
-//! are worth nothing and refresh grants stop. When the person is next rehired
-//! after a layoff the stock starts again at one real dollar a share (a new
-//! employer), and refresh grants resume.
+//! typical price is higher in the paths that survive. Nothing of this applies
+//! before a job that starts in the future has begun. After a ruin unvested grants
+//! are worth nothing and refresh grants stop, so although the expected price is
+//! kept, expected equity income over a career is lower: the grants a ruined
+//! employer would have made are lost. When the person is next rehired after a
+//! layoff the stock starts again at one real dollar a share (a new employer), and
+//! refresh grants resume.
 //!
 //! # The link to the job (`layoff_link`)
 //!
@@ -90,7 +93,7 @@
 
 use serde_json::Value;
 
-use super::{CareerClimate, JobState, StockModel};
+use super::{CareerClimate, Employment, JobState, StockModel};
 use crate::data::Data;
 use crate::economy;
 use crate::math;
@@ -228,7 +231,9 @@ impl PublicShape {
             s.idio_log = [0.0; LINK_MONTHS];
             s.idio_12m = 0.0;
         }
-        if u_ruin < self.ruin_monthly {
+        // A job that has not started yet cannot lose its employer.
+        let exposed = self.ruin_monthly > 0.0 && s.employment != Employment::NotStarted;
+        if exposed && u_ruin < self.ruin_monthly {
             s.stock_ruined = true;
             s.stock_price = 0.0;
             return;
@@ -248,7 +253,7 @@ impl PublicShape {
         };
         // The same product as the default; the boost only when ruin is possible.
         let mut gross = market * idio;
-        if self.ruin_monthly > 0.0 {
+        if exposed {
             gross *= self.survivor_boost;
         }
         s.stock_price *= gross;

@@ -260,6 +260,34 @@ fn ruin_arrives_at_the_stated_rate_and_keeps_the_expected_price() {
     assert_eq!(vested_after, 0.0, "worthless shares pay nothing");
 }
 
+/// A job that starts in the future cannot lose its employer before it begins: no
+/// ruin and no boost until then.
+#[test]
+fn ruin_waits_for_the_job_to_start() {
+    let ruin = StockRuin::Stated {
+        annual_probability: 0.5,
+    };
+    let m = job(
+        public(0.0, TailShape::Normal, ruin, true),
+        RiskLevel::Typical,
+    );
+    let mut ruined_later = 0;
+    for path in 0..200 {
+        let (mut career, mut equity) = rngs(path);
+        let mut s = m.initial_state_not_started();
+        for t in 0..60 {
+            let month = m.step(&mut s, &climate(t, 35.0), &mut career, &mut equity);
+            assert!(!s.stock_ruined && s.stock_price == 1.0 && !month.laid_off);
+        }
+        m.begin(&mut s, 40.0);
+        for t in 60..120 {
+            m.step(&mut s, &climate(t, 35.0), &mut career, &mut equity);
+            ruined_later += u32::from(s.stock_ruined);
+        }
+    }
+    assert!(ruined_later > 0);
+}
+
 // ----------------------------------------------------------------- layoff link
 
 /// The link's rule: three times the ordinary chance while the trailing return is

@@ -554,6 +554,25 @@ give the same results:
   read. They add three schema types: `WageShockShape`, `PayCutShape` and
   `JobSearchModel`.
 
+* `incomes[].kind.failure` on self-employment (`{"type": "never"}` | `{"type":
+  "hazard", young_annual_probability, mature_annual_probability, young_years,
+  years_in_business (number or null), recession_multiplier, then}`, default
+  `never`, where `then` is `{"type": "stops"}` | `{"type": "restart", gap_months,
+  income_fraction}`) and `incomes[].kind.monthly_lumpiness` (0 to 2, default 0).
+* `incomes[].kind.equity[].company` gains, for `public`: `tails` (`"normal"` |
+  `"fat"`, default `normal`), `ruin` (`{"type": "never"}` | `{"type":
+  "by_volatility"}` | `{"type": "stated", annual_probability}`, default `never`)
+  and `layoff_link` (true | false, default false); for `private`: `exit_timing`
+  (`{"type": "constant_hazard"}` | `{"type": "lognormal", median_years, sigma}`,
+  default `constant_hazard`) and `exit_size` (`"classes"` | `"pareto_tail"`,
+  default `classes`).
+  These add five schema types (`BusinessFailure`, `AfterFailure`, `StockRuin`,
+  `ExitTiming`, `ExitSize`; `tails` reuses `TailShape`) and no validation codes:
+  out-of-range numbers are `out_of_range` errors at the field's path. In a traced
+  path a business closure is logged as a `laid_off` event labelled "Business
+  closed" and a restart as a `rehired` event labelled "Self-employment
+  restarted"; no output document changes shape.
+
 The `adjusted_history` warning is also raised, at the option's own path, when the
 historical replay is run with a long-run uncertainty or disasters switched on. The
 sleeve options add no warning codes; out-of-range values are `out_of_range` or

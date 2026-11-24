@@ -469,6 +469,8 @@ Knobs: private stage, paper value, include in base plan (default no); single-sto
 
 As built, the portfolio's single-stock sleeve uses a lognormal factor by default; the Student-t(4) shape above is the opt-in `portfolio.single_stock.tails: fat`, and `ruin_hazard` can be stated directly (docs/methodology.md 2.11).
 
+As built for stock from an employer (docs/methodology.md section 6): by default the wait for a private company's outcome is memoryless (a constant yearly chance) and a listed employer's stock is lognormal with no ruin and no link to the job. The lognormal wait above is the opt-in `exit_timing: lognormal`; a Pareto tail on the large class is the opt-in `exit_size: pareto_tail`; the Student-t(4) shape, the ruin hazard and the job-loss link are the opt-in `tails: fat`, `ruin` and `layoff_link` on a listed employer. The link is applied month by month (three times the layoff chance while the trailing twelve-month company-specific return is below -40%), not year by year.
+
 Left out: exercise strategy, AMT, 83(b), QSBS (tax module); preference waterfalls.
 
 ---

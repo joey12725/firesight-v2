@@ -327,7 +327,7 @@ impl State {
                         "Business closed".to_string()
                     });
                 }
-                if b.reopened {
+                if b.reopened && active {
                     self.event(now, TraceEventKind::Rehired, None, || {
                         "Self-employment restarted".to_string()
                     });

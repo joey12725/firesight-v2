@@ -95,8 +95,9 @@ pub enum Stream {
     /// Extra career draws for one person (index into `people`): mixture wage shocks,
     /// duration-dependent unemployment. Opt-in career models only.
     CareerShape(usize),
-    /// Self-employment and private-equity extras for one income (index into
-    /// `incomes`): business failure, heavy-tailed equity exits.
+    /// The opt-in closure risk and monthly lumpiness of one self-employment income
+    /// (index into `incomes`): two words a month, drawn only when one of the two
+    /// is on. Opt-in career models only.
     Business(usize),
     /// Household-wide health processes: medical inflation, uncertain mortality
     /// improvement. Opt-in health models only.
