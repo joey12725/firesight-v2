@@ -270,3 +270,94 @@ fn rich_career_options_do_not_allocate() {
         assert!(sink.years > 300 && sink.total.is_finite());
     }
 }
+
+/// The opt-in business and employer-stock options switched on: a business that
+/// can close and pays in lumps (its own stream, two words a month), a listed
+/// employer with fat tails, a ruin hazard and the layoff link, and a private one
+/// with a lognormal wait and a Pareto tail. Their tables are built when the plan
+/// is compiled and only read on the path.
+#[test]
+fn rich_business_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich business".into();
+    let job = |id: &str, company: EquityCompany| Income {
+        id: id.into(),
+        owner: 0,
+        kind: IncomeKind::Job(Job {
+            salary: 60_000.0,
+            risk: CareerRisk {
+                level: RiskLevel::High,
+                ..CareerRisk::default()
+            },
+            equity: vec![EquityGrant {
+                id: "grant".into(),
+                company,
+                unvested_value: 40_000.0,
+                refresh_annual_value: 10_000.0,
+                sell_on_vest: false,
+                ..EquityGrant::default()
+            }],
+            ..Job::default()
+        }),
+        ..Income::default()
+    };
+    profile.incomes.push(Income {
+        id: "shop".into(),
+        owner: 0,
+        kind: IncomeKind::SelfEmployment(SelfEmployment {
+            net_annual: 30_000.0,
+            failure: BusinessFailure::Hazard {
+                young_annual_probability: 0.3,
+                mature_annual_probability: 0.1,
+                young_years: 5.0,
+                years_in_business: Some(0.0),
+                recession_multiplier: 3.0,
+                then: AfterFailure::Restart {
+                    gap_months: 6,
+                    income_fraction: 0.8,
+                },
+            },
+            monthly_lumpiness: 1.0,
+            ..SelfEmployment::default()
+        }),
+        ..Income::default()
+    });
+    profile.incomes.push(job(
+        "listed",
+        EquityCompany::Public {
+            volatility: 0.7,
+            beta: 1.3,
+            tails: TailShape::Fat,
+            ruin: StockRuin::Stated {
+                annual_probability: 0.1,
+            },
+            layoff_link: true,
+        },
+    ));
+    profile.incomes.push(job(
+        "startup",
+        EquityCompany::Private {
+            liquidity_hazard: 0.12,
+            fail_prob: 0.4,
+            exit_volatility: 1.0,
+            exit_timing: ExitTiming::lognormal(),
+            exit_size: ExitSize::ParetoTail,
+        },
+    ));
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}

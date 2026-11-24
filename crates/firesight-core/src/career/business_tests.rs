@@ -81,7 +81,10 @@ fn both_options_are_off_by_default_and_draw_nothing() {
     assert_eq!(s.business, BusinessState::default());
     let (mut a, mut b) = (rng(0), rng(0));
     let month = model.business_step(&mut s, true, false, &mut a);
-    assert_eq!((month.lump, month.closed, month.reopened), (1.0, false, false));
+    assert_eq!(
+        (month.lump, month.closed, month.reopened),
+        (1.0, false, false)
+    );
     assert_eq!(s.business, BusinessState::default());
     assert_eq!(a.next_u64(), b.next_u64(), "nothing was drawn");
     assert_eq!(model.expected_business_level(3), vec![1.0; 3]);
@@ -115,7 +118,11 @@ fn closures_arrive_at_the_entered_yearly_chances() {
         assert!(l.windows(2).all(|w| w[1] <= w[0]));
     }
     let n = paths as f64;
-    let expected = [0.9, math::powi(0.9, 5), math::powi(0.9, 5) * math::powi(0.96, 5)];
+    let expected = [
+        0.9,
+        math::powi(0.9, 5),
+        math::powi(0.9, 5) * math::powi(0.96, 5),
+    ];
     for (count, want) in open.iter().zip(expected) {
         // Three standard errors of a proportion near one half over 200,000 paths.
         close(f64::from(*count) / n, want, 0.0035);
@@ -328,7 +335,10 @@ fn draws_are_fixed_and_an_inactive_income_cannot_close() {
             let month = b.step(&mut idle, false, true, &mut r);
             assert!(!month.closed && month.lump > 0.0);
         }
-        assert_eq!((idle.level, idle.closures, idle.venture_months), (1.0, 0, 0));
+        assert_eq!(
+            (idle.level, idle.closures, idle.venture_months),
+            (1.0, 0, 0)
+        );
     }
 }
 

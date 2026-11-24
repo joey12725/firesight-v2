@@ -2945,4 +2945,115 @@ mod tests {
             "/assumptions/market/disasters/annual_probability"
         ));
     }
+
+    /// The opt-in business and employer-stock options: every number is checked at
+    /// the path an editor control binds to, and the defaults are clean.
+    #[test]
+    fn business_and_employer_stock_options_are_checked() {
+        let business = |se: serde_json::Value| {
+            PatchOp::append("/incomes", json!({"id": "shop", "owner": 0, "kind": se}))
+        };
+        let k = "/incomes/@shop/kind";
+        let hazard = |extra: serde_json::Value| {
+            let mut failure = json!({"type": "hazard"});
+            for (key, value) in extra.as_object().unwrap() {
+                failure[key] = value.clone();
+            }
+            business(json!({"type": "self_employment", "net_annual": 50_000.0, "failure": failure}))
+        };
+        // Everything at its default, switched on, is valid.
+        let r = patched(&[
+            hazard(json!({})),
+            PatchOp::set(format!("{k}/monthly_lumpiness"), json!(1.0)),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        let r = patched(&[hazard(
+            json!({"then": {"type": "stops"}, "years_in_business": 2.0}),
+        )]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        for (extra, at) in [
+            (
+                json!({"young_annual_probability": 0.6}),
+                "young_annual_probability",
+            ),
+            (
+                json!({"mature_annual_probability": -0.01}),
+                "mature_annual_probability",
+            ),
+            (json!({"young_years": 31.0}), "young_years"),
+            (json!({"years_in_business": -1.0}), "years_in_business"),
+            (json!({"recession_multiplier": 0.5}), "recession_multiplier"),
+            (
+                json!({"recession_multiplier": 11.0}),
+                "recession_multiplier",
+            ),
+            (
+                json!({"then": {"type": "restart", "gap_months": 121}}),
+                "then/gap_months",
+            ),
+            (
+                json!({"then": {"type": "restart", "income_fraction": 2.5}}),
+                "then/income_fraction",
+            ),
+        ] {
+            assert_error(
+                &[hazard(extra)],
+                "out_of_range",
+                &format!("{k}/failure/{at}"),
+            );
+        }
+        for bad in [-0.1, 2.5] {
+            assert_error(
+                &[business(
+                    json!({"type": "self_employment", "monthly_lumpiness": bad}),
+                )],
+                "out_of_range",
+                &format!("{k}/monthly_lumpiness"),
+            );
+        }
+
+        let job = |company: serde_json::Value| {
+            PatchOp::append(
+                "/incomes",
+                json!({"id": "tech", "owner": 0, "kind": {"type": "job", "salary": 100_000.0,
+                    "equity": [{"id": "rsu", "unvested_value": 10_000.0, "company": company}]}}),
+            )
+        };
+        let c = "/incomes/@tech/kind/equity/@rsu/company";
+        for company in [
+            json!({"type": "public", "tails": "fat", "ruin": {"type": "by_volatility"}, "layoff_link": true}),
+            json!({"type": "public", "ruin": {"type": "stated"}}),
+            json!({"type": "private", "exit_timing": {"type": "lognormal"}, "exit_size": "pareto_tail"}),
+        ] {
+            let r = patched(&[job(company)]);
+            assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        }
+        for bad in [-0.01, 0.51] {
+            assert_error(
+                &[job(
+                    json!({"type": "public", "ruin": {"type": "stated", "annual_probability": bad}}),
+                )],
+                "out_of_range",
+                &format!("{c}/ruin/annual_probability"),
+            );
+        }
+        for (timing, at) in [
+            (
+                json!({"type": "lognormal", "median_years": 0.1}),
+                "median_years",
+            ),
+            (
+                json!({"type": "lognormal", "median_years": 41.0}),
+                "median_years",
+            ),
+            (json!({"type": "lognormal", "sigma": 0.01}), "sigma"),
+            (json!({"type": "lognormal", "sigma": 2.5}), "sigma"),
+        ] {
+            assert_error(
+                &[job(json!({"type": "private", "exit_timing": timing}))],
+                "out_of_range",
+                &format!("{c}/exit_timing/{at}"),
+            );
+        }
+    }
 }

@@ -170,7 +170,10 @@ impl Failure {
         };
         let young_months = months(young_years);
         Some(Failure {
-            hazard: [row(young_annual_probability), row(mature_annual_probability)],
+            hazard: [
+                row(young_annual_probability),
+                row(mature_annual_probability),
+            ],
             young_months,
             age0_months: match years_in_business {
                 Some(years) => months(years),

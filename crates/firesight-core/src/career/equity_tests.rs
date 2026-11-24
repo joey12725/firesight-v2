@@ -308,10 +308,7 @@ fn the_link_moves_layoffs_and_nothing_else() {
     let ruin = StockRuin::Stated {
         annual_probability: 0.04,
     };
-    let off = job(
-        public(0.8, TailShape::Fat, ruin, false),
-        RiskLevel::Typical,
-    );
+    let off = job(public(0.8, TailShape::Fat, ruin, false), RiskLevel::Typical);
     let on = job(public(0.8, TailShape::Fat, ruin, true), RiskLevel::Typical);
     let (mut layoffs_off, mut layoffs_on, mut ruin_layoffs, mut restarts) = (0, 0, 0, 0);
     let (mut crashed_months, mut months_at_risk) = (0u64, 0u64);
@@ -354,7 +351,10 @@ fn the_link_moves_layoffs_and_nothing_else() {
     }
     assert!(ruin_layoffs > 100, "{ruin_layoffs}");
     assert!(restarts > 100, "{restarts}");
-    assert!(crashed_months * 20 > months_at_risk, "the stock crashes often");
+    assert!(
+        crashed_months * 20 > months_at_risk,
+        "the stock crashes often"
+    );
     assert!(
         layoffs_on > layoffs_off + 500,
         "layoffs {layoffs_off} without the link, {layoffs_on} with it"
