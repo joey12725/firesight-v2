@@ -65,7 +65,7 @@ use serde_json::Value;
 use crate::data::Data;
 use crate::math;
 use crate::model::{BuyHome, Property, PropertyUse};
-use crate::rng::{normal_from_bits, Rng};
+use crate::rng::{normal_from_bits, uniform_from_bits, Rng};
 
 /// Residential rental property is depreciated over 27.5 years (IRC section
 /// 168(c)), i.e. 330 months.
@@ -260,6 +260,8 @@ pub struct PropertyModel {
     drift_monthly: f64,
     /// Monthly log sd of the local drift.
     sigma_local_monthly: f64,
+    /// `0.5 * sigma_local_monthly^2`, the lognormal drift correction.
+    half_var_local: f64,
     /// Log sd of the transaction shock.
     sigma_sale: f64,
     rental: Option<RentalModel>,
@@ -395,6 +397,7 @@ impl PropertyModel {
     ) -> PropertyModel {
         let params = HousingParams::from_data(data);
         let scale = idiosyncratic_volatility.max(0.0) / Property::DEFAULT_IDIOSYNCRATIC_VOLATILITY;
+        let sigma_local_monthly = params.sigma_local_annual * scale / 12f64.sqrt();
         let rental = match usage {
             PropertyUse::Rental(terms) => {
                 let vacancy = terms.vacancy.clamp(0.0, 1.0);
@@ -430,7 +433,8 @@ impl PropertyModel {
             maintenance_rate: maintenance_rate.max(0.0),
             hoa_real: hoa_monthly.max(0.0),
             drift_monthly: 1.0 + math::annual_to_monthly(appreciation_vs_national.max(-0.99)),
-            sigma_local_monthly: params.sigma_local_annual * scale / 12f64.sqrt(),
+            sigma_local_monthly,
+            half_var_local: 0.5 * sigma_local_monthly * sigma_local_monthly,
             sigma_sale: params.sigma_sale * scale,
             rental,
             params,
@@ -634,7 +638,7 @@ impl PropertyModel {
         // for a property that is owned.
         let r_local = rng.next_u64();
         let r_sale = rng.next_u64();
-        let u_vacancy = rng.uniform();
+        let b_vacancy = rng.next_u64();
         let rent_growth = state.rent_growth;
         if let Some(r) = &self.rental {
             state.rent_growth *= r.growth_monthly;
@@ -643,7 +647,6 @@ impl PropertyModel {
         if !state.owned {
             return out;
         }
-        let z_local = normal_from_bits(r_local);
         state.sale_noise = r_sale;
 
         let value = state.value;
@@ -682,6 +685,7 @@ impl PropertyModel {
         }
 
         if let Some(r) = &self.rental {
+            let u_vacancy = uniform_from_bits(b_vacancy);
             if state.vacant {
                 if u_vacancy < r.p_fill {
                     state.vacant = false;
@@ -706,8 +710,9 @@ impl PropertyModel {
 
         let mut growth = (1.0 + home_national).max(0.0) * self.drift_monthly;
         if self.sigma_local_monthly > 0.0 {
+            // The word becomes a normal only here, where it is used.
             let s = self.sigma_local_monthly;
-            growth *= math::exp(s * z_local - 0.5 * s * s);
+            growth *= math::exp(s * normal_from_bits(r_local) - self.half_var_local);
         }
         state.value = value * growth;
         out

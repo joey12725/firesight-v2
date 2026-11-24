@@ -148,6 +148,13 @@ pub fn normal_from_bits(bits: u64) -> f64 {
     inverse_normal_cdf(((bits >> 11) as f64 + 0.5) * F64_UNIT)
 }
 
+/// [`Rng::uniform`] of a word already drawn: a caller can draw the word every step
+/// and convert it only where it is used.
+#[inline]
+pub fn uniform_from_bits(bits: u64) -> f64 {
+    (bits >> 11) as f64 * F64_UNIT
+}
+
 /// xoshiro256++ with the distributions the model needs.
 #[derive(Clone, Debug)]
 pub struct Rng {
@@ -212,7 +219,7 @@ impl Rng {
     /// Uniform in `[0, 1)` with 53 random bits.
     #[inline]
     pub fn uniform(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 * F64_UNIT
+        uniform_from_bits(self.next_u64())
     }
 
     /// Uniform in `(0, 1]`. Safe to pass to `ln`.
