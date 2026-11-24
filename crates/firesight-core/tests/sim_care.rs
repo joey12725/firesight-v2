@@ -121,7 +121,11 @@ fn health_states_put_the_expensive_years_before_death() {
 
 #[test]
 fn health_states_off_is_the_default_bit_for_bit() {
-    for example in Profile::examples(START) {
+    // The "full-life" example switches health states on.
+    for example in Profile::examples(START)
+        .into_iter()
+        .filter(|e| e.slug != "full-life")
+    {
         let mut explicit = example.profile.clone();
         explicit.assumptions.health_model = HealthModelKind::Independent;
         let json = serde_json::to_value(&example.profile).unwrap();

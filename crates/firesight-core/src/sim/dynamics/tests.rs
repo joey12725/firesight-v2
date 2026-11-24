@@ -102,7 +102,11 @@ fn merge_person_keeps_tax_character() {
 
 #[test]
 fn a_profile_without_household_dynamics_is_inactive() {
-    for ex in Profile::examples(EXAMPLE_START) {
+    // The "full-life" example has parents and life insurance on purpose.
+    for ex in Profile::examples(EXAMPLE_START)
+        .into_iter()
+        .filter(|e| e.slug != "full-life")
+    {
         let f = DynamicsPlan::compile(
             &ex.profile,
             crate::data::Data::embedded(),

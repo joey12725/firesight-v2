@@ -1,0 +1,738 @@
+{
+  "schema_version": 2,
+  "name": "Full life",
+  "description": "Demo household with the optional realism features on. Spending: two \\\n                      cars replaced on a cycle, seasonal spending, category inflation, \\\n                      detailed irregular expenses, belt-tightening when out of work. \\\n                      Children: on the health plan, an uncertain second birth with parental \\\n                      leave, uncertain college costs, possible support as adults. Housing: \\\n                      lumpy maintenance, a capped assessment, insurance repricing, slow \\\n                      home sales, a home-equity line, downsizing when the children leave, \\\n                      rate-aware prepayment. Work: job changes, recession pay, disability, \\\n                      late-career layoffs, business failure. Tax and policy: chained CPI, \\\n                      full state rules, policy risk, tax-loss harvesting, charitable \\\n                      distributions. Health: health states, linked lifespans, the income \\\n                      gradient, Medicaid, spousal care. Markets: valuation, bonds priced \\\n                      from the yield, income yields that move. Decisions: confirmation \\\n                      before retiring, going back to work, adaptive claiming, pausing \\\n                      saving in distress. Family: two parents with estates and care, term \\\n                      life insurance.",
+  "start": "2026-11",
+  "household": {
+    "people": [
+      {
+        "id": "elena",
+        "name": "Elena",
+        "birth": "1990-06",
+        "sex": "female",
+        "health": "good",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 22.0
+          },
+          "claiming": {
+            "type": "adaptive",
+            "earliest": 62.0,
+            "latest": 70.0
+          }
+        },
+        "disability_risk": "typical",
+        "ltd_insurance": {
+          "replacement": 0.6,
+          "to_age": 65.0
+        },
+        "life_insurance": [
+          {
+            "id": "elena_term",
+            "name": "20-year term life",
+            "kind": {
+              "type": "term",
+              "years_remaining": 20.0
+            },
+            "death_benefit": 750000.0,
+            "annual_premium": 480.0
+          }
+        ]
+      },
+      {
+        "id": "marcus",
+        "name": "Marcus",
+        "birth": "1988-02",
+        "sex": "male",
+        "health": "good",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 22.0
+          },
+          "claiming": {
+            "type": "adaptive",
+            "earliest": 62.0,
+            "latest": 70.0
+          }
+        },
+        "disability_risk": "typical",
+        "life_insurance": [
+          {
+            "id": "marcus_term",
+            "name": "20-year term life",
+            "kind": {
+              "type": "term",
+              "years_remaining": 20.0
+            },
+            "death_benefit": 750000.0,
+            "annual_premium": 690.0
+          }
+        ]
+      }
+    ],
+    "children": [
+      {
+        "id": "leo",
+        "name": "Leo",
+        "birth": "2022-08",
+        "costs": "modeled",
+        "childcare_monthly": 1500.0,
+        "college": {
+          "type": "public_in_state"
+        },
+        "college_share": 1.0,
+        "college_cost": {
+          "type": "stochastic",
+          "attend_probability": 0.95,
+          "real_tuition_growth": 0.01,
+          "tuition_volatility": 0.012,
+          "aid_scale": 1.0
+        },
+        "adult_support": {
+          "probability": 0.3,
+          "annual": 12000.0,
+          "mean_years": 2.0
+        }
+      },
+      {
+        "id": "second_child",
+        "name": "Second child (hoped for)",
+        "birth": "2028-03",
+        "costs": "modeled",
+        "childcare_monthly": 1700.0,
+        "college": {
+          "type": "public_in_state"
+        },
+        "college_share": 1.0,
+        "arrival": {
+          "type": "uncertain",
+          "probability": 0.85,
+          "delay_mean_months": 4.0,
+          "twins_probability": 0.03
+        },
+        "college_cost": {
+          "type": "stochastic",
+          "attend_probability": 0.95,
+          "real_tuition_growth": 0.01,
+          "tuition_volatility": 0.012,
+          "aid_scale": 1.0
+        },
+        "adult_support": {
+          "probability": 0.3,
+          "annual": 12000.0,
+          "mean_years": 2.0
+        },
+        "parental_leave": {
+          "person": 0,
+          "months": 3,
+          "pay_fraction": 0.6
+        }
+      }
+    ],
+    "location": {
+      "country": "US",
+      "state": "CA",
+      "city": "Sacramento",
+      "foreign_tax_rate": null
+    },
+    "married": "2017-11",
+    "parents": [
+      {
+        "id": "elena_mother",
+        "name": "Elena's mother",
+        "child": 0,
+        "birth": "1959-11",
+        "sex": "female",
+        "health": "good",
+        "estate": 520000.0,
+        "share": 0.5,
+        "inherited_ira_fraction": 0.4,
+        "care_erodes_estate": true,
+        "care_support": {
+          "probability": 1.0,
+          "annual_cost": 0.0,
+          "hours": 0.0
+        }
+      },
+      {
+        "id": "marcus_father",
+        "name": "Marcus's father",
+        "child": 1,
+        "birth": "1955-11",
+        "sex": "male",
+        "health": "good",
+        "estate": 280000.0,
+        "share": 0.5,
+        "inherited_ira_fraction": 0.25,
+        "care_erodes_estate": true
+      }
+    ]
+  },
+  "incomes": [
+    {
+      "id": "elena_job",
+      "name": "Hospital operations manager",
+      "owner": 0,
+      "kind": {
+        "type": "job",
+        "salary": 118000.0,
+        "growth": {
+          "type": "lifecycle",
+          "profile": "typical",
+          "extra": 0.0
+        },
+        "risk": {
+          "level": "typical",
+          "job_mobility": "typical",
+          "recession_pay": "typical",
+          "late_career": "realistic"
+        },
+        "bonus": {
+          "target_fraction": 0.08,
+          "volatility": 0.3,
+          "month": 3
+        },
+        "commission": null,
+        "equity": [],
+        "plan": {
+          "employee_fraction": 0.1,
+          "employee_max": false,
+          "roth_fraction": 0.0,
+          "match_rate": 0.5,
+          "match_up_to": 0.06,
+          "after_tax_mega": false
+        },
+        "hsa_contribution": 3600.0,
+        "hsa_employer": 900.0,
+        "ends_at_retirement": true
+      },
+      "start": null,
+      "end": null
+    },
+    {
+      "id": "marcus_business",
+      "name": "Remodelling business",
+      "owner": 1,
+      "kind": {
+        "type": "self_employment",
+        "net_annual": 84000.0,
+        "volatility": 0.3,
+        "real_growth": 0.0,
+        "ends_at_retirement": true,
+        "solo_401k_fraction": 0.08,
+        "business_risk": "typical",
+        "years_operating": 8.0,
+        "fallback_wage": {
+          "annual": 64000.0,
+          "search_months": 4
+        }
+      },
+      "start": null,
+      "end": null
+    }
+  ],
+  "spending": {
+    "items": [
+      {
+        "id": "utilities",
+        "name": "Utilities, internet and phones",
+        "category": "utilities",
+        "amount": 420.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "groceries",
+        "name": "Groceries",
+        "category": "groceries",
+        "amount": 1250.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "dining",
+        "name": "Restaurants",
+        "category": "dining",
+        "amount": 420.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "transport",
+        "name": "Fuel, car insurance and upkeep",
+        "category": "transport",
+        "amount": 800.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "factor",
+          "factor": 0.6
+        },
+        "owner": null
+      },
+      {
+        "id": "insurance",
+        "name": "Umbrella insurance",
+        "category": "insurance",
+        "amount": 45.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "clothing",
+        "name": "Clothing and personal care",
+        "category": "personal",
+        "amount": 280.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "household",
+        "name": "Household goods and services",
+        "category": "other",
+        "amount": 350.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "activities",
+        "name": "Children's activities",
+        "category": "other",
+        "amount": 250.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "entertainment",
+        "name": "Entertainment and hobbies",
+        "category": "entertainment",
+        "amount": 300.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "giving",
+        "name": "Charity and gifts",
+        "category": "giving",
+        "amount": 250.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "vacations",
+        "name": "Family vacations",
+        "category": "travel",
+        "amount": 7000.0,
+        "frequency": "annual",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "factor",
+          "factor": 1.4
+        },
+        "owner": null
+      }
+    ],
+    "lifestyle_creep": 0.25,
+    "retirement_smile": true,
+    "shocks": "detailed",
+    "healthcare": {
+      "mode": "modeled",
+      "early_retirement": {
+        "type": "aca"
+      },
+      "long_term_care": true,
+      "quality": "silver",
+      "cover_children": true,
+      "medicaid": true,
+      "spousal_care": true
+    },
+    "survivor_factor": 0.7,
+    "vehicles": [
+      {
+        "id": "suv",
+        "name": "Family SUV",
+        "price": 36000.0,
+        "replace_every_years": 10.0,
+        "age_years": 3.0,
+        "trade_in_fraction": 0.2,
+        "financing": {
+          "down_fraction": 0.1,
+          "rate": 0.07,
+          "term_months": 60
+        },
+        "owner": null,
+        "end": null
+      },
+      {
+        "id": "second_car",
+        "name": "Second car",
+        "price": 26000.0,
+        "replace_every_years": 12.0,
+        "age_years": 7.0,
+        "trade_in_fraction": 0.2,
+        "financing": null,
+        "owner": 1,
+        "end": null
+      }
+    ],
+    "seasonality": "typical",
+    "category_inflation": "stochastic",
+    "unemployment_cut": 0.1
+  },
+  "accounts": [
+    {
+      "id": "checking",
+      "name": "Joint checking",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 16000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "fixed",
+        "rate": 0.0
+      },
+      "holdings": null
+    },
+    {
+      "id": "savings",
+      "name": "Savings",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 52000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "elena_401k",
+      "name": "Elena's 401(k)",
+      "owner": 0,
+      "kind": "traditional",
+      "balance": 172000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "elena_roth",
+      "name": "Elena's Roth IRA",
+      "owner": 0,
+      "kind": "roth",
+      "balance": 36000.0,
+      "cost_basis": null,
+      "roth_basis": 24000.0,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "marcus_solo",
+      "name": "Marcus's solo 401(k)",
+      "owner": 1,
+      "kind": "traditional",
+      "balance": 88000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "brokerage",
+      "name": "Joint brokerage",
+      "owner": 0,
+      "kind": "taxable",
+      "balance": 78000.0,
+      "cost_basis": 61000.0,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "hsa",
+      "name": "HSA",
+      "owner": 0,
+      "kind": "hsa",
+      "balance": 12000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    }
+  ],
+  "portfolio": {
+    "target": {
+      "us_stocks": 55.0,
+      "intl_stocks": 20.0,
+      "bonds": 25.0
+    },
+    "glide": {
+      "type": "target_date",
+      "years_before": 15.0,
+      "equity_at_retirement": 0.6,
+      "years_after": 7.0,
+      "equity_final": 0.45
+    },
+    "rebalance": {
+      "type": "annual"
+    },
+    "location": "tax_efficient",
+    "expense_ratio": 0.001,
+    "advisory_fee": 0.0,
+    "emergency_months": 6.0,
+    "retirement_cash_years": 0.0,
+    "custom_asset": null,
+    "single_stock": {
+      "volatility": 0.35,
+      "beta": 1.1
+    },
+    "tax_loss_harvesting": true,
+    "pause_deferrals_in_distress": true
+  },
+  "properties": [
+    {
+      "id": "home",
+      "name": "House in Sacramento",
+      "use": {
+        "type": "primary"
+      },
+      "value": 640000.0,
+      "basis": 585000.0,
+      "mortgage": {
+        "balance": 452000.0,
+        "rate": 0.061,
+        "remaining_months": 324,
+        "payment": null
+      },
+      "property_tax_rate": 0.011,
+      "insurance_rate": 0.005,
+      "maintenance_rate": 0.01,
+      "hoa_monthly": 0.0,
+      "appreciation_vs_national": 0.0,
+      "idiosyncratic_volatility": 0.08,
+      "maintenance": "lumpy",
+      "assessment": {
+        "type": "capped",
+        "annual_cap": 0.02,
+        "assessed_value": 609000.0
+      },
+      "insurance_real_growth": "stochastic"
+    }
+  ],
+  "debts": [],
+  "debt_policy": {
+    "strategy": "minimum",
+    "extra_monthly": 0.0,
+    "refinance_mortgages": true,
+    "mortgage_prepayment": {
+      "type": "when_rate_above",
+      "real_rate": null
+    }
+  },
+  "events": [],
+  "retirement": {
+    "trigger": {
+      "type": "when_funded",
+      "withdrawal_rate": 0.035,
+      "basis": "investable",
+      "count_future_income": true,
+      "min_age": 55.0,
+      "max_age": 67.0,
+      "confirmation": {
+        "months": 6,
+        "max_equity_drawdown": 0.2
+      }
+    },
+    "partner_offset_years": 0.0,
+    "spending_rule": {
+      "type": "guardrails",
+      "upper": 0.2,
+      "lower": 0.2,
+      "adjust": 0.1
+    },
+    "withdrawal_order": {
+      "type": "tax_aware",
+      "fill_to_bracket": 0.12,
+      "roth_conversions": true,
+      "mind_aca": true
+    },
+    "early_access": "auto",
+    "bequest_target": 0.0,
+    "home_equity": "last_resort",
+    "qcd": true,
+    "home_equity_borrowing": {
+      "type": "heloc",
+      "max_combined_ltv": 0.8,
+      "spread": 0.035,
+      "draw_years": 10.0,
+      "repay_years": 20.0,
+      "freeze_probability": 0.3
+    },
+    "downsize": {
+      "when": {
+        "type": "when_children_leave"
+      },
+      "to_value_fraction": 0.6,
+      "rent_instead": false,
+      "selling_cost_fraction": 0.06,
+      "buying_cost_fraction": 0.03
+    },
+    "return_to_work": {
+      "funded_ratio_below": 0.8,
+      "until_age": 70.0,
+      "pay_fraction": 0.5,
+      "former_annual_pay": null,
+      "search": {
+        "type": "typical"
+      }
+    }
+  },
+  "assumptions": {
+    "market": {
+      "kind": {
+        "type": "bootstrap",
+        "mean_block_months": 60,
+        "from_year": null
+      },
+      "equity_premium_adjustment": 0.0,
+      "inflation_adjustment": 0.0,
+      "stress": [],
+      "bond_pricing": "from_yield",
+      "valuation": {
+        "starting_cape": 40.0,
+        "fair_cape": 17.3,
+        "half_life_years": 15.0
+      },
+      "dynamic_yields": true
+    },
+    "taxes": {
+      "kind": {
+        "type": "us_current_law"
+      },
+      "index_brackets": true,
+      "social_security_haircut": null,
+      "chained_cpi": true,
+      "state_detail": "full",
+      "policy_risk": {
+        "ss_haircut_probability": 0.5,
+        "ss_haircut_factor": 0.77,
+        "earliest_year": 2033,
+        "tax_increase_probability": 0.25,
+        "tax_increase_points": 0.02
+      }
+    },
+    "longevity": {
+      "type": "stochastic",
+      "improvement": true,
+      "couple_dependence": {
+        "type": "linked"
+      },
+      "income_gradient": true
+    },
+    "career_risk": true,
+    "health_risk": true,
+    "housing_liquidity": "realistic",
+    "health_model": {
+      "type": "states"
+    }
+  },
+  "simulation": {
+    "paths": 10000,
+    "seed": 1,
+    "end_age": 100
+  }
+}

@@ -27,8 +27,10 @@ impl Profile {
         dual_income_family(EXAMPLE_START)
     }
 
-    /// The three demo households with `start` set to the given month. Birth dates and
-    /// event dates are placed relative to `start`, so the demos never go stale.
+    /// The demo households with `start` set to the given month. Birth dates and event
+    /// dates are placed relative to `start`, so the demos never go stale. The first
+    /// three use the default model throughout; the fourth ("full-life") switches on a
+    /// selection of the optional realism features (`docs/methodology.md`, section 18).
     pub fn examples(start: YearMonth) -> Vec<Example> {
         vec![
             Example {
@@ -51,6 +53,15 @@ impl Profile {
                 summary: "33, single, Tampa. A day job, a duplex, weekend gig work and a \
                           crypto sleeve, with a move to Lisbon in five years.",
                 profile: side_hustle_landlord(start),
+            },
+            Example {
+                slug: "full-life",
+                title: "Full life",
+                summary: "36 and 38 in Sacramento with a child, another hoped for, a house \
+                          and ageing parents, run with the optional realism features on: \
+                          uneven spending, career and health shocks, policy risk and the \
+                          decisions a household makes when money runs short.",
+                profile: full_life(start),
             },
         ]
     }
@@ -803,6 +814,414 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
                 rate: None,
             },
             ..RetirementPlan::default()
+        },
+        ..Profile::default()
+    }
+}
+
+/// A household with a selection of the optional realism features on (the list is in
+/// the profile's description). Left off on purpose: divorce risk, panic selling,
+/// long-term-care insurance, an adjustable-rate mortgage, cash-out refinancing, a
+/// reverse mortgage, fat tails and the stress scenarios, which are choices or
+/// stresses rather than a description of an ordinary household.
+fn full_life(start: YearMonth) -> Profile {
+    let adaptive = Claiming::Adaptive {
+        earliest: 62.0,
+        latest: 70.0,
+    };
+    let term_life = |id: &str, premium: f64| LifePolicy {
+        id: id.into(),
+        name: "20-year term life".into(),
+        kind: PolicyKind::Term {
+            years_remaining: 20.0,
+        },
+        death_benefit: 750_000.0,
+        annual_premium: premium,
+    };
+    let elena = Person {
+        id: "elena".into(),
+        name: "Elena".into(),
+        birth: start - (36 * 12 + 5),
+        sex: Sex::Female,
+        social_security: SocialSecurity {
+            claiming: adaptive,
+            ..SocialSecurity::default()
+        },
+        disability_risk: DisabilityRisk::Typical,
+        ltd_insurance: Some(LtdInsurance::default()),
+        life_insurance: vec![term_life("elena_term", 480.0)],
+        ..Person::default()
+    };
+    let marcus = Person {
+        id: "marcus".into(),
+        name: "Marcus".into(),
+        birth: start - (38 * 12 + 9),
+        sex: Sex::Male,
+        social_security: SocialSecurity {
+            claiming: adaptive,
+            ..SocialSecurity::default()
+        },
+        disability_risk: DisabilityRisk::Typical,
+        life_insurance: vec![term_life("marcus_term", 690.0)],
+        ..Person::default()
+    };
+    let college_cost = CollegeCost::Stochastic {
+        attend_probability: DEFAULT_ATTEND_PROBABILITY,
+        real_tuition_growth: DEFAULT_REAL_TUITION_GROWTH,
+        tuition_volatility: DEFAULT_TUITION_VOLATILITY,
+        aid_scale: 1.0,
+    };
+    let children = vec![
+        Child {
+            id: "leo".into(),
+            name: "Leo".into(),
+            birth: start - (4 * 12 + 3),
+            costs: ChildCosts::Modeled,
+            childcare_monthly: Some(1_500.0),
+            college: College::PublicInState,
+            college_share: 1.0,
+            college_cost,
+            adult_support: Some(AdultSupport::default()),
+            ..Child::default()
+        },
+        Child {
+            id: "second_child".into(),
+            name: "Second child (hoped for)".into(),
+            birth: start + 16,
+            costs: ChildCosts::Modeled,
+            childcare_monthly: Some(1_700.0),
+            college: College::PublicInState,
+            college_share: 1.0,
+            arrival: Arrival::Uncertain {
+                probability: 0.85,
+                delay_mean_months: 4.0,
+                twins_probability: 0.03,
+            },
+            college_cost,
+            adult_support: Some(AdultSupport::default()),
+            parental_leave: Some(ParentalLeave {
+                person: 0,
+                months: 3,
+                pay_fraction: 0.6,
+            }),
+            ..Child::default()
+        },
+    ];
+    let hospital_job = Income {
+        id: "elena_job".into(),
+        name: "Hospital operations manager".into(),
+        owner: 0,
+        kind: IncomeKind::Job(Job {
+            salary: 118_000.0,
+            bonus: Some(Bonus {
+                target_fraction: 0.08,
+                volatility: 0.3,
+                month: 3,
+            }),
+            risk: CareerRisk {
+                job_mobility: JobMobility::Typical,
+                recession_pay: RecessionPay::Typical,
+                late_career: LateCareer::Realistic,
+                ..CareerRisk::default()
+            },
+            plan: Some(EmployerPlan {
+                employee_fraction: 0.10,
+                roth_fraction: 0.0,
+                match_rate: 0.5,
+                match_up_to: 0.06,
+                ..EmployerPlan::default()
+            }),
+            hsa_contribution: 3_600.0,
+            hsa_employer: 900.0,
+            ..Job::default()
+        }),
+        ..Income::default()
+    };
+    let contracting = Income {
+        id: "marcus_business".into(),
+        name: "Remodelling business".into(),
+        owner: 1,
+        kind: IncomeKind::SelfEmployment(SelfEmployment {
+            net_annual: 84_000.0,
+            volatility: 0.3,
+            ends_at_retirement: true,
+            solo_401k_fraction: 0.08,
+            business_risk: BusinessRisk::Typical,
+            years_operating: 8.0,
+            fallback_wage: Some(FallbackWage {
+                annual: 64_000.0,
+                search_months: 4,
+            }),
+            ..SelfEmployment::default()
+        }),
+        ..Income::default()
+    };
+    let mut vacations = item("vacations", "Family vacations", Category::Travel, 7_000.0);
+    vacations.frequency = Frequency::Annual;
+    vacations.in_retirement = RetirementChange::Factor { factor: 1.4 };
+    let mut fuel = item(
+        "transport",
+        "Fuel, car insurance and upkeep",
+        Category::Transport,
+        800.0,
+    );
+    fuel.in_retirement = RetirementChange::Factor { factor: 0.6 };
+    let home = Property {
+        id: "home".into(),
+        name: "House in Sacramento".into(),
+        value: 640_000.0,
+        basis: Some(585_000.0),
+        mortgage: Some(Mortgage {
+            balance: 452_000.0,
+            rate: 0.061,
+            remaining_months: 27 * 12,
+            ..Mortgage::default()
+        }),
+        property_tax_rate: Some(0.011),
+        maintenance: MaintenanceModel::Lumpy,
+        // Proposition 13: the assessment rises at most 2% a year from the price paid.
+        assessment: Assessment::Capped {
+            annual_cap: 0.02,
+            assessed_value: Some(609_000.0),
+        },
+        insurance_real_growth: InsuranceGrowth::Stochastic,
+        ..Property::default()
+    };
+    let parent = |id: &str, name: &str, child: usize, age: i32, sex: Sex| Parent {
+        id: id.into(),
+        name: name.into(),
+        child,
+        birth: start - age * 12,
+        sex,
+        ..Parent::default()
+    };
+
+    Profile {
+        name: "Full life".into(),
+        description: "Demo household with the optional realism features on. Spending: two \\
+                      cars replaced on a cycle, seasonal spending, category inflation, \\
+                      detailed irregular expenses, belt-tightening when out of work. \\
+                      Children: on the health plan, an uncertain second birth with parental \\
+                      leave, uncertain college costs, possible support as adults. Housing: \\
+                      lumpy maintenance, a capped assessment, insurance repricing, slow \\
+                      home sales, a home-equity line, downsizing when the children leave, \\
+                      rate-aware prepayment. Work: job changes, recession pay, disability, \\
+                      late-career layoffs, business failure. Tax and policy: chained CPI, \\
+                      full state rules, policy risk, tax-loss harvesting, charitable \\
+                      distributions. Health: health states, linked lifespans, the income \\
+                      gradient, Medicaid, spousal care. Markets: valuation, bonds priced \\
+                      from the yield, income yields that move. Decisions: confirmation \\
+                      before retiring, going back to work, adaptive claiming, pausing \\
+                      saving in distress. Family: two parents with estates and care, term \\
+                      life insurance."
+            .into(),
+        start: Some(start),
+        household: Household {
+            people: vec![elena, marcus],
+            children,
+            location: Location {
+                state: Some("CA".into()),
+                city: Some("Sacramento".into()),
+                ..Location::default()
+            },
+            married: Some(start - 9 * 12),
+            parents: vec![
+                Parent {
+                    estate: 520_000.0,
+                    share: 0.5,
+                    inherited_ira_fraction: 0.4,
+                    care_support: Some(CareSupport::default()),
+                    ..parent("elena_mother", "Elena's mother", 0, 67, Sex::Female)
+                },
+                Parent {
+                    estate: 280_000.0,
+                    share: 0.5,
+                    inherited_ira_fraction: 0.25,
+                    ..parent("marcus_father", "Marcus's father", 1, 71, Sex::Male)
+                },
+            ],
+            ..Household::default()
+        },
+        incomes: vec![hospital_job, contracting],
+        spending: Spending {
+            items: vec![
+                item(
+                    "utilities",
+                    "Utilities, internet and phones",
+                    Category::Utilities,
+                    420.0,
+                ),
+                item("groceries", "Groceries", Category::Groceries, 1_250.0),
+                item("dining", "Restaurants", Category::Dining, 420.0),
+                fuel,
+                item("insurance", "Umbrella insurance", Category::Insurance, 45.0),
+                item(
+                    "clothing",
+                    "Clothing and personal care",
+                    Category::Personal,
+                    280.0,
+                ),
+                item(
+                    "household",
+                    "Household goods and services",
+                    Category::Other,
+                    350.0,
+                ),
+                item(
+                    "activities",
+                    "Children's activities",
+                    Category::Other,
+                    250.0,
+                ),
+                item(
+                    "entertainment",
+                    "Entertainment and hobbies",
+                    Category::Entertainment,
+                    300.0,
+                ),
+                item("giving", "Charity and gifts", Category::Giving, 250.0),
+                vacations,
+            ],
+            healthcare: Healthcare {
+                cover_children: true,
+                medicaid: true,
+                spousal_care: true,
+                ..Healthcare::default()
+            },
+            shocks: ShockLevel::Detailed,
+            vehicles: vec![
+                Vehicle {
+                    id: "suv".into(),
+                    name: "Family SUV".into(),
+                    price: 36_000.0,
+                    replace_every_years: 10.0,
+                    age_years: 3.0,
+                    financing: Some(VehicleFinancing::default()),
+                    ..Vehicle::default()
+                },
+                Vehicle {
+                    id: "second_car".into(),
+                    name: "Second car".into(),
+                    price: 26_000.0,
+                    replace_every_years: 12.0,
+                    age_years: 7.0,
+                    owner: Some(1),
+                    ..Vehicle::default()
+                },
+            ],
+            seasonality: Seasonality::Typical,
+            category_inflation: CategoryInflation::Stochastic,
+            unemployment_cut: 0.10,
+            ..Spending::default()
+        },
+        accounts: vec![
+            Account {
+                cash_yield: CashYield::Fixed { rate: 0.0 },
+                ..account("checking", "Joint checking", 0, AccountKind::Cash, 16_000.0)
+            },
+            account("savings", "Savings", 0, AccountKind::Cash, 52_000.0),
+            account(
+                "elena_401k",
+                "Elena's 401(k)",
+                0,
+                AccountKind::Traditional,
+                172_000.0,
+            ),
+            Account {
+                roth_basis: Some(24_000.0),
+                ..account(
+                    "elena_roth",
+                    "Elena's Roth IRA",
+                    0,
+                    AccountKind::Roth,
+                    36_000.0,
+                )
+            },
+            account(
+                "marcus_solo",
+                "Marcus's solo 401(k)",
+                1,
+                AccountKind::Traditional,
+                88_000.0,
+            ),
+            Account {
+                cost_basis: Some(61_000.0),
+                ..account(
+                    "brokerage",
+                    "Joint brokerage",
+                    0,
+                    AccountKind::Taxable,
+                    78_000.0,
+                )
+            },
+            account("hsa", "HSA", 0, AccountKind::Hsa, 12_000.0),
+        ],
+        properties: vec![home],
+        portfolio: PortfolioPolicy {
+            target: Allocation::from_pairs(&[
+                (AssetClass::UsStocks, 55.0),
+                (AssetClass::IntlStocks, 20.0),
+                (AssetClass::Bonds, 25.0),
+            ]),
+            glide: GlidePath::TargetDate {
+                years_before: 15.0,
+                equity_at_retirement: 0.6,
+                years_after: 7.0,
+                equity_final: 0.45,
+            },
+            location: AssetLocation::TaxEfficient,
+            tax_loss_harvesting: true,
+            pause_deferrals_in_distress: true,
+            ..PortfolioPolicy::default()
+        },
+        debt_policy: DebtPolicy {
+            mortgage_prepayment: MortgagePrepayment::WhenRateAbove { real_rate: None },
+            ..DebtPolicy::default()
+        },
+        retirement: RetirementPlan {
+            trigger: RetirementTrigger::WhenFunded(WhenFunded {
+                withdrawal_rate: 0.035,
+                min_age: Some(55.0),
+                max_age: 67.0,
+                confirmation: Some(RetirementConfirmation::default()),
+                ..WhenFunded::default()
+            }),
+            spending_rule: SpendingRule::Guardrails {
+                upper: 0.2,
+                lower: 0.2,
+                adjust: 0.1,
+            },
+            qcd: true,
+            home_equity_borrowing: HomeEquityBorrowing::Heloc(Heloc::default()),
+            downsize: Some(Downsize::default()),
+            return_to_work: Some(ReturnToWork::default()),
+            ..RetirementPlan::default()
+        },
+        assumptions: Assumptions {
+            market: MarketModel {
+                // The valuation setting already lowers the first decade's stock
+                // returns; the flat adjustment would count today's prices twice.
+                equity_premium_adjustment: 0.0,
+                bond_pricing: BondPricing::FromYield,
+                valuation: Some(Valuation::default()),
+                dynamic_yields: true,
+                ..MarketModel::default()
+            },
+            taxes: TaxModel {
+                chained_cpi: true,
+                state_detail: StateDetail::Full,
+                policy_risk: Some(PolicyRisk::default()),
+                ..TaxModel::default()
+            },
+            longevity: Longevity::Stochastic {
+                improvement: true,
+                couple_dependence: CoupleDependence::Linked,
+                income_gradient: true,
+                income_percentile: None,
+            },
+            housing_liquidity: HousingLiquidity::Realistic,
+            health_model: HealthModelKind::States,
+            ..Assumptions::default()
         },
         ..Profile::default()
     }

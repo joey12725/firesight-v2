@@ -51,7 +51,11 @@ fn scalar_mean(p: &Profile, paths: u64, s: PathScalar) -> f64 {
 
 #[test]
 fn bond_pricing_sampled_is_the_baseline_bit_for_bit() {
-    for example in Profile::examples(START) {
+    // The "full-life" example prices bonds from the yield.
+    for example in Profile::examples(START)
+        .into_iter()
+        .filter(|e| e.slug != "full-life")
+    {
         let mut sampled = example.profile.clone();
         sampled.assumptions.market.bond_pricing = BondPricing::Sampled;
         assert_eq!(
@@ -310,7 +314,11 @@ fn a_fat_tailed_trace_announces_crash_months() {
 
 #[test]
 fn dynamic_yields_off_is_the_baseline_bit_for_bit() {
-    for example in Profile::examples(START) {
+    // The "full-life" example has dynamic yields on.
+    for example in Profile::examples(START)
+        .into_iter()
+        .filter(|e| e.slug != "full-life")
+    {
         let mut off = example.profile.clone();
         off.assumptions.market.dynamic_yields = false;
         assert_eq!(
