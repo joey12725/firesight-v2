@@ -78,6 +78,7 @@ fn bootstrap(mean_block_months: u32) -> MarketKind {
     MarketKind::Bootstrap {
         mean_block_months,
         from_year: None,
+        joins: BootstrapJoins::Uniform,
     }
 }
 
@@ -91,6 +92,7 @@ const ALL_KINDS: [(&str, MarketKind); 4] = [
         MarketKind::Bootstrap {
             mean_block_months: 60,
             from_year: None,
+            joins: BootstrapJoins::Uniform,
         },
     ),
     ("regime", MarketKind::Regime),
@@ -693,6 +695,7 @@ fn bootstrap_respects_from_year_and_clamps_silly_values() {
             &market(MarketKind::Bootstrap {
                 mean_block_months: block,
                 from_year: Some(year),
+                joins: BootstrapJoins::Uniform,
             }),
             data,
         )
@@ -1873,6 +1876,7 @@ fn no_nan_anywhere_in_any_model() {
             MarketKind::Bootstrap {
                 mean_block_months: block,
                 from_year,
+                joins: BootstrapJoins::Uniform,
             },
         ));
     }
@@ -1945,6 +1949,16 @@ fn draw_counts_are_fixed_per_month() {
     for (name, kind, market_draws, inflation_draws) in [
         ("bootstrap", bootstrap(60), 8 * months, 0),
         ("bootstrap iid", bootstrap(1), 8 * months, 0),
+        (
+            "bootstrap matched",
+            MarketKind::Bootstrap {
+                mean_block_months: 12,
+                from_year: None,
+                joins: BootstrapJoins::Matched,
+            },
+            8 * months,
+            0,
+        ),
         ("historical", MarketKind::Historical, 7 * months, 0),
         ("regime", MarketKind::Regime, 17 * months, months),
         ("lognormal", MarketKind::Lognormal, 12 * months + 1, months),

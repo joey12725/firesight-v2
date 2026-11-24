@@ -535,6 +535,9 @@ impl State {
             months,
             econ,
         );
+        if plan.econ.has_path_overlays() {
+            plan.econ.apply_path_overlays(seed, path, econ);
+        }
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {

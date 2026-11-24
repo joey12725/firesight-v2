@@ -81,9 +81,13 @@
 //! See [`EconomyModel::apply_stress`].
 
 mod fit;
+mod joins;
+mod overlay;
 mod regime;
 pub(crate) mod sampler;
 mod stress;
+#[cfg(test)]
+mod rich_tests;
 #[cfg(test)]
 mod tests;
 
@@ -94,14 +98,19 @@ use serde_json::Value;
 use crate::data::{Data, History};
 use crate::math;
 use crate::model::{
-    AssetClass, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock, YearMonth,
-    N_ASSETS,
+    AssetClass, BootstrapJoins, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock,
+    YearMonth, N_ASSETS,
 };
 use crate::rng::Rng;
 
 use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
+pub use overlay::{
+    Episode, CASH_PASS_THROUGH, DISASTER_MONTHS_RANGE, DISASTER_RECESSION_MONTHS,
+    DISASTER_WORDS_PER_EPISODE, MAX_BURST_INFLATION, MAX_BURST_PRICE_FACTOR, MAX_DISASTER_DEPTH,
+    MAX_EPISODES,
+};
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
@@ -487,6 +496,9 @@ enum Kind {
     Bootstrap {
         /// Restart probability times 2^32.
         restart: u64,
+        /// The state-matched restart table (`joins: matched`); `None` restarts at a
+        /// uniformly random row.
+        joins: Option<Arc<joins::JoinTable>>,
     },
     Historical,
     Regime(Arc<RegimeParams>),
@@ -506,6 +518,8 @@ pub struct EconomyModel {
     crypto_shock: Arc<ShockTable>,
     /// Sensitivity of each asset class to an equity move imposed by a stress overlay.
     stress_beta: [f64; N_ASSETS],
+    /// Long-run uncertainty and rare disasters; `None` when both are off.
+    overlay: Option<Arc<overlay::Overlay>>,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -1019,9 +1033,13 @@ impl EconomyModel {
         ));
         let kind = match market.kind {
             MarketKind::Bootstrap {
-                mean_block_months, ..
+                mean_block_months,
+                joins,
+                ..
             } => Kind::Bootstrap {
                 restart: probability_bits(1.0 / f64::from(mean_block_months.max(1))),
+                joins: matches!(joins, BootstrapJoins::Matched)
+                    .then(|| Arc::new(joins::JoinTable::new(&base.rows))),
             },
             MarketKind::Historical => Kind::Historical,
             MarketKind::Regime => Kind::Regime(regime_params(data)),
@@ -1095,6 +1113,7 @@ impl EconomyModel {
             stock_shock: Arc::new(ShockTable::constant(1.0)),
             crypto_shock,
             stress_beta: [0.0; N_ASSETS],
+            overlay: overlay::Overlay::new(market).map(Arc::new),
         };
         model.with_asset_params(&SingleStock::default(), &CustomAsset::default())
     }
@@ -1214,7 +1233,7 @@ impl EconomyModel {
         let mut sink = Sink::new(out);
         let rng = &mut *streams.market;
         match &self.kind {
-            Kind::Bootstrap { restart } => {
+            Kind::Bootstrap { restart, joins } => {
                 let rows = &self.rows[..];
                 let n = rows.len();
                 let mut i = 0usize;
@@ -1229,7 +1248,10 @@ impl EconomyModel {
                 for t in 0..months {
                     let bits = rng.next_u64();
                     if t == 0 || (bits >> 32) < *restart {
-                        i = (((bits & MASK_32) * n as u64) >> 32) as usize;
+                        i = match joins {
+                            Some(table) if t > 0 => table.restart(i, bits & MASK_32),
+                            _ => (((bits & MASK_32) * n as u64) >> 32) as usize,
+                        };
                     } else {
                         i += 1;
                         if i == n {

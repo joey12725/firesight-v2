@@ -1559,11 +1559,73 @@ impl Checker<'_> {
         }
     }
 
+    /// Long-run uncertainty and rare disasters (`assumptions.market`).
+    fn market_risk(&mut self) {
+        let m = &self.p.assumptions.market;
+        if let Some(dist) = &m.equity_premium_uncertainty {
+            check_uncertain(
+                &mut self.r,
+                "/assumptions/market/equity_premium_uncertainty",
+                "Uncertainty about the long-run stock return",
+                dist,
+                Bounds::new(-0.2, 0.2),
+            );
+        }
+        if let Some(dist) = &m.inflation_uncertainty {
+            check_uncertain(
+                &mut self.r,
+                "/assumptions/market/inflation_uncertainty",
+                "Uncertainty about long-run inflation",
+                dist,
+                Bounds::new(-0.1, 0.1),
+            );
+        }
+        let d = &m.disasters;
+        let base = "/assumptions/market/disasters";
+        self.r.range(
+            &format!("{base}/annual_probability"),
+            "Annual probability of a disaster",
+            d.annual_probability,
+            0.0,
+            0.1,
+        );
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/depth"),
+            "Disaster depth",
+            &d.depth,
+            Bounds::new(0.0, crate::economy::MAX_DISASTER_DEPTH),
+        );
+        let (shortest, longest) = crate::economy::DISASTER_MONTHS_RANGE;
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/years"),
+            "Disaster length in years",
+            &d.years,
+            Bounds::new(shortest as f64 / 12.0, longest as f64 / 12.0),
+        );
+        self.r.range(
+            &format!("{base}/inflation_probability"),
+            "Probability of an inflation burst",
+            d.inflation_probability,
+            0.0,
+            1.0,
+        );
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/inflation"),
+            "Extra inflation in a disaster",
+            &d.inflation,
+            Bounds::new(0.0, crate::economy::MAX_BURST_INFLATION),
+        );
+    }
+
     fn assumptions(&mut self) {
         let a = &self.p.assumptions;
         if let MarketKind::Bootstrap {
             mean_block_months,
             from_year,
+            ..
         } = a.market.kind
         {
             if !(1..=600).contains(&mean_block_months) {
@@ -1599,6 +1661,7 @@ impl Checker<'_> {
             -0.05,
             0.15,
         );
+        self.market_risk();
         for (i, s) in a.market.stress.iter().enumerate() {
             let sp = format!("/assumptions/market/stress/{i}");
             match s {
@@ -1968,6 +2031,18 @@ impl Checker<'_> {
             && p.assumptions.market.equity_premium_adjustment != 0.0
         {
             self.r.warn("adjusted_history", "/assumptions/market/equity_premium_adjustment", "The historical replay is being run with stock returns shifted from the record. Set the adjustment to 0 to replay history as it happened.");
+        }
+        if matches!(p.assumptions.market.kind, MarketKind::Historical) {
+            let m = &p.assumptions.market;
+            for (on, field) in [
+                (m.equity_premium_uncertainty.is_some(), "equity_premium_uncertainty"),
+                (m.inflation_uncertainty.is_some(), "inflation_uncertainty"),
+                (m.disasters.annual_probability > 0.0, "disasters/annual_probability"),
+            ] {
+                if on {
+                    self.r.warn("adjusted_history", &format!("/assumptions/market/{field}"), "The historical replay is being run with random changes laid over the record, so its paths are no longer history as it happened. Switch this off to replay history exactly.");
+                }
+            }
         }
         if p.assumptions.market.equity_premium_adjustment > 0.02 {
             self.r.warn("returns_optimistic", "/assumptions/market/equity_premium_adjustment", "Adding more than two points a year to historical stock returns is very optimistic.");
@@ -2452,5 +2527,92 @@ mod tests {
         let v = serde_json::to_value(&r).unwrap();
         assert!(v["errors"][0]["code"].is_string());
         assert!(v["warnings"].is_array());
+    }
+
+    #[test]
+    fn market_risk_options_are_checked() {
+        use serde_json::json;
+        let base = "/assumptions/market";
+        // Sensible settings pass.
+        let r = patched(&[
+            PatchOp::set(
+                &format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.01}),
+            ),
+            PatchOp::set(
+                &format!("{base}/inflation_uncertainty"),
+                json!({"type": "triangular", "low": -0.005, "mode": 0.0, "high": 0.015}),
+            ),
+            PatchOp::set(&format!("{base}/disasters/annual_probability"), json!(0.01)),
+            PatchOp::set(&format!("{base}/kind/joins"), json!("matched")),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert!(r.warnings.is_empty(), "{:#?}", r.warnings);
+        // A spread that reaches beyond 20 points a year (4 sd).
+        assert_error(
+            &[PatchOp::set(
+                &format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.06}),
+            )],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/sd"),
+        );
+        assert_error(
+            &[PatchOp::set(
+                &format!("{base}/inflation_uncertainty"),
+                json!({"type": "uniform", "low": 0.02, "high": -0.02}),
+            )],
+            "dist_order",
+            &format!("{base}/inflation_uncertainty/high"),
+        );
+        for (field, value) in [
+            ("annual_probability", json!(0.2)),
+            ("annual_probability", json!(-0.01)),
+            ("inflation_probability", json!(1.5)),
+        ] {
+            let path = format!("{base}/disasters/{field}");
+            assert_error(&[PatchOp::set(&path, value)], "out_of_range", &path);
+        }
+        // A depth of 100%, a disaster shorter than a year, a burst above 25 points.
+        for (field, value, at) in [
+            (
+                "depth",
+                json!({"type": "pert", "low": 0.2, "mode": 0.5, "high": 1.0}),
+                "high",
+            ),
+            (
+                "years",
+                json!({"type": "uniform", "low": 0.5, "high": 5.0}),
+                "low",
+            ),
+            (
+                "years",
+                json!({"type": "uniform", "low": 5.0, "high": 60.0}),
+                "high",
+            ),
+            (
+                "inflation",
+                json!({"type": "uniform", "low": 0.0, "high": 0.4}),
+                "high",
+            ),
+        ] {
+            let path = format!("{base}/disasters/{field}");
+            assert_error(
+                &[PatchOp::set(&path, value)],
+                "out_of_range",
+                &format!("{path}/{at}"),
+            );
+        }
+        // Random overlays on the historical replay get the adjusted-history warning.
+        let r = patched(&[
+            PatchOp::set(&format!("{base}/kind"), json!({"type": "historical"})),
+            PatchOp::set(&format!("{base}/equity_premium_adjustment"), json!(0.0)),
+            PatchOp::set(&format!("{base}/disasters/annual_probability"), json!(0.01)),
+        ]);
+        assert!(has(
+            &r.warnings,
+            "adjusted_history",
+            "/assumptions/market/disasters/annual_probability"
+        ));
     }
 }
