@@ -66,9 +66,8 @@
 //! plan's expected real return to the planned (or latest) retirement age, would meet
 //! the requirement as it would stand then (future income valued at that age).
 
-use crate::accounts::Bucket;
 use crate::health::{CoveragePhase, HealthContext};
-use crate::model::{PropertyUse, WealthBasis, WhenFunded};
+use crate::model::{AccountKind, PropertyUse, WealthBasis, WhenFunded};
 use crate::stats::TraceEventKind;
 use crate::tax::{self, TaxInputs};
 use crate::MAX_PEOPLE;
@@ -340,10 +339,12 @@ impl State {
         need -= continuing;
 
         // Tax on a year of retirement income, at today's law.
-        let investable = self.acc.investable();
+        // One pass over the holdings: `investable()` is this sum of `by_kind()`, and
+        // the taxable total is the same prefix sum `total(Bucket::Taxable)` makes.
+        let kinds = self.acc.by_kind();
+        let investable = kinds[0] + kinds[1] + kinds[2] + kinds[3] + kinds[4];
         let (trad_share, gain_share) = if investable > 0.0 {
-            let kinds = self.acc.by_kind();
-            let taxable = self.acc.total(Bucket::Taxable);
+            let taxable = kinds[AccountKind::Taxable.index()];
             let gain = if taxable > 0.0 {
                 (self.acc.unrealized_gain() / taxable).clamp(0.0, 1.0)
             } else {
