@@ -2240,7 +2240,7 @@
       },
       "raise_months_of_spending": {
         "value": 12.0,
-        "source": "Judgement: a refinance raises at least a year of planned spending, so that one carries the household for a while.",
+        "source": "Judgement: once retired, a refinance raises at least a year of planned spending (and in the annual plan the penalised withdrawals until 59 and a half), so that one carries the household for a while.",
         "confidence": "judgement"
       },
       "min_cash": {

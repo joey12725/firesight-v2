@@ -190,6 +190,8 @@ pub(crate) struct HxState {
     pub mortgage_rate: f64,
     /// Month of the last cash-out refinance.
     pub last_cash_out: i32,
+    /// No prepayment before this month (the cash of a cash-out is for spending).
+    pub no_prepay_until: i32,
     /// Market state and stream of each rental with realistic dynamics.
     pub rentals: Vec<RentalMarketState>,
     pub rental_rng: Vec<Rng>,
@@ -210,6 +212,7 @@ impl HxState {
             downsized: false,
             mortgage_rate: 0.0,
             last_cash_out: NEVER_CASHED_OUT,
+            no_prepay_until: 0,
             rentals: vec![RentalMarketState::default(); plan.props.len()],
             rental_rng: vec![Rng::from_seed(0); plan.props.len()],
         }
@@ -228,6 +231,7 @@ impl HxState {
         self.downsized = false;
         self.mortgage_rate = 0.0;
         self.last_cash_out = NEVER_CASHED_OUT;
+        self.no_prepay_until = 0;
         self.rentals.fill(RentalMarketState::default());
         for (i, r) in plan.hx.rentals.iter().enumerate() {
             if r.is_some() {

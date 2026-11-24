@@ -118,9 +118,10 @@ pub struct Downsize {
     /// What triggers the move.
     pub when: DownsizeWhen,
     /// Price of the new home as a share of the old home's market value at the time
-    /// (0.6 = a home worth 60% as much). It is bought for cash out of the sale
-    /// proceeds; with `rent_instead`, or if the proceeds do not cover it, the
-    /// household rents such a home instead.
+    /// (0.6 = a home worth 60% as much). The sale proceeds pay for it, with a 30-year
+    /// mortgage at the market rate for any rest; with `rent_instead`, or if the
+    /// proceeds do not make a 20% down payment, the household rents such a home
+    /// instead.
     pub to_value_fraction: f64,
     /// Rent instead of buying: the household pays 4% of the new home's value a year
     /// in rent, growing like other rents.
@@ -168,7 +169,7 @@ pub enum DownsizeWhen {
 }
 
 /// Refinancing the main home for cash when savings would otherwise be withdrawn with
-/// the early-withdrawal penalty.
+/// the early-withdrawal penalty, if the penalty avoided pays for the refinance.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct CashOutRefinance {

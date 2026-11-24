@@ -78,7 +78,8 @@ pub struct DebtPolicy {
     /// Refinance the main home for cash instead of withdrawing retirement money with
     /// the 10% early-withdrawal penalty: a new loan at the market mortgage rate (plus
     /// a premium) up to a loan-to-value limit, with closing costs, at most once a
-    /// year. Leave empty never to do so.
+    /// year, and only when the penalty avoided outweighs the closing costs and the
+    /// extra interest. Leave empty never to do so.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cash_out_refinance: Option<CashOutRefinance>,
     /// Whether spare cash pays a mortgage down early instead of being invested in the

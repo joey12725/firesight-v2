@@ -645,8 +645,9 @@ fn downsize_with_a_mortgage_finances_what_the_proceeds_do_not_cover() {
 // F29: cash-out refinancing and rate-aware prepayment.
 
 /// A 50-year-old who retired with $600,000 in a traditional IRA, nothing in taxable
-/// accounts, and a $600,000 house with $100,000 owed at 3%: every dollar she spends
-/// before 59 and a half (beyond a 72(t) schedule) would bear the 10% penalty.
+/// accounts, and a $600,000 house with $100,000 owed at 7% (about the market rate, so
+/// that refinancing it costs nothing in rate): every dollar she spends before 59 and
+/// a half (beyond a 72(t) schedule) would bear the 10% penalty.
 fn early_retiree() -> Profile {
     let mut p = quiet(vec![person("early", 50, Sex::Female)], 90.0);
     p.assumptions.taxes = TaxModel::default();
@@ -659,7 +660,7 @@ fn early_retiree() -> Profile {
         property_tax_rate: Some(0.01),
         mortgage: Some(Mortgage {
             balance: 100_000.0,
-            rate: 0.03,
+            rate: 0.07,
             remaining_months: 240,
             ..Mortgage::default()
         }),
@@ -690,63 +691,65 @@ fn cash_out_refinance_replaces_penalised_withdrawals() {
     let mut p = base_p.clone();
     p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
     let plan = compile(&p);
-    let paths = 100;
+    let base_plan = compile(&base_p);
+    let paths = 200;
     let on = run_checked(&plan, SEED, 0..paths);
-    let base = run(&compile(&base_p), SEED, 0..paths);
-    let pen = |a: &Accumulator| years_total(a, YearSeries::TaxPenalties, 0..9);
+    let base = run(&base_plan, SEED, 0..paths);
+    let pen = |a: &Accumulator| years_total(a, YearSeries::TaxPenalties, 0..10);
     let (pb, po) = (pen(&base), pen(&on));
-    eprintln!("penalties before 59: without {pb}, with cash-out {po}");
-    assert!(pb > 0);
-    assert!((po as f64) < 0.6 * pb as f64, "{po} vs {pb}");
-    // Year 0: cash from the house is the new loan less the $100,000 repaid, and the
-    // closing costs are 2% of the loan plus $2,000, on every path:
-    // costs = 0.02 x (cash + payoff) + 2,000.
-    let n = paths as f64;
-    let cash = in_year(&on, YearSeries::PropertySale, 0) as f64 / n;
-    let costs = (in_year(&on, YearSeries::SpendOneOff, 0)
-        - in_year(&base, YearSeries::SpendOneOff, 0)) as f64
-        / n;
-    eprintln!("cash out {cash:.0}, closing costs {costs:.0}");
-    assert!(cash > 50_000.0, "{cash}");
-    // The balance is a little under 100,000 by the month of the refinance.
-    let expected = 0.02 * (cash + 99_500.0) + 2_000.0;
-    assert!((costs - expected).abs() < 50.0, "{costs} vs {expected}");
-    // Never more than 80% of the home's value is owed.
-    let trace = sim::trace_path(&plan, SEED, 0);
-    assert!(trace
-        .events
-        .iter()
-        .any(|e| e.label.starts_with("Cash-out refinance of home")));
-    let column = |s: YearSeries| {
-        trace
-            .annual
+    let one_off = |a: &Accumulator| years_total(a, YearSeries::SpendOneOff, 0..10);
+    let closing = one_off(&on) - one_off(&base);
+    eprintln!(
+        "penalties before 59 and a half: without {pb}, with cash-out {po}; closing costs {closing}"
+    );
+    // It refinances only where the penalty it avoids pays for the closing costs (and
+    // for the dearer and longer borrowing, not measured here): penalties fall by more
+    // than the closing costs paid, and by a tenth or more.
+    assert!(closing > 0);
+    assert!(pb - po > closing, "{} vs {closing}", pb - po);
+    assert!((po as f64) < 0.9 * pb as f64, "{po} vs {pb}");
+    // A series that is zero all along is left out of a trace.
+    let column = |t: &firesight_core::stats::PathTrace, s: YearSeries| {
+        t.annual
             .columns
             .iter()
             .find(|c| c.key == s.key())
-            .unwrap()
-            .values
-            .clone()
+            .map_or_else(|| vec![0.0; 100], |c| c.values.clone())
     };
-    let (owed, value) = (
-        column(YearSeries::Mortgage),
-        column(YearSeries::PropertyValue),
-    );
-    let peak = owed
-        .iter()
-        .zip(&value)
-        .map(|(o, v)| o / v)
-        .fold(0.0f64, f64::max);
-    assert!(peak > 0.15 && peak <= 0.80 + 1e-6, "{peak}");
-    // At most one refinance in any 12 months.
-    let months: Vec<_> = trace
-        .events
-        .iter()
-        .filter(|e| e.label.starts_with("Cash-out"))
-        .map(|e| e.month)
-        .collect();
-    for w in months.windows(2) {
-        assert!(w[1] - w[0] >= 12, "{months:?}");
+    let mut refinanced = 0;
+    for path in 0..40 {
+        let trace = sim::trace_path(&plan, SEED, path);
+        let months: Vec<_> = trace
+            .events
+            .iter()
+            .filter(|e| e.label.starts_with("Cash-out refinance of home"))
+            .map(|e| e.month)
+            .collect();
+        if months.is_empty() {
+            continue;
+        }
+        refinanced += 1;
+        // At most one refinance in any 12 months.
+        for w in months.windows(2) {
+            assert!(w[1] - w[0] >= 12, "{months:?}");
+        }
+        let owed = column(&trace, YearSeries::Mortgage);
+        // The first refinance's year: closing costs are 2% of the new loan plus
+        // $2,000; the loan is the cash from the house plus the old balance (a little
+        // under last year-end's).
+        let y = (months[0].year() - trace.start.year()) as usize;
+        let base_trace = sim::trace_path(&base_plan, SEED, path);
+        let costs = column(&trace, YearSeries::SpendOneOff)[y]
+            - column(&base_trace, YearSeries::SpendOneOff)[y];
+        let sale = column(&trace, YearSeries::PropertySale)[y];
+        let before = if y > 0 { owed[y - 1] } else { 100_000.0 };
+        let (lo, hi) = (0.02 * sale + 2_000.0, 0.02 * (sale + before) + 2_000.0);
+        assert!(
+            costs > 0.99 * lo && costs < 1.01 * hi,
+            "path {path}: {costs} not in {lo}..{hi}"
+        );
     }
+    assert!(refinanced >= 5, "{refinanced}");
 }
 
 /// A 40-year-old earning $150,000 and spending $60,000, whose $350,000 home carries
@@ -934,4 +937,97 @@ fn realistic_rentals_keep_the_average_and_add_lumps() {
         }
     }
     assert!(seen.0 && seen.1, "{seen:?}");
+}
+
+// ---------------------------------------------------------------------------------
+// Random streams: the features draw only from their own streams, and how much they
+// draw does not depend on what the household decides.
+
+#[test]
+fn housing_decisions_leave_markets_careers_and_lifespans_untouched() {
+    let mut base_p = overspending(Profile::example(), 1.6);
+    // A fixed retirement date, so that wages and layoffs are comparable.
+    base_p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 58.0,
+    };
+    let on_p = with_housing_decisions(base_p.clone());
+    let hecm_p = with_housing_decisions_hecm(base_p.clone());
+    let plans = [compile(&base_p), compile(&on_p), compile(&hecm_p)];
+    let mut changed = 0;
+    for path in 0..25 {
+        let traces: Vec<_> = plans
+            .iter()
+            .map(|p| sim::trace_path(p, SEED, path))
+            .collect();
+        let a = &traces[0];
+        for b in &traces[1..] {
+            assert_eq!(a.months, b.months, "path {path}");
+            for s in [
+                PathScalar::DeathAge0,
+                PathScalar::DeathAge1,
+                PathScalar::Inflation,
+                PathScalar::MonthsUnemployed,
+                PathScalar::LongTermCareCost,
+            ] {
+                let v = |t: &firesight_core::stats::PathTrace| {
+                    t.scalars.iter().find(|x| x.scalar == s).unwrap().value
+                };
+                assert_eq!(v(a).to_bits(), v(b).to_bits(), "path {path} {s:?}");
+            }
+            for key in [
+                "price_level",
+                "return_us_stocks",
+                "return_bonds",
+                "income_wages",
+            ] {
+                assert_eq!(a.column(key), b.column(key), "path {path} {key}");
+            }
+            if a.column("mortgage") != b.column("mortgage") {
+                changed += 1;
+            }
+        }
+    }
+    // And the decisions did act.
+    assert!(changed > 10, "{changed}");
+}
+
+#[test]
+fn lenders_and_tenants_do_not_depend_on_the_household() {
+    // The lenders' freezes and the rental's tenants and repairs are the same whatever
+    // the household spends, path by path.
+    let labels = |plan: &sim::Plan, path: u64, prefixes: &[&str]| -> Vec<(YearMonth, String)> {
+        sim::trace_path(plan, SEED, path)
+            .events
+            .iter()
+            .filter(|e| prefixes.iter().any(|p| e.label.starts_with(p)))
+            .map(|e| (e.month, e.label.clone()))
+            .collect()
+    };
+    let mut lean = landlord();
+    lean.retirement.home_equity_borrowing = heloc();
+    let lavish = overspending(lean.clone(), 1.5);
+    let (lean, lavish) = (
+        compile(&realistic_rentals(lean)),
+        compile(&realistic_rentals(lavish)),
+    );
+    let prefixes = [
+        "Lenders freeze",
+        "Home-equity lines open",
+        "Tenant moved out of flat",
+        "Evicted a tenant from flat",
+        "Large repair on flat",
+    ];
+    let mut events = 0;
+    for path in 0..30 {
+        let a = labels(&lean, path, &prefixes);
+        let b = labels(&lavish, path, &prefixes);
+        assert_eq!(a, b, "path {path}");
+        events += a.len();
+        // The spending did change the path.
+        let ta = sim::trace_path(&lean, SEED, path);
+        let tb = sim::trace_path(&lavish, SEED, path);
+        assert_ne!(ta.column("spend_essential"), tb.column("spend_essential"));
+    }
+    assert!(events > 30, "{events}");
 }

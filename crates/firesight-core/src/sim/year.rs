@@ -898,6 +898,7 @@ impl State {
                 };
                 if plan.hx.cash_out.is_some() {
                     let rate = econ.mortgage_rate[t];
+                    self.hx.long_yield = econ.long_yield[t];
                     self.hx_cash_out_before_plan(plan, t, price, rate, &base_result);
                 }
                 self.wplan = plan_year_from(

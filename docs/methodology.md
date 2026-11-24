@@ -538,8 +538,9 @@ conventional no-PMI line); otherwise, or with `rent_instead`, the household rent
 a home at 4% of its price a year, like a household that sold as a last resort. The
 move draws nothing at random. Measured on the family example (4,000 paired paths,
 guardrails spending, `home_equity: last_resort`): downsizing to 0.6 when the children
-leave lowers success from 91.5% to 90.8% (37 paths rescued, 62 harmed) and the median
-terminal net worth by $35,000: 9% of the home's value goes in transaction costs, the
+leave lowers success from 91.5% to 90.8% (37 paths rescued, 62 harmed), the median
+terminal net worth by $35,000 and its 10th percentile from $104,000 to $63,000, while
+FI rises from 96.4% to 98.3% (the freed equity is investable): 9% of the home's value goes in transaction costs, the
 guardrails spend part of the freed equity, and a household that later runs short has a
 smaller home to sell. Downsizing when savings fall below 80% of the requirement gives
 91.8% (within noise) and raises the 10th percentile of terminal net worth from $104,000
@@ -553,26 +554,38 @@ anything but these rules.
 `sim/cash_out.rs`). When money would otherwise be withdrawn with the 10% early-withdrawal
 penalty (the year's withdrawal plan contains penalised withdrawals, or a mid-year
 shortfall would be covered from penalised sources; both found by running the
-withdrawal on a copy of the accounts), the household first refinances its main home:
-a new loan up to `max_ltv` of the value (default 0.80, the Fannie Mae April 2026
+withdrawal on a copy of the accounts), the household considers refinancing its main
+home: a new loan up to `max_ltv` of the value (default 0.80, the Fannie Mae April 2026
 eligibility limit for a one-unit main home), repaying the mortgage and any home-equity
 line, at the simulated 30-year rate plus `rate_premium` (0.25 points: Fannie Mae's
 loan-level price adjustments charge a cash-out loan 1.25 points of price more than a
 rate refinance at 75 to 80% LTV and a 740-759 score, which at the usual 4 to 6 points
 per point of rate is 0.2 to 0.3 points, a conversion that is a judgement) over
-`term_years` (30). It raises the penalised amount, at least a year of planned spending,
-pays closing costs of 2% plus $2,000 (the judgement the rate refinance already uses),
-and happens at most once in twelve months and only for at least $10,000 (judgements).
-The cash is booked as cash from property, the costs as one-off spending, the loan in
-`mortgage`. Measured (4,000 paired paths): on the early-career saver, who retires at
-about 39, success rises from 83.7% to 84.7% (103 rescued, 64 harmed) and the median
-terminal net worth by $288,000; on the family example success falls from 91.5% to
-90.7% and FI from 96.4% to 95.8%, because a working household that refinances instead
-of taking a penalised withdrawal must clear the larger mortgage before it counts as
-funded, and pays its interest for decades. Not modelled: the lender's income and
-credit tests, freezes of refinancing in downturns, the rule that interest on the
-cash-out part is deductible only if spent on the home (it is deducted like the rest),
-and the choice between a cash-out and a home-equity line by their costs.
+`term_years` (30), with closing costs of 2% plus $2,000 (the judgement the rate
+refinance already uses), at most once in twelve months and only for at least $10,000
+(judgements). A retired household's annual plan raises the year's penalised
+withdrawals times the years until the youngest adult is 59 and a half (at least a
+year of spending), so that one refinance bridges the gap; a mid-year shortfall raises
+only itself. It goes ahead only if the penalty avoided (10% of the cash, less the
+rise in loan payments while withdrawals would be penalised) exceeds the closing
+costs, plus the higher rate on the old balance over that loan's remaining life, plus
+the carry of the new borrowing over the 10-year Treasury yield until 59 and a half
+(the safe-asset comparison the prepayment rule also uses). Without that test the
+first version refinanced a working household's whole mortgage to cover a month's
+shortfall and invested what was left over, which lowered success on the family
+example from 91.5% to 90.7% and its 10th percentile of terminal net worth from
+$104,000 to $42,000. The cash is booked as cash from property, the costs as one-off
+spending, the loan in `mortgage`. Measured (4,000 paired paths): on the early-career
+saver, who retires at about 39, success moves from 83.7% to 83.9% (within noise; 29
+rescued, 20 harmed) and the median terminal net worth rises by $60,000; on the family
+example success moves from 91.5% to 91.7% (9 rescued, 1 harmed) and the 10th
+percentile of terminal net worth from $104,000 to $119,000. The test is strict: with
+mortgage rates well above Treasury yields a refinance rarely pays for itself. Not
+modelled: the lender's income and credit tests, freezes of refinancing in downturns,
+the rule that interest on the cash-out part is deductible only if spent on the home
+(it is deducted like the rest), repaying the loan from penalty-free withdrawals after
+59 and a half (it runs to term), and the choice between a cash-out and a home-equity
+line by their costs.
 
 **Rate-aware mortgage prepayment** (opt-in, `debt_policy.mortgage_prepayment: {type:
 when_rate_above}`; same file). When surplus cash is about to be invested, the part the
@@ -584,8 +597,11 @@ less last year's inflation is above that real rate. Contributions to tax-advanta
 accounts come first, as before; the prepayment is booked as debt spending and the
 scheduled payment is unchanged, so the loan ends sooner. Measured (4,000 paired paths):
 on the early-career saver success rises from 83.7% to 90.3% (296 rescued, 29 harmed),
-the FI age moves 0.3 years later and median lifetime tax falls by $49,000 (less taxable
-income from the brokerage account); on the family example success is unchanged within
+the FI age moves 0.3 years later, median lifetime tax falls by $49,000 (less taxable
+income from the brokerage account) and median terminal net worth rises by $192,000: a
+household that retires at 39 without a mortgage needs smaller withdrawals, many of
+them otherwise from penalised or fully taxed accounts, and is less exposed to a bad
+sequence of returns; on the family example success is unchanged within
 noise (91.5% to 91.2%). Not modelled: the mortgage interest deduction in the
 comparison, rental mortgages, the liquidity lost by prepaying, and expectations of
 future rates.
