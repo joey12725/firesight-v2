@@ -697,6 +697,27 @@ pub fn execute_plan(
     tax_inputs: &mut TaxInputs,
     sell_target: Option<&Weights>,
 ) -> Executed {
+    execute(
+        plan,
+        fraction,
+        accounts,
+        (&inputs.ages, &inputs.penalty_exempt),
+        tax_inputs,
+        sell_target,
+    )
+}
+
+/// [`execute_plan`] with the only parts of the plan inputs it reads: each owner's
+/// age and penalty exemption.
+#[inline]
+fn execute(
+    plan: &WithdrawalPlan,
+    fraction: f64,
+    accounts: &mut Accounts,
+    (ages, penalty_exempt): (&[f64; MAX_PEOPLE], &[bool; MAX_PEOPLE]),
+    tax_inputs: &mut TaxInputs,
+    sell_target: Option<&Weights>,
+) -> Executed {
     let mut done = Executed::default();
     if fraction.is_nan() || fraction <= 0.0 {
         return done;
@@ -735,9 +756,9 @@ pub fn execute_plan(
     let wanted = |amount: f64| amount > 0.0 || amount.is_nan();
     for p in 0..MAX_PEOPLE {
         let base = || WithdrawContext {
-            owner_age: inputs.ages[p],
+            owner_age: ages[p],
             qualified_medical: 0.0,
-            penalty_exempt: inputs.penalty_exempt[p],
+            penalty_exempt: penalty_exempt[p],
             prefer_overweight: prefer,
         };
         let medical = plan.from_hsa[p] * fraction;
@@ -795,12 +816,24 @@ pub fn execute_plan(
         };
         pull(accounts, &mut done, Bucket::Taxable, taxable, &taxable_ctx);
     }
+    // Conversions and harvests that are not planned are not called for: both return
+    // 0 for an amount that is not positive, which is still added below.
     for (p, amount) in plan.roth_conversion.iter().enumerate() {
-        let c = accounts.convert_to_roth(p, amount * fraction);
+        let amount = amount * fraction;
+        let c = if amount > 0.0 {
+            accounts.convert_to_roth(p, amount)
+        } else {
+            0.0
+        };
         tax_inputs.roth_conversions += c;
         done.converted += c;
     }
-    let harvested = accounts.harvest_gains(plan.gain_harvest * fraction);
+    let harvest = plan.gain_harvest * fraction;
+    let harvested = if harvest > 0.0 {
+        accounts.harvest_gains(harvest)
+    } else {
+        0.0
+    };
     tax_inputs.long_term_gains += harvested;
     done.long_term_gain += harvested;
     done
@@ -928,14 +961,51 @@ impl Balances {
     }
 }
 
+/// The parts of [`PlanInputs`] the allocator reads.
+#[derive(Clone, Copy, Default)]
+struct Limits {
+    ages: [f64; MAX_PEOPLE],
+    rmd: [f64; MAX_PEOPLE],
+    sepp_available: [f64; MAX_PEOPLE],
+    medical_need: f64,
+    cash_target: f64,
+    cash_floor: f64,
+    in_drawdown: bool,
+}
+
+impl Limits {
+    fn of(inputs: &PlanInputs) -> Limits {
+        Limits {
+            ages: inputs.ages,
+            rmd: inputs.rmd,
+            sepp_available: inputs.sepp_available,
+            medical_need: inputs.medical_need,
+            cash_target: inputs.cash_target,
+            cash_floor: inputs.cash_floor,
+            in_drawdown: inputs.in_drawdown,
+        }
+    }
+}
+
 /// Everything about the year that does not change between gross-up iterations.
-struct Setup<'a> {
+struct Setup {
     /// The order actually followed (see [`effective_order`]).
     order: WithdrawalOrder,
-    balances: Balances,
-    inputs: &'a PlanInputs,
+    limits: Limits,
     /// Under 59 and a half, not exempt, and the plan avoids penalties (`Auto`).
     restricted: [bool; MAX_PEOPLE],
+    /// The sources `free_traditional` names (the first `n_free` entries).
+    free_trad: [usize; MAX_PEOPLE],
+    n_free: usize,
+    /// The draw as every candidate starts it: capacities, and the forced
+    /// withdrawals (RMDs, running 72(t) schedules) already taken. None of it
+    /// depends on the need.
+    start: Draw,
+    /// Forced withdrawal per person, and the 72(t) part of it.
+    forced: [f64; MAX_PEOPLE],
+    sepp: [f64; MAX_PEOPLE],
+    /// Cash withdrawn to refill the retirement cash bucket.
+    refill: f64,
     /// Traditional dollars that fit under the configured bracket top, after forced
     /// withdrawals (infinite when there is no limit, 0 when not tax-aware).
     bracket_room: f64,
@@ -953,25 +1023,26 @@ struct Setup<'a> {
     conversion_cap: f64,
 }
 
-impl Setup<'_> {
-    /// Sources by person that this strategy may use freely.
-    fn free_traditional(&self) -> ([usize; MAX_PEOPLE], usize) {
-        let mut idx = [0; MAX_PEOPLE];
-        let mut n = 0;
-        for (p, restricted) in self.restricted.iter().enumerate() {
+impl Setup {
+    /// The setup of a plan on `balances` before any tax is considered: the
+    /// conventional order's limits (no bracket room, no conversions), which
+    /// `plan_year` then fills in.
+    fn new(
+        order: WithdrawalOrder,
+        a: &Balances,
+        limits: Limits,
+        restricted: [bool; MAX_PEOPLE],
+        gain_share: f64,
+    ) -> Setup {
+        // Sources by person that this strategy may use freely.
+        let mut free_trad = [0; MAX_PEOPLE];
+        let mut n_free = 0;
+        for (p, restricted) in restricted.iter().enumerate() {
             if !restricted {
-                idx[n] = TRAD + p;
-                n += 1;
+                free_trad[n_free] = TRAD + p;
+                n_free += 1;
             }
         }
-        (idx, n)
-    }
-
-    /// Chooses sources for a cash need of `need` (tax on the withdrawals included).
-    fn allocate(&self, need: f64) -> WithdrawalPlan {
-        let a = &self.balances;
-        let inp = self.inputs;
-        let mut plan = WithdrawalPlan::default();
         let mut d = Draw {
             rem: [0.0; N_SOURCES],
             out: [0.0; N_SOURCES],
@@ -981,16 +1052,16 @@ impl Setup<'_> {
         // Cash: in a drawdown the whole bucket above the floor is spendable; out of
         // one, only what exceeds the bucket target, and a low bucket is refilled.
         let cash = a.cash.max(0.0);
-        let floor = inp.cash_floor.max(0.0);
-        let target = inp.cash_target.max(0.0);
-        let keep = if inp.in_drawdown {
+        let floor = limits.cash_floor.max(0.0);
+        let target = limits.cash_target.max(0.0);
+        let keep = if limits.in_drawdown {
             floor
         } else {
             floor.max(target)
         };
         d.rem[CASH] = (cash - keep).max(0.0);
         d.rem[CASH_LOCKED] = cash - d.rem[CASH];
-        let refill = if inp.in_drawdown {
+        let refill = if limits.in_drawdown {
             0.0
         } else {
             (target - cash).max(0.0)
@@ -999,7 +1070,7 @@ impl Setup<'_> {
         for p in 0..MAX_PEOPLE {
             d.rem[TRAD + p] = a.traditional[p].max(0.0);
             let roth = a.roth[p].max(0.0);
-            let free = if self.restricted[p] {
+            let free = if restricted[p] {
                 a.roth_accessible[p]
             } else {
                 roth
@@ -1010,13 +1081,42 @@ impl Setup<'_> {
         }
 
         // Forced: RMDs and running 72(t) schedules.
-        let mut left = need;
+        let mut forced = [0.0; MAX_PEOPLE];
+        let mut sepp = [0.0; MAX_PEOPLE];
         for p in 0..MAX_PEOPLE {
-            let sepp = inp.sepp_available[p].max(0.0).min(d.rem[TRAD + p]);
-            let forced = (inp.rmd[p].max(0.0) + sepp).min(d.rem[TRAD + p]);
-            d.rem[TRAD + p] -= forced;
-            d.out[TRAD + p] = forced;
-            plan.sepp[p] = sepp;
+            sepp[p] = limits.sepp_available[p].max(0.0).min(d.rem[TRAD + p]);
+            forced[p] = (limits.rmd[p].max(0.0) + sepp[p]).min(d.rem[TRAD + p]);
+            d.rem[TRAD + p] -= forced[p];
+            d.out[TRAD + p] = forced[p];
+        }
+        Setup {
+            order,
+            limits,
+            restricted,
+            free_trad,
+            n_free,
+            start: d,
+            forced,
+            sepp,
+            refill,
+            bracket_room: 0.0,
+            aca_room: f64::INFINITY,
+            convert: false,
+            fill_rate: 0.0,
+            gain_share,
+            conversion_cap: f64::INFINITY,
+        }
+    }
+
+    /// Chooses sources for a cash need of `need` (tax on the withdrawals included).
+    fn allocate(&self, need: f64) -> WithdrawalPlan {
+        let inp = &self.limits;
+        let mut plan = WithdrawalPlan::default();
+        let mut d = self.start;
+        let refill = self.refill;
+        plan.sepp = self.sepp;
+        let mut left = need;
+        for forced in self.forced {
             left -= forced;
         }
         // HSA money pays medical costs first: it is the only tax-free use it has.
@@ -1031,8 +1131,8 @@ impl Setup<'_> {
 
         d.want = left + refill;
         plan.cash_refill = refill;
-        let (free_trad, n_free) = self.free_traditional();
-        let free_trad = &free_trad[..n_free];
+        let n_free = self.n_free;
+        let free_trad = &self.free_trad[..n_free];
         let mut bracket_used = 0.0;
         let mut costly = false;
         if d.want <= 0.0 {
@@ -1131,10 +1231,11 @@ impl Setup<'_> {
     }
 }
 
-/// Federal taxable income that is taxed at ordinary rates.
-fn ordinary_taxable(result: &TaxResult, inputs: &TaxInputs) -> f64 {
+/// Federal taxable income that is taxed at ordinary rates, from the return's
+/// taxable income.
+fn ordinary_taxable(taxable_income: f64, inputs: &TaxInputs) -> f64 {
     let preferential = inputs.qualified_dividends.max(0.0) + inputs.long_term_gains.max(0.0);
-    (result.taxable_income - preferential.min(result.taxable_income.max(0.0))).max(0.0)
+    (taxable_income - preferential.min(taxable_income.max(0.0))).max(0.0)
 }
 
 /// Taxable income at which the highest bracket taxed at `rate` or less ends
@@ -1203,14 +1304,16 @@ pub fn plan_year(
     inputs: &PlanInputs,
     tax: &TaxYearParams,
 ) -> WithdrawalPlan {
+    let base_result = Engine.compute(tax, &inputs.base_tax_inputs);
     plan_year_impl(
         order,
         early_access,
         accounts,
         inputs,
         tax,
-        tax::compute,
-        None,
+        &Engine,
+        base_result,
+        &mut PlanMemo::default(),
     )
 }
 
@@ -1224,14 +1327,37 @@ pub fn plan_year_from(
     tax: &TaxYearParams,
     base_result: &TaxResult,
 ) -> WithdrawalPlan {
+    plan_year_memo(
+        order,
+        early_access,
+        accounts,
+        inputs,
+        tax,
+        base_result,
+        &mut PlanMemo::default(),
+    )
+}
+
+/// [`plan_year_from`] that keeps what the plan works out about the tax limits of the
+/// year in `memo`, for a second costing of the same plan (see [`PlanMemo`]).
+pub(crate) fn plan_year_memo(
+    order: &WithdrawalOrder,
+    early_access: EarlyAccess,
+    accounts: &Accounts,
+    inputs: &PlanInputs,
+    tax: &TaxYearParams,
+    base_result: &TaxResult,
+    memo: &mut PlanMemo,
+) -> WithdrawalPlan {
     plan_year_impl(
         order,
         early_access,
         accounts,
         inputs,
         tax,
-        tax::compute,
-        Some(*base_result),
+        &Engine,
+        *base_result,
+        memo,
     )
 }
 
@@ -1244,7 +1370,73 @@ pub fn plan_year_with(
     tax: &TaxYearParams,
     compute: &dyn Fn(&TaxYearParams, &TaxInputs) -> TaxResult,
 ) -> WithdrawalPlan {
-    plan_year_impl(order, early_access, accounts, inputs, tax, compute, None)
+    let base_result = compute(tax, &inputs.base_tax_inputs);
+    plan_year_impl(
+        order,
+        early_access,
+        accounts,
+        inputs,
+        tax,
+        &Given(compute),
+        base_result,
+        &mut PlanMemo::default(),
+    )
+}
+
+/// How a plan costs a candidate return.
+trait PlanTax {
+    fn compute(&self, tax: &TaxYearParams, x: &TaxInputs) -> TaxResult;
+
+    /// `self.compute(tax, x).taxable_income`.
+    fn taxable_income(&self, tax: &TaxYearParams, x: &TaxInputs) -> f64 {
+        self.compute(tax, x).taxable_income
+    }
+}
+
+/// A tax function supplied by the caller.
+struct Given<F>(F);
+
+impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult> PlanTax for Given<F> {
+    fn compute(&self, tax: &TaxYearParams, x: &TaxInputs) -> TaxResult {
+        (self.0)(tax, x)
+    }
+}
+
+/// `tax::compute`, as a plan uses it: the plan reads neither the IRMAA figures,
+/// which are left out, nor (when it probes the bracket room) anything beyond
+/// taxable income, which is all that is worked out then.
+struct Engine;
+
+impl PlanTax for Engine {
+    #[inline(always)]
+    fn compute(&self, tax: &TaxYearParams, x: &TaxInputs) -> TaxResult {
+        tax::compute_no_irmaa(tax, x)
+    }
+
+    #[inline(always)]
+    fn taxable_income(&self, tax: &TaxYearParams, x: &TaxInputs) -> f64 {
+        tax::taxable_income(tax, x)
+    }
+}
+
+/// What a tax-aware plan works out about the year's limits before it allocates
+/// anything: the bracket room and the room under the ACA cliff. They depend on the
+/// return before withdrawals, the forced withdrawals and the law, not on the need,
+/// so `sim`, which costs its January plan a second time when the premium credit it
+/// earns is not the one it assumed (only the need and the cash target change),
+/// passes the same memo to both costings and the second takes them from the first.
+/// A memo is for one plan: one set of accounts, base return and parameters.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct PlanMemo {
+    /// The forced withdrawal per person (bits), whether anyone is on the
+    /// marketplace, and the order the limits were worked out for.
+    key: Option<([u64; MAX_PEOPLE], bool, WithdrawalOrder)>,
+    bracket_room: f64,
+    aca_room: f64,
+    aca_cliff: f64,
+    /// Share of a taxable sale that is gain (0 when the bucket is at a loss), as the
+    /// last plan found it.
+    pub gain_share: f64,
 }
 
 /// One evaluation of a candidate plan: the plan, the return under it, and what
@@ -1268,22 +1460,30 @@ fn burden(r: &TaxResult) -> f64 {
 /// Grosses a plan up for the tax its own withdrawals cause: finds the cash amount
 /// `g` with `g = net_need + extra_tax(g)`, by a fixed-point step followed by secant
 /// steps on `f(g) = g - net_need - extra_tax(g)`. The result is left in `best`.
-fn gross_up<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
+fn gross_up<T: PlanTax>(
     setup: &Setup,
     accounts: &Accounts,
+    inputs: &PlanInputs,
     tax: &TaxYearParams,
-    compute: &F,
+    taxer: &T,
     base_total: f64,
     best: &mut Eval,
 ) {
     let evaluate = |need: f64, e: &mut Eval| {
         e.plan = setup.allocate(need);
         e.after = *accounts;
-        e.t = setup.inputs.base_tax_inputs;
-        e.done = execute_plan(&e.plan, 1.0, &mut e.after, setup.inputs, &mut e.t, None);
-        e.result = compute(tax, &e.t);
+        e.t = inputs.base_tax_inputs;
+        e.done = execute(
+            &e.plan,
+            1.0,
+            &mut e.after,
+            (&inputs.ages, &inputs.penalty_exempt),
+            &mut e.t,
+            None,
+        );
+        e.result = taxer.compute(tax, &e.t);
     };
-    let n = setup.inputs.net_need;
+    let n = inputs.net_need;
     let residual = |g: f64, r: &TaxResult| g - n - (r.total - base_total);
     let mut ga = n;
     evaluate(ga, best);
@@ -1309,20 +1509,18 @@ fn gross_up<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
 }
 
 #[inline]
-fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
+#[allow(clippy::too_many_arguments)]
+fn plan_year_impl<T: PlanTax>(
     order: &WithdrawalOrder,
     early_access: EarlyAccess,
     accounts: &Accounts,
     inputs: &PlanInputs,
     tax: &TaxYearParams,
-    compute: F,
-    known_base: Option<TaxResult>,
+    taxer: &T,
+    base_result: TaxResult,
+    memo: &mut PlanMemo,
 ) -> WithdrawalPlan {
     let base = &inputs.base_tax_inputs;
-    let base_result = match known_base {
-        Some(r) => r,
-        None => compute(tax, base),
-    };
     let status = base.filing_status.index();
 
     let mut restricted = [false; MAX_PEOPLE];
@@ -1334,22 +1532,19 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
     let balances = Balances::of(accounts);
     let taxable_value = balances.taxable;
     let order = &effective_order(order, tax);
-    let mut setup = Setup {
-        order: *order,
-        balances,
-        inputs,
-        restricted,
-        bracket_room: 0.0,
-        aca_room: f64::INFINITY,
-        convert: false,
-        fill_rate: 0.0,
-        gain_share: if taxable_value > 0.0 {
-            (accounts.unrealized_gain() / taxable_value).clamp(0.0, 1.0)
-        } else {
-            0.0
-        },
-        conversion_cap: f64::INFINITY,
+    let gain_share = if taxable_value > 0.0 {
+        (accounts.unrealized_gain() / taxable_value).clamp(0.0, 1.0)
+    } else {
+        0.0
     };
+    memo.gain_share = gain_share;
+    let mut setup = Setup::new(
+        *order,
+        &balances,
+        Limits::of(inputs),
+        restricted,
+        gain_share,
+    );
 
     let mut aca_cliff = f64::INFINITY;
     if let WithdrawalOrder::TaxAware {
@@ -1361,30 +1556,33 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
         // The return with only the forced withdrawals on it.
         let mut forced = *base;
         let mut any_forced = false;
+        let mut forced_bits = [0; MAX_PEOPLE];
         for p in 0..MAX_PEOPLE {
             let f = (inputs.rmd[p].max(0.0) + inputs.sepp_available[p].max(0.0))
                 .min(balances.traditional[p]);
+            forced_bits[p] = f.to_bits();
             if f > 0.0 {
                 forced.traditional_distributions += f;
                 any_forced = true;
             }
         }
-        let forced_result = if any_forced {
-            compute(tax, &forced)
-        } else {
-            base_result
-        };
+        let key = (forced_bits, inputs.on_aca, *order);
+        if memo.key != Some(key) {
+            let forced_result = if any_forced {
+                taxer.compute(tax, &forced)
+            } else {
+                base_result
+            };
 
-        {
             let top = bracket_top(&tax.federal.ordinary[status], fill_to_bracket);
             let at = |x: f64| {
                 let mut t = forced;
                 t.traditional_distributions += x;
-                ordinary_taxable(&compute(tax, &t), &t)
+                ordinary_taxable(taxer.taxable_income(tax, &t), &t)
             };
-            let start = ordinary_taxable(&forced_result, &forced);
+            let start = ordinary_taxable(forced_result.taxable_income, &forced);
             let gap = top - start;
-            setup.bracket_room = if gap <= 0.0 {
+            let mut bracket_room = if gap <= 0.0 {
                 0.0
             } else if !gap.is_finite() {
                 f64::INFINITY
@@ -1408,52 +1606,62 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
                     }
                 }
             };
-            setup.convert = roth_conversions;
-            setup.fill_rate = fill_to_bracket.max(0.0);
-        }
 
-        if mind_aca && inputs.on_aca && base.aca_household_size > 0 {
-            let people = f64::from(base.aca_household_size);
-            let poverty_line = tax.federal.fpl_base + tax.federal.fpl_per_person * (people - 1.0);
-            let cliff = ACA_CLIFF_FPL_MULTIPLE * poverty_line;
-            // Already over the cliff on other income: there is nothing to protect.
-            if cliff > 0.0 && forced_result.magi < cliff {
-                aca_cliff = cliff * (1.0 - ACA_PLANNING_MARGIN);
-                setup.aca_room = (aca_cliff - forced_result.magi).max(0.0);
-                // On the marketplace a traditional dollar costs its tax and the
-                // premium credit it loses (10 to 17 cents between 138% and 400% of
-                // the poverty line). Fill the bracket only as far as the two
-                // together stay within the rate being filled: first the unused
-                // deduction, then the rest of the bracket.
-                let limit = setup.bracket_room.min(setup.aca_room);
-                if limit > CENT {
-                    let allowed = fill_to_bracket.max(0.0) + FILL_RATE_TOLERANCE;
-                    let unused_deduction = if forced_result.taxable_income <= 0.0 {
-                        (forced_result.deduction - forced_result.agi)
-                            .max(0.0)
-                            .min(limit)
-                    } else {
-                        0.0
-                    };
-                    let mut room = 0.0;
-                    let mut cost = burden(&forced_result);
-                    for x in [unused_deduction, limit] {
-                        if x - room <= CENT {
-                            continue;
+            let mut aca_room = f64::INFINITY;
+            let mut cliff_planned = f64::INFINITY;
+            if mind_aca && inputs.on_aca && base.aca_household_size > 0 {
+                let people = f64::from(base.aca_household_size);
+                let poverty_line =
+                    tax.federal.fpl_base + tax.federal.fpl_per_person * (people - 1.0);
+                let cliff = ACA_CLIFF_FPL_MULTIPLE * poverty_line;
+                // Already over the cliff on other income: there is nothing to protect.
+                if cliff > 0.0 && forced_result.magi < cliff {
+                    cliff_planned = cliff * (1.0 - ACA_PLANNING_MARGIN);
+                    aca_room = (cliff_planned - forced_result.magi).max(0.0);
+                    // On the marketplace a traditional dollar costs its tax and the
+                    // premium credit it loses (10 to 17 cents between 138% and 400% of
+                    // the poverty line). Fill the bracket only as far as the two
+                    // together stay within the rate being filled: first the unused
+                    // deduction, then the rest of the bracket.
+                    let limit = bracket_room.min(aca_room);
+                    if limit > CENT {
+                        let allowed = fill_to_bracket.max(0.0) + FILL_RATE_TOLERANCE;
+                        let unused_deduction = if forced_result.taxable_income <= 0.0 {
+                            (forced_result.deduction - forced_result.agi)
+                                .max(0.0)
+                                .min(limit)
+                        } else {
+                            0.0
+                        };
+                        let mut room = 0.0;
+                        let mut cost = burden(&forced_result);
+                        for x in [unused_deduction, limit] {
+                            if x - room <= CENT {
+                                continue;
+                            }
+                            let mut t = forced;
+                            t.traditional_distributions += x;
+                            let c = burden(&taxer.compute(tax, &t));
+                            if c - cost > allowed * (x - room) {
+                                break;
+                            }
+                            room = x;
+                            cost = c;
                         }
-                        let mut t = forced;
-                        t.traditional_distributions += x;
-                        let c = burden(&compute(tax, &t));
-                        if c - cost > allowed * (x - room) {
-                            break;
-                        }
-                        room = x;
-                        cost = c;
+                        bracket_room = room;
                     }
-                    setup.bracket_room = room;
                 }
             }
+            memo.key = Some(key);
+            memo.bracket_room = bracket_room;
+            memo.aca_room = aca_room;
+            memo.aca_cliff = cliff_planned;
         }
+        setup.bracket_room = memo.bracket_room;
+        setup.aca_room = memo.aca_room;
+        aca_cliff = memo.aca_cliff;
+        setup.convert = roth_conversions;
+        setup.fill_rate = fill_to_bracket.max(0.0);
     }
 
     let mut best = Eval {
@@ -1466,8 +1674,9 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
     gross_up(
         &setup,
         accounts,
+        inputs,
         tax,
-        &compute,
+        taxer,
         base_result.total,
         &mut best,
     );
@@ -1482,7 +1691,7 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
         let allowed = setup.fill_rate + FILL_RATE_TOLERANCE;
         let mut without = best.t;
         without.roth_conversions = (without.roth_conversions - converted).max(0.0);
-        let r0 = compute(tax, &without);
+        let r0 = taxer.compute(tax, &without);
         let preferential = without.long_term_gains.max(0.0) + without.qualified_dividends.max(0.0);
         let zero_top = bracket_top(&tax.federal.capital_gains[status], 0.0);
         // Up to here the conversion leaves the 0% gains bracket alone.
@@ -1502,7 +1711,7 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
             } else {
                 let mut t = without;
                 t.roth_conversions += x;
-                burden(&compute(tax, &t))
+                burden(&taxer.compute(tax, &t))
             };
             if c - cost > allowed * (x - cap) {
                 break;
@@ -1515,8 +1724,9 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
             gross_up(
                 &setup,
                 accounts,
+                inputs,
                 tax,
-                &compute,
+                taxer,
                 base_result.total,
                 &mut best,
             );
@@ -1543,7 +1753,7 @@ fn plan_year_impl<F: Fn(&TaxYearParams, &TaxInputs) -> TaxResult>(
             if gain > CENT {
                 let mut th = t;
                 th.long_term_gains += gain;
-                let rh = compute(tax, &th);
+                let rh = taxer.compute(tax, &th);
                 let cost =
                     (rh.total - rh.aca_premium_credit) - (result.total - result.aca_premium_credit);
                 if cost <= HARVEST_MAX_COST * gain {
@@ -1584,29 +1794,30 @@ pub fn cover_shortfall(
     }
     // Only ages and exemptions carry over: no forced amounts, and the cash bucket is
     // left alone (the caller has already used what it wanted to use of it).
-    let bare = PlanInputs {
+    let limits = Limits {
         ages: inputs.ages,
-        penalty_exempt: inputs.penalty_exempt,
-        ..PlanInputs::default()
+        ..Limits::default()
     };
     let mut balances = Balances::of(accounts);
     balances.cash = 0.0;
-    let setup = Setup {
-        order: WithdrawalOrder::Conventional,
-        balances,
-        inputs: &bare,
+    let setup = Setup::new(
+        WithdrawalOrder::Conventional,
+        &balances,
+        limits,
         restricted,
-        bracket_room: 0.0,
-        aca_room: f64::INFINITY,
-        convert: false,
-        fill_rate: 0.0,
-        gain_share: 0.0,
-        conversion_cap: f64::INFINITY,
-    };
+        0.0,
+    );
     let mut plan = setup.allocate(amount);
     // Without a schedule the "72(t)" tier is just an early withdrawal.
     plan.sepp = [0.0; MAX_PEOPLE];
-    let mut done = execute_plan(&plan, 1.0, accounts, &bare, tax_inputs, sell_target);
+    let mut done = execute(
+        &plan,
+        1.0,
+        accounts,
+        (&inputs.ages, &inputs.penalty_exempt),
+        tax_inputs,
+        sell_target,
+    );
     done.shortfall = (amount - done.to_cash).max(0.0);
     done
 }

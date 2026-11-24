@@ -40,8 +40,8 @@ mod law;
 mod tests;
 
 pub use calc::{
-    compute, effective_marginal_rate, irmaa_monthly_surcharge, irmaa_tier, room_to_aca_cliff,
-    room_to_bracket_top,
+    compute, compute_no_irmaa, effective_marginal_rate, irmaa_monthly_surcharge, irmaa_tier,
+    room_to_aca_cliff, room_to_bracket_top, taxable_income,
 };
 pub use explain::explain;
 

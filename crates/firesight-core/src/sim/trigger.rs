@@ -375,7 +375,7 @@ impl State {
         // m the marginal rate on one more dollar withdrawn in the same proportions.
         x.traditional_distributions = withdrawals * trad_share;
         x.long_term_gains = withdrawals * gain_share;
-        let r = tax::compute(&self.params, &x);
+        let r = tax::compute_no_irmaa(&self.params, &x);
         let credit = r.aca_premium_credit;
         let mut tax_total = r.total.max(0.0);
         if withdrawals > 0.0 && tax_total > 0.0 {
