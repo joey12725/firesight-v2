@@ -15,8 +15,8 @@ use crate::health::{HealthModel, MortalityModel};
 use crate::housing::{amortized_payment, PropertyModel};
 use crate::math;
 use crate::model::{
-    Category, ChildCosts, Cola, College, CostOfLivingChange, DebtKind, EmployerPlan, EventKind,
-    IncomeChangeKind, IncomeKind, Profile, PropertyUse, Rebalance, RetirementChange,
+    Category, ChildCosts, Cola, College, CostOfLivingChange, DebtKind, EmployerPlan, Episode,
+    EventKind, IncomeChangeKind, IncomeKind, Profile, PropertyUse, Rebalance, RetirementChange,
     RetirementTrigger, Sex, ShockLevel, SocialSecurityBasis, SpendingChangeKind, SpendingTarget,
     Stress, TaxKind, WageGrowth, WealthBasis, When, WhenContext, WhenFunded, WithdrawalOrder,
     YearMonth,
@@ -368,6 +368,14 @@ pub(crate) enum StressPlan {
         start: Sched,
         months: usize,
         inflation: f64,
+    },
+    HistoricalEpisode {
+        start: Sched,
+        episode: Episode,
+    },
+    LostGeneration {
+        start: Sched,
+        months: usize,
     },
 }
 
@@ -1129,6 +1137,14 @@ impl Plan {
                     start: Sched::from_when(&start, &ctx),
                     months: (years * 12.0).round().max(0.0) as usize,
                     inflation,
+                },
+                Stress::HistoricalEpisode { start, episode } => StressPlan::HistoricalEpisode {
+                    start: Sched::from_when(&start, &ctx),
+                    episode,
+                },
+                Stress::LostGeneration { start, years } => StressPlan::LostGeneration {
+                    start: Sched::from_when(&start, &ctx),
+                    months: (years * 12.0).round().max(0.0) as usize,
                 },
             })
             .collect();

@@ -116,6 +116,8 @@ pub enum Stream {
     CoupleLongevity,
     /// Class-wide premium increases of long-term-care insurance.
     LtcPremiumRates,
+    /// The Student-t mixing variables of the fat-tailed market model.
+    MarketTails,
 }
 
 impl Stream {
@@ -130,6 +132,7 @@ impl Stream {
             Stream::Events => 5,
             Stream::PolicyRisk => 1500,
             Stream::HomeEquityCredit => 1600,
+            Stream::MarketTails => 1800,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -569,6 +572,7 @@ mod tests {
             Stream::HealthStates(1),
             Stream::CoupleLongevity,
             Stream::LtcPremiumRates,
+            Stream::MarketTails,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

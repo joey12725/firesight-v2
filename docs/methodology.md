@@ -72,6 +72,40 @@ Two things are deliberately not copied from the sampled row:
   consistent with each other.
 * **The long-run level of international stocks and gold** (2.5).
 
+#### Bond returns from the yield path (`market.bond_pricing: from_yield`, opt-in)
+
+With the default `sampled`, a month's bond return is the resampled row's, while the
+yield level follows today's rate (above): the two need not agree. With
+`from_yield` each month's bond return is priced from the path's own 10-year yield,
+exactly as `data/history` builds the `bond10` column from Treasury yields and as
+the regime model prices its bond: a month of interest at the yield the month began
+with, minus the modified duration of a 10-year semi-annual par bond times the
+yield change, plus half its convexity times the change squared. The yield's monthly
+changes are still the sampled rows' own, so bonds keep history's co-movement with
+stocks and inflation; only the carry now comes from the path's level (today's 5.29%
+in the first month). No random numbers are drawn and every other series of the path
+is unchanged bit for bit.
+
+Measured (1,500 paths of 120 months, the record as it was): the correlation across
+paths between a decade's bond return and what its own yield implies (average
+carry less duration times the yield change) is 0.34 with sampled returns and 0.99
+priced from the yield; monthly bond volatility is within 10% of the sampled one.
+Over 60 years bonds return 2.1% a year after inflation (geometric, 800 paths)
+against 1.5% sampled and 1.56% in the record: the yield starts above the record's
+mean and the record's own bond returns include the decades of financial repression
+in which yields sat far below inflation, which a level-based price does not
+reproduce. On the dual-income example (4,000 paired paths) success moves from
+91.5% to 92.0% (+0.5, 95% interval 0.0 to +1.0) and the median terminal net worth
+by 9%; a 30-year retiree in 40/60 at a 4% withdrawal goes from 92.7% to 96.9%
+(2,000 paths) and ends 17% richer at the median.
+
+Not modelled: the yield level still does not respond to the path's sampled
+inflation (it moves by history's yield changes, not by the inflation of the row),
+so a sampled 1970s block raises yields as 1970s yields rose but a long run of
+sampled high inflation does not lift the level beyond that; only the block
+bootstrap is affected (the regime model already prices from its yield, the replay
+uses the record, the lognormal model has a constant yield).
+
 ### 2.2 Regime switching
 
 A two-state hidden Markov model (calm and turbulent) fitted to the same data drives
@@ -95,6 +129,55 @@ volatilities and correlations. No crashes clustering, no persistent inflation, a
 constant yield. It is the textbook baseline the other models are compared with.
 Bill returns are floored at zero (independent draws around a 0.27% monthly mean were
 negative in 14% of months) with the centre lowered so that the mean is unchanged.
+
+#### Fat tails and volatility clustering (`market.kind: fat_tailed`, opt-in)
+
+The lognormal model with the same means, volatilities and recession chain, and
+three additions. Stocks (US and international), bonds and gold share one Student-t
+mixing variable each month (5 degrees of freedom, unit variance: a multivariate t,
+so a bad month tends to be bad for all of them). The variance of both stock markets
+follows a GARCH(1,1) recursion on the US shock (Bollerslev 1986; with t shocks
+Bollerslev 1987), `v' = 0.02 + 0.15 v eta^2 + 0.83 v`, capped at 16 times normal
+(the record's highest trailing-year variance, to April 1933, is 15 times its
+average) and divided by its long-run mean so that the unconditional volatility is
+the lognormal model's. Months whose conditional variance is in its top quarter use
+the correlations of the record's turbulent months (trailing 12-month volatility
+above its 75th percentile), the others the calm months': US with international
+stocks 0.77 against 0.60 (Longin and Solnik 2001 find the same rise in bear
+markets), US stocks with 10-year Treasuries 0.00 against 0.13. The record shows the
+stock-bond correlation falling in turbulent months, not rising (the flight to
+quality), so the model follows the record. The log-return means are exactly the
+lognormal model's, and the model draws from the `Market` stream exactly what the
+lognormal model draws, so the two see the same normal shocks on a path; the
+mixing variables come from a stream of their own (`MarketTails`).
+
+`a`, `b` and the degrees of freedom were fitted by simulated moments: on a grid,
+the values whose 1,203-month samples (the record's length) have, at the median, the
+record's excess kurtosis of monthly US stock returns (7.4) and autocorrelation of
+absolute returns at lags 1 and 12 (0.22 and 0.15). Maximum likelihood on the same
+record gives 0.13, 0.83 and 7.3 degrees of freedom, whose samples have a kurtosis of
+3.5: too thin-tailed for a model whose point is the tails. Measured
+(`realism_tests/fat_tails.rs`, 300 samples of 1,203 months): kurtosis 7.40,
+absolute-return autocorrelation 0.229 and 0.131, against 0.03 and 0.000 for
+lognormal; the median 100-year worst real fall of US stocks -63% (5th to 95th
+percentile -90% to -38%) against -58% for lognormal, and the record's -79% sits
+inside that band; 7 months below -15% per century on traced paths against the
+record's 11. Volatilities within 2% and log means within 0.05 points of lognormal.
+
+What it does to plans: little to success, more to the bad tail of drawdowns. On a
+60/40 retiree spending 4.5% (3,000 paired paths) success is 87.3% lognormal and
+88.8% fat-tailed, and the 95th percentile of the portfolio's worst fall is 57%
+against 48% (the 5th percentile 15% against 19%). On the early-career example
+(`firesight compare`, 4,000 paired paths, lognormal against fat-tailed) success goes
+from 82.0% to 84.2%. Volatility is concentrated in fewer, wilder paths: most paths
+see calmer markets than lognormal's constant volatility and a few far rougher ones,
+and over a 30-year plan that roughly cancels or slightly helps. A trace announces
+each month in which US stocks fall more than 15%.
+
+Not modelled: no mean reversion and a constant yield (as in lognormal); recessions
+stay independent of the volatility state; no leverage effect (falls do not raise
+volatility more than rises); today's volatility is not an input (paths start at the
+long-run mean variance); bills, home prices and inflation keep normal shocks.
 
 ### 2.4 Historical replay
 
@@ -189,6 +272,61 @@ It matters. On the early-career example (10,000 paired paths, after the audit):
 success 84.2% at the default, 90.7% at 0, 75.2% at -0.03; the median age of
 financial independence moves from 39.3 to 38.7 and 40.0.
 
+#### Valuation-aware expected returns (`market.valuation`, opt-in)
+
+The adjustment above lowers every month's stock return by the same amount for the
+whole plan. `valuation: { starting_cape, fair_cape, half_life_years }` instead
+starts expected US stock returns from today's valuation and lets it fade. The
+state is the log gap between the cyclically adjusted price-earnings ratio (CAPE) and
+its normal level, `v = ln(CAPE / fair)`. Each month the model's own US stock return
+is multiplied by `exp(-k v)`, with `k` set by the half-life, and the month's real
+surprise (its real log return less the model's mean) moves `v` one for one, since a
+ten-year earnings average barely moves in a month. So `v` is a stationary AR(1):
+an expensive start returns less until the CAPE has come back to normal, a crash
+lowers the CAPE and raises later expected returns, and from a fair start the
+long-run mean is the model's own. The expected shortfall of the cumulative log
+return after `t` months is `v0 (1 - (1 - k)^t)`, which tends to `v0`: the level lost
+while valuations normalise is not made up. This is Campbell and Shiller's finding
+(1998, 2001) that valuation ratios forecast ten-year stock returns and revert mostly
+through prices. Listed real estate, the single stock and the custom asset follow by
+their equity beta (as under a stress). International stocks, gold and crypto are
+left alone. The overlay applies to the bootstrap, regime and lognormal models, not
+to the historical replay. The model's mean is computed exactly for the bootstrap
+(the record's mean) and the lognormal model (its parameter), and for the regime
+model from 2,000 fixed-seed paths of 60 years, computed once per process. It draws
+no random numbers, so the sampled shocks and every other series are unchanged. A
+stress overlay (2.8) dictates US stock returns over its window, so no tilt applies
+inside it and the gap moves with the stressed prices alone; after the window the
+tilt is re-derived from the gap the stress left, so a crash at retirement from a CAPE
+of 40 brings valuations down and the returns that follow up, rather than the path
+carrying on as if the CAPE were still 40.
+
+Parameters (`data/actuarial/params.json`, `market_realism.valuation`): starting
+CAPE 40 (Shiller CAPE of the S&P 500, 38 to 42 through 2026: YCharts, Financer,
+multpl.com), normal CAPE 17.3 (its mean since 1881; reverting all the way to it is
+the bearish reading, and 25 to 30 assumes part of today's level is permanent),
+half-life 15 years (a judgement in the 10 to 20 year range; the papers do not pin
+down the speed).
+
+Measured. Over 1,000 paths the first decade's real log return falls short by 0.310
+(bootstrap), 0.322 (regime) and 0.303 (lognormal) against the formula's 0.310, about
+3.1 points a year. The third decade still loses 0.11 to 0.15. From a fair start the
+60-year mean real return moves by less than 0.15 points, and the spread of ten-year
+real returns narrows by 18 to 19% (the price feedback is a source of mean reversion
+the models did not have). On the early-career example (4,000 paired paths, the
+record as it was, `equity_premium_adjustment: 0`): success 90.4% to 88.4% and the
+median age of independence 38.7 to 39.7. Combined with the default -1.5 point
+adjustment, which partly counts the same high valuations twice (a validation warning
+says so), success falls from 83.7% to 80.8% and independence moves from 39.3 to 40.4.
+With a 40% crash at retirement as well (default adjustment, 4,000 paired paths) success
+is 64.9%, against 58.6% for the crash alone: by retirement much of the gap has
+closed, the crash takes the CAPE below normal, and the returns that follow are
+tilted up.
+
+Not modelled: earnings growth shocks separate from prices (all reversion goes
+through prices), valuations of international markets, and any link from valuation
+to dividend yields unless `dynamic_yields` is also on.
+
 ### 2.8 Stress scenarios
 
 Applied to every path on top of the random draws.
@@ -209,6 +347,58 @@ Applied to every path on top of the random draws.
 
 A token or company that has collapsed (a return of exactly -100%) stays collapsed
 through a stress overlay.
+
+#### Historical episodes and a lost generation (opt-in stresses)
+
+* **Historical episode** (`historical_episode { start, episode }`): from the start
+  date the path lives through a real episode again. US stocks, 10-year bonds, bills,
+  inflation, home prices and the recession flag are the record's months, as they
+  were (no equity-premium or inflation adjustment); international stocks and gold
+  too where the record has them (from 1975 and 1968), otherwise they, listed real
+  estate, crypto, the single stock and the custom asset move by their equity beta
+  times the change imposed on US stocks. The 10-year yield and the mortgage rate
+  move by the record's monthly changes from the path's level, so a path does not
+  jump to 1929's rates overnight. The windows, computed from `data/history` (CRSP
+  total market deflated by CPI-U) as the month after the real peak to the month the
+  real index regained it: Great Depression 1929-09 to 1945-02 (186 months, -79% at
+  the 1932 trough); dot-com 2000-04 to 2013-02 (155 months, which includes 2008;
+  stocks +0.2% after inflation over the whole window, bonds +4.1% a year); 2008
+  2007-11 to 2013-01 (63 months, -51% at the trough). The 1966 window, January 1966
+  to July 1982, is a judgement: the total market regained its 1966 real level
+  briefly in 1967, so it is set by the Dow's 1966 peak and the August 1982 low
+  (inflation 7.0% a year, stocks -1.3% and bonds -2.6% a year after inflation, the
+  yield from 4.7% to 13.7%). It ends at the low, so none of the 1980s recovery is
+  included.
+* **Lost generation** (`lost_generation { start, years }`, default 20 years):
+  Japan after 1989. Over the window inflation is scaled to average -0.3% a year
+  (Japan 1999-2012, World Bank via FRED), US and international stocks to a real
+  total return of -2% a year (a judgement: TOPIX fell from 2,881 at the end of 1989
+  to 1,086 at the end of 1998, Cabinet Office of Japan 2002, and returned -1.96% a
+  year in price from the end of 1990 to 2013, CFA Institute 2013), each month's
+  gross return times one constant so volatility is kept. The bill and 10-year
+  yields glide in a straight line over eight years from the path's level to 0.1%
+  and 1.0% (JGB 10-year yield 7.0% in 1990, 1.5% in 1998, 1.0% in 2003, OECD via
+  FRED) with the path's own monthly moves kept, and bonds are priced from that
+  yield. Home prices keep their real change.
+
+After either window, the shift imposed on the rate levels fades at 1/120 a month
+(the bootstrap's pull to the mean) instead of snapping back, with the carry and
+price change of the fading shift added to bond returns. A trace's event log
+announces the episode in the month it starts.
+
+Measured (`firesight compare`, early-career example, 4,000 paired paths, each
+stress starting at retirement): success 83.7% at baseline, Great Depression 19.1%,
+1966 42.4%, dot-com 41.4%, 2008 77.6%, lost generation 29.8%. On a 60/40 retiree
+spending 4% from a taxable account with `equity_premium_adjustment: 0` (1,500
+paths): 94.5% at baseline, 1966 0.8%, 2008 92.2%, 1929 81.7%, 2000 69.4%, lost
+generation 42.1%. The 1966 figure is far below Bengen's 1966 retiree, who survived
+30 years: that retiree had the 1982-2000 boom after the window, while here the path
+after July 1982 is an ordinary draw, and here bonds are 10-year Treasuries
+(-2.6% a year real), not intermediate ones.
+
+Not modelled: the episodes' unemployment and wage paths (layoff risk still follows
+the recession flag only), the Japanese land-price collapse in a lost generation,
+and episodes outside the US record.
 
 ## 3. Inflation and what follows it
 
@@ -254,6 +444,47 @@ holding moves it by half.)
 
 While working, cash above the emergency fund (default six months of spending) is
 invested each month.
+
+#### Dividend yields that move with the market (`market.dynamic_yields`, opt-in)
+
+Off, US stocks (and the single stock) distribute 1.5% a year and international
+stocks 3%, whatever the market does. On, each yield is a state on the path, after
+Lintner's (1956) model of dividend smoothing: a fall in prices raises the yield at
+once, dividends then close 30% a year of the gap to their target (a judgement:
+Lintner's partial-adjustment form, with published speeds that vary widely), and in
+recession months they are cut at a further 10% a year. The 10% is calibrated so that
+replaying 2007-11 to 2013-01 (`historical_episode: financial2008`) cuts the US
+dividend run rate by 20% from peak to trough, against the 21% fall of S&P 500
+dividends per share from 2008 to 2009 (Shiller's data, as tabulated by DQYDJ). Only
+the surprise in each month's return moves the yield (against the model's long-run
+mean log return), and the target is lifted by the long-run effect of the recession
+cuts, so the average yield stays today's: 1.53% and 3.1% over the bootstrap,
+regime, lognormal and fat-tailed models (`realism_tests/dividends.rs`). With
+`market.valuation` the US target also moves inversely with the CAPE gap: from a
+CAPE of 40 the yield rises toward 1.5% x 40 / 17.3 = 3.5% as the market returns to
+its normal valuation (3.6% on average after 50 years, against 1.55% without
+valuation). Yields are bounded to 0.2% to 15%.
+
+Total returns are never changed: only the split between taxable dividends and price
+gains moves, and with it the taxable account's tax timing and the income that ACA
+subsidies and IRMAA test. Bond and cash interest already followed the path's
+10-year and bill yields before this option (a par bond's coupon and the bill rate of
+the month), so the option does not change them; in the lognormal and fat-tailed
+models the 10-year yield is constant and so is bond interest. Stress overlays
+re-derive the yields from their start month on. A trace announces each fall of
+the US dividend run rate by 10% from its peak.
+
+Measured: an 80/20 retiree with $3M in a taxable account spending $120k, with
+`valuation` on (1,500 paired paths): median lifetime tax $367,700 -> $400,300
+(+8.9%), median terminal wealth -1.2%, success 90.1% -> 89.9%. On the
+dual-income example (`firesight compare`, 4,000 paired paths) the change is within
+noise: success 91.5% both, median lifetime tax +$500; with `valuation` on, tax
++$4,800 and success 89.7% -> 89.8%. Little of that household's money is in a
+taxable account.
+
+Not modelled: listed real estate keeps its constant 4% (REIT payouts follow rents,
+not prices); the qualified share of dividends is fixed; bond funds pay the current
+yield, not the book yield of bonds bought earlier; special dividends and buybacks.
 
 ## 5. Taxes
 

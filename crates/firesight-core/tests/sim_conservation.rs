@@ -628,3 +628,22 @@ fn housing_decisions_conserve_money() {
         run_checked(&plan, 9, 0..paths());
     }
 }
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+#[test]
+fn optional_market_refinements_conserve_money() {
+    let mut bases: Vec<Profile> = Profile::examples(START)
+        .into_iter()
+        .map(|e| e.profile)
+        .collect();
+    bases.push(kitchen_sink());
+    for base in &bases {
+        for (label, profile) in realism_profiles::variants(base) {
+            let plan = compile(&profile);
+            let acc = run_checked(&plan, 13, 0..200);
+            assert_eq!(acc.paths, 200, "{} {label}", base.name);
+        }
+    }
+}

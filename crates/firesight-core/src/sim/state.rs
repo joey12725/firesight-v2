@@ -303,6 +303,8 @@ pub(crate) struct State {
     pub hd: super::housing_decisions::HdState,
     /// The opt-in health, longevity and care features (`care.rs`).
     pub care: super::care::CareState,
+    /// Market annotations of the traced path, due month first (`market_notes.rs`).
+    pub market_notes: super::market_notes::MarketNotes,
 }
 
 impl State {
@@ -493,6 +495,7 @@ impl State {
             tax_details: Vec::new(),
             hd: super::housing_decisions::HdState::new(plan),
             care: super::care::CareState::default(),
+            market_notes: Default::default(),
         }
     }
 
@@ -556,10 +559,12 @@ impl State {
 
         let mut market = Rng::stream(seed, path, Stream::Market);
         let mut inflation = Rng::stream(seed, path, Stream::Inflation);
+        let mut tails = Rng::stream(seed, path, Stream::MarketTails);
         plan.econ.generate(
             &mut EconomyStreams {
                 market: &mut market,
                 inflation: &mut inflation,
+                tails: &mut tails,
             },
             path,
             months,
@@ -817,6 +822,9 @@ impl State {
         self.trace_events.clear();
         self.tax_details.clear();
         self.hd.begin(plan, seed, path);
+        if detail {
+            self.plan_market_notes(plan, econ);
+        }
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs
         // the funded test before the first annual plan, and would otherwise read
@@ -864,6 +872,14 @@ impl State {
                 months,
                 inflation,
             }),
+            StressPlan::HistoricalEpisode { start, episode } => {
+                resolve(start).map(|from_month| ResolvedStress::HistoricalEpisode {
+                    from_month,
+                    episode,
+                })
+            }
+            StressPlan::LostGeneration { start, months } => resolve(start)
+                .map(|from_month| ResolvedStress::LostGeneration { from_month, months }),
         };
         if let Some(r) = resolved {
             plan.econ.apply_stress(&r, econ);

@@ -62,6 +62,7 @@ mod events;
 mod family;
 mod housing_decisions;
 mod housing_ext;
+mod market_notes;
 mod month;
 mod plan;
 mod preview;

@@ -279,6 +279,7 @@ impl State {
                 rec.record_tax_return(*year, detail);
             }
         }
+        self.emit_market_notes(t, now);
         for event in self.trace_events.drain(..) {
             rec.record_event(event);
         }

@@ -23,6 +23,7 @@ mod care;
 mod family;
 mod housing;
 mod housing_realism;
+mod market_realism;
 mod realism;
 mod spending_realism;
 
@@ -1658,8 +1659,14 @@ impl Checker<'_> {
                         0.5,
                     );
                 }
+                Stress::HistoricalEpisode { start, .. } => self.when(&format!("{sp}/start"), start),
+                Stress::LostGeneration { start, years } => {
+                    self.when(&format!("{sp}/start"), start);
+                    market_realism::lost_generation_years(&sp, *years, &mut self.r);
+                }
             }
         }
+        market_realism::check(&a.market, &mut self.r);
         if let TaxKind::Flat { rate } = a.taxes.kind {
             self.r.range(
                 "/assumptions/taxes/kind/rate",

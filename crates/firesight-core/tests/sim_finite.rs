@@ -191,3 +191,44 @@ fn housing_decisions_are_finite_under_every_market_model() {
         }
     }
 }
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+#[test]
+fn optional_market_refinements_are_finite() {
+    for example in Profile::examples(START) {
+        for (label, profile) in realism_profiles::variants(&example.profile) {
+            let plan = compile(&profile);
+            let mut ws = Workspace::new(&plan);
+            let mut rec = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 0,
+            };
+            for i in 0..500 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut rec);
+            }
+            let summary = plan.summarize(&rec.inner);
+            let json = serde_json::to_string(&summary).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{label}"
+            );
+            let mut detail = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 1,
+            };
+            for i in 0..10 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut detail);
+            }
+            let trace = sim::trace_path(&plan, 19, 2);
+            let json = serde_json::to_string(&trace).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{label}"
+            );
+        }
+    }
+}

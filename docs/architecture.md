@@ -32,8 +32,9 @@ the optional LLM proxy.
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
   Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks,
   ChildArrival(child), CollegePrices, ChildCollege(child), ChildSupport(child),
-  Maintenance(property), InsuranceDrift, RentMarket, Liquidity}` (the last four are
-  the opt-in housing realism options and are drawn only when an option is on).
+  Maintenance(property), InsuranceDrift, RentMarket, Liquidity, MarketTails}` (the
+  housing realism streams Maintenance through Liquidity are drawn only when their
+  option is on, and MarketTails only under the fat-tailed market model).
   Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
@@ -241,13 +242,19 @@ RetirementPlan {
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal
+                              | FatTailed        // lognormal means and vols; Student-t shocks, GARCH(1,1) volatility, calm/turbulent correlations
                               | Historical,       // every start month in history, in order: path i = cohort i
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
                         inflation_adjustment: f64,
-                        stress: Vec<Stress> },
+                        stress: Vec<Stress>,
+                        bond_pricing: Sampled (default) | FromYield,     // bootstrap: bond returns priced from the path's yield
+                        valuation: Option<{ starting_cape (40), fair_cape (17.3), half_life_years (15) }>,  // None (default): no valuation tilt
+                        dynamic_yields: bool (false) },  // dividend yields move with prices, recessions and valuation; total returns unchanged
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
+         | HistoricalEpisode{ start: When, episode: GreatDepression1929 | Stagflation1966 | DotCom2000 | Financial2008 }  // the record's months, all series
+         | LostGeneration{ start: When, years (20) },  // Japan-style: stocks -2% real a year, -0.3% inflation, yields glide to 1%
   taxes: TaxModel { kind: UsCurrentLaw | Flat{rate} | None, index_brackets: bool (true),
                     social_security_haircut: Option<{ from_year, factor }>,
                     chained_cpi: bool (false),     // thresholds on the chained index (brackets, IRA/HSA limits) grow 0.25 points a year slower
