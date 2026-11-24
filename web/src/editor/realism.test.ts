@@ -219,6 +219,31 @@ describe('every feature has a control where a user would look', () => {
     });
   }
 
+  it('cash-out refinancing is offered to an owner with no mortgage', () => {
+    const text = source('property');
+    // The group shows for any main home, owned or planned; only the mortgage's own controls need a mortgage.
+    expect(text).toMatch(/\{\(mortgaged \|\| hasHome\) && \(/);
+    const cashOut = text.indexOf('path="/debt_policy/cash_out_refinance"');
+    const gated = [...text.matchAll(/\{mortgaged && \(/g)].map((m) => m.index);
+    expect(gated).toHaveLength(2);
+    // The cash-out control sits between the two gated blocks (refinancing above it, prepayment below), inside neither.
+    expect(cashOut).toBeGreaterThan(text.indexOf(')}', gated[0]));
+    expect(cashOut).toBeLessThan(gated[1] as number);
+  });
+
+  it('care for a parent that costs nothing and takes no time is not counted as on', () => {
+    const withParent = applyPatch(base(FAMILY), [append('/household/parents', { id: 'mom', name: 'Mom', ...MAKE.parent('1956-03') })]).profile;
+    const idle = applyPatch(withParent, [set('/household/parents/@mom/care_support', { annual_cost: 0, hours: 0 })]).profile;
+    expect(ids(idle)).not.toContain('F48');
+    expect(familyRealism(idle.household)).toBe(1);
+    const hours = applyPatch(withParent, [set('/household/parents/@mom/care_support', { annual_cost: 0, hours: 0.2 })]).profile;
+    expect(ids(hours)).toContain('F48');
+    // The full-life example's parent care is real: it is counted, and it costs something.
+    const full = examples.get('full-life') as Profile;
+    expect(ids(full)).toContain('F48');
+    expect(full.household.parents.some((x) => x.care_support && x.care_support.annual_cost > 0 && x.care_support.hours > 0)).toBe(true);
+  });
+
   it('the divorce life event and an adjustable-rate purchase are in the events section', () => {
     expect(source('events')).toContain("type: 'divorce'");
     expect(source('events')).toContain('/mortgage_kind');

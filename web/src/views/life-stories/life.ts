@@ -153,6 +153,23 @@ const bySpendingRule = (e: TraceEvent) => !/^(Unemployed|Back to work):/.test(e.
 
 const INHERITED_IRA = /^Inherited IRA distribution/;
 const NEW_VEHICLE = 'New vehicle';
+const BORROWED = /^Borrowed against /;
+const MAJOR_REPAIR = /^Major repair on /;
+const REPRICED = /^Insurance repriced/;
+const SAVING_PAUSED = /^Saving paused/;
+const SAVING_RESUMED = /^Saving resumed/;
+const LINES_FROZEN = /^Lenders freeze home-equity lines/;
+const LINES_REOPENED = /^Home-equity lines open again/;
+const DOWNSIZED = /^Downsized: sold (.*?) and (bought a smaller home(?: with a ([\d.]+)% mortgage)?|rented)$/;
+
+/** A label cut to at most `n` characters at the end of a word, for a marker's title. */
+const short = (label: string, n = 24) => {
+  if (label.length <= n) return label;
+  const cut = label.slice(0, n - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space >= 8 ? cut.slice(0, space) : cut).replace(/[\s:;,.]+$/, '')}…`;
+};
+const howOften = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
 
 /** Titles, weight and tone for the life events the optional features log (the label is the sentence). */
 const LIFE_TURNS: { test: RegExp; title: string; priority: number; trouble?: boolean }[] = [
@@ -165,14 +182,11 @@ const LIFE_TURNS: { test: RegExp; title: string; priority: number; trouble?: boo
   { test: /^Changed jobs/, title: 'Changes jobs', priority: 2 },
   { test: /^Pay freeze/, title: 'Pay freeze', priority: 1, trouble: true },
   { test: /^Pay cut/, title: 'Pay cut', priority: 2, trouble: true },
-  { test: /^Major repair/, title: 'Major repair', priority: 2, trouble: true },
-  { test: /^Insurance repriced/, title: 'Insurance repriced', priority: 1, trouble: true },
   { test: /^Rent: lease not renewed/, title: 'Forced to move', priority: 2, trouble: true },
   { test: /adjustable rate reset/, title: 'Mortgage rate resets', priority: 2 },
   { test: /^Listed .* for sale/, title: 'Lists a home', priority: 3 },
   { test: /^Took a reverse mortgage/, title: 'Reverse mortgage', priority: 4 },
   { test: /^Opened a home-equity line/, title: 'Home-equity line', priority: 3 },
-  { test: /^Borrowed against/, title: 'Borrows on the home', priority: 2, trouble: true },
   { test: /^Cash-out refinance/, title: 'Cash-out refinance', priority: 3 },
   { test: /^Evicted a tenant/, title: 'Evicts a tenant', priority: 1, trouble: true },
   { test: /^Tenant moved out/, title: 'Tenant moves out', priority: 0 },
@@ -184,6 +198,7 @@ const LIFE_TURNS: { test: RegExp; title: string; priority: number; trouble?: boo
   { test: /^Life insurance .*:/, title: 'Life insurance ends', priority: 2 },
   { test: /dies; the estate does not come/, title: 'A parent dies', priority: 2 },
 ];
+// Major repairs, insurance repricing and draws on the home repeat: they are folded in curateEvents, not listed here.
 
 /**
  * The trace's event log, edited for a reader: pairs joined (laid off and rehired),
@@ -254,7 +269,57 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
   }
   for (const group of runs('life_event', 14, (e) => INHERITED_IRA.test(e.label))) {
     const s = span(group);
-    push(s.a, 'life_event', 'Inherited IRA', `The inherited IRA is paid out and taxed as income ${group.length === 1 ? s.text : `over ${group.length} years, ${s.text}`}.`, 1);
+    // Two parents can leave IRAs whose ten years of payouts overlap: years are counted once.
+    const n = new Set(group.map((x) => life.monthYear[at(x.e)])).size;
+    const several = group.length > n;
+    push(s.a, 'life_event', 'Inherited IRA', `${several ? 'The inherited IRAs are' : 'The inherited IRA is'} paid out and taxed as income ${n === 1 ? s.text : `over ${n} years, ${s.text}`}.`, 1);
+  }
+
+  // What the housing and saving features log month after month or year after year: one
+  // entry for each run, with how often, over which years and how much.
+  type Run = ReturnType<typeof runs>[number];
+  const fold = (kind: TraceEventKind, gap: number, test: RegExp) =>
+    runs(kind, gap, (e) => test.test(e.label)).map((group: Run) => {
+      group.forEach((x) => used.add(x.i));
+      const amounts = group.map((x) => x.e.amount ?? 0);
+      return { group, n: group.length, s: span(group), first: (group[0] as Run[number]).e, total: amounts.reduce((t, v) => t + v, 0), largest: Math.max(...amounts) };
+    });
+  const consume = (kind: TraceEventKind, test: RegExp) => {
+    const months: number[] = [];
+    raw.forEach((e, i) => {
+      if (e.kind !== kind || !test.test(e.label)) return;
+      used.add(i);
+      months.push(at(e));
+    });
+    return months;
+  };
+  for (const r of fold('life_event', 26, BORROWED)) {
+    const home = named(r.first.label.replace(BORROWED, ''), names);
+    push(r.s.a, 'life_event', 'Borrows on the home', `Borrows ${moneyCompact(r.total)} against ${home} ${r.n === 1 ? '' : `in ${r.n} draws `}${r.s.text}, to cover what savings no longer can.`, 2, true);
+  }
+  for (const r of fold('life_event', Infinity, MAJOR_REPAIR)) {
+    const home = named(r.first.label.replace(MAJOR_REPAIR, ''), names);
+    push(r.s.a, 'life_event', r.n === 1 ? 'Major repair' : 'Major repairs', r.n === 1 ? `A major repair on ${home} costs ${moneyCompact(r.total)} ${r.s.text}.` : `Major repairs on ${home} come ${howOften(r.n)} ${r.s.text} and cost ${moneyCompact(r.total)} in all; the largest is ${moneyCompact(r.largest)}.`, 2, true);
+  }
+  for (const r of fold('life_event', Infinity, REPRICED)) {
+    const steepest = Math.max(...r.group.map((x) => pctOf(x.e.label)));
+    push(r.s.a, 'life_event', 'Insurance repriced', `Home insurance is repriced ${howOften(r.n)} ${r.s.text}${steepest > 0 ? `; the ${r.n === 1 ? 'premium rises' : 'largest rise is'} ${steepest.toFixed(0)}%` : ''}.`, 1, true);
+  }
+  const resumed = consume('other', SAVING_RESUMED);
+  for (const r of fold('other', Infinity, SAVING_PAUSED)) {
+    const why = r.first.label.replace(/^Saving paused:?\s*/, '');
+    const back = resumed.find((m) => m > r.s.a);
+    const detail =
+      r.n === 1
+        ? `Retirement saving is paused ${r.s.text}${why ? ` while ${why}` : ''}${back !== undefined ? `, and resumes at ${who} ${ageOf(back)}` : ''}.`
+        : `Retirement saving is paused ${howOften(r.n)} ${r.s.text}${why ? `, the first time while ${why}` : ''}.`;
+    push(r.s.a, 'other', 'Saving paused', detail, 2, true);
+  }
+  const reopened = consume('market', LINES_REOPENED);
+  for (const r of fold('market', Infinity, LINES_FROZEN)) {
+    const back = reopened.find((m) => m > r.s.a);
+    const detail = r.n === 1 ? `Lenders freeze home-equity lines ${r.s.text}${back !== undefined ? ` and reopen them at ${who} ${ageOf(back)}` : ''}.` : `Lenders freeze home-equity lines ${howOften(r.n)} ${r.s.text}, each time until the downturn is over.`;
+    push(r.s.a, 'market', 'Credit lines frozen', detail, 2, true);
   }
 
   // Running short and recovering can alternate month by month near the end: the first time is the event, the rest are repeats.
@@ -330,11 +395,16 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       case 'retired':
         return void push(m, e.kind, 'Retires', `Retirement starts at ${who} ${(life.monthAges[m] ?? 0).toFixed(1)}${amount ? ` with ${amount} invested` : ''}.`, 5);
       case 'bought_home': {
+        const moved = DOWNSIZED.exec(label);
+        if (moved) return void push(m, e.kind, 'Downsizes', `Sells ${moved[1]} and buys a smaller home${amount ? ` for ${amount}` : ''} at ${who} ${ageOf(m)}${moved[3] ? `, on a ${moved[3]}% mortgage` : ''}.`, 4);
         const parsed = /^(.*?) \(([\d.]+)% mortgage\)$/.exec(e.label);
         return void push(m, e.kind, 'Buys a home', `“${parsed?.[1] ?? e.label}” goes ahead at ${who} ${ageOf(m)}${amount ? `: a ${amount} home` : ''}${parsed ? ` on a ${parsed[2]}% mortgage` : ''}.`, 4);
       }
-      case 'sold_home':
+      case 'sold_home': {
+        const moved = DOWNSIZED.exec(label);
+        if (moved) return void push(m, e.kind, 'Downsizes', `Sells ${moved[1]} and rents a smaller home at ${who} ${ageOf(m)}${amount ? `, keeping ${amount} from the sale` : ''}.`, 4);
         return void push(m, e.kind, 'Sells a home', `${label} at ${who} ${ageOf(m)}${amount ? ` for ${amount}` : ''}.`, 4);
+      }
       case 'relocated':
         return void push(m, e.kind, label.length <= 22 ? label : 'Moves', `${label} at ${who} ${ageOf(m)}.`, 4);
       case 'claimed_social_security': {
@@ -372,9 +442,13 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
         return void push(m, e.kind, 'Essentials covered again', `${label} at ${who} ${ageOf(m)}.`, m > lastShort ? 3 : 0);
       case 'died':
         return void push(m, e.kind, label.replace(/ at \d+$/, ''), `${label}.`, 5);
-      case 'windfall':
+      case 'windfall': {
+        // A parent whose care used up the estate leaves nothing: that is a death, not a windfall.
+        const nothing = /^Inheritance from (.*?): \$0k.*?(?:, after (\$\d+k) of care)?$/.exec(label);
+        if (nothing) return void push(m, 'life_event', 'A parent dies', `${nothing[1]} dies at ${who} ${ageOf(m)} and leaves nothing${nothing[2] ? `: ${nothing[2]} of care used up the estate` : ''}.`, 2);
         // An inheritance already states its size ("Inheritance from Mom: $180k").
         return void push(m, e.kind, label.length <= 22 ? label : /^Inheritance/.test(label) ? 'Inheritance' : /^Life insurance/.test(label) ? 'Life insurance pays' : 'Windfall', `${label} at ${who} ${ageOf(m)}${amount && !label.includes('$') ? `: ${amount}` : ''}.`, 3);
+      }
       case 'major_expense': {
         // A vehicle on a replacement cycle comes round every few years: marked, but told once in the narrative.
         const vehicle = /^Replace vehicle: (.*)$/.exec(label)?.[1];
@@ -394,7 +468,7 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       case 'debt_paid_off':
         return void push(m, e.kind, label.length <= 24 ? label : 'Debt paid off', `${label} at ${who} ${ageOf(m)}.`, 1);
       default:
-        return void push(m, e.kind, label.length <= 24 ? label : label.slice(0, 22) + '…', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, e.kind === 'partner_joined' ? 4 : 2);
+        return void push(m, e.kind, short(label), `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, e.kind === 'partner_joined' ? 4 : 2);
     }
   });
 
@@ -427,21 +501,23 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
   }
 
   const byKind = (kind: TraceEventKind) => life.events.filter((e) => e.kind === kind);
-  const tell = (kinds: TraceEventKind[], before: number, least = -Infinity) =>
-    life.events.filter((e) => kinds.includes(e.kind) && e.month < before && e.title !== NEW_VEHICLE && (e.kind !== 'child' || e.priority >= least)).forEach((e) => out.push({ text: e.detail, year: e.year }));
-
   const fi = byKind('financially_independent')[0];
   const retired = byKind('retired')[0] ?? (fi?.title.includes('retires') ? fi : undefined);
   const turning = retired?.month ?? fi?.month ?? trace.months;
-  // Working years: the things that happened on the way.
-  tell(['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event', 'policy_change'], turning, 3);
+  // Working years: the things that happened on the way, in the order they happened. That
+  // includes the turns the optional features add (a disability, a divorce, a failed business)
+  // and the vehicle cycle, told once where it starts.
+  const WORKING: TraceEventKind[] = ['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event', 'policy_change'];
+  const working: { month: number; sentence: Sentence }[] = life.events
+    .filter((e) => e.month < turning && e.title !== NEW_VEHICLE && ((WORKING.includes(e.kind) && (e.kind !== 'child' || e.priority >= 3)) || (e.kind === 'life_event' && e.priority >= 4)))
+    .map((e) => ({ month: e.month, sentence: { text: e.detail, year: e.year } }));
   const vehicles = life.events.filter((e) => e.title === NEW_VEHICLE);
   if (vehicles.length > 0) {
     const first = vehicles[0] as LifeEvent;
-    out.push({ text: vehicles.length === 1 ? first.detail : `A vehicle is replaced ${vehicles.length} times over the life, first at ${wholeAge(first.age)}.`, year: first.year });
+    working.push({ month: first.month, sentence: { text: vehicles.length === 1 ? first.detail : `A vehicle is replaced ${vehicles.length} times over the life, first at ${wholeAge(first.age)}.`, year: first.year } });
   }
-  // The turns a life takes that the optional features add (a disability, a divorce, a failed business).
-  life.events.filter((e) => e.kind === 'life_event' && e.priority >= 4 && e.month < turning).forEach((e) => out.push({ text: e.detail, year: e.year }));
+  working.sort((a, b) => a.month - b.month);
+  working.forEach((w) => out.push(w.sentence));
 
   const fiAge = s('fi_age');
   if (fi && fiAge !== null) {

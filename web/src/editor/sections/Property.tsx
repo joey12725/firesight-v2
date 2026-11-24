@@ -209,6 +209,9 @@ export function PropertySection() {
   const reserved = profile.events.flatMap((e) => (e.kind.type === 'buy_home' ? [e.kind.property_id] : []));
   const addProperty = (name: string, value: Record<string, unknown>) => add(name, value, { taken: reserved });
   const addDebt = useAdd('/debts');
+  const mortgaged = profile.properties.some((p) => p.mortgage) || profile.events.some((e) => e.kind.type === 'buy_home');
+  // A cash-out refinance needs only an owned main home: one with no mortgage has the most room to borrow.
+  const hasHome = profile.properties.some((p) => p.use.type === 'primary') || profile.events.some((e) => e.kind.type === 'buy_home' && e.kind.use.type === 'primary');
   return (
     <>
       <Group title="Property">
@@ -223,14 +226,16 @@ export function PropertySection() {
           <AddButton label="Vacation home" onAdd={() => addProperty('Vacation home', { use: { type: 'vacation' }, value: 300_000 })} />
         </div>
       </Group>
-      {(profile.properties.some((p) => p.mortgage) || profile.events.some((e) => e.kind.type === 'buy_home')) && (
-        <Group title="Mortgages">
-          <ToggleField
-            path="/debt_policy/refinance_mortgages"
-            label="Refinance when rates fall"
-            hint="Each January, if the market rate is a point or more below the loan’s and four years of saved interest cover the closing costs."
-          />
-          <Realism summary="Cash-out refinancing and paying down early" on={debtPolicyRealism(profile.debt_policy)}>
+      {(mortgaged || hasHome) && (
+        <Group title={mortgaged ? 'Mortgages' : 'Borrowing against the home'}>
+          {mortgaged && (
+            <ToggleField
+              path="/debt_policy/refinance_mortgages"
+              label="Refinance when rates fall"
+              hint="Each January, if the market rate is a point or more below the loan’s and four years of saved interest cover the closing costs."
+            />
+          )}
+          <Realism summary={mortgaged ? 'Cash-out refinancing and paying down early' : 'Cash-out refinancing'} on={debtPolicyRealism(profile.debt_policy)}>
             <Optional path="/debt_policy/cash_out_refinance" label="Refinance for cash before penalised withdrawals" present={profile.debt_policy.cash_out_refinance !== null} make={MAKE.cashOutRefinance}>
               <Row cols={3}>
                 <PercentField path="/debt_policy/cash_out_refinance/max_ltv" label="Up to, of value" />
@@ -238,21 +243,23 @@ export function PropertySection() {
                 <NumField path="/debt_policy/cash_out_refinance/term_years" label="Term" kind="years" suffix="yrs" />
               </Row>
             </Optional>
-            <Row>
-              <ChoiceField
-                path="/debt_policy/mortgage_prepayment"
-                label="Prepay the mortgage"
-                options={[
-                  { value: 'never', label: 'Never' },
-                  { value: 'when_rate_above', label: 'When its rate is high' },
-                ]}
-                read={(v) => (v as typeof profile.debt_policy.mortgage_prepayment).type}
-                write={(type) => ({ type })}
-              />
-              {profile.debt_policy.mortgage_prepayment.type === 'when_rate_above' && (
-                <PercentField path="/debt_policy/mortgage_prepayment/real_rate" label="Real rate to beat" nullable placeholder="Automatic" />
-              )}
-            </Row>
+            {mortgaged && (
+              <Row>
+                <ChoiceField
+                  path="/debt_policy/mortgage_prepayment"
+                  label="Prepay the mortgage"
+                  options={[
+                    { value: 'never', label: 'Never' },
+                    { value: 'when_rate_above', label: 'When its rate is high' },
+                  ]}
+                  read={(v) => (v as typeof profile.debt_policy.mortgage_prepayment).type}
+                  write={(type) => ({ type })}
+                />
+                {profile.debt_policy.mortgage_prepayment.type === 'when_rate_above' && (
+                  <PercentField path="/debt_policy/mortgage_prepayment/real_rate" label="Real rate to beat" nullable placeholder="Automatic" />
+                )}
+              </Row>
+            )}
           </Realism>
         </Group>
       )}

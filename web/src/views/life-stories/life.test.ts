@@ -91,7 +91,17 @@ describe('events of the optional realism features', () => {
     ['medicaid', "Savings spent down: Medicaid pays for person 1's care", null],
     ['ltc_insurance', 'Long-term-care insurance starts paying for person 1', null],
     ['ltc_insurance', "Person 2's long-term-care insurance lapses: the premium is unaffordable", null],
-    ['other', 'Saving paused: high-interest debt', null],
+    ['other', 'Saving paused: carrying high-interest debt', null],
+    ['other', 'Saving resumed', null],
+    ['bought_home', 'Downsized: sold Family home and bought a smaller home with a 6.25% mortgage', 262_000],
+    ['sold_home', 'Downsized: sold Lake house and rented', 310_000],
+    ['life_event', 'Borrowed against Home', 1_500],
+    ['life_event', 'Borrowed against Home', 2_500],
+    ['life_event', 'Major repair on Home', 6_000],
+    ['life_event', 'Insurance repriced: premiums up 9%', null],
+    ['market', 'Home-equity lines open again', null],
+    ['market', 'Lenders freeze home-equity lines', null],
+    ['windfall', "Inheritance from Dad: $0k, after $1247k of care", 0],
   ];
 
   const staged = () => {
@@ -133,6 +143,68 @@ describe('events of the optional realism features', () => {
     expect(find(life, 'Inheritance')?.detail).toMatch(/^Inheritance from Mom: \$180k at age \d+\.$/);
     expect(find(life, 'Life insurance pays')?.detail).toMatch(/^Life insurance pays out: Term life at age \d+: \$500k\.$/);
     expect(find(life, 'Supports a child')?.detail).toMatch(/Mia needs support for 20 months at age \d+: \$12k a year\.$/);
+    // A downsizing is told as a move, not as a quoted plan event that "goes ahead".
+    const moves = life.events.filter((e) => e.title === 'Downsizes').map((e) => e.detail);
+    expect(moves).toHaveLength(2);
+    expect(moves.find((d) => /buys/.test(d))).toMatch(/^Sells Family home and buys a smaller home for \$262k at age \d+, on a 6\.25% mortgage\.$/);
+    expect(moves.find((d) => /rents/.test(d))).toMatch(/^Sells Lake house and rents a smaller home at age \d+, keeping \$310k from the sale\.$/);
+    expect(life.events.some((e) => /goes ahead/.test(e.detail) && /Downsized/.test(e.detail))).toBe(false);
+    // A parent whose care used up the estate is a death, not a windfall of nothing.
+    expect(life.events.find((e) => /^Dad dies/.test(e.detail))?.detail).toMatch(/^Dad dies at age \d+ and leaves nothing: \$1247k of care used up the estate\.$/);
+    expect(life.events.some((e) => /\$0k/.test(e.detail))).toBe(false);
+  });
+
+  it('folds what the housing and saving features log again and again, and keeps the money', () => {
+    const life = staged();
+    const titled = (title: string) => life.events.filter((e) => e.title === title);
+    // Two draws and two repairs a year apart: one entry each, with the total.
+    expect(titled('Borrows on the home')).toHaveLength(1);
+    expect(titled('Borrows on the home')[0]?.detail).toMatch(/^Borrows \$4k against Home in 2 draws between ages \d+ and \d+, /);
+    expect(titled('Major repairs')).toHaveLength(1);
+    expect(titled('Major repairs')[0]?.detail).toMatch(/^Major repairs on Home come twice between ages \d+ and \d+ and cost \$24k in all; the largest is \$18k\.$/);
+    expect(titled('Major repair')).toHaveLength(0);
+    expect(titled('Insurance repriced')).toHaveLength(1);
+    expect(titled('Insurance repriced')[0]?.detail).toMatch(/^Home insurance is repriced twice between ages \d+ and \d+; the largest rise is 15%\.$/);
+    // A pause and its end are one entry with a whole title; so are a freeze and the reopening.
+    expect(titled('Saving paused')).toHaveLength(1);
+    expect(titled('Saving paused')[0]?.detail).toMatch(/^Retirement saving is paused at age \d+ while carrying high-interest debt, and resumes at age \d+\.$/);
+    expect(life.events.some((e) => /Saving resumed/.test(e.title))).toBe(false);
+    // A long label is cut at the end of a word, never inside one.
+    for (const e of life.events) if (e.title.endsWith('…')) expect(LOGGED.some(([, label]) => label.startsWith(`${e.title.slice(0, -1)} `) || label.startsWith(`${e.title.slice(0, -1)}:`)), e.title).toBe(true);
+    expect(titled('Credit lines frozen')).toHaveLength(1);
+    expect(titled('Credit lines frozen')[0]?.detail).toMatch(/^Lenders freeze home-equity lines twice between ages \d+ and \d+, each time/);
+    expect(life.events.some((e) => /open again/.test(e.detail))).toBe(false);
+    // Two parents' inherited IRAs paid out in the same years count the years once.
+    const f = fixtures.get('dual-income-family') as Fixture;
+    const base = f.traces[0] as PathTrace;
+    const [y = 2026] = base.start.split('-').map(Number);
+    const payouts = [1, 2, 3].flatMap((k) => [0, 1].map(() => ({ kind: 'life_event' as const, label: `Inherited IRA distribution (${9 - k} more to come)`, amount: 9_000, month: `${y + k}-01` })));
+    const both = buildLife({ ...base, events: payouts }, f.profile);
+    expect(both.events.filter((e) => e.title === 'Inherited IRA')).toHaveLength(1);
+    expect(both.events.find((e) => e.title === 'Inherited IRA')?.detail).toMatch(/^The inherited IRAs are paid out and taxed as income over 3 years, between ages \d+ and \d+\.$/);
+  });
+
+  it('tells the working years in the order they happened', () => {
+    const f = fixtures.get('dual-income-family') as Fixture;
+    const base = f.traces[0] as PathTrace;
+    const [y = 2026] = base.start.split('-').map(Number);
+    const event = (kind: PathTrace['events'][number]['kind'], label: string, amount: number | null, year: number) => ({ kind, label, amount, month: `${y + year}-03` });
+    // A business failure early on, then an inheritance and a downsizing, with a vehicle cycle starting in between.
+    const events = [
+      event('life_event', 'Business failed: self-employment income of person 2 ends', null, 1),
+      event('major_expense', 'Replace vehicle: Family car', 28_000, 2),
+      event('windfall', 'Inheritance from Mom: $260k', 260_000, 3),
+      event('major_expense', 'Replace vehicle: Family car', 30_000, 4),
+      event('bought_home', 'Downsized: sold Family home and bought a smaller home', 262_000, 5),
+      event('retired', 'Retired', 900_000, 8),
+    ];
+    const told = narrative(buildLife({ ...base, events }, f.profile), null).map((s) => s.text);
+    const at = (re: RegExp) => told.findIndex((t) => re.test(t));
+    expect(at(/Business failed/)).toBeGreaterThan(0);
+    expect(at(/Business failed/)).toBeLessThan(at(/A vehicle is replaced 2 times/));
+    expect(at(/A vehicle is replaced 2 times/)).toBeLessThan(at(/Inheritance from Mom/));
+    expect(at(/Inheritance from Mom/)).toBeLessThan(at(/Sells Family home/));
+    expect(at(/Sells Family home/)).toBeLessThan(at(/Retirement starts/));
   });
 
   it('folds the yearly repeats and keeps them apart from the spending rule', () => {
@@ -142,7 +214,7 @@ describe('events of the optional realism features', () => {
     expect(find(life, 'Harvests tax losses')?.detail).toMatch(/^Realises \$10k of losses in the taxable account between ages \d+ and \d+, in 2 sales/);
     expect(count('qualified_charitable_distribution')).toBe(1);
     expect(life.events.filter((e) => e.title === 'Inherited IRA')).toHaveLength(1);
-    expect(find(life, 'Inherited IRA')?.detail).toMatch(/over 2 years/);
+    expect(find(life, 'Inherited IRA')?.detail).toMatch(/^The inherited IRA is paid out and taxed as income over 2 years/);
     // Belt-tightening while out of work is not one of the spending rule's cuts.
     expect(find(life, 'Spending cut')).toBeUndefined();
     const story = narrative(life, null).map((s) => s.text).join(' ');
@@ -154,6 +226,49 @@ describe('events of the optional realism features', () => {
     expect(new Set(told).size).toBe(told.length);
     expect(told.filter((t) => /Replaces the/.test(t))).toHaveLength(1);
   });
+});
+
+/** What a feature logs month after month or year after year is one entry (or one per run), never a flood. */
+function expectNoFlood(life: Life) {
+  const perTitle = new Map<string, number>();
+  for (const e of life.events) perTitle.set(e.title, (perTitle.get(e.title) ?? 0) + 1);
+  for (const title of ['Major repair', 'Major repairs', 'Insurance repriced', 'Saving paused', 'Credit lines frozen']) expect(perTitle.get(title) ?? 0, title).toBeLessThanOrEqual(1);
+  // Two parents can each leave an IRA, years apart.
+  expect(perTitle.get('Inherited IRA') ?? 0).toBeLessThanOrEqual(2);
+  expect(perTitle.get('Borrows on the home') ?? 0).toBeLessThanOrEqual(4);
+  expect(perTitle.has('Saving resumed')).toBe(false);
+  for (const [title, n] of perTitle) expect(n, `${title} x${n}`).toBeLessThanOrEqual(title === 'New vehicle' ? 30 : 12);
+  // Before the folds one full-life trace had 221 entries, 115 of them draws on the home.
+  expect(life.events.length).toBeLessThanOrEqual(120);
+}
+
+describe('the full-life example, life by life', () => {
+  it('folds the repeating events of its optional features on sixty lives', () => {
+    const f = fixtures.get('full-life') as Fixture;
+    const engine = new wasm.Engine(JSON.stringify(f.profile));
+    const worst = { events: 0, title: '', n: 0 };
+    try {
+      for (let path = 0; path < 60; path++) {
+        const life = buildLife(JSON.parse(engine.trace(path)) as PathTrace, f.profile);
+        expectNoFlood(life);
+        for (const e of life.events) {
+          expect(e.title.length, e.title).toBeLessThanOrEqual(26);
+          expect(e.detail, e.detail).not.toMatch(/NaN|undefined|null|Person \d|\$0k|goes ahead at .*Downsized|“Downsized/);
+        }
+        const told = narrative(life, f.summary).map((s) => s.text);
+        expect(new Set(told).size, told.join(' / ')).toBe(told.length);
+        worst.events = Math.max(worst.events, life.events.length);
+        const perTitle = new Map<string, number>();
+        for (const e of life.events) perTitle.set(e.title, (perTitle.get(e.title) ?? 0) + 1);
+        for (const [title, n] of perTitle) if (title !== 'New vehicle' && n > worst.n) Object.assign(worst, { title, n });
+      }
+    } finally {
+      engine.free();
+    }
+    // The folds had something to fold: some life repeats a title, and none floods.
+    expect(worst.events).toBeGreaterThan(40);
+    expect(worst.n).toBeLessThanOrEqual(12);
+  }, 120_000);
 });
 
 describe('buildLife on real traces', () => {
@@ -196,6 +311,8 @@ describe('buildLife on real traces', () => {
             expect(e.detail.trim()).toMatch(/\.$/);
             expect(e.year).toBe(life.monthYear[e.month]);
           }
+          // What a feature logs month after month or year after year is one entry (or one per run), never a flood.
+          expectNoFlood(life);
           // Small unplanned expenses are counted, not marked.
           const shocks = raw.filter((e) => e.kind === 'expense_shock').length;
           expect(life.smallShocks.count + count('expense_shock')).toBe(shocks);

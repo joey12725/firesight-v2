@@ -55,7 +55,9 @@ const count = (...flags: unknown[]) => flags.filter(Boolean).length;
 
 export const personRealism = (p: Person) => count(p.disability_risk !== 'off', p.ltc_insurance, p.life_insurance.length > 0);
 export const childRealism = (c: Child) => count(c.arrival.type === 'uncertain', c.college_cost.type === 'stochastic', c.adult_support, c.parental_leave ?? c.second_parental_leave);
-export const familyRealism = (h: Household) => count(h.parents.length > 0, h.parents.some((p) => p.care_support), h.divorce_risk.type !== 'off');
+/** A parent's care the household takes part in: it pays something or someone gives up work (support that does neither changes nothing). */
+const helpsWithCare = (p: Household['parents'][number]) => !!p.care_support && (p.care_support.annual_cost > 0 || p.care_support.hours > 0);
+export const familyRealism = (h: Household) => count(h.parents.length > 0, h.parents.some(helpsWithCare), h.divorce_risk.type !== 'off');
 export const careerRealism = (risk: { job_mobility: string; recession_pay: string; late_career: string }) => count(risk.job_mobility !== 'off', risk.recession_pay !== 'off', risk.late_career !== 'off');
 export const claimingRealism = (people: Person[]) => count(...people.map((p) => p.social_security.claiming.type === 'adaptive'));
 export const spendingRealism = (s: Spending) => count(s.seasonality !== 'off', s.category_inflation !== 'off', s.unemployment_cut > 0);
@@ -75,6 +77,18 @@ export const lifeRealism = (a: Assumptions) =>
 // ---- the fifty ----------------------------------------------------------------------
 
 export type SectionId = 'household' | 'income' | 'spending' | 'accounts' | 'property' | 'events' | 'retirement' | 'assumptions';
+
+/** The sections of the plan editor, in order, by the titles they carry there. */
+export const SECTION_TITLE: Record<SectionId, string> = {
+  household: 'Household',
+  income: 'Income',
+  spending: 'Spending',
+  accounts: 'Savings and accounts',
+  property: 'Property and debts',
+  events: 'Life events',
+  retirement: 'Retirement plan',
+  assumptions: 'Assumptions',
+};
 
 export interface Feature {
   id: string;
@@ -142,7 +156,7 @@ export const FEATURES: Feature[] = [
   { id: 'F45', field: 'confirmation', label: 'Not retiring into a crash', section: 'retirement', on: (p) => timingRealism(p.retirement.trigger) > 0 },
   { id: 'F46', field: 'divorce_risk', label: 'Divorce', section: 'household', on: (p) => p.household.divorce_risk.type !== 'off' || p.events.some((e) => e.kind.type === 'divorce') },
   { id: 'F47', field: 'parents', label: 'Inheritance from parents', section: 'household', on: (p) => p.household.parents.length > 0 },
-  { id: 'F48', field: 'care_support', label: 'Caring for a parent', section: 'household', on: (p) => p.household.parents.some((x) => x.care_support) },
+  { id: 'F48', field: 'care_support', label: 'Caring for a parent', section: 'household', on: (p) => p.household.parents.some(helpsWithCare) },
   { id: 'F49', field: 'spousal_care', label: 'Spousal caregiving', section: 'spending', on: (p) => p.spending.healthcare.spousal_care },
   { id: 'F50', field: 'life_insurance', label: 'Life insurance', section: 'household', on: (p) => p.household.people.some((x) => x.life_insurance.length > 0) },
 ];

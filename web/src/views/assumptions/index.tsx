@@ -3,7 +3,7 @@
 // in force for this plan, each with a picture of what it implies, drawn from this plan's
 // own simulation where the Summary carries it and from the historical record (labelled
 // as such) where it does not, and a link to the place in the editor that changes it.
-import { featuresOn } from '@/editor/realism';
+import { featuresOn, SECTION_TITLE, type SectionId } from '@/editor/realism';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { EnginePool } from '@/engine';
 import type { Summary } from '@/engine/output-types';
@@ -206,8 +206,21 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
           </p>
           {realism.length > 0 && (
             <p data-testid="assumptions-realism" className="mt-3 max-w-[46rem] text-sm leading-relaxed text-pretty text-ink-2">
-              On top of that this plan switches on <b className="font-semibold text-ink-1">{realism.length} of the 50 optional realism features</b>: {realism.map((f) => f.label).join('; ')}. Each adds a source of
-              risk or a behaviour the standard model leaves out; they are set in the folded “optional” groups of the plan editor.
+              On top of that this plan switches on <b className="font-semibold text-ink-1">{realism.length} of the 50 optional realism features</b>. Each adds a source of risk or a behaviour the standard model leaves out. By the
+              section of the plan editor where each is set:{' '}
+              {(Object.keys(SECTION_TITLE) as SectionId[])
+                .filter((id) => realism.some((f) => f.section === id))
+                .map((id, i) => (
+                  <span key={id}>
+                    {i > 0 && '; '}
+                    <b className="font-semibold text-ink-1">{SECTION_TITLE[id]}</b>:{' '}
+                    {realism
+                      .filter((f) => f.section === id)
+                      .map((f) => f.label)
+                      .join(', ')}
+                  </span>
+                ))}
+              .
             </p>
           )}
           <p className="mt-3 max-w-[46rem] text-xs leading-relaxed text-pretty text-ink-3">
