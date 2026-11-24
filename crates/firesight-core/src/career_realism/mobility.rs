@@ -13,15 +13,14 @@
 //! in which people change jobs; its average growth already contains the average gain
 //! from moves. Adding jumps on top would raise the average career. The model instead
 //! keeps the average on the curve and redistributes around it: every month in which
-//! the person is employed and the move draw is made, pay is multiplied by the stayer
-//! deflator
+//! the person is employed and does not move, pay is multiplied by the stayer deflator
 //!
 //! ```text
-//! d = 1 / (1 + h * (E[exp(J)] - 1)),   E[exp(J)] = exp(mu + SD^2 / 2)
+//! d = (1 - h * E[exp(J)]) / (1 - h),   E[exp(J)] = exp(mu + SD^2 / 2)
 //! ```
 //!
 //! so that `E[pay growth] = curve growth` exactly (a move multiplies by `exp(J)`, no
-//! move by `d`, so the expected factor is `h E[e^J] d + (1 - h) d = 1`). Movers then
+//! move by `d`, so the expected factor is `h E[e^J] + (1 - h) d = 1`). Movers then
 //! gain more than stayers, as in the job-ladder evidence, while stayers fall behind
 //! the curve; the mean path is the curve. What the jumps do add is dispersion between
 //! careers (some climb, some stay). The persistent wage shock of the existing model
@@ -147,7 +146,7 @@ impl MobilityModel {
                 let gain = math::exp(mu + 0.5 * JUMP_SD * JUMP_SD);
                 hazard[rec][b] = h;
                 mean[rec][b] = mu;
-                deflator[rec][b] = 1.0 / (1.0 + h * (gain - 1.0));
+                deflator[rec][b] = (1.0 - h * gain) / (1.0 - h);
             }
         }
         MobilityModel {
@@ -221,14 +220,45 @@ mod tests {
             for b in 0..BANDS {
                 let h = m.hazard[rec][b];
                 let gain = math::exp(m.mean_log_jump[rec][b] + 0.5 * JUMP_SD * JUMP_SD);
-                let mean =
-                    h * gain * m.stayer_deflator[rec][b] + (1.0 - h) * m.stayer_deflator[rec][b];
+                // What `step` does: a move multiplies by exp(J) (mean `gain`), a
+                // month without one by the deflator.
+                let mean = h * gain + (1.0 - h) * m.stayer_deflator[rec][b];
                 assert!((mean - 1.0).abs() < 1e-12, "cell {rec},{b}: {mean}");
+                // Under 1 where movers gain on average; a little over 1 for older
+                // workers in a recession, whose moves lose pay on average.
+                assert!((m.stayer_deflator[rec][b] - 1.0).abs() < 0.01);
+                assert_eq!(m.stayer_deflator[rec][b] < 1.0, gain > 1.0);
             }
         }
         // Hand value for a 30-year-old in an expansion: h = 0.018424, gain =
-        // exp(0.08 + 0.0072) = 1.091121, deflator = 1 / (1 + 0.018424 * 0.091121).
-        assert!((m.stayer_deflator[0][1] - 0.998_324).abs() < 1e-6);
+        // exp(0.08 + 0.0072) = 1.091121, deflator = (1 - 0.018424 * 1.091121) /
+        // (1 - 0.018424) = 0.998290.
+        assert!((m.stayer_deflator[0][1] - 0.998290).abs() < 1e-6);
+    }
+
+    #[test]
+    fn step_is_mean_preserving_over_the_two_variates() {
+        // Integrates `step` itself over a grid of both variates: the expected pay
+        // factor of a month is 1 in every cell (this fails if the mover's factor and
+        // the deflator do not belong together).
+        let m = MobilityModel::new(JobMobility::High);
+        let n = 4000u64;
+        for (age, rec) in [(23.0, false), (30.0, false), (40.0, true), (58.0, false)] {
+            let (r, b) = (usize::from(rec), band(age));
+            let h = m.hazard[r][b];
+            let mut moved = 0.0;
+            for i in 0..n {
+                let q = (i as f64 + 0.5) / n as f64;
+                let bits = ((q * (1u64 << 53) as f64) as u64) << 11;
+                moved += m.step(age, rec, 0.0, bits).factor;
+            }
+            let stay = m.step(age, rec, 1.0 - 1e-12, 0).factor;
+            let mean = h * moved / n as f64 + (1.0 - h) * stay;
+            assert!(
+                (mean - 1.0).abs() < 2e-5,
+                "age {age} recession {rec}: {mean}"
+            );
+        }
     }
 
     #[test]
