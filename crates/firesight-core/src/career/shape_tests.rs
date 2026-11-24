@@ -183,7 +183,10 @@ fn wage_mixture_draws_match_its_moments() {
     // moves, 0.15 * P(N(-0.25, 2.207) < -2) = 0.15 * 0.214 = 0.032.
     close(f64::from(quiet) / n, 0.57, 0.01);
     close(f64::from(big_down) / n, 0.032, 0.002);
-    assert!(big_down > big_up, "large falls should outnumber large rises");
+    assert!(
+        big_down > big_up,
+        "large falls should outnumber large rises"
+    );
 }
 
 #[test]
@@ -348,7 +351,11 @@ fn two_part_pay_cut_keeps_the_mean_and_is_skewed() {
         let var = loss_sq / losers - m1 * m1;
         let third = loss_cu / losers - 3.0 * m1 * loss_sq / losers + 2.0 * m1 * m1 * m1;
         close_rel(m1, m, 0.004);
-        close_rel(var, top * top * b / ((1.0 + b) * (1.0 + b) * (2.0 + b)), 0.01);
+        close_rel(
+            var,
+            top * top * b / ((1.0 + b) * (1.0 + b) * (2.0 + b)),
+            0.01,
+        );
         let skew = 2.0 * (b - 1.0) * (b + 2.0).sqrt() / ((b + 3.0) * b.sqrt());
         assert!(skew > 0.56);
         close(third / (var * var.sqrt()), skew, 0.02);
@@ -394,7 +401,12 @@ fn two_part_pay_cut_in_the_job_keeps_the_mean_scar_and_the_spell() {
     };
     // (age, recession, base mean): 0.08; 0.08 * 1.5; 0.15.
     for (age, recession, base) in [(40.0, 0, 0.08), (52.0, 0, 0.12), (40.0, 1, 0.15)] {
-        let mut plain = JobModel::new(&job(RiskLevel::Typical, CareerRisk::default()), age, true, d);
+        let mut plain = JobModel::new(
+            &job(RiskLevel::Typical, CareerRisk::default()),
+            age,
+            true,
+            d,
+        );
         let mut shaped = JobModel::new(&job(RiskLevel::Typical, two), age, true, d);
         plain.hazard = [[1.0; 6]; 2];
         shaped.hazard = [[1.0; 6]; 2];
@@ -487,7 +499,11 @@ fn search_chances_reproduce_the_default_mean_spell() {
                 assert!(chances[d] < chances[d - 1]);
             }
             close(chances[35] / chances[0], 0.3519, 1e-4);
-            close(chances[6] / chances[0], 0.35 + 0.65 * math::exp(-1.0), 1e-12);
+            close(
+                chances[6] / chances[0],
+                0.35 + 0.65 * math::exp(-1.0),
+                1e-12,
+            );
             assert!(chances[0] > 0.05 && chances[0] < 0.6, "{}", chances[0]);
         }
     }
@@ -662,7 +678,11 @@ fn monthly_search_draws_the_scar_when_the_search_ends() {
                 long_spells += u32::from(spell > 6.0);
                 // Age 52 in an expansion: 0.08 * 1.5 plus 0.01 a month beyond six.
                 let mean = 0.12 + (0.01 * (spell - 6.0).max(0.0)).min(0.10);
-                close(before - s.persistent_shock, mean + p.scar_sd * z_scar, 1e-12);
+                close(
+                    before - s.persistent_shock,
+                    mean + p.scar_sd * z_scar,
+                    1e-12,
+                );
                 assert_eq!(s.pending_scar, 0.0);
                 assert_eq!(s.scar_class, 1);
                 break;

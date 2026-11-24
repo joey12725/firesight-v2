@@ -21,7 +21,7 @@
 //!     for the spell length.
 //! * Where one word must give two independent things (which part of a mixture, and
 //!   the value inside it) the low 11 bits choose the part and the high 53 bits give
-//!   the value. [`normal_from_bits`] and [`CompiledDist::sample`] read only the high
+//!   the value. [`normal_from_bits`] and the uniform used here read only the high
 //!   53 bits, so the two are independent. A probability is therefore a whole number
 //!   of 2048ths, and every mean below is computed from that rounded probability.
 //! * Nothing here allocates after compilation or calls a rejection sampler.
@@ -458,8 +458,8 @@ impl JobSearch {
     /// band held fixed.
     pub(super) fn mean_months(chance: &[f64; SEARCH_MONTHS]) -> f64 {
         // A uniform part of a month, not less than the floor in the first month.
-        let first = SPELL_MIN_MONTHS * SPELL_MIN_MONTHS
-            + 0.5 * (1.0 - SPELL_MIN_MONTHS * SPELL_MIN_MONTHS);
+        let first =
+            SPELL_MIN_MONTHS * SPELL_MIN_MONTHS + 0.5 * (1.0 - SPELL_MIN_MONTHS * SPELL_MIN_MONTHS);
         let mut still_searching = 1.0;
         let mut mean = 0.0;
         for (d, f) in chance.iter().enumerate() {
@@ -512,7 +512,11 @@ fn scaled(shape: &[f64; SEARCH_MONTHS], first: f64) -> [f64; SEARCH_MONTHS] {
 pub(super) fn clipped_lognormal_mean(median: f64, sigma: f64) -> f64 {
     let (lo, hi) = (SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
     if median.is_nan() || sigma.is_nan() || median <= 0.0 || sigma <= 0.0 {
-        return if median.is_nan() { lo } else { median.clamp(lo, hi) };
+        return if median.is_nan() {
+            lo
+        } else {
+            median.clamp(lo, hi)
+        };
     }
     let mu = math::ln(median);
     let a = (math::ln(lo) - mu) / sigma;

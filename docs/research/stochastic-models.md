@@ -125,6 +125,8 @@ Literature calibrations for reference: CGM (rho 1, sigma_eta 0.10-0.13, sigma_ep
 
 The medium default is deliberately about half the literature variance. **Judgement**, for two reasons. First, job loss and its scarring are modelled explicitly in section 3; Guvenen et al. show that once nonemployment shocks are separate, the Gaussian part shrinks to rho 0.97 and sigma_eps 0.135 (a pure Gaussian fit to the same data needs rho 1.02 and sigma_eps 0.76). Second, a large share of measured transitory variance in survey data is measurement error.
 
+As built, the persistent shock is Gaussian by default; `risk.wage_shocks: fat_tailed` makes it a two-part normal mixture with the same mean and variance, `risk.layoff_pay_cut: two_part` and `risk.job_search: monthly` reshape the pay cut and the spell of section 3 (docs/methodology.md section 6). Their numbers are judgements (`career_shapes` in params.json).
+
 Keep sigma constant over the business cycle. [Guvenen, Ozkan and Song (2014)](https://doi.org/10.1086/675535) find that recessions do not raise the variance of earnings shocks; they fatten the left tail, which the job-loss module produces.
 
 ### Knobs

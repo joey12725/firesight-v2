@@ -46,6 +46,31 @@
 //! job loss is explicit. Planning code that uses [`JobModel::expected_real_salary`]
 //! is therefore slightly optimistic for jobs with layoff risk.
 //!
+//! # Opt-in shapes (`risk.wage_shocks`, `risk.layoff_pay_cut`, `risk.job_search`)
+//!
+//! Three settings on a job change the shape of a random part and keep its average.
+//! All are off by default, and with them off the arithmetic above is untouched. The
+//! mechanisms and their maths are in [`shape`]; their numbers are judgements
+//! (`career_shapes` in params.json).
+//!
+//! * `wage_shocks: fat_tailed`: `eta` is a two-part normal mixture with mean zero
+//!   and variance `sigma_eta^2` (a small move most years, a large one in about one
+//!   year in seven, a little more often down). `Var[z]/2` is replaced by the exact
+//!   `ln E[exp(z)]` of the mixture, so expected pay is still the curve and
+//!   [`JobModel::expected_real_salary`] needs no change.
+//! * `layoff_pay_cut: two_part`: `L` is about zero with a stated probability (lower
+//!   in the recession regime and from age 50) and otherwise a right-skewed loss;
+//!   `E[L]` is the default's mean for the same layoff.
+//! * `job_search: monthly`: the spell is not drawn at the layoff. Each month out of
+//!   work ends the search with a probability that falls with the months searched
+//!   and depends on that month's regime; `L` is drawn in the month the search ends.
+//!   Unemployment insurance is fixed at the layoff as in the default.
+//!
+//! None of them draws a random number of its own: each reads a word that
+//! [`JobModel::step`] draws anyway (the January persistent-shock word, the scar word
+//! and the spell word, which the default reads only in the month of a layoff). They
+//! do nothing when `assumptions.career_risk` is false or `risk.level` is `none`.
+//!
 //! # Simplifications
 //!
 //! * The schema has no education field. `Typical` is the average of the CGM
@@ -1034,6 +1059,9 @@ impl JobModel {
     /// Draws, in order, one 64-bit word each. From `career`: layoff, spell length,
     /// scar, commission, bonus, and in January two more (persistent and transitory
     /// wage shock). From `equity`: stock, liquidity event, outcome class, multiple.
+    /// The opt-in shapes read the same words and draw nothing more: with
+    /// `job_search: monthly` the spell word decides each month out of work and the
+    /// scar word is read in the month the search ends.
     pub fn step(
         &self,
         state: &mut JobState,

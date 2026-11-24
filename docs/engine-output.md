@@ -546,6 +546,14 @@ give the same results:
   mean_includes_losses }` or null, default null), where `loss` is an uncertain
   number between 0 and 1.
 
+* `incomes[].kind.risk.wage_shocks` (`"normal"` | `"fat_tailed"`, default
+  `normal`), `incomes[].kind.risk.layoff_pay_cut` (`"normal"` | `"two_part"`,
+  default `normal`) and `incomes[].kind.risk.job_search` (`"drawn_at_layoff"` |
+  `"monthly"`, default `drawn_at_layoff`), on jobs only. They are plain choices, so
+  they add no validation codes: a misspelt value is refused when the profile is
+  read. They add three schema types: `WageShockShape`, `PayCutShape` and
+  `JobSearchModel`.
+
 The `adjusted_history` warning is also raised, at the option's own path, when the
 historical replay is run with a long-run uncertainty or disasters switched on. The
 sleeve options add no warning codes; out-of-range values are `out_of_range` or

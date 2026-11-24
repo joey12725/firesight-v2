@@ -98,7 +98,10 @@ Income { id, name, owner: usize (person index), kind, start: Option<When>, end: 
 When   = Date{at: YearMonth} | Age{person, age} | Retirement{offset_years} | Start
 IncomeKind =
   Job { salary, growth: Flat{real_raise} | Lifecycle{profile: Flat|Typical|Steep, extra},
-        risk: CareerRisk { level: None|Low|Typical|High }   // wage shocks + layoff hazard
+        risk: CareerRisk { level: None|Low|Typical|High,    // wage shocks + layoff hazard
+                           wage_shocks: Normal | FatTailed,          // default Normal
+                           layoff_pay_cut: Normal | TwoPart,         // default Normal
+                           job_search: DrawnAtLayoff | Monthly },    // default DrawnAtLayoff
         bonus: Option<Bonus{ target_fraction, volatility }>,
         commission: Option<Commission{ expected_annual, volatility }>,
         equity: Vec<EquityGrant>,
@@ -294,7 +297,7 @@ for each month t:
 | `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise; opt-in sleeve shapes (fat tails, crypto cycles, custom loss events; 3 words a month from `AssetExt` when cycles or loss events are on) |
 | `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
 | `benefits` | Social Security: indexed earnings record -> AIME -> PIA -> claim adjustment, spousal and survivor, trust-fund haircut |
-| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation |
+| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation; opt-in shapes in `career/shape.rs` (fat-tailed wage shocks, two-part pay cut, monthly job search), which reuse words the job already draws |
 | `health` | Premiums by phase (employer, ACA, Medicare), out-of-pocket, long-term care, mortality draws |
 | `housing` | Properties, mortgages, PMI, purchase and sale, rentals, depreciation |
 | `accounts` | Buckets (cash, taxable with basis, traditional, Roth with basis and conversion tranches, HSA) x asset classes; contributions waterfall; withdrawals; rebalancing; glide path |

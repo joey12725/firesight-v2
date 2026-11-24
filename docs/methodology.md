@@ -607,6 +607,91 @@ Past earnings, needed for Social Security, are rebuilt backwards from today's pa
 along the same curve the job follows going forward, capped at each year's wage
 base.
 
+### Shapes of wage shocks, pay cuts and job searches (opt-in)
+
+Three settings under a job's `risk` change the shape of one random part each and
+keep its average. All are off by default, and a profile that does not set them
+gives the same results as before, bit for bit. They do nothing when career risk is
+off or the job's risk level is `none`. None of them draws a random number of its
+own: each reads a number the job draws every month anyway, so switching one on
+moves nothing outside that job's pay (markets, lifespans, health and the month of
+the household's first layoff are the same bits). The shapes follow well-documented
+facts; every number that sets them is a judgement, not an estimate
+(`career_shapes` in `data/actuarial/params.json`).
+
+**Fat-tailed wage shocks** (`wage_shocks: fat_tailed`). By default the lasting
+yearly surprise in pay is a bell curve. Earnings records do not look like that:
+most years pay barely moves, occasionally it moves a lot, and the large moves are
+more often down. With `fat_tailed` the surprise is a mixture of two bell curves: a
+small one (0.55 times the default's standard deviation) in 85% of years and a
+large one (2.2 times, centred a quarter of a standard deviation below zero) in the
+other 15%. The mixture has mean zero and exactly the default's variance, and the
+mean correction uses the mixture's own expected value in place of half the
+variance, so expected pay is still the wage curve and planning figures are
+unchanged. The surprise has skewness -0.5 and kurtosis 11 against 0 and 3; 57% of
+years fall within half a standard deviation against 38%, and 3.2% are more than
+two standard deviations down against 2.3%. The yearly change in pay a person sees
+also holds the passing shock, which stays normal, so the difference in observed
+pay is milder. Measured for a typical job over 30 years from age 30 (20,000
+paths): yearly pay changes have kurtosis 3.9 against 3.0 and skewness -0.10
+against 0; lifetime pay averages 90% of the no-risk curve either way (5th
+percentile 56% either way, 95th 133% against 134%). Because layoffs and pay cuts
+already supply most of the left tail in this model, the lean downwards is kept
+small.
+
+**Two-part pay cut after a layoff** (`layoff_pay_cut: two_part`). By default the
+lasting change in pay on finding a new job is one bell curve around the average
+loss (8% in logs in normal times, 15% in the recession regime, half as much again
+from age 50, more after a search longer than six months), with a standard
+deviation of 15 points: a raise of 7% is as likely as a loss of 23%. Surveys of
+displaced workers show something else: about half are back at their old pay or
+better, and a minority take large lasting losses. With `two_part`, a share of
+people (45% in normal times, 35% in the recession regime, a fifth fewer from age
+50) return at the old pay give or take 5%; the rest take a loss whose likelihood
+falls steadily from nothing to a largest loss. The largest loss is half of pay, or
+three times the average loss of those who lose where that is more (61% of pay in a
+recession from age 50; up to 74% after a search of 16 months or more). The
+average change in log pay is exactly the default's for the same layoff, so the
+documented averages hold. Measured across layoffs for the same worker (20,000
+paths): pay within 5% of the old level after 39% of layoffs against 19%; a raise
+of more than 10% after 1.3% against 8.2%; a cut of more than 30% after 10.1%
+against 6.6%, and of more than 40% after 3.1% against 0.7%. Lifetime pay
+averages 90% of the curve either way; layoffs, spells and months out of work are
+identical path by path.
+
+**Monthly job search** (`job_search: monthly`). By default the length of a spell
+out of work is drawn on the day of the layoff from the state of the economy that
+day, so a recession that begins a month later cannot lengthen it. With `monthly`
+there is a chance of finding work each month:
+
+```text
+chance(d) = first-month chance x (0.35 + 0.65 x exp(-d / 6)),  d = months searched
+```
+
+The chance falls as the search drags on (to 59% of its first-month level after six
+months and 44% after twelve), which is the standard finding that the long-term
+unemployed find work more slowly. The first-month chance depends on that month's
+regime (in or within twelve months after a recession, or not) and on age, and is
+solved when the plan is compiled so that, with the regime held fixed, the mean
+spell equals the default's exactly (3.6 months in normal times and 6.4 in the
+recession regime at 35 to 54). No search lasts more than 36 months, the default's
+limit. The pay cut is drawn in the month the search ends, with the default's
+add-on for long searches; unemployment insurance is fixed at the layoff as before.
+A search that begins the month before a lasting recession is more than a month
+longer on average than one in a steady economy (unit-tested). Measured for the
+same worker (20,000 paths, bootstrap markets): months out of work over a career
+average 8.9 against 9.1 (95th percentile 31.5 against 29.6); spells that span
+more than twelve calendar months are 8.2% of spells against 6.8%, and more than
+24 months 2.2% against 1.7%.
+
+**Effect on plans.** Small, as it should be for changes that keep the mean and
+the variance. With all three on, the three demo households succeed 84.0%, 91.7%
+and 92.5% of the time against 83.7%, 91.8% and 92.7% (10,000 paths each, same
+seed; the standard error of each difference is a few tenths of a point). The
+options matter for what one career can look like (a long quiet stretch, one
+career-altering layoff, a search that runs into a recession), not for the headline
+rate.
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own
@@ -953,7 +1038,10 @@ words a path when a long-run uncertainty is set; rare disasters: fifteen words a
 path when they are on; matched bootstrap joins reuse the restart word and draw
 nothing extra; extra asset draws: three words a month when crypto cycles or custom
 loss events are on, while fat tails, the stock's stated hazard and the crypto
-presets reuse words that are drawn anyway). The number of draws from
+presets reuse words that are drawn anyway; the career shapes of section 6
+(fat-tailed wage shocks, the two-part pay cut, the monthly job search) draw
+nothing extra either, reading words of the person's career stream that every job
+draws each month). The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
@@ -1122,6 +1210,12 @@ Stated plainly, roughly in order of how much they could move an answer.
 * Survivor benefits are understated in three cases (a widow of an early claimer; a
   widow who works past 60; a worker who dies before 62).
 * Deaths of partners are independent; health and wealth do not affect each other.
+* By default wage shocks and the pay change after a layoff are bell curves, and
+  the length of a spell out of work is fixed on the day of the layoff. Opt-in
+  shapes address each (section 6); their numbers are judgements, not fits to
+  earnings or duration data. Even with them on there are no voluntary job changes,
+  the passing wage shock stays normal, and the variance of wage shocks does not
+  change over the business cycle.
 * The lifecycle wage curve falls 15 to 22% in real terms from 45 to 65, which
   reflects the data (including shorter hours) but will understate pay for someone
   who stays full-time in a stable job; use the flat profile.

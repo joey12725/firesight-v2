@@ -33,9 +33,10 @@ pub enum PayCutShape {
     Normal,
     /// Two kinds of outcome. Some people (45% in normal times, 35% around
     /// recessions, a fifth fewer from age 50) find work at about the old pay, give
-    /// or take 5%. The rest take a loss with a long tail: usually modest,
-    /// occasionally three times the average. The average change is the same as
-    /// under `normal`.
+    /// or take 5%. The rest take a loss: usually small, occasionally large, and
+    /// never more than half of pay after an ordinary layoff (up to three quarters
+    /// after a very long search in a recession). The average change is the same as
+    /// under `normal`; raises after a layoff become rare and deep cuts more common.
     TwoPart,
 }
 
@@ -52,6 +53,7 @@ pub enum JobSearchModel {
     /// the longer the search has lasted (to 35% of its first-month level, mostly
     /// within a year) and follows the economy month by month, so a recession that
     /// arrives during a search lengthens it. The average search is the same as
-    /// under `drawn_at_layoff` when the economy does not change during it.
+    /// under `drawn_at_layoff` when the economy does not change during it, with
+    /// more searches lasting over a year. No search lasts more than 36 months.
     Monthly,
 }
