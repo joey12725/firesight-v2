@@ -171,6 +171,7 @@ fn fat_tails_keep_mean_and_volatility_and_add_extremes() {
         big_thin as f64 / moves as f64,
         big_fat as f64 / moves as f64,
     );
+    println!("moves beyond four standard deviations: normal {thin_rate:.6}, fat {fat_rate:.6}");
     assert!(thin_rate < 2e-4, "{thin_rate}");
     assert!(fat_rate > 2e-3 && fat_rate < 1e-2, "{fat_rate}");
 }

@@ -475,7 +475,8 @@ event, 93.7% with it inside the mean and 92.3% with it on top.
 Not modelled: any link between a cycle state or a loss event and the stock market
 or a recession; recovery after a loss event; different tail shapes in the calm and
 wild states; a failure hazard that rises as a stock falls. Employer stock held as
-equity compensation (section 6) keeps its own, normal, shape.
+equity compensation keeps its own shape, set on the grant (section 6): normal
+unless its own `tails` and `ruin` are set.
 
 ## 3. Inflation and what follows it
 
@@ -691,6 +692,170 @@ seed; the standard error of each difference is a few tenths of a point). The
 options matter for what one career can look like (a long quiet stretch, one
 career-altering layoff, a search that runs into a recession), not for the headline
 rate.
+
+### Business closures, lumpy profit and employer stock (opt-in)
+
+By default a self-employment income never stops before its planned end and pays
+the same amount every month of a year, and stock from an employer is the market
+times a bell-curve factor with no chance of collapse and no connection to the job.
+Seven settings change that. All are off by default, and a profile that does not
+set them gives the same results as before, bit for bit. Two of them add a risk and
+lower an average on purpose (a business that can close; a job tied to the
+employer's share price); the others change a shape and keep the average, with the
+exceptions stated below. Their numbers are judgements or come from the equity
+section of the research note (`business_and_equity` in
+`data/actuarial/params.json`).
+
+**A business that can close** (`failure: hazard` on a self-employment income).
+Each month the income is being received, the business closes with a probability
+set by a yearly chance: 10% while the venture is under five years old and 4% after
+(both can be changed), doubled in recession months. The yearly figure is the
+chance in a year with no recession month. What happens next is a choice: the
+income stops for good (`then: stops`), or, the default, there is no income for 12
+months and then work starts again at 70% of what profit would have been, as a
+young venture that can close in its turn; the cut is lasting and compounds. A
+business whose age is not given is treated as established if the income is already
+being received and as new if it starts later. No unemployment insurance is paid,
+and a closure does not turn into a job. The yearly ups and downs of profit are
+drawn exactly as before, on the same stream.
+
+This is not mean-preserving: it is a risk the default leaves out, and it lowers
+expected profit. The exact expected share of the entered profit with no
+recessions, for an established business that restarts: 85% in year 10, 73% in
+year 20 and 63% in year 30 (91%, 85% and 79% averaged over the first 10, 20 and
+30 years); for a new one 90% in year 1, 77% in year 10 and 57% in year 30; for an
+established one that stops for good 67%, 44% and 29% in years 10, 20 and 30.
+Measured for one person earning $96,000 a year for 30 years (20,000 paths,
+bootstrap markets, so recessions included): lifetime profit averages 76% of the
+amount entered (5th percentile 40%, median 77%, 95th 100%), 76% of businesses
+close at least once and half at least twice, and there are 21 months with no
+profit on average; a new business averages 68%; with `stops`, 53% (5th percentile
+3%).
+
+Planning figures: the plan preview's income and the starting point of the
+lifestyle ratchet are the profit entered, because the business is open at the
+start. The funded test does not count future earned income at all, so the
+requirement is unchanged; what changes is how fast savings grow towards it. On a
+path, the tax plan for the rest of the year and the income the lifestyle ratchet
+follows read the business as it is: nothing while closed, the reduced amount after
+a restart. An `income_change` event that sets the profit to an amount sets the
+amount paid after any restart cuts so far.
+
+**Lumpy profit** (`monthly_lumpiness`). Each month's profit is multiplied by an
+independent factor with mean exactly 1 and the entered standard deviation (0.5:
+months typically within 50% of the average; 1.0 for work paid in a few large
+invoices). The factor is lognormal, so no month pays exactly nothing, and it is
+limited to twelve average months in one month. The expected total of a year is
+unchanged. Measured for the same person (20,000 paths): at 0.5 a year's total
+varies by 14% (the entered figure over the square root of twelve) and lifetime
+profit is within 4.4% of the amount entered on 90% of paths; at 1.0 the monthly
+spread is 0.99 after the limit, a year's total varies by 29%, one month in ten
+pays under a quarter of the average, and lifetime profit is between 92% and 109%
+on 90% of paths. Median terminal net worth moves by 0.3%: this option matters for
+cash flow within a year, not for the plan.
+
+Both options draw from a stream of their own per income (two numbers a month,
+whatever the state of the business), so switching either on moves nothing else:
+pay, layoffs, markets, lifespans and health are the same bits.
+
+**Fat tails for a listed employer** (`tails: fat` on a grant's `company`). The
+company's own monthly factor is the fat one of the portfolio's single stock
+(section 2.11): the exponential of a Student-t with four degrees of freedom,
+limited to eight standard deviations and a factor of five, with mean exactly 1
+and the standard deviation of the bell-curve factor it replaces. A month's own
+move of more than four standard deviations happens about 5 times in 1,000 months
+against 8 in 100,000. The expected price and its volatility are unchanged.
+Measured for an employee on $100,000 with an $80,000 grant and $20,000 a year of
+refresh grants over 30 years, typical job risk (20,000 paths): lifetime pay and
+equity average 1.12 times thirty salaries either way (5th percentile 0.76, 95th
+1.58).
+
+**Ruin** (`ruin`). With `by_volatility` the shares have a chance each year of
+becoming worthless for good, read from the stock's own volatility exactly as the
+portfolio's single stock reads it (0.3% a year at 25% company-specific volatility,
+1% at 35%, 3% at 50% and above); `stated` gives the chance directly. In every
+other month the return is raised by the same odds, so the expected price is
+unchanged and a grant already made has the same expected value. What is not kept
+is what a ruined employer would have granted later: unvested shares are worth
+nothing and refresh grants stop until the person is laid off and rehired, when
+the stock starts again as a new employer's. For the same employee with a stock of
+35% volatility (0.5% a year) lifetime pay and equity average 1.114 against 1.122;
+at 60% volatility (3% a year) 1.079 against 1.122. Nothing happens to a job that
+has not started yet. The shares already vested and kept in the portfolio follow
+the portfolio's own single-stock setting, which is a separate process and does
+not know about a ruin here.
+
+**The job follows the share price** (`layoff_link`). The research note's rule: the
+monthly chance of a layoff is three times as high while the employer's shares
+have lost more than 40% over the last twelve months for reasons of the company's
+own (the market's part is taken out), and if the shares become worthless the job
+is lost that month. The comparison uses the price history up to the month before
+and the job's own layoff number, so no random number is added or moved. This is
+not mean-preserving: it adds layoffs, and they come when the unvested shares are
+worth least. It has no effect when the job's risk level is `none` or career risk
+is off. How much it adds depends on how volatile the stock is, because a 40% fall
+is rare for a steady company and common for a wild one: a stock of 35% volatility
+is in that state about 4% of the time, one of 60% about a quarter of the time.
+Measured for the same
+employee (20,000 paths): at 35% volatility layoffs per career rise from 1.93 to
+2.08 with the link alone and to 2.23 with ruin as well, and lifetime pay and
+equity fall from 1.122 to 1.105 times thirty salaries; at 60% volatility layoffs
+rise to 2.88 and to 3.86, and lifetime pay and equity fall to 1.023 (5th
+percentile 0.65 against 0.75). The multiplier and the threshold are the research
+note's judgement, not estimates.
+
+**When a private company has its outcome** (`exit_timing: lognormal`). By default
+the outcome has the same chance every year (12%), so the single most likely year
+is the first and one company in eight has its outcome within twelve months. With
+`lognormal` the wait follows the research note's own equation: a lognormal with a
+median you state (5 years by default; about 7 for a company at seed or series A,
+3 for a late-stage one) and a log standard deviation of 0.5. The chance of the
+outcome in a month is that distribution's hazard: almost nothing in the first
+year (0.06% of companies), 3% within two years, half by the median, 92% within
+twice the median. Recession months stop the clock, as they block the outcome by
+default. The kinds of outcome and their sizes are untouched, so the expected
+payout per share is the same; what changes is when it arrives, and with it how
+many shares have vested by then. Measured for an employee with an $80,000 grant
+and $20,000 a year of refresh grants at a company that fails half the time
+(20,000 paths): a payout has arrived within one, two, five and ten years on 0.0%,
+1.1%, 18% and 42% of paths against 5.2%, 9.9%, 21% and 33%; over 30 years 50%
+against 48% (under the default 5% of companies still have no outcome after 30
+years). Equity received over 30 years averages $455,000 against $439,000 (4%
+more, because later outcomes find more shares vested and none are left waiting).
+
+**How large a private outcome can be** (`exit_size: pareto_tail`). By default a
+large outcome pays between 4 and 20 times the paper value, every multiple in that
+range equally likely on a ratio scale, and nothing can pay more. Venture outcomes
+do not stop at 20 times: the distribution quoted in the research note falls off
+like a power law. With `pareto_tail` the large class pays a Pareto multiple from
+4 times, cut off at 200 times, whose index (1.55, close to the 1.4 that
+distribution implies) is solved so that the average multiple of the class is
+exactly the default's 9.94. The chance of each kind of outcome, the other kinds
+and the expected payout are unchanged; inside the large class the median falls
+from 8.9 to 6.2 times and one outcome in twelve pays more than 20 times. On
+paths, the same companies have the same kind of outcome in the same month.
+Measured for the same employee (20,000 paths): the 99th percentile of equity
+received falls from $3.5 million to $3.0 million and the largest single path
+rises from $11 million to $65 million; the mean is $446,000 against $439,000,
+inside the sampling error of a tail this heavy (about 2%).
+
+The five employer-stock settings draw nothing: each reads a number the job draws
+every month anyway (for a listed company the liquidity number, which the default
+discards). Markets, lifespans, health and business profit are the same bits with
+them on, and so is every layoff unless the link is on.
+
+**Effect on plans.** For the demo household with business income (the side
+hustle and later consulting), switching closures on at the defaults lowers
+success from 92.7% to 90.2% and median terminal net worth from $1.01 million to
+$0.92 million, and moves the median age of financial independence from 47.7 to
+49.8; lumpiness at 1.0 leaves all three where they were (92.6%). For the demo
+household with employer stock, fat tails leave success at 83.7%; a 4% yearly ruin
+chance gives 83.9% and with the link 84.1% (10,000 paths each, same seed; the
+standard error of each difference is a few tenths of a point). Success does not
+fall there because that household retires when it is funded: a lost job delays
+retirement (the median age of financial independence moves from 39.3 to 39.9)
+and lowers later spending rather than causing a shortfall. The third
+demo household has neither kind of income and is unchanged.
 
 ## 7. Spending
 
@@ -1041,7 +1206,10 @@ loss events are on, while fat tails, the stock's stated hazard and the crypto
 presets reuse words that are drawn anyway; the career shapes of section 6
 (fat-tailed wage shocks, the two-part pay cut, the monthly job search) draw
 nothing extra either, reading words of the person's career stream that every job
-draws each month). The number of draws from
+draws each month; business closures and lumpy profit: two words a month per
+self-employment income from that income's own stream, whatever the state of the
+business; the employer-stock options draw nothing extra, reading words of the
+equity stream that every job draws each month). The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
@@ -1169,7 +1337,10 @@ Stated plainly, roughly in order of how much they could move an answer.
 * The single stock's own shocks are lognormal and the custom asset's normal unless
   fat tails are asked for (2.11); the fat shapes are a judgement, not a fit.
   Volatility is constant within a path for every asset except crypto with cycles
-  on. Employer stock held as equity compensation always uses the normal shape.
+  on. Employer stock held as equity compensation uses the normal shape and has no
+  ruin hazard unless its own options are set (section 6); a ruin there does not
+  reach shares already vested and kept, which follow the portfolio's single
+  stock.
 
 **Taxes**
 
@@ -1216,6 +1387,16 @@ Stated plainly, roughly in order of how much they could move an answer.
   earnings or duration data. Even with them on there are no voluntary job changes,
   the passing wage shock stays normal, and the variance of wage shocks does not
   change over the business cycle.
+* By default a self-employment income never closes and pays the same every month
+  of a year, an employer's stock cannot collapse and says nothing about the job,
+  and a private company's outcome is most likely in its first year and capped at
+  20 times paper value. Opt-in settings address each (section 6). Their numbers
+  are judgements: the closure chances are not fitted to business-survival data,
+  and the link between a share price and a layoff is the research note's rule of
+  thumb. Even with them on, a closed business does not become a job, a restart is
+  the same income at a lower level, a private company's paper value does not move
+  before its outcome, and there are no secondary sales, lock-ups or liquidation
+  preferences.
 * The lifecycle wage curve falls 15 to 22% in real terms from 45 to 65, which
   reflects the data (including shorter hours) but will understate pay for someone
   who stays full-time in a stable job; use the flat profile.
