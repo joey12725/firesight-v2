@@ -1,5 +1,5 @@
 // Import and export of plans as JSON files.
-import { EngineError, migrateV1, normalize } from '@/engine';
+import { EngineError, compactProfile, migrateV1, normalize } from '@/engine';
 import type { Profile } from '@/engine/types';
 import type { RunSettings, Scenario } from './profile-store';
 
@@ -58,7 +58,7 @@ export function parsePlan(text: string): ImportedPlan {
 }
 
 export function planFileText(profile: Profile, scenarios: Scenario[], run: RunSettings): string {
-  const withRun: Profile = { ...profile, simulation: { ...profile.simulation, ...run } };
+  const withRun: Profile = { ...compactProfile(profile), simulation: { ...profile.simulation, ...run } };
   // Without scenarios, write a bare profile: the same format the CLI and examples use.
   const content = scenarios.length === 0 ? withRun : ({ firesight: 2, profile: withRun, scenarios, run } satisfies PlanFile);
   return `${JSON.stringify(content, null, 2)}\n`;

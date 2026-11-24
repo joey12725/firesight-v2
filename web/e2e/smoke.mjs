@@ -38,7 +38,7 @@ try {
 
   await page.getByRole('heading', { name: /When can work become optional/ }).waitFor();
   ok('app loads and wasm initialises (landing lists the demo households from the engine)');
-  expect((await page.getByTestId(/^demo-/).count()) === 3, 'expected three demo households');
+  expect((await page.getByTestId(/^demo-/).count()) === 4, 'expected four demo households');
   await page.screenshot({ path: `${shots}/01-landing-light.png` });
 
   await page.getByTestId('demo-dual-income-family').click();
@@ -249,7 +249,7 @@ try {
 
   // Every editor section, on every demo: expand everything, add one of each kind of
   // thing, and require that the engine accepts each addition without errors.
-  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord']) {
+  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord', 'full-life']) {
     // A fresh browser profile each time, so the landing state is shown.
     const tour = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const t = await open(tour, base);
@@ -270,7 +270,7 @@ try {
       const errors = await t.locator('li button:has(svg.text-bad)').allInnerTexts();
       expect(!/\d+ to fix/.test(text), `${slug}: adding ${what} left validation errors: ${errors.join(' | ')}`);
     };
-    for (const name of ['Add a child', 'Job', 'Self-employment', 'Pension', 'Annuity', 'Other', 'Add a grant', 'Add a budget line', 'Cash', 'Taxable', 'Pre-tax', 'Roth', 'HSA', 'Home', 'Rental', 'Vacation home', 'Add a debt']) {
+    for (const name of ['Add a child', 'Job', 'Self-employment', 'Pension', 'Annuity', 'Other', 'Add a grant', 'Add a budget line', 'Cash', 'Taxable', 'Pre-tax', 'Roth', 'HSA', 'Home', 'Rental', 'Vacation home', 'Add a debt', 'Add a vehicle', 'Add a parent', 'Add a policy']) {
       await t.getByRole('button', { name, exact: true }).first().click();
       await noErrors(name);
     }
@@ -279,13 +279,22 @@ try {
       await t.getByRole('dialog', { name: 'Add a life event' }).getByRole('button', { name: new RegExp(`^${kind}`) }).click();
       await noErrors(`event "${kind}"`);
     }
-    for (const kind of ['Crash at retirement', 'Lost decade', 'Stagflation']) {
+    // A divorce needs a partner to leave.
+    await t.getByRole('button', { name: 'Add a life event' }).click();
+    const divorce = t.getByRole('dialog', { name: 'Add a life event' }).getByRole('button', { name: /^Divorce/ });
+    const couple = await t.evaluate(() => window.__firesight.plan.getState().profile.household.people.length > 1);
+    expect((await divorce.isDisabled()) === !couple, `${slug}: a divorce should be offered exactly when there are two adults`);
+    if (couple) {
+      await divorce.click();
+      await noErrors('event "Divorce"');
+    } else await t.keyboard.press('Escape');
+    for (const kind of ['Crash at retirement', 'Lost decade', 'Stagflation', 'A historical episode', 'Lost generation']) {
       await t.getByRole('button', { name: 'Add a stress test' }).click();
       await t.getByRole('dialog', { name: 'Add a stress test' }).getByRole('button', { name: new RegExp(`^${kind}`) }).click();
       await noErrors(`stress test "${kind}"`);
     }
     // Every choice of the main unions.
-    for (const [label, count] of [['Retire', 5], ['Spending rule', 6], ['Withdrawal order', 3], ['How futures are generated', 4], ['Glide path', 4], ['Tax model', 3], ['Lifespans', 2]]) {
+    for (const [label, count] of [['Retire', 5], ['Spending rule', 6], ['Withdrawal order', 3], ['How futures are generated', 5], ['Glide path', 4], ['Tax model', 3], ['Lifespans', 2]]) {
       const select = t.getByLabel(label, { exact: true });
       const values = await select.locator('option:not([disabled])').evaluateAll((os) => os.map((o) => o.value));
       expect(values.length === count, `${slug}: ${label} should offer ${count} choices, has ${values.length}`);
@@ -294,6 +303,58 @@ try {
         await noErrors(`${label} = ${v}`);
       }
     }
+    // Optional realism: open every folded group (the additions above brought more), then work every control in them.
+    // Each choice of each select and segmented control, and each switch on, must be accepted by the engine and
+    // leave a plan it can simulate. Controls that appear as others are switched on are reached on later passes.
+    await t.getByLabel('Retire', { exact: true }).selectOption('when_funded');
+    await t.getByLabel('How futures are generated', { exact: true }).selectOption('bootstrap');
+    await t.getByLabel('Tax model', { exact: true }).selectOption('us_current_law');
+    await t.getByLabel('Lifespans', { exact: true }).selectOption('stochastic');
+    const worked = new Set();
+    let groups = 0;
+    for (let pass = 0; pass < 4; pass++) {
+      while (await closedItems.count()) await closedItems.first().click();
+      while (await closedDetails.count()) await closedDetails.first().click();
+      groups = await t.locator('.realism').count();
+      const controls = await t.locator('.realism [data-path]').evaluateAll((nodes) =>
+        nodes.flatMap((n) => {
+          const path = n.getAttribute('data-path');
+          if (n.querySelector('[data-path]')) return [];
+          if (n.querySelector('[role="switch"]')) return [{ path, kind: 'switch' }];
+          if (n.querySelector('[role="radiogroup"]')) return [{ path, kind: 'radio', n: n.querySelectorAll('[role="radio"]').length }];
+          const select = n.querySelector('select');
+          return select && !n.querySelector('input') ? [{ path, kind: 'select', values: [...select.options].filter((o) => !o.disabled).map((o) => o.value) }] : [];
+        }),
+      );
+      let fresh = 0;
+      for (const c of controls) {
+        if (worked.has(c.path)) continue;
+        worked.add(c.path);
+        fresh++;
+        const node = t.locator(`.realism [data-path="${c.path}"]`).first();
+        if (c.kind === 'switch') {
+          const sw = node.locator('[role="switch"]').first();
+          if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
+          await noErrors(`${c.path} on`);
+        } else if (c.kind === 'radio') {
+          // Every choice, ending on the last (the non-default one).
+          for (let i = 0; i < c.n; i++) {
+            await node.locator('[role="radio"]').nth(i).click();
+            await noErrors(`${c.path} choice ${i + 1}`);
+          }
+        } else {
+          for (const v of [...c.values.slice(1), ...c.values.slice(0, 1), ...c.values.slice(-1)]) {
+            await node.locator('select').first().selectOption(v);
+            await noErrors(`${c.path} = ${v}`);
+          }
+        }
+      }
+      if (fresh === 0) break;
+    }
+    expect(groups >= 20, `${slug}: expected the optional realism groups in every section, found ${groups}`);
+    const used = await t.evaluate(() => window.__firesight.features?.(window.__firesight.plan.getState().profile) ?? []);
+    ok(`${slug}: ${worked.size} optional realism controls in ${groups} groups worked; ${used.length} of 50 features on at the end`);
+
     // Capture the whole editor column at its full height.
     await t.evaluate(() => {
       const scroller = document.querySelector('[data-section]')?.parentElement;

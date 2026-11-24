@@ -106,6 +106,19 @@ function complete<T>(profile: T): T {
   return completeProfile((cachedSchema ??= schema()), profile);
 }
 
+/**
+ * The profile as the engine writes it, for files and share links: the optional realism
+ * fields that hold their defaults are left out, so a plan that uses none of them is
+ * written exactly as it was before they existed. Reading it back completes it again.
+ */
+export function compactProfile(profile: Profile): Profile {
+  try {
+    return call<PatchResult>(() => wasm.applyPatch(text(profile), '[]')).profile;
+  } catch {
+    return profile;
+  }
+}
+
 export function defaultProfile(): Profile {
   return complete(call<Profile>(() => wasm.defaultProfile()));
 }

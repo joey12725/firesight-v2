@@ -143,10 +143,37 @@ function PersonRealism({ path, person }: { path: string; person: Person }) {
   );
 }
 
+/** Who takes the first leave. With a second leave in the plan, that one goes to the other parent, so it follows. */
+function LeaveTaker({ path, child }: { path: string; child: Child }) {
+  const people = usePeople();
+  const edit = useEdit();
+  const help = useHelp(`${path}/parental_leave/person`);
+  const issues = useIssues(`${path}/parental_leave/person`);
+  if (people.length < 2) return null;
+  return (
+    <Field label="Who takes it" help={help} issues={issues}>
+      {({ id, invalid }) => (
+        <span data-path={`${path}/parental_leave/person`} className="block">
+          <Select
+            id={id}
+            invalid={invalid}
+            value={String(child.parental_leave?.person ?? 0)}
+            options={people}
+            onChange={(v) => {
+              const ops = [set(`${path}/parental_leave/person`, Number(v))];
+              if (child.second_parental_leave) ops.push(set(`${path}/second_parental_leave/person`, Number(v) === 0 ? 1 : 0));
+              edit(ops, { label: 'Change who takes parental leave' });
+            }}
+          />
+        </span>
+      )}
+    </Field>
+  );
+}
+
 function LeaveFields({ path }: { path: string }) {
   return (
     <>
-      <PersonField path={`${path}/person`} label="Who takes it" />
       <Row>
         <NumField path={`${path}/months`} label="Length" kind="months" suffix="mo" />
         <PercentField path={`${path}/pay_fraction`} label="Pay during leave" />
@@ -181,6 +208,7 @@ function ChildRealism({ path, child, planned }: { path: string; child: Child; pl
             </Row>
           )}
           <Optional path={`${path}/parental_leave`} label="Parental leave at the birth" present={child.parental_leave !== null} make={() => MAKE.parentalLeave(0)}>
+            <LeaveTaker path={path} child={child} />
             <LeaveFields path={`${path}/parental_leave`} />
           </Optional>
           {people.length > 1 && child.parental_leave !== null && (
@@ -235,7 +263,7 @@ export function DivorceTerms({ path, keepsHome }: { path: string; keepsHome: boo
       {homes && !keepsHome && <MoneyField path={`${path}/then_rent_monthly`} label="Rent after the sale" nullable placeholder="4% of the price a year" suffix="/mo" />}
       <Row>
         <MoneyField path={`${path}/legal_costs`} label="Legal costs" />
-        <PercentField path={`${path}/spending_factor`} label="Shared spending afterwards" />
+        <PercentField path={`${path}/spending_factor`} label="Spending after" />
       </Row>
       <Row cols={3}>
         <MoneyField path={`${path}/support/annual`} label="Support" suffix="/yr" />

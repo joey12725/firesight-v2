@@ -11,7 +11,7 @@ const base = process.env.BASE_URL ?? 'http://localhost:5173';
 const shots = resolve(dirname(fileURLToPath(import.meta.url)), 'shots');
 mkdirSync(shots, { recursive: true });
 const VIEWPORTS = { desktop: [1440, 900], laptop: [1024, 768], phone: [390, 844] };
-const slugs = (process.argv[2] ?? 'dual-income-family,early-career-saver,side-hustle-landlord').split(',');
+const slugs = (process.argv[2] ?? 'dual-income-family,early-career-saver,side-hustle-landlord,full-life').split(',');
 const viewports = (process.argv[3] ?? 'desktop,laptop,phone').split(',');
 const themes = (process.argv[4] ?? 'light,dark').split(',');
 const paths = Number(process.env.PATHS ?? 10000);

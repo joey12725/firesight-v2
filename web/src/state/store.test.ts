@@ -177,6 +177,24 @@ describe('files', () => {
     expect(parsed.simulation.seed).toBe(3);
   });
 
+  it('leaves the optional fields that hold their defaults out of the file, and reads them back', () => {
+    const profile = store().profile!;
+    // In the app every field is there...
+    expect(profile.spending.vehicles).toEqual([]);
+    expect(profile.retirement.home_equity_borrowing).toEqual({ type: 'none' });
+    // ...in the file only what the plan uses, so a plan without optional features is written as it always was.
+    const written = JSON.parse(planFileText(profile, [], { paths: 2_000, seed: 3 })) as { spending: Record<string, unknown>; retirement: Record<string, unknown> };
+    expect('vehicles' in written.spending).toBe(false);
+    expect('home_equity_borrowing' in written.retirement).toBe(false);
+    expect(store().edit([set('/retirement/qcd', true), append('/spending/vehicles', { id: 'car', name: 'Car', price: 30_000 })]).ok).toBe(true);
+    const text = planFileText(store().profile!, [], { paths: 2_000, seed: 3 });
+    expect((JSON.parse(text) as { retirement: { qcd?: boolean } }).retirement.qcd).toBe(true);
+    const back = parsePlan(text).profile;
+    expect(back.spending.vehicles).toHaveLength(1);
+    expect(back.spending.seasonality).toBe('off');
+    expect(back.household).toEqual(store().profile!.household);
+  });
+
   it('migrates a v1 file and reports what it assumed', () => {
     const v1 = readFileSync(new URL('../../../examples/v1/dual-income-family.json', import.meta.url), 'utf8');
     const plan = parsePlan(v1);

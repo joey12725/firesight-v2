@@ -152,6 +152,7 @@ function named(text: string, names: string[]): string {
 const bySpendingRule = (e: TraceEvent) => !/^(Unemployed|Back to work):/.test(e.label);
 
 const INHERITED_IRA = /^Inherited IRA distribution/;
+const NEW_VEHICLE = 'New vehicle';
 
 /** Titles, weight and tone for the life events the optional features log (the label is the sentence). */
 const LIFE_TURNS: { test: RegExp; title: string; priority: number; trouble?: boolean }[] = [
@@ -372,9 +373,14 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       case 'died':
         return void push(m, e.kind, label.replace(/ at \d+$/, ''), `${label}.`, 5);
       case 'windfall':
-        return void push(m, e.kind, label.length <= 22 ? label : 'Windfall', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, 3);
-      case 'major_expense':
+        // An inheritance already states its size ("Inheritance from Mom: $180k").
+        return void push(m, e.kind, label.length <= 22 ? label : /^Inheritance/.test(label) ? 'Inheritance' : /^Life insurance/.test(label) ? 'Life insurance pays' : 'Windfall', `${label} at ${who} ${ageOf(m)}${amount && !label.includes('$') ? `: ${amount}` : ''}.`, 3);
+      case 'major_expense': {
+        // A vehicle on a replacement cycle comes round every few years: marked, but told once in the narrative.
+        const vehicle = /^Replace vehicle: (.*)$/.exec(label)?.[1];
+        if (vehicle) return void push(m, e.kind, NEW_VEHICLE, `Replaces the ${vehicle.charAt(0).toLowerCase()}${vehicle.slice(1)} at ${who} ${ageOf(m)}${amount ? ` for ${amount}` : ''}.`, 1);
         return void push(m, e.kind, label.length <= 22 ? label : 'Major expense', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, 3);
+      }
       case 'career_break':
         return void push(m, e.kind, label.replace(/\s*\(.*\)$/, '').length <= 24 ? label.replace(/\s*\(.*\)$/, '') : 'Career break', `${label}, from ${who} ${ageOf(m)}.`, 3);
       case 'life_event': {
@@ -422,13 +428,18 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
 
   const byKind = (kind: TraceEventKind) => life.events.filter((e) => e.kind === kind);
   const tell = (kinds: TraceEventKind[], before: number, least = -Infinity) =>
-    life.events.filter((e) => kinds.includes(e.kind) && e.month < before && (e.kind !== 'child' || e.priority >= least)).forEach((e) => out.push({ text: e.detail, year: e.year }));
+    life.events.filter((e) => kinds.includes(e.kind) && e.month < before && e.title !== NEW_VEHICLE && (e.kind !== 'child' || e.priority >= least)).forEach((e) => out.push({ text: e.detail, year: e.year }));
 
   const fi = byKind('financially_independent')[0];
   const retired = byKind('retired')[0] ?? (fi?.title.includes('retires') ? fi : undefined);
   const turning = retired?.month ?? fi?.month ?? trace.months;
   // Working years: the things that happened on the way.
   tell(['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event', 'policy_change'], turning, 3);
+  const vehicles = life.events.filter((e) => e.title === NEW_VEHICLE);
+  if (vehicles.length > 0) {
+    const first = vehicles[0] as LifeEvent;
+    out.push({ text: vehicles.length === 1 ? first.detail : `A vehicle is replaced ${vehicles.length} times over the life, first at ${wholeAge(first.age)}.`, year: first.year });
+  }
   // The turns a life takes that the optional features add (a disability, a divorce, a failed business).
   life.events.filter((e) => e.kind === 'life_event' && e.priority >= 4 && e.month < turning).forEach((e) => out.push({ text: e.detail, year: e.year }));
 
@@ -463,7 +474,8 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
 
   // Retirement: what happened after.
   life.events
-    .filter((e) => e.priority > 0 && e.month >= turning && ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock', 'medicaid', 'policy_change', 'ltc_insurance', 'bereavement'].includes(e.kind) || (e.kind === 'life_event' && e.priority >= 4))
+    .filter((e) => e.priority > 0 && e.month >= turning && (['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock', 'medicaid', 'policy_change', 'ltc_insurance', 'bereavement'].includes(e.kind) || (e.kind === 'life_event' && e.priority >= 4)))
+    .filter((e) => e.title !== NEW_VEHICLE)
     .forEach((e) => out.push({ text: e.detail, year: e.year }));
 
   // The spending rule, in one sentence rather than one per adjustment.

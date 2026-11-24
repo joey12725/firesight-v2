@@ -129,6 +129,9 @@ describe('events of the optional realism features', () => {
     expect(find(life, 'Care at home')?.detail).toMatch(/^Daniel cares for person 1 at home|^Daniel cares for Priya at home/);
     expect(find(life, 'A parent needs care')).toBeDefined();
     expect(find(life, 'Panic sale')?.trouble).toBe(true);
+    expect(find(life, 'New vehicle')?.detail).toMatch(/^Replaces the family car at age \d+ for \$28k\.$/);
+    expect(find(life, 'Inheritance')?.detail).toMatch(/^Inheritance from Mom: \$180k at age \d+\.$/);
+    expect(find(life, 'Life insurance pays')?.detail).toMatch(/^Life insurance pays out: Term life at age \d+: \$500k\.$/);
     expect(find(life, 'Supports a child')?.detail).toMatch(/Mia needs support for 20 months at age \d+: \$12k a year\.$/);
   });
 
@@ -146,6 +149,10 @@ describe('events of the optional realism features', () => {
     expect(story).not.toMatch(/The spending rule/);
     expect(story).toMatch(/becomes disabled at 52\./);
     expect(story).not.toMatch(/health plan/);
+    // Each turn of the life is told once, and the vehicle cycle in one sentence.
+    const told = narrative(life, null).map((s) => s.text);
+    expect(new Set(told).size).toBe(told.length);
+    expect(told.filter((t) => /Replaces the/.test(t))).toHaveLength(1);
   });
 });
 

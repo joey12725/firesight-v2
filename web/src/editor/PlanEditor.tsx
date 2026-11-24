@@ -43,16 +43,27 @@ function useFocusPath(container: React.RefObject<HTMLElement | null>) {
     if (!focusPath) return;
     const ui = useUi.getState();
     ui.toggleSection(sectionForPath(focusPath), true);
-    // Wait for the section body to render.
-    const frame = requestAnimationFrame(() => {
+    const locate = () => {
       const nodes = [...(container.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [])];
-      const best = nodes
+      return nodes
         .filter((n) => focusPath === n.dataset.path || focusPath.startsWith(`${n.dataset.path}/`) || n.dataset.path?.startsWith(`${focusPath}/`))
         .sort((a, b) => (b.dataset.path?.length ?? 0) - (a.dataset.path?.length ?? 0))[0];
-      const target = best ?? container.current?.querySelector<HTMLElement>(`[data-section="${sectionForPath(focusPath)}"]`);
+    };
+    const section = () => container.current?.querySelector<HTMLElement>(`[data-section="${sectionForPath(focusPath)}"]`);
+    const show = (target: HTMLElement | null | undefined) => {
       target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       target?.querySelector<HTMLElement>('input, select, button')?.focus({ preventScroll: true });
       ui.setFocusPath(null);
+    };
+    // Wait for the section body to render.
+    let frame = requestAnimationFrame(() => {
+      const best = locate();
+      if (best?.dataset.path === focusPath) return show(best);
+      // The field may be in a folded group of optional realism: open those around it and look again.
+      const folded = (best ?? section())?.querySelectorAll<HTMLElement>('.realism > button[aria-expanded="false"]');
+      if (!folded?.length) return show(best ?? section());
+      folded.forEach((button) => button.click());
+      frame = requestAnimationFrame(() => show(locate() ?? section()));
     });
     return () => cancelAnimationFrame(frame);
   }, [focusPath, container]);

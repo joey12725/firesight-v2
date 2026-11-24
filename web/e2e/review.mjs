@@ -15,7 +15,7 @@ mkdirSync(out, { recursive: true });
 const LAYOUTS = { wide: [1440, 900, false], desktop: [1440, 900, true], laptop: [1024, 768, true], phone: [390, 844, true] };
 const ALL_VIEWS = ['overview', 'outcomes', 'cash-flow', 'what-matters', 'scenarios', 'life-stories', 'assumptions'];
 const arg = (i, d) => (process.argv[i] && process.argv[i] !== '-' ? process.argv[i] : d).split(',');
-const slugs = arg(2, 'dual-income-family,early-career-saver,side-hustle-landlord');
+const slugs = arg(2, 'dual-income-family,early-career-saver,side-hustle-landlord,full-life');
 const views = arg(3, ALL_VIEWS.join(','));
 const layouts = arg(4, 'wide,desktop,laptop,phone');
 const themes = arg(5, 'light,dark');

@@ -204,7 +204,7 @@ export function Realism({ summary, on = 0, children }: { summary: string; on?: n
     <Disclosure
       className="realism"
       summary={
-        <span data-realism={summary}>
+        <span data-realism={summary} className="text-left">
           {summary}
           {on > 0 && <span className="num ml-1.5 rounded-full bg-accent-soft px-1.5 py-px text-2xs font-medium text-accent-ink">{on} on</span>}
         </span>

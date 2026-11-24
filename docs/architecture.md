@@ -530,6 +530,19 @@ function taxDetail(profileJson: string, year: number, inputsJson: string): strin
 
 A profile with no `start` starts in the current month of the caller's clock.
 
+Profiles written by the engine (`applyPatch`, `defaultProfile`, `exampleProfiles`,
+`migrateV1`) leave out the optional realism fields of methodology section 18 while
+they hold their defaults, so a plan that uses none of them is written exactly as it
+was before they existed. A patch addresses fields of the document it is given, so an
+`append` to a list that was left out fails. The web app therefore completes every
+profile as it comes out of the engine (`web/src/engine/complete.ts`: a table of the
+omitted defaults, checked by `complete.test.ts` against the schema and against the
+engine), works and patches on the complete form, and writes the compact form again to
+plan files and share links. In the editor these features sit in folded "optional"
+groups in the section each belongs to; `web/src/editor/realism.ts` lists all fifty with
+their sections, and `realism.test.ts` applies what the editor writes for each to a real
+plan.
+
 The web app owns a pool of `navigator.hardwareConcurrency - 1` workers. A run is split
 into chunks of ~500 paths handed out to idle workers; results merge on arrival, so
 charts sharpen progressively and a new edit cancels the stale run. Solver, sensitivity

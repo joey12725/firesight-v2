@@ -43,7 +43,7 @@ export function PropertyCostFields({ path }: { path: string }) {
         <Row>
           <ChoiceField
             path={`${path}/assessment`}
-            label="Property tax is assessed on"
+            label="Tax assessed on"
             options={[
               { value: 'market', label: 'Market value' },
               { value: 'capped', label: 'A capped value' },
@@ -241,16 +241,16 @@ export function PropertySection() {
             <Row>
               <ChoiceField
                 path="/debt_policy/mortgage_prepayment"
-                label="Spare cash pays the mortgage down"
+                label="Prepay the mortgage"
                 options={[
                   { value: 'never', label: 'Never' },
-                  { value: 'when_rate_above', label: 'When its rate beats safe returns' },
+                  { value: 'when_rate_above', label: 'When its rate is high' },
                 ]}
                 read={(v) => (v as typeof profile.debt_policy.mortgage_prepayment).type}
                 write={(type) => ({ type })}
               />
               {profile.debt_policy.mortgage_prepayment.type === 'when_rate_above' && (
-                <PercentField path="/debt_policy/mortgage_prepayment/real_rate" label="Real rate to beat" nullable placeholder="Treasury yield after tax" />
+                <PercentField path="/debt_policy/mortgage_prepayment/real_rate" label="Real rate to beat" nullable placeholder="Automatic" />
               )}
             </Row>
           </Realism>

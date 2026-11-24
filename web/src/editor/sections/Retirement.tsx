@@ -104,7 +104,7 @@ export function RetirementSection() {
               <Optional path={`${t}/confirmation`} label="Wait until the plan stays funded" present={trigger.confirmation !== null} make={MAKE.confirmation}>
                 <Row>
                   <NumField path={`${t}/confirmation/months`} label="Funded for" kind="months" suffix="mo in a row" />
-                  <PercentField path={`${t}/confirmation/max_equity_drawdown`} label="Stocks no more than this below their peak" />
+                  <PercentField path={`${t}/confirmation/max_equity_drawdown`} label="Largest fall in stocks" />
                 </Row>
               </Optional>
               <Optional path={`${t}/one_more_year`} label="May work one more year" present={trigger.one_more_year !== null} make={MAKE.oneMoreYear}>
@@ -139,7 +139,7 @@ export function RetirementSection() {
         <Realism summary="Going back to work" on={work ? 1 : 0}>
           <Optional path="/retirement/return_to_work" label="Look for work again if savings fall short" present={work !== null} make={MAKE.returnToWork}>
             <Row>
-              <PercentField path="/retirement/return_to_work/funded_ratio_below" label="When savings cover less than" />
+              <PercentField path="/retirement/return_to_work/funded_ratio_below" label="Savings cover under" />
               <NumField path="/retirement/return_to_work/until_age" label="Not from age" kind="years" />
             </Row>
             <Row>
@@ -270,7 +270,7 @@ export function RetirementSection() {
                     read={(v) => (v as typeof borrowing.open_when).type}
                     write={MAKE.reverseOpen}
                   />
-                  {borrowing.open_when.type === 'savings_below' && <NumField path={`${b}/open_when/years`} label="Below this many years of spending" step={1} suffix="yrs" />}
+                  {borrowing.open_when.type === 'savings_below' && <NumField path={`${b}/open_when/years`} label="Years of spending left" step={1} suffix="yrs" />}
                 </Row>
                 <Row>
                   <PercentField path={`${b}/lender_margin`} label="Lender’s margin" />

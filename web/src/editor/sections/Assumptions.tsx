@@ -242,15 +242,15 @@ export function AssumptionsSection() {
             </>
           )}
           <Optional path="/assumptions/taxes/policy_risk" label="Policy may change along the way" present={taxes.policy_risk !== null} make={MAKE.policyRisk}>
-            <Row cols={3}>
+            <Row>
               <PercentField path="/assumptions/taxes/policy_risk/ss_haircut_probability" label="Chance of a benefit cut" />
               <PercentField path="/assumptions/taxes/policy_risk/ss_haircut_factor" label="Share still paid" />
-              <NumField path="/assumptions/taxes/policy_risk/earliest_year" label="Not before" kind="integer" />
             </Row>
             <Row>
               <PercentField path="/assumptions/taxes/policy_risk/tax_increase_probability" label="Chance of a tax rise" />
-              <PercentField path="/assumptions/taxes/policy_risk/tax_increase_points" label="Points added to each rate" />
+              <PercentField path="/assumptions/taxes/policy_risk/tax_increase_points" label="Points added" />
             </Row>
+            <NumField path="/assumptions/taxes/policy_risk/earliest_year" label="No change before the year" kind="integer" />
           </Optional>
         </Realism>
       </Group>
