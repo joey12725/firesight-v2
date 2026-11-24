@@ -71,7 +71,7 @@ export const YEAR_SERIES = [
 ] as const;
 export type YearSeries = (typeof YEAR_SERIES)[number];
 
-/** One number per path, in the engine's order. `coast_fi_age` was appended in accumulator version 3, the last nine in version 5. */
+/** One number per path, in the engine's order. `coast_fi_age` was appended in accumulator version 3, nine more in version 5, `medicaid_age` with the optional realism features. */
 // prettier-ignore
 export const PATH_SCALARS = [
   'fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement',
@@ -80,7 +80,7 @@ export const PATH_SCALARS = [
   'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_retired', 'years_below_90',
   'years_below_75', 'years_depleted', 'coast_fi_age', 'extra_spending_ratio', 'initial_withdrawal_rate', 'home_sale_age',
   'plan_delivered_share', 'social_security_claim_age_0', 'social_security_claim_age_1', 'person_retirement_age_0',
-  'person_retirement_age_1', 'mortgage_payoff_age',
+  'person_retirement_age_1', 'mortgage_payoff_age', 'medicaid_age',
 ] as const;
 export type PathScalar = (typeof PATH_SCALARS)[number];
 
@@ -130,6 +130,8 @@ export interface Headline {
   initial_withdrawal_rate: Spread;
   /** Share of all paths on which a home was sold as a last resort. These paths are not counted as depleted. */
   home_sale_rate: Estimate;
+  /** Share of all paths on which Medicaid paid for long-term care after savings were spent down. Zero unless `spending.healthcare.medicaid` is on. */
+  medicaid_rate: Estimate;
   /** Share of retired path-years spent cutting or depleted. */
   years_cutting_share: number | null;
   median_lifetime_tax: number | null;
@@ -373,7 +375,8 @@ export const TRACE_EVENT_KINDS = [
   'bought_home', 'sold_home', 'relocated', 'windfall', 'major_expense', 'expense_shock',
   'roth_conversion', 'spending_cut', 'spending_raise', 'depleted', 'recovered', 'claimed_social_security',
   'health_coverage', 'long_term_care', 'rmd_started', 'debt_paid_off', 'child', 'partner_joined',
-  'died', 'market', 'life_event', 'other',
+  'died', 'tax_loss_harvest', 'qualified_charitable_distribution', 'policy_change', 'market', 'life_event', 'other',
+  'health_state', 'bereavement', 'medicaid', 'ltc_insurance',
 ] as const;
 export type TraceEventKind = (typeof TRACE_EVENT_KINDS)[number];
 

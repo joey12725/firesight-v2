@@ -65,7 +65,7 @@ export const readLevels = (h: Headline): Levels => Object.fromEntries(METRIC_IDS
 
 // ---- paired effects -----------------------------------------------------------------
 
-/** The parts of a `Comparison` this view reads (a full one carries 36 scalars of 100 dots each). */
+/** The parts of a `Comparison` this view reads (a full one carries 37 scalars of 100 dots each). */
 export interface PairedLite {
   paths: number;
   outcomes: OutcomeComparison[];

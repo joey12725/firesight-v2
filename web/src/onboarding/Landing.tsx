@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { exampleProfiles } from '@/engine';
 import { openHousehold, useHouseholds } from '@/state/households';
 import { useUi } from '@/state/ui-store';
-import { Button, Icon, type IconName } from '@/ui';
+import { Button, Icon, cx, type IconName } from '@/ui';
 import { METHODOLOGY_URL, openBlank, openExample } from '@/shell/actions';
 import { askAssistant } from '@/assistant';
 
@@ -67,8 +67,8 @@ export function Landing() {
           <h2 id="demo-title" className="eyebrow">
             Explore a demo household
           </h2>
-          <p className="mt-1 text-sm text-ink-2">Three made-up households with real detail. Open one to see every view on a finished plan, then change anything: it re-runs as you type.</p>
-          <ul className="mt-3 grid gap-3 md:grid-cols-3">
+          <p className="mt-1 text-sm text-ink-2">Made-up households with real detail. Open one to see every view on a finished plan, then change anything: it re-runs as you type.</p>
+          <ul className={cx('mt-3 grid gap-3', examples.length % 3 === 0 ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
             {examples.map((ex) => (
               <li key={ex.slug}>
                 <button

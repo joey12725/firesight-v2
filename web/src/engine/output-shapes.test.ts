@@ -28,11 +28,11 @@ function run(profileJson: string, paths = PATHS) {
 }
 
 describe('engine output matches the TypeScript types', () => {
-  it('has the three demo households', () => {
-    expect(examples.map((e) => e.slug).sort()).toEqual(['dual-income-family', 'early-career-saver', 'side-hustle-landlord']);
+  it('has the four demo households', () => {
+    expect(examples.map((e) => e.slug).sort()).toEqual(['dual-income-family', 'early-career-saver', 'full-life', 'side-hustle-landlord']);
   });
 
-  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord']) {
+  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord', 'full-life']) {
     describe(slug, () => {
       it('Summary, digest, PathTrace, PlanPreview and Comparison conform', () => {
         const profile = examples.find((e) => e.slug === slug)?.profile;

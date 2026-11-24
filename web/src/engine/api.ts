@@ -1,6 +1,7 @@
 // Typed wrappers for the wasm calls that run on the main thread. Call `initEngine()`
 // (and await it) once before anything else here.
 import init, * as wasm from './pkg/firesight_wasm.js';
+import { completeProfile } from './complete';
 import { toEngineError } from './errors';
 import type { Comparison, PlanPreview, Summary, SummaryDigest } from './output-types';
 import type { Aggregator } from './pool';
@@ -64,7 +65,9 @@ export interface PatchResult extends Report {
  * cannot be applied or the result does not match the schema.
  */
 export function applyPatch(profile: Profile | string, ops: PatchOp[]): PatchResult {
-  return call(() => wasm.applyPatch(text(profile), JSON.stringify(ops)));
+  const result = call<PatchResult>(() => wasm.applyPatch(text(profile), JSON.stringify(ops)));
+  complete(result.profile);
+  return result;
 }
 
 /** Normalises any profile-shaped JSON through the engine (fills every default). */
@@ -79,7 +82,9 @@ export interface MigrationResult {
 }
 
 export function migrateV1(v1Json: string): MigrationResult {
-  return call(() => wasm.migrateV1(v1Json));
+  const result = call<MigrationResult>(() => wasm.migrateV1(v1Json));
+  complete(result.profile);
+  return result;
 }
 
 export function levers(profile: Profile | string): Lever[] {
@@ -90,12 +95,25 @@ export function schema(): unknown {
   return call(() => wasm.schema());
 }
 
+let cachedSchema: unknown;
+
+/**
+ * The engine omits the optional realism fields while they hold their defaults; the app
+ * reads and patches the complete form, so every profile the engine hands back is
+ * completed here (see `complete.ts`).
+ */
+function complete<T>(profile: T): T {
+  return completeProfile((cachedSchema ??= schema()), profile);
+}
+
 export function defaultProfile(): Profile {
-  return call(() => wasm.defaultProfile());
+  return complete(call<Profile>(() => wasm.defaultProfile()));
 }
 
 export function exampleProfiles(): ExampleProfile[] {
-  return call(() => wasm.exampleProfiles());
+  const examples = call<ExampleProfile[]>(() => wasm.exampleProfiles());
+  for (const example of examples) complete(example.profile);
+  return examples;
 }
 
 /**

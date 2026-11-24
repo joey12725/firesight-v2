@@ -19,6 +19,8 @@ export type RunDigest = {
   seed: number;
   /** Share of lives that sell a home as a last resort. Those lives count as success, so it is reported with it. */
   home_sale: { p: number; lo: number; hi: number };
+  /** Share of lives in which Medicaid pays for long-term care after savings are spent down. Present only when it happens (spending.healthcare.medicaid is on). */
+  medicaid?: { p: number; lo: number; hi: number };
   /** Mean share of planned retirement spending delivered, every retired year weighing the same (never above 1). */
   plan_delivered: number | null;
   /** Median first-year withdrawal rate among lives that retire. */
@@ -32,6 +34,7 @@ export function digestRun(engine: Pick<EngineBridge, 'digest'>, run: RunRecord):
     seed: run.seed,
     ...engine.digest(run),
     home_sale: { p: round(h.home_sale_rate.value, 3) ?? 0, lo: round(h.home_sale_rate.lo, 3) ?? 0, hi: round(h.home_sale_rate.hi, 3) ?? 0 },
+    ...((h.medicaid_rate?.value ?? 0) > 0 ? { medicaid: { p: round(h.medicaid_rate.value, 3) ?? 0, lo: round(h.medicaid_rate.lo, 3) ?? 0, hi: round(h.medicaid_rate.hi, 3) ?? 0 } } : {}),
     plan_delivered: round(h.plan_delivered_share.value, 3),
     initial_withdrawal_rate_p50: round(h.initial_withdrawal_rate.p50, 4),
   };

@@ -1,4 +1,4 @@
-// The Life stories transforms, checked against real traces from the engine for the three
+// The Life stories transforms, checked against real traces from the engine for the
 // demo households, plus the lane layout used for the event labels.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -33,11 +33,121 @@ beforeAll(() => {
   // The engine is slow to warm up when the machine is busy.
 }, 120_000);
 
-const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord'];
+const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord', 'full-life'];
 const lives = (slug: string): { life: Life; summary: Summary }[] => {
   const f = fixtures.get(slug) as Fixture;
   return f.traces.map((trace) => ({ life: buildLife(trace, f.profile), summary: f.summary }));
 };
+
+describe('events of the optional realism features', () => {
+  // One event of each wording the engine logs, placed a year apart on a real life.
+  const LOGGED: [kind: PathTrace['events'][number]['kind'], label: string, amount: number | null][] = [
+    ['life_event', 'Person 1 becomes disabled at 52', 31_000],
+    ['life_event', 'Person 1 starts disability insurance (SSDI)', null],
+    ['life_event', 'Person 1 recovers and can work again', null],
+    ['life_event', 'Changed jobs from Acme (pay +12%)', 120_000],
+    ['life_event', 'Pay freeze at Acme: no raise this year', null],
+    ['life_event', 'Pay cut of 10% at Acme for nine months', null],
+    ['life_event', 'Involuntary retirement at 58: laid off from Acme and does not find work again', null],
+    ['life_event', 'Business failed: self-employment income of person 2 ends', null],
+    ['life_event', 'Divorce after 14 years of marriage: partner leaves with $412k', 412_000],
+    ['life_event', 'Major repair on Home', 18_000],
+    ['life_event', 'Insurance repriced: premiums up 15%', null],
+    ['life_event', 'Rent: lease not renewed, new lease at market (+6.5% after inflation)', null],
+    ['life_event', 'Home: adjustable rate reset from 5.25% to 7.25%, payment 2,840 a month', null],
+    ['life_event', 'Listed Home for sale: expected to close in 7 months at 4.0% below market', null],
+    ['life_event', 'Took a reverse mortgage on Home', 150_000],
+    ['life_event', 'Opened a home-equity line on Home', 90_000],
+    ['life_event', 'Cash-out refinance of Home at 6.75%', 80_000],
+    ['life_event', 'Person 1 looks for work again: savings cover 71% of the plan', 0.71],
+    ['life_event', 'Person 1 claims Social Security at 62.5: savings are nearly gone', 40_000],
+    ['life_event', 'Retirement postponed: stocks are 27% below their peak', 0.27],
+    ['life_event', 'Funded, but working one more year', null],
+    ['life_event', 'Inherited IRA distribution (9 more to come)', 12_000],
+    ['life_event', 'Inherited IRA distribution (8 more to come)', 12_000],
+    ['spending_cut', 'Unemployed: discretionary spending cut by 10%', null],
+    ['spending_raise', 'Back to work: discretionary spending restored', null],
+    ['expense_shock', 'Home repair', 40_000],
+    ['major_expense', 'Replace vehicle: Family car', 28_000],
+    ['child', 'Mia born (twins), 5 months later than planned', null],
+    ['child', 'Mia starts college: 5 years, aid 31% off the published price', null],
+    ['child', 'Mia needs support for 20 months', 12_000],
+    ['child', 'Children are on the health plan', 6_000],
+    ['career_break', 'Parental leave for Mia: person 2 (4 months)', null],
+    ['long_term_care', 'Mom needs care for 2.4 years; the household pays $7k a year', 7_000],
+    ['long_term_care', 'Person 2 cares for person 1 at home, half the hours, and keeps working', null],
+    ['windfall', 'Inheritance from Mom: $180k', 180_000],
+    ['windfall', 'Life insurance pays out: Term life', 500_000],
+    ['market', 'Panic sale: 50% of stocks moved to cash after a 31% fall', 20_000],
+    ['market', 'Back into stocks after 14 months in cash', null],
+    ['market', 'Lenders freeze home-equity lines', null],
+    ['tax_loss_harvest', 'Harvested a capital loss and stayed invested (basis reset)', 4_000],
+    ['tax_loss_harvest', 'Harvested a capital loss and stayed invested (basis reset)', 6_000],
+    ['qualified_charitable_distribution', 'Person 1 gives from the IRA as a qualified charitable distribution', 3_000],
+    ['policy_change', 'Policy risk: Social Security benefits cut to 77% of scheduled', 0.77],
+    ['policy_change', 'Policy risk: ordinary income tax rates rise 2.0 points', 0.02],
+    ['health_state', 'Person 1 health: chronic condition', null],
+    ['bereavement', 'Person 2 dies within six months of being widowed (bereavement effect)', null],
+    ['medicaid', "Savings spent down: Medicaid pays for person 1's care", null],
+    ['ltc_insurance', 'Long-term-care insurance starts paying for person 1', null],
+    ['ltc_insurance', "Person 2's long-term-care insurance lapses: the premium is unaffordable", null],
+    ['other', 'Saving paused: high-interest debt', null],
+  ];
+
+  const staged = () => {
+    const f = fixtures.get('dual-income-family') as Fixture;
+    const base = f.traces[0] as PathTrace;
+    const [y = 2026, m = 1] = base.start.split('-').map(Number);
+    // Consecutive harvests and inherited-IRA payouts fall in neighbouring years so they fold; everything else is a year apart.
+    const events = LOGGED.map(([kind, label, amount], i) => ({ kind, label, amount, month: `${y + 1 + Math.min(i, Math.floor(base.months / 12) - 3)}-${String(m).padStart(2, '0')}` }));
+    return buildLife({ ...base, events }, f.profile);
+  };
+  const find = (life: Life, title: string) => life.events.find((e) => e.title === title);
+
+  it('reads as plain sentences with short titles', () => {
+    const life = staged();
+    for (const e of life.events) {
+      expect(e.title.length, e.title).toBeLessThanOrEqual(26);
+      expect(e.detail, e.detail).not.toMatch(/NaN|undefined|null|[Pp]erson \d|Policy risk|\.\.$/);
+      expect(e.detail.trim(), e.detail).toMatch(/\.$/);
+      // An age the engine already wrote into the sentence is not said twice.
+      expect(e.detail, e.detail).not.toMatch(/at \d+(\.\d)?[:,]? .*at age \d+\.$|at \d+ at age/);
+    }
+    expect(find(life, 'Disability')?.detail).toMatch(/^Priya becomes disabled at 52\.$/);
+    expect(find(life, 'Disability')?.trouble).toBe(true);
+    expect(find(life, 'Forced to retire')?.detail).toMatch(/^Involuntary retirement at 58: laid off from Acme and does not find work again\.$/);
+    expect(find(life, 'Divorce')?.detail).toMatch(/partner leaves with \$412k at age \d+\.$/);
+    expect(find(life, 'Changes jobs')?.detail).toMatch(/^Changed jobs from Acme \(pay \+12%\) at age \d+\.$/);
+    expect(find(life, 'Mortgage rate resets')).toBeDefined();
+    expect(find(life, 'Claims early or late')?.detail).toMatch(/^Priya claims Social Security at 62\.5: savings are nearly gone\.$/);
+    expect(find(life, 'Tightens its belt')?.detail).toMatch(/^Discretionary spending cut by 10% while out of work, from age \d+\.$/);
+    expect(find(life, 'Home repair')?.detail).toMatch(/^Home repair: an unplanned expense of \$40k at age \d+\.$/);
+    expect(find(life, 'Benefits cut')?.detail).toMatch(/^The law changes: Social Security benefits cut to 77% of scheduled from age \d+\.$/);
+    expect(find(life, 'Taxes rise')).toBeDefined();
+    expect(find(life, 'Medicaid')?.detail).toMatch(/Medicaid pays for Priya's care at age \d+\.$/);
+    expect(find(life, 'Health changes')?.detail).toMatch(/^Priya’s health becomes: chronic condition at age \d+\.$/);
+    expect(find(life, 'Care at home')?.detail).toMatch(/^Daniel cares for person 1 at home|^Daniel cares for Priya at home/);
+    expect(find(life, 'A parent needs care')).toBeDefined();
+    expect(find(life, 'Panic sale')?.trouble).toBe(true);
+    expect(find(life, 'Supports a child')?.detail).toMatch(/Mia needs support for 20 months at age \d+: \$12k a year\.$/);
+  });
+
+  it('folds the yearly repeats and keeps them apart from the spending rule', () => {
+    const life = staged();
+    const count = (kind: string) => life.events.filter((e) => e.kind === kind).length;
+    expect(count('tax_loss_harvest')).toBe(1);
+    expect(find(life, 'Harvests tax losses')?.detail).toMatch(/^Realises \$10k of losses in the taxable account between ages \d+ and \d+, in 2 sales/);
+    expect(count('qualified_charitable_distribution')).toBe(1);
+    expect(life.events.filter((e) => e.title === 'Inherited IRA')).toHaveLength(1);
+    expect(find(life, 'Inherited IRA')?.detail).toMatch(/over 2 years/);
+    // Belt-tightening while out of work is not one of the spending rule's cuts.
+    expect(find(life, 'Spending cut')).toBeUndefined();
+    const story = narrative(life, null).map((s) => s.text).join(' ');
+    expect(story).not.toMatch(/The spending rule/);
+    expect(story).toMatch(/becomes disabled at 52\./);
+    expect(story).not.toMatch(/health plan/);
+  });
+});
 
 describe('buildLife on real traces', () => {
   for (const slug of SLUGS) {

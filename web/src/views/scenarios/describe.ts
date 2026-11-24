@@ -149,6 +149,13 @@ function allocation(v: Obj): string {
     .join(', ');
 }
 
+const EPISODE: Record<string, string> = {
+  great_depression1929: 'the Great Depression (1929 to 1945)',
+  stagflation1966: 'the stagflation of 1966 to 1982',
+  dot_com2000: 'the dot-com bust and its aftermath (2000 to 2013)',
+  financial2008: 'the financial crisis (2007 to 2013)',
+};
+
 /** Tagged objects the what-ifs write, in words. */
 function tagged(v: Obj, pattern: string, profile: Profile): string | null {
   const type = typeof v.type === 'string' ? v.type : null;
@@ -175,6 +182,8 @@ function tagged(v: Obj, pattern: string, profile: Profile): string | null {
   if (pattern.startsWith('/assumptions/market/stress')) {
     if (type === 'crash_at_retirement') return `stocks fall ${pct(Number(v.drawdown ?? 0.4), 0)} at retirement and take ${plural(Number(v.recovery_years ?? 5), 'year')} to recover`;
     if (type === 'lost_decade') return isObj(v.start) ? `ten years of flat stocks, ${when(v.start, profile)}` : 'ten years of flat stocks';
+    if (type === 'historical_episode') return `a replay of ${EPISODE[String(v.episode)] ?? 'a historical episode'}${isObj(v.start) ? `, ${when(v.start, profile)}` : ''}`;
+    if (type === 'lost_generation') return `${plural(Number(v.years ?? 20), 'year')} of stagnant stocks and falling prices${isObj(v.start) ? `, ${when(v.start, profile)}` : ''}`;
     if (type === 'stagflation') return `${plural(Number(v.years ?? 0), 'year')} of ${pct(Number(v.inflation ?? 0), 0)} inflation${isObj(v.start) ? `, ${when(v.start, profile)}` : ''}`;
   }
   if (pattern === '/portfolio/target') return allocation(v);
