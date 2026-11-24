@@ -12,9 +12,12 @@
 //! * the pay loss on returning is larger again by [`SCAR_MULTIPLIER`];
 //! * with a probability that rises with age ([`NEVER_AT_55`] plus [`NEVER_PER_YEAR`] for
 //!   each year older, at most [`NEVER_MAX`]) the laid-off worker never works again:
-//!   involuntary retirement. The person is retired on the spot (their jobs end, they
-//!   stop contributing), and if nobody else in the household is still working the
-//!   household retires the next month on what it has.
+//!   involuntary retirement. The person is retired on the spot (all their jobs end,
+//!   they stop contributing; self-employment of their own carries on under its own
+//!   settings), and if nobody else in the household still has a job or
+//!   self-employment the household retires the next month on what it has. Because the
+//!   job ends in the layoff month, unemployment insurance is not collected beyond that
+//!   month (not modelled).
 //!
 //! The combined effect at 60, in a normal labour market, is a median spell of
 //! `2.2 x 1.4 x 1.6 = 4.9` months and a mean pay loss of `0.08 x 1.5 x 1.5 = 18%`, and

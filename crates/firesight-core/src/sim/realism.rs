@@ -82,16 +82,24 @@ impl State {
         // Older workers laid off this month (F19).
         if let (Some(late), true) = (&jr.late_career, jm.laid_off) {
             let st = &mut self.jobs[j].st;
+            // The job step has already run the first month of the spell off
+            // `spell_months_left`; a spell of under a month ended in the same step
+            // (the worker is back at work and the scar is applied).
+            let still_out = matches!(st.employment, Employment::Unemployed { .. });
+            let served = if still_out { 1.0 } else { 0.0 };
             if let Some(o) = late.adjust(
                 climate.age,
-                st.spell_months_left,
+                st.spell_months_left + served,
                 st.pending_scar,
                 draw.u_never,
             ) {
-                st.spell_months_left = o.spell_months;
-                st.pending_scar = o.scar;
                 if o.never {
+                    // Not back at work after all.
+                    jm.rehired = false;
                     self.rz_never_works_again(plan, j, t, climate.age);
+                } else if still_out {
+                    st.spell_months_left = o.spell_months - served;
+                    st.pending_scar = o.scar;
                 }
             }
         }
