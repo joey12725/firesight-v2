@@ -213,14 +213,14 @@ fn defaults_need_no_extension_and_draw_nothing() {
 /// four standard deviations. Student-t(4) with unit variance is `T / sqrt 2`, so
 /// the event is `|T| > 5.657`, probability 0.00481 by the closed-form CDF (once in
 /// 208 months, about 17 years). Student-t(6) is `T / sqrt 1.5`: `|T| > 4.899`,
-/// probability 0.00274 (once in 365 months, about 30 years). The normal: 0.0000633
+/// probability 0.00271 (once in 368 months, about 30 years). The normal: 0.0000633
 /// (once in 15,800 months, about 1,300 years).
 #[test]
 fn four_sigma_months_are_as_common_as_the_schema_says() {
     let exact4 = 2.0 * (1.0 - sampler::student_t_cdf_even(4.0 * 2f64.sqrt(), 4));
     let exact6 = 2.0 * (1.0 - sampler::student_t_cdf_even(4.0 * 1.5f64.sqrt(), 6));
     assert!((exact4 - 0.004_81).abs() < 2e-5, "{exact4}");
-    assert!((exact6 - 0.002_74).abs() < 2e-5, "{exact6}");
+    assert!((exact6 - 0.002_71).abs() < 2e-5, "{exact6}");
     let n = 3_000_000;
     let freq = |table: &ShockTable| {
         let mut rng = Rng::from_seed(41);
@@ -640,7 +640,7 @@ fn fat_custom_residual_keeps_mean_and_volatility() {
     let far = |v: &[f64]| share(v, |r| (r - monthly).abs() > 4.0 * sigma);
     let (fa, fb) = (far(&a), far(&b));
     assert!(fa < 0.000_2, "normal {fa}");
-    assert!((fb - 0.002_74).abs() < 0.000_5, "fat {fb}");
+    assert!((fb - 0.002_71).abs() < 0.000_5, "fat {fb}");
 }
 
 fn loss(annual_probability: f64, low: f64, high: f64, mean_includes_losses: bool) -> LossEvent {

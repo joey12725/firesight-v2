@@ -2479,5 +2479,41 @@
       "reasoning": "The US record the generators resample contains one episode of this kind (1929-33). Other developed markets had several in the twentieth century: wars, hyperinflations, and long stagnations such as Japan after 1989. Published cross-country estimates of the frequency of macroeconomic disasters are of the order of 2% a year (Barro 2006; Barro and Ursua 2008; figures recalled from memory, not re-verified, and they measure output or consumption, not share prices). One percent a year is a round number for events beyond those the US record already holds. The depth is a permanent loss against the undisturbed path, not a peak-to-trough fall that is later recovered, so it is set below the peak-to-trough falls usually quoted. The pass-through figures sit between the 1940s, when US bill rates were pegged and kept up with none of the inflation, and the 1970s, when they kept up with most of it.",
       "confidence": "low; a judgement throughout. Treat the option as a stress dial, not a forecast."
     }
+  },
+  "asset_shapes": {
+    "summary": "Opt-in shapes of the single stock, crypto and the custom asset (portfolio.single_stock, portfolio.crypto, portfolio.custom_asset). All are off by default. The crypto outlooks and token hazards they make reachable are the existing ones under crypto.model. Nothing in this section is estimated from a data set; every number is a judgement, kept equal to the code by tests/rich_assets.rs.",
+    "asset_ext_words_per_month": 3,
+    "single_stock_fat_tails": {
+      "summary": "tails: fat replaces the lognormal factor with exp of a scaled unit-variance Student-t(4), rescaled to mean 1 and solved to the lognormal factor's standard deviation.",
+      "student_t_df": 4,
+      "cap_sd": 8.0,
+      "max_monthly_factor": 5.0,
+      "reasoning": "Four degrees of freedom is the shape the single-stock specification above (equity_compensation.single_public_stock.model) already names and the crypto sleeve already uses; it is not fitted to stock returns here. The cap of eight standard deviations is the crypto sleeve's. The factor-of-five limit on one month's company-specific move binds only above about 60% idiosyncratic volatility and is there to keep very volatile settings bounded.",
+      "confidence": "low; a judgement. That monthly returns of individual stocks have fatter tails than a normal is well established; the degrees of freedom are not estimated."
+    },
+    "crypto_cycles": {
+      "summary": "Defaults and limits of portfolio.crypto.dynamics: cycles, a two-state (calm, wild) Markov chain on the volatility of the crypto shock with the long-run variance of the steady model.",
+      "calm_months": 30.0,
+      "wild_months": 12.0,
+      "volatility_ratio": 2.5,
+      "months_min": 1.0,
+      "months_max": 600.0,
+      "volatility_ratio_max": 5.0,
+      "reasoning": "crypto.reasoning.volatility above records drawdowns of 75-85% in 2014, 2018 and 2022 with quieter stretches between: roughly one wild year in three or four. Thirty calm months and twelve wild ones put 29% of months in the wild state; a ratio of 2.5 gives about 45% a year when calm and 105% when wild at the default 70% overall. The spell lengths and the ratio are round numbers chosen to look like that record, not estimates from it.",
+      "confidence": "low; a judgement"
+    },
+    "custom_fat_tails": {
+      "summary": "tails: fat replaces the normal residual with a unit-variance Student-t(6), the shape listed real estate already uses.",
+      "student_t_df": 6,
+      "confidence": "low; a judgement"
+    },
+    "custom_loss_event": {
+      "summary": "Defaults of portfolio.custom_asset.loss_event when it is switched on (the engine default is none).",
+      "annual_probability": 0.02,
+      "loss_pert": {"low": 0.1, "mode": 0.3, "high": 0.6},
+      "mean_includes_losses": true,
+      "reasoning": "A placeholder for 'rare and large': once in fifty years, most likely a 30% write-down. The right values depend entirely on what the custom asset is, so the user should set them; they are not taken from default or recovery studies.",
+      "confidence": "low; a judgement"
+    }
   }
 }

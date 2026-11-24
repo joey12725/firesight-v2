@@ -184,3 +184,51 @@ fn kitchen_sink_lite() -> Profile {
     });
     p
 }
+
+/// The opt-in sleeve shapes (fat tails, crypto cycles, loss events on the custom
+/// asset) switched on, with a portfolio that holds all three sleeves: the cycle and
+/// loss draws happen inside the economy generator.
+#[test]
+fn rich_asset_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich assets".into();
+    let pf = &mut profile.portfolio;
+    pf.target = Allocation::from_pairs(&[
+        (AssetClass::UsStocks, 40.0),
+        (AssetClass::Bonds, 15.0),
+        (AssetClass::Crypto, 15.0),
+        (AssetClass::SingleStock, 15.0),
+        (AssetClass::Custom, 15.0),
+    ]);
+    pf.single_stock.tails = TailShape::Fat;
+    pf.single_stock.ruin_hazard = Some(0.05);
+    pf.crypto = CryptoAssumptions {
+        outlook: CryptoOutlook::Believer,
+        token: CryptoToken::OtherTokens,
+        dynamics: CryptoDynamics::cycles(),
+    };
+    pf.custom_asset = Some(CustomAsset {
+        tails: TailShape::Fat,
+        loss_event: Some(LossEvent {
+            annual_probability: 0.1,
+            ..LossEvent::default()
+        }),
+        ..CustomAsset::default()
+    });
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
