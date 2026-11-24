@@ -49,6 +49,72 @@ impl Checker<'_> {
             self.divorce_terms("/household/divorce_risk", terms);
         }
         self.parents();
+        self.life_insurance();
+    }
+
+    /// `household.people[].life_insurance`.
+    fn life_insurance(&mut self) {
+        let people = &self.p.household.people;
+        let total: usize = people.iter().map(|x| x.life_insurance.len()).sum();
+        if total > MAX_POLICIES {
+            self.r.error(
+                "life_insurance_too_many",
+                "/household/people",
+                format!("At most {MAX_POLICIES} life insurance policies can be listed."),
+            );
+        }
+        for (i, person) in people.iter().enumerate() {
+            let base = format!("/household/people/{i}/life_insurance");
+            check_ids(
+                &mut self.r,
+                &base,
+                person.life_insurance.iter().map(|x| x.id.as_str()),
+            );
+            for (j, pol) in person.life_insurance.iter().enumerate() {
+                let k = format!("{base}/{j}");
+                let benefit_ok = self.r.money(
+                    &format!("{k}/death_benefit"),
+                    "Death benefit",
+                    pol.death_benefit,
+                );
+                let premium_ok = self.r.money(
+                    &format!("{k}/annual_premium"),
+                    "Premium",
+                    pol.annual_premium,
+                );
+                if let PolicyKind::Term { years_remaining } = pol.kind {
+                    if self.r.range(
+                        &format!("{k}/kind/years_remaining"),
+                        "Years remaining",
+                        years_remaining,
+                        0.0,
+                        80.0,
+                    ) && years_remaining > 40.0
+                    {
+                        self.r.warn(
+                            "life_insurance_term",
+                            &format!("{k}/kind/years_remaining"),
+                            "Term policies are sold for at most 30 to 40 years; for cover that lasts for life use a permanent policy.",
+                        );
+                    }
+                }
+                // Judgement thresholds: a 20-year term policy for a healthy
+                // 30-year-old costs about 0.05% of its benefit a year (Policygenius
+                // 2024: $264 for $500,000); even late-life permanent cover rarely
+                // costs more than a few percent. More than 10% a year is almost
+                // certainly a typing error.
+                if benefit_ok && premium_ok && pol.annual_premium > 0.1 * pol.death_benefit {
+                    self.r.warn(
+                        "life_insurance_premium",
+                        &format!("{k}/annual_premium"),
+                        format!(
+                            "The premium is more than 10% of the death benefit a year ({} for {}); check both amounts.",
+                            pol.annual_premium, pol.death_benefit
+                        ),
+                    );
+                }
+            }
+        }
     }
 
     /// `household.parents`.
@@ -322,6 +388,51 @@ mod tests {
         let mut odd = p;
         odd.household.parents[0].birth = odd.household.people[0].birth - 13 * 12;
         assert!(codes(&validate(&odd).warnings).contains(&"parent_age_gap"));
+    }
+
+    #[test]
+    fn life_insurance_checks() {
+        let mut p = dual();
+        let policy = LifePolicy {
+            id: "term".into(),
+            death_benefit: 500_000.0,
+            annual_premium: 400.0,
+            ..LifePolicy::default()
+        };
+        p.household.people[0].life_insurance = vec![policy.clone()];
+        let r = validate(&p);
+        assert!(r.errors.is_empty() && r.warnings.is_empty(), "{r:?}");
+        let mut dup = p.clone();
+        dup.household.people[0].life_insurance.push(policy.clone());
+        assert!(codes(&validate(&dup).errors).contains(&"id_duplicate"));
+        // The same id on two people is fine: ids are per list.
+        let mut two = p.clone();
+        two.household.people[1].life_insurance = vec![policy.clone()];
+        assert!(validate(&two).errors.is_empty());
+        let mut many = p.clone();
+        many.household.people[0].life_insurance = (0..9)
+            .map(|k| LifePolicy {
+                id: format!("p{k}"),
+                ..policy.clone()
+            })
+            .collect();
+        assert!(codes(&validate(&many).errors).contains(&"life_insurance_too_many"));
+        let mut bad = p.clone();
+        bad.household.people[0].life_insurance[0].death_benefit = -1.0;
+        assert!(codes(&validate(&bad).errors).contains(&"negative_amount"));
+        let mut bad = p.clone();
+        bad.household.people[0].life_insurance[0].kind = PolicyKind::Term {
+            years_remaining: -2.0,
+        };
+        assert!(!validate(&bad).errors.is_empty());
+        let mut odd = p.clone();
+        odd.household.people[0].life_insurance[0].kind = PolicyKind::Term {
+            years_remaining: 50.0,
+        };
+        assert!(codes(&validate(&odd).warnings).contains(&"life_insurance_term"));
+        let mut odd = p;
+        odd.household.people[0].life_insurance[0].annual_premium = 60_000.0;
+        assert!(codes(&validate(&odd).warnings).contains(&"life_insurance_premium"));
     }
 
     #[test]

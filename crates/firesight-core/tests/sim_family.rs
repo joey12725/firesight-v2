@@ -430,3 +430,122 @@ fn spousal_care_lowers_the_care_bill() {
     off.spending.healthcare.spousal_care = false;
     assert_eq!(json(&summary(&base, 3, 100)), json(&summary(&off, 3, 100)));
 }
+
+// ------------------------------------------------------- F50 life insurance
+
+fn term_policy(benefit: f64, premium: f64, years: f64) -> LifePolicy {
+    LifePolicy {
+        id: "term".into(),
+        name: "Term life".into(),
+        kind: PolicyKind::Term {
+            years_remaining: years,
+        },
+        death_benefit: benefit,
+        annual_premium: premium,
+    }
+}
+
+#[test]
+fn life_insurance_pays_on_early_deaths_and_costs_premiums_otherwise() {
+    let base = example("dual-income-family");
+    let mut p = base.clone();
+    // About the market price for a healthy 40-year-old: $1M for 20 years.
+    p.household.people[0].life_insurance = vec![term_policy(1_000_000.0, 900.0, 20.0)];
+    let age0 = f64::from(p.household.people[0].birth.age_months_at(START)) / 12.0;
+    let n = 600;
+    let a = run(&compile(&base), 51, 0..n);
+    let b = run(&compile(&p), 51, 0..n);
+    assert_eq!(a.path_indices(), b.path_indices());
+    let d0 = b.scalar_column(PathScalar::DeathAge0);
+    let d1 = b.scalar_column(PathScalar::DeathAge1);
+    let wa = a.scalar_column(PathScalar::TerminalNetWorth);
+    let wb = b.scalar_column(PathScalar::TerminalNetWorth);
+    let (mut paid, mut unpaid) = (Vec::new(), Vec::new());
+    for i in 0..wa.len() {
+        let (x, y) = (f64::from(wa[i]), f64::from(wb[i]));
+        let died = f64::from(d0[i]);
+        if died < age0 + 19.9 && f64::from(d1[i]) > died + 1.0 {
+            paid.push(y - x);
+        } else if died > age0 + 20.1 {
+            unpaid.push(y - x);
+        }
+    }
+    let median = |v: &mut Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        v[v.len() / 2]
+    };
+    // A death within the term while the partner lives: about 5% of paths at
+    // these ages. $1M nominal paid then, invested for decades: more than its
+    // real value at the end, but not wildly so.
+    assert!(paid.len() > 8, "{}", paid.len());
+    let gain = median(&mut paid);
+    assert!((300_000.0..6_000_000.0).contains(&gain), "{gain}");
+    // Otherwise: twenty years of $900 premiums, compounded, are lost.
+    let loss = -median(&mut unpaid);
+    assert!((3_000.0..150_000.0).contains(&loss), "{loss}");
+    // Traces log the payout, in real dollars.
+    let ts = traces(&p, 51, 120);
+    let ev = ts
+        .iter()
+        .flat_map(|t| &t.events)
+        .find(|e| e.label.starts_with("Life insurance pays out"));
+    if let Some(ev) = ev {
+        let real = ev.amount.unwrap();
+        assert!(real <= 1_000_000.0 && real > 300_000.0, "{real}");
+    }
+    // Off: an empty list is the baseline.
+    let mut off = base.clone();
+    off.household.people[0].life_insurance = Vec::new();
+    assert_eq!(json(&summary(&base, 3, 100)), json(&summary(&off, 3, 100)));
+}
+
+#[test]
+fn a_permanent_policy_counts_toward_the_bequest() {
+    let mut base = example("dual-income-family");
+    base.retirement.bequest_target = 2_000_000.0;
+    let mut p = base.clone();
+    for person in &mut p.household.people {
+        person.life_insurance = vec![LifePolicy {
+            id: "whole".into(),
+            kind: PolicyKind::Permanent,
+            death_benefit: 750_000.0,
+            annual_premium: 6_000.0,
+            ..LifePolicy::default()
+        }];
+    }
+    let sa = summary(&base, 9, 300);
+    let sb = summary(&p, 9, 300);
+    // Both lives are insured, so the last death always pays $750k (nominal) to
+    // the estate unless the household ran out of money: more paths leave the
+    // bequest than without, at the cost of $12k a year of premiums.
+    assert!(
+        sb.headline.success_rate.value > sa.headline.success_rate.value,
+        "{} vs {}",
+        sb.headline.success_rate.value,
+        sa.headline.success_rate.value
+    );
+    // On a path that ends with the last death (not at the horizon) the estate is
+    // paid unless the policy lapsed; on one cut by the horizon it never is.
+    let horizon = compile(&p).horizon_months();
+    let ts = traces(&p, 9, 20);
+    let (mut estate, mut cut) = (0, 0);
+    for t in &ts {
+        let has = |s: &str| t.events.iter().any(|e| e.label.starts_with(s));
+        let lapsed = has("Life insurance whole: lapses");
+        let paid = has("Life insurance pays the estate");
+        if t.months < horizon && !lapsed {
+            assert!(paid, "path {}", t.path_index);
+            estate += 1;
+        } else {
+            assert!(!paid, "path {}", t.path_index);
+            cut += 1;
+        }
+        // The first death paid the survivor unless the policy had lapsed.
+        assert!(
+            has("Life insurance pays out") || lapsed,
+            "path {}",
+            t.path_index
+        );
+    }
+    assert!(estate > 5 && cut > 2, "{estate} {cut}");
+}

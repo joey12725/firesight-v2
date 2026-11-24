@@ -229,5 +229,21 @@ pub fn household_dynamics() -> Profile {
             ..Parent::default()
         },
     ];
+    p.household.people[0].life_insurance = vec![LifePolicy {
+        id: "term".into(),
+        name: "Term life".into(),
+        kind: PolicyKind::Term {
+            years_remaining: 15.0,
+        },
+        death_benefit: 1_000_000.0,
+        annual_premium: 1_100.0,
+    }];
+    p.household.people[1].life_insurance = vec![LifePolicy {
+        id: "whole".into(),
+        name: "Whole life".into(),
+        kind: PolicyKind::Permanent,
+        death_benefit: 250_000.0,
+        annual_premium: 3_000.0,
+    }];
     p
 }

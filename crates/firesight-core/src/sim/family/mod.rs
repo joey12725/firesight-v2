@@ -8,9 +8,11 @@
 //! Randomness comes only from this module's own streams (`Stream::Divorce`,
 //! `Stream::Parent`, `Stream::SpousalCare`), drawn
 //! a fixed number of times per path in [`State::begin_family`] whatever happens on
-//! the path, so the streams of every other subsystem are untouched.
+//! the path, so the streams of every other subsystem are untouched. Life insurance
+//! draws nothing: it follows the deaths already drawn.
 
 mod divorce;
+mod insurance;
 mod parents;
 mod spousal;
 #[cfg(test)]
@@ -19,7 +21,7 @@ mod tests;
 pub(crate) use divorce::MarriageHazard;
 
 use crate::data::Data;
-use crate::model::{EventKind, Profile, YearMonth, MAX_PARENTS};
+use crate::model::{EventKind, Profile, YearMonth, MAX_PARENTS, MAX_POLICIES};
 use crate::rng::{Rng, Stream};
 use crate::MAX_PEOPLE;
 
@@ -40,6 +42,8 @@ pub(crate) struct FamilyPlan {
     pub parent_care: Option<crate::health::HealthModel>,
     /// `spending.healthcare.spousal_care` for a couple with long-term care on.
     pub spousal_care: bool,
+    /// Life insurance policies.
+    pub policies: Vec<insurance::PolicyPlan>,
 }
 
 impl FamilyPlan {
@@ -71,8 +75,14 @@ impl FamilyPlan {
         let (parents, parent_care) = parents::ParentPlan::compile_all(profile, data, start);
         let hc = &profile.spending.healthcare;
         let spousal_care = hc.spousal_care && hc.long_term_care && people.len() == 2;
+        let policies = insurance::PolicyPlan::compile_all(profile);
         FamilyPlan {
-            active: hazard.is_some() || has_divorce_event || !parents.is_empty() || spousal_care,
+            active: hazard.is_some()
+                || has_divorce_event
+                || !parents.is_empty()
+                || spousal_care
+                || !policies.is_empty(),
+            policies,
             spousal_care,
             married_month,
             hazard,
@@ -105,6 +115,8 @@ pub(crate) struct FamilyState {
     /// Per person, the uniform that decides whether they cut back at work to care
     /// for the other partner.
     pub care_u: [f64; MAX_PEOPLE],
+    /// Per policy, whether it is still in force.
+    pub in_force: [bool; MAX_POLICIES],
 }
 
 impl Default for FamilyState {
@@ -119,6 +131,7 @@ impl Default for FamilyState {
             parents: [parents::ParentPath::default(); MAX_PARENTS],
             ira: [parents::InheritedIra::default(); MAX_PARENTS],
             care_u: [1.0; MAX_PEOPLE],
+            in_force: [false; MAX_POLICIES],
         }
     }
 }
@@ -128,6 +141,9 @@ impl State {
     /// one uniform on `Stream::Divorce` when the divorce hazard is on.
     pub(crate) fn begin_family(&mut self, plan: &Plan, seed: u64, path: u64) {
         self.fam = FamilyState::default();
+        for k in 0..plan.family.policies.len() {
+            self.fam.in_force[k] = true;
+        }
         if let Some(h) = &plan.family.hazard {
             let mut rng = Rng::stream(seed, path, Stream::Divorce);
             self.fam.divorce_month = h.draw_month(rng.uniform());
@@ -155,6 +171,9 @@ impl State {
         if plan.family.spousal_care {
             replan |= self.spousal_care_month(plan, t);
         }
+        if !plan.family.policies.is_empty() {
+            replan |= self.insurance_month(plan, price, t);
+        }
         if self.fam.support_monthly != 0.0 && ti < self.fam.support_until {
             if self.alive[1] && self.alive[0] {
                 let x = self.fam.support_monthly;
@@ -179,7 +198,7 @@ impl State {
         } else {
             0.0
         };
-        support + self.parent_support_rate(plan, t) * price
+        support + self.parent_support_rate(plan, t) * price + self.premium_rate(plan, t)
     }
 }
 

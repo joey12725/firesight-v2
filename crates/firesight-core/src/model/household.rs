@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{DivorceRisk, Parent, YearMonth};
+use super::{DivorceRisk, LifePolicy, Parent, YearMonth};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -64,6 +64,9 @@ pub struct Person {
     /// Social Security claiming plan and how the benefit is estimated.
     #[serde(default)]
     pub social_security: SocialSecurity,
+    /// Life insurance policies on this person's life. Empty (the default): none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub life_insurance: Vec<LifePolicy>,
 }
 
 impl Default for Person {
@@ -76,6 +79,7 @@ impl Default for Person {
             health: HealthStatus::default(),
             joins: None,
             social_security: SocialSecurity::default(),
+            life_insurance: Vec::new(),
         }
     }
 }

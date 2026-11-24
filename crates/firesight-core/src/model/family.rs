@@ -257,3 +257,62 @@ impl Default for Parent {
         }
     }
 }
+
+/// Most life insurance policies a profile can hold, over all people.
+pub const MAX_POLICIES: usize = 8;
+
+/// A life insurance policy on one person's life.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct LifePolicy {
+    /// Stable identifier used by patches, for example "term_20".
+    pub id: String,
+    /// Display name, shown in the event log.
+    pub name: String,
+    /// Term or permanent.
+    pub kind: PolicyKind,
+    /// Paid at the insured's death while the policy is in force, in dollars of the
+    /// plan's start, fixed in nominal terms (policies are not indexed). Tax-free
+    /// to the beneficiary (IRC 101(a)): the surviving partner, or the estate (it
+    /// then counts toward the bequest target) when nobody is left.
+    pub death_benefit: f64,
+    /// Premium per year, in dollars of the start, level in nominal terms as the
+    /// premiums of term and whole life policies are. Essential spending while the
+    /// policy is in force. The policy lapses in the first month the household has
+    /// run out of savings and cannot pay it.
+    pub annual_premium: f64,
+}
+
+impl Default for LifePolicy {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            kind: PolicyKind::default(),
+            death_benefit: 0.0,
+            annual_premium: 0.0,
+        }
+    }
+}
+
+/// How long a life insurance policy lasts.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PolicyKind {
+    /// Term life: in force for the years remaining of its term, then it ends.
+    Term {
+        /// Years of the term still to run from the start of the plan.
+        years_remaining: f64,
+    },
+    /// Whole or other permanent life: in force for life while premiums are paid
+    /// (cash value is not modelled).
+    Permanent,
+}
+
+impl Default for PolicyKind {
+    fn default() -> Self {
+        PolicyKind::Term {
+            years_remaining: 20.0,
+        }
+    }
+}

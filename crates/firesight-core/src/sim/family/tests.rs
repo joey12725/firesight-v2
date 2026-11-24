@@ -402,3 +402,126 @@ fn a_working_partner_cuts_back_with_the_stated_probabilities() {
     assert!(!r && !ended);
     assert_eq!(e, Employment::Employed);
 }
+
+fn insured_plan(kind: crate::model::PolicyKind) -> Plan {
+    let mut p = dual_income();
+    p.household.people[0].life_insurance = vec![crate::model::LifePolicy {
+        id: "term".into(),
+        name: "Term life".into(),
+        kind,
+        death_benefit: 500_000.0,
+        annual_premium: 1_200.0,
+    }];
+    Plan::compile(&p, crate::data::Data::embedded()).unwrap()
+}
+
+fn insured_state(plan: &Plan) -> State {
+    let mut st = State::new(plan);
+    st.present = [true, true];
+    st.alive = [true, true];
+    st.months = 600;
+    st.death_month = [500, 550];
+    st.fam = FamilyState::default();
+    st.fam.in_force[0] = true;
+    st
+}
+
+#[test]
+fn premiums_are_paid_until_the_term_ends() {
+    use crate::model::PolicyKind;
+    let plan = insured_plan(PolicyKind::Term {
+        years_remaining: 10.0,
+    });
+    assert!(plan.family.active);
+    let p = &plan.family.policies[0];
+    assert_eq!((p.insured, p.end_month), (0, 120));
+    assert_eq!(p.premium, 100.0);
+    let mut st = insured_state(&plan);
+    let cash = st.acc.cash;
+    assert!(!st.insurance_month(&plan, 1.0, 0));
+    assert!((cash - st.acc.cash - 100.0).abs() < 1e-9);
+    assert_eq!(st.planned, 100.0);
+    assert_eq!(st.premium_rate(&plan, 0), 100.0);
+    // Month 120: the term has run out; nothing more is paid.
+    let cash = st.acc.cash;
+    st.insurance_month(&plan, 1.0, 120);
+    assert!(!st.fam.in_force[0]);
+    assert_eq!(st.acc.cash, cash);
+    assert_eq!(st.premium_rate(&plan, 121), 0.0);
+    // A death after the term pays nothing.
+    st.alive[0] = false;
+    st.insurance_month(&plan, 1.0, 130);
+    assert_eq!(st.acc.cash, cash);
+}
+
+#[test]
+fn a_death_within_the_term_pays_the_survivor() {
+    use crate::model::PolicyKind;
+    let plan = insured_plan(PolicyKind::Term {
+        years_remaining: 20.0,
+    });
+    let mut st = insured_state(&plan);
+    st.alive[0] = false;
+    st.present[0] = false;
+    let cash = st.acc.cash;
+    assert!(st.insurance_month(&plan, 1.3, 60));
+    // Nominal $500,000, not indexed, and no premium in the month of death.
+    assert!((st.acc.cash - cash - 500_000.0).abs() < 1e-6);
+    assert_eq!(
+        st.led[crate::stats::YearSeries::IncomeOther.index()],
+        500_000.0
+    );
+    assert!(!st.fam.in_force[0]);
+    // Paid once.
+    assert!(!st.insurance_month(&plan, 1.3, 61));
+    assert!((st.acc.cash - cash - 500_000.0).abs() < 1e-6);
+}
+
+#[test]
+fn the_last_death_pays_the_estate_in_the_final_month() {
+    use crate::model::PolicyKind;
+    let plan = insured_plan(PolicyKind::Permanent);
+    assert_eq!(plan.family.policies[0].end_month, i32::MAX);
+    let mut st = insured_state(&plan);
+    // Person 2 died earlier; person 1 dies at month 400, which ends the path.
+    st.alive[1] = false;
+    st.present[1] = false;
+    st.death_month = [400, 300];
+    st.months = 400;
+    let cash = st.acc.cash;
+    st.insurance_month(&plan, 1.0, 398);
+    assert!((cash - st.acc.cash - 100.0).abs() < 1e-9);
+    let cash = st.acc.cash;
+    st.insurance_month(&plan, 1.0, 399);
+    assert!((st.acc.cash - cash - 500_000.0).abs() < 1e-6);
+    assert!(!st.fam.in_force[0]);
+    // A path cut by the horizon (death after it) pays nothing.
+    let mut st = insured_state(&plan);
+    st.death_month = [700, 300];
+    st.months = 600;
+    let cash = st.acc.cash;
+    st.insurance_month(&plan, 1.0, 599);
+    assert!((cash - st.acc.cash - 100.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_policy_lapses_when_money_runs_out_or_the_insured_leaves() {
+    use crate::model::PolicyKind;
+    let plan = insured_plan(PolicyKind::Permanent);
+    let mut st = insured_state(&plan);
+    st.depleted_now = true;
+    let cash = st.acc.cash;
+    st.insurance_month(&plan, 1.0, 50);
+    assert!(!st.fam.in_force[0]);
+    assert_eq!(st.acc.cash, cash);
+    // Lapsed: a later death pays nothing.
+    st.alive[0] = false;
+    st.insurance_month(&plan, 1.0, 60);
+    assert_eq!(st.acc.cash, cash);
+
+    let mut st = insured_state(&plan);
+    st.fam.left[0] = true;
+    st.insurance_month(&plan, 1.0, 50);
+    assert!(!st.fam.in_force[0]);
+    assert_eq!(st.acc.cash, cash);
+}

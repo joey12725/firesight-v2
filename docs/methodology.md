@@ -619,6 +619,46 @@ inheritance in a divorce (it is split with everything else), and the household
 anticipating the inheritance: the funded test and the spending rules do not
 count it until it arrives.
 
+### Life insurance
+
+Opt-in per person: `life_insurance` lists policies on that person's life, each a
+term policy with `years_remaining` or a permanent one, with a death benefit and an
+annual premium, both level in nominal dollars as written policies are (they are not
+indexed, so inflation erodes them). Nothing is drawn: a policy follows the deaths
+already on the path, so it adds no random stream and a profile with and without it
+is compared on the same lives. While a policy is in force its premium is essential
+spending, paid monthly and expected by the year's plan. It ends at the first of:
+the end of the term; the insured's death within the term, when the benefit is paid
+into the household's cash, untaxed (IRC 101(a)) and recorded as other income; the
+insured leaving the household in a divorce (the policy goes with them); or the
+first month the household has run out of savings, when the premium cannot be paid
+and the policy lapses for good. When the insured is the last to die, the benefit is
+paid in the path's final month and so is part of the estate counted against the
+bequest target and of the terminal net worth. A person who joins the household
+later pays nothing on a policy before joining and a death before joining pays the
+household nothing. Market prices for checking inputs: about $264 a year for a
+$500,000 20-year term policy for a healthy 30-year-old (Policygenius 2024); the
+validator warns when a premium exceeds 10% of the benefit a year (a judgement: a
+likely typing error) and when a term exceeds 40 years.
+
+Measured on the dual-income example (4,000 paired paths, seed 1) with a $1 million
+20-year term policy on each partner at $800 a year: success 91.5% to 91.6%, the FI
+rate from 96.4% to 97.8% (an early death no longer stops the survivor reaching
+independence), the median terminal net worth from $1.73 million to $1.81 million
+and the tenth percentile from $104k to $128k. With a $250,000 permanent policy on
+each at $3,000 a year instead: success falls to 90.8% and the median terminal net
+worth barely moves ($1.74 million): a lifetime of premiums buys a benefit that is
+worth less in real terms by the time it is paid.
+
+Not modelled: cash value of permanent policies (loans, surrender, dividends),
+premiums that rise at renewal or with age (term premiums here are level for the
+whole term; annually renewable term is not represented), underwriting and the
+contestability and suicide clauses, employer group life that ends with the job,
+conversion of term to permanent cover, the policy owner being someone other than
+the insured, and estate tax on large benefits. A lapse is only for running out of
+savings: a household that drops a policy because it no longer needs it should end
+the term there.
+
 ## 11. When retirement happens
 
 Triggers: at an age, at a date, already retired, when a fixed number is reached, or

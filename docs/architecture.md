@@ -88,7 +88,10 @@ DivorceTerms { asset_split (0.5), support: { annual, years, direction: Pays|Rece
 Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             health: Excellent|Good|Average|Poor,     // scales mortality; default Good (0.85x)
             joins: Option<YearMonth>,               // future partner: not in household before this
-            social_security: SocialSecurity }
+            social_security: SocialSecurity,
+            life_insurance: Vec<LifePolicy> (0..=8 in all) }
+LifePolicy { id, name, kind: Term { years_remaining } | Permanent,
+             death_benefit, annual_premium }        // nominal, level; benefit tax-free to survivor or estate
 SocialSecurity { claim_age: f64 (62..=70, default 67),
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $
