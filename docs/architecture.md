@@ -28,18 +28,55 @@ the optional LLM proxy.
 * `f(profile, data, seed, path_index)` is a pure function. Same inputs, same bits, on
   native and wasm. No `HashMap` iteration order in results, no time, no global RNG.
 * Every random subsystem draws from its own named stream:
-  `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
-  `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks,
-  ChildArrival(child), CollegePrices, ChildCollege(child), ChildSupport(child),
-  Maintenance(property), InsuranceDrift, RentMarket, Liquidity, MarketTails, Divorce,
-  Parent(i), SpousalCare, ..}` (the
-  housing realism streams Maintenance through Liquidity are drawn only when their
-  option is on, and MarketTails only under the fat-tailed market model).
-  Changing a decision in a scenario must not
-  shift the random numbers of any unrelated subsystem. This is what makes scenario
-  comparison a paired experiment (common random numbers), and it is the v1 idea we keep
-  and make exact.
+  `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in `core::rng`. The
+  identifiers are part of the reproducibility contract: they are never renumbered,
+  only added to.
+
+  | Stream | Id | Drawn for |
+  |---|---|---|
+  | `Market` | 1 | asset returns, rates, recessions |
+  | `Inflation` | 2 | inflation innovations outside the joint market draw |
+  | `EquityComp` | 3 | employer stock prices, private-company outcomes |
+  | `Shocks` | 4 | irregular expenses |
+  | `Events` | 5 | whether and when probabilistic life events occur |
+  | `Career(person)` | 0x0100_0000 + i | wage shocks, layoffs, re-employment |
+  | `Health(person)` | 0x0200_0000 + i | medical costs, long-term care |
+  | `Longevity(person)` | 0x0300_0000 + i | age at death |
+  | `Housing(property)` | 0x0400_0000 + i | a property's own price path |
+  | `CategoryPrices` | 1100 | category price wedges (`category_inflation`) |
+  | `DetailedShocks` | 1101 | typed irregular expenses (`shocks: detailed`) |
+  | `Vehicle(k)` | 0x1100_0000 + k | replacement-date jitter |
+  | `CollegePrices` | 1200 | the path of college prices |
+  | `ChildArrival(child)` | 0x1200_0000 + i | an uncertain birth |
+  | `ChildCollege(child)` | 0x1280_0000 + 2i | attendance, years, aid |
+  | `ChildSupport(child)` | 0x1280_0000 + 2i + 1 | support as an adult |
+  | `RentMarket` | 1300 | the local rent index (market-rent lines) |
+  | `Liquidity` | 1301 | time to close and discount of slow home sales |
+  | `InsuranceDrift` | 1302 | the homeowner's-insurance premium index |
+  | `Maintenance(property)` | 0x1300_0000 + i | major repairs (lumpy maintenance) |
+  | `CareerExt(kind, i)` | 0x1400_0000 + kind x 0x1_0000 + i | job changes, recession pay, disability, late-career layoffs, business cycles (kind 0 job, 1 person, 2 self-employment) |
+  | `PolicyRisk` | 1500 | the path's policy changes |
+  | `HomeEquityCredit` | 1600 | lenders freezing home-equity lines |
+  | `RentalMarket(property)` | 0x1600_0000 + i | tenants, rents and repairs of a realistic rental |
+  | `CoupleLongevity` | 1700 | linked lifespans |
+  | `LtcPremiumRates` | 1701 | class-wide long-term-care premium increases |
+  | `HealthStates(person)` | 0x1700_0000 + i | the yearly health-state path |
+  | `MarketTails` | 1800 | Student-t mixing of the fat-tailed market model |
+  | `PanicSelling` | 1900 | whether a panic-prone household sells in a fall |
+  | `OneMoreYear` | 1901 | whether a funded household works one more year |
+  | `ReturnToWork(person)` | 0x1900_0000 + i | length of a retiree's job search |
+  | `Divorce` | 2000 | when a couple with `divorce_risk` divorces |
+  | `SpousalCare` | 2001 | whether a working partner cuts back to give care |
+  | `Parent(i)` | 0x1a00_0000 + i | a parent's lifetime and late-life care |
+
+  The first nine are the base model's. Every other stream belongs to one opt-in
+  feature and is drawn only when that feature is on, a fixed number of times a
+  month or a path whatever the household decides. Changing a decision in a
+  scenario, or switching a feature on, must not shift the random numbers of any
+  other subsystem. This is what makes scenario comparison a paired experiment
+  (common random numbers), and it is the v1 idea we keep and make exact.
+  `tests/sim_richness.rs` checks that the ids are unique and that no feature moves
+  the market, career, health or longevity draws.
 * Path `i` can be re-simulated alone at any time with a full ledger (`trace_path`).
   The aggregate run therefore never stores per-path time series.
 
@@ -351,6 +388,33 @@ for each month t:
   each April: settle last year's actual tax against what was withheld/estimated.
 ```
 
+The opt-in features (`docs/methodology.md` section 18) enter this loop through hooks,
+each behind a flag of the compiled plan that is false when the feature is off, so
+the default path executes the code it always did. Where they sit:
+
+```
+path start   lifetimes redrawn jointly (linked lifespans), health-state paths, policy
+             draws, births, college prices, parents' lifetimes, divorce month
+start of t   career-realism variates drawn; disability onset and recovery
+  1.         household dynamics (divorce, a parent's death or care spell, life
+             insurance, a partner starting to give care); births and parental leave;
+             insurance, rent-market and sale-terms draws
+  3.         after each job's step: disability, recession pay, late-career layoff,
+             job change; business cycle and fallback wage; return to work
+  4.         adaptive claiming before Social Security is paid; disability insurance
+             after it (the larger of the two, not both)
+  6.         seasonal, category-price and unemployment factors on the budget;
+             children's health cover; spousal care, then long-term-care insurance,
+             then Medicaid on the care bill; vehicles; detailed shocks
+  7.         ARM resets, lumpy repairs, realistic rentals; sales that close;
+             home-equity interest, reverse-mortgage accrual, downsizing
+  8-9.       QCDs; cash-out refinance before penalised withdrawals; home-equity
+             borrowing before a sale or a cut to essentials; saving paused in
+             distress; home-equity repayment and mortgage prepayment from surplus
+ 10.         tax-loss harvesting; panic selling and re-entry
+ 11.         retirement confirmation and the one-more-year draw
+```
+
 ### What "financially independent", "retired" and "success" mean
 
 * **FI date**: first month the trigger is satisfied. For `WhenFunded` the test is
@@ -385,6 +449,11 @@ for each month t:
 | `decumulation` | Spending rules and the annual withdrawal / Roth-conversion plan |
 | `sim` | `Plan`, path state, the monthly loop, trigger logic |
 | `stats` | Mergeable accumulators and the final `Summary` |
+| `career_realism` | Opt-in: job mobility, recession pay, disability, late-career layoffs, business cycles and failure |
+| `health_states`, `longevity_links`, `medicaid`, `ltc_insurance` | Opt-in: the health-state chain, linked lifespans, Medicaid's long-term-care rules, long-term-care insurance |
+| `home_equity`, `rental_market`, `housing/{arm,ext,insurance,maintenance}` | Opt-in: home-equity lines and reverse mortgages, realistic rentals, adjustable rates, lumpy maintenance, assessment caps, insurance repricing |
+| `policy` | Opt-in: per-path policy risk |
+| `sim/{spendx,family,housing_ext,housing_decisions,cash_out,downsize,care,tax_realism,realism,rz_*}`, `sim/behavior`, `sim/dynamics` | The simulation-side hooks of the opt-in features (spending, children, housing, care, tax, careers, household decisions, household changes) |
 | `scenario` | Patch application, lever definitions for sensitivity, bisection solver state machine, grid sweeps |
 | `legacy` | v1 profile migration |
 | `validate` | Errors and warnings |
@@ -537,7 +606,14 @@ instructions per simulated life.
   balances), no NaN, results independent of chunking and merge order, identical seeds
   give identical bytes, stream isolation (changing spending does not change market
   draws).
-* Golden tests: the demo profiles' `Summary` at a fixed seed.
+* Golden tests: the demo profiles' `Summary` at a fixed seed. Three of the four use
+  the default model throughout and pin it; `full-life` pins a selection of the
+  opt-in features.
+* The opt-in features together (`tests/sim_richness.rs`): every feature at once,
+  each group, each feature alone and (slow, ignored) every pair, with conservation
+  checks, finite values, chunking invariance and a difference from the baseline;
+  the stream audit; and a check of the order of events for contradictions between
+  features.
 * Economy calibration tests: simulated moments within tolerance of
   `data/history/calibration.json`.
 

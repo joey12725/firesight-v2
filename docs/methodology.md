@@ -3,7 +3,8 @@
 This document explains what the engine does, relationship by relationship, with the
 numbers it was checked against. It is written for a reader who wants to trust the
 model or to challenge it. Where a choice is a judgement, it says so. Where the model
-is known to be wrong or incomplete, section 17 lists it.
+is known to be wrong or incomplete, section 17 lists it. Everything described as
+"opt-in" is off unless the profile switches it on; section 18 lists those switches.
 
 Conventions used throughout: money is in today's dollars (dollars of the plan's
 start month) unless a line says nominal; rates are per year; "real" means after
@@ -486,7 +487,7 @@ Not modelled: listed real estate keeps its constant 4% (REIT payouts follow rent
 not prices); the qualified share of dividends is fixed; bond funds pay the current
 yield, not the book yield of bonds bought earlier; special dividends and buybacks.
 
-### Stopping saving in distress (opt-in)
+### 4.1 Stopping saving in distress (opt-in)
 
 `portfolio.pause_deferrals_in_distress: true` (default false) stops a household
 saving for retirement while it is in trouble. A month is one of distress when the
@@ -517,7 +518,7 @@ Not modelled: solo 401(k) and HSA payroll contributions continue, as do the
 employer's own; there are no hardship withdrawals or 401(k) loans; the household
 does not cut spending to save more.
 
-### Panic selling (opt-in, a behavioural assumption)
+### 4.2 Panic selling (opt-in, a behavioural assumption)
 
 `portfolio.behavior: panic_prone` (the default is `disciplined`) lets the household
 sell stocks after a crash. The engine follows the US stock index and its running
@@ -613,7 +614,7 @@ State and local rules corrected by the audit:
 Other tax modes: a flat rate, or none. A household abroad pays its flat foreign
 rate instead of US federal, state and payroll tax (a simplification).
 
-### Chained-CPI indexing (`assumptions.taxes.chained_cpi`, off by default)
+### 5.1 Chained-CPI indexing (`assumptions.taxes.chained_cpi`, off by default)
 
 Since 2018 the income tax brackets, the standard deduction (and the additional
 amount at 65), the capital-gain thresholds, the QBI thresholds, the child credit
@@ -639,7 +640,7 @@ the inflation regime (the historical wedge is larger when inflation is high). Th
 qualified charitable distribution limit (IRC 408(d)(8)(G), also a section 1(f)(3)
 adjustment) takes the same chained factor.
 
-### State detail (`assumptions.taxes.state_detail: full`, `basic` by default)
+### 5.2 State detail (`assumptions.taxes.state_detail: full`, `basic` by default)
 
 Three state rules that the base tables leave out, each read from its statute or the
 state's own form and stored under a `detail` key of the state in
@@ -679,7 +680,7 @@ $1.315m (-1.5%, the credit once both are on benefits). Not modelled: other state
 recapture or phase-out rules (Connecticut's), New Jersey and other disability or
 family-leave payroll taxes, Washington's payroll programmes, Oregon's.
 
-### Policy risk (`assumptions.taxes.policy_risk`, absent by default)
+### 5.3 Policy risk (`assumptions.taxes.policy_risk`, absent by default)
 
 `social_security_haircut` is a switch: every path gets the same cut. `policy_risk`
 makes policy a distribution. Once per path, from its own random stream
@@ -714,7 +715,7 @@ payroll-tax cap or the retirement age instead of a cut, rate changes that differ
 bracket, changes to capital-gains or estate tax, and any link between policy and
 the economy on the same path.
 
-### Tax-loss harvesting (`portfolio.tax_loss_harvesting`, off by default)
+### 5.4 Tax-loss harvesting (`portfolio.tax_loss_harvesting`, off by default)
 
 Once a month after returns, any taxable holding that stands at least 5% below its cost
 basis (and by at least $1,000 in today's dollars) is sold and a similar fund of the
@@ -744,7 +745,7 @@ loss carried forward (tested). Not modelled: trading
 costs, tracking difference against the replaced fund, wash sales through the household's
 other accounts or a spouse, harvesting individual lots rather than whole asset classes.
 
-### Qualified charitable distributions (`retirement.qcd`, off by default)
+### 5.5 Qualified charitable distributions (`retirement.qcd`, off by default)
 
 From age 70 and a half, the budget's Giving lines are paid straight from the person's
 traditional account (the engine keeps one traditional balance per person, so a
@@ -909,7 +910,9 @@ unvested equity. The household then receives:
   retirement code pays exactly that PIA (the SSDI-to-retirement conversion). Not
   insured (basis `none`, under five years of earnings on record, already claiming
   retirement) means no SSDI. Paid through the Social Security income series and taxed
-  with it.
+  with it. A disabled person who also receives a survivor or spousal benefit on
+  another record gets the larger of the two, not both, and a benefit cut drawn by
+  policy risk (5.3) applies to SSDI as to every other Social Security benefit.
 * **LTD insurance**, if set: after a three-month elimination period,
   `replacement x base salary at onset`, fixed in nominal dollars (as most policies are),
   less the SSDI received (the usual offset), until `to_age`. Taxable (employer-paid
@@ -1064,7 +1067,7 @@ actually incurred (housing, health net of the premium credit, care, children, de
 service, one-off costs). It has exactly the scope of actual spending, so delivered
 and planned can be compared year by year.
 
-### Vehicle replacement cycles
+### 7.1 Vehicle replacement cycles (opt-in)
 
 Opt-in through `spending.vehicles`. Without it, car costs are whatever the user put in
 a budget line: smooth. Each listed vehicle instead has a price in today's dollars, a
@@ -1113,7 +1116,7 @@ shocks scale car repairs with the vehicles' cost but not their age), buying a ca
 of a loan balance still owed on the old one (a second loan simply adds to the first
 and the payment is recomputed), leasing.
 
-### Seasonal spending
+### 7.2 Seasonal spending (opt-in)
 
 Opt-in through `spending.seasonality = "typical"`. Each category has twelve monthly
 weights, rescaled in code to average exactly 1, so a line's annual amount is unchanged
@@ -1141,7 +1144,7 @@ feature: the differences are the noise of which month a withdrawal falls in.
 Not modelled: seasonal income, regional or household-specific patterns, weights that
 vary with age or children.
 
-### Personal inflation by category
+### 7.3 Personal inflation by category (opt-in)
 
 Opt-in through `spending.category_inflation = "stochastic"`. Lines in the food, energy
 (utilities and transport), shelter (rent), medical and education groups carry a
@@ -1169,7 +1172,7 @@ risk in the paths where the household's own prices run ahead of CPI for years.
 Not modelled: correlation of the wedges with each other or with CPI and market returns,
 and a wedge that differs by region.
 
-### Richer irregular expenses
+### 7.4 Richer irregular expenses (opt-in)
 
 Opt-in through `spending.shocks = "detailed"`. Four independent compound-Poisson shock
 types fire monthly: home repair (scaled with the value of owned primary homes: 0.4 a
@@ -1217,7 +1220,7 @@ Not modelled: shocks that depend on the age of the home or car, insurance
 reimbursement, and shocks to rental property (landlord repairs use the property's own
 maintenance rate).
 
-### Belt-tightening when unemployed
+### 7.5 Belt-tightening when unemployed (opt-in)
 
 Opt-in through `spending.unemployment_cut` (0 by default). While an earner is in an
 unemployment spell, discretionary spending is multiplied by `1 - cut`, phasing in
@@ -1242,7 +1245,7 @@ ends poorer.
 Not modelled: a cut that deepens when benefits run out, durable goods deferred during
 a spell, and a cut for a partner's spell that differs from the earner's own.
 
-### Children
+### 7.6 Children
 
 USDA expenditure estimates by age band and income tier (2015 dollars brought to
 today), with the only-child and three-plus adjustments, childcare for ages 0 to 4
@@ -1252,7 +1255,7 @@ divided by 0.8 (a retired household used to get the lowest tier whatever it spen
 In the funded test, child costs still to come are a sum set aside, not a permanent
 cost.
 
-### Uncertain arrival of planned children (opt-in)
+### 7.7 Uncertain arrival of planned children (opt-in)
 
 A child whose birth month is in the future can carry
 `arrival: {"type": "uncertain", "probability", "delay_mean_months", "twins_probability"}`
@@ -1289,7 +1292,7 @@ of the parents' ages and health, and a late arrival does not change leave or car
 plans; no adoption, fertility-treatment costs or pregnancy medical costs; higher-order
 multiples.
 
-### College cost uncertainty (opt-in)
+### 7.8 College cost uncertainty (opt-in)
 
 `college_cost: {"type": "stochastic", "attend_probability", "real_tuition_growth",
 "tuition_volatility", "aid_scale"}` on a child with a college plan (default `fixed`:
@@ -1351,7 +1354,7 @@ merit aid is only in the average, students who leave without a degree, loans and
 plans are not modelled, the funded test sets aside the fixed four-year cost, and tuition
 shocks are independent of inflation and markets.
 
-### Adult children who need support (opt-in)
+### 7.9 Adult children who need support (opt-in)
 
 `adult_support: {"probability", "annual", "mean_years"}` on a child (default absent: none).
 With probability 0.3 (judgement; 18% of 25 to 34 year olds lived in a parent's home in
@@ -1379,7 +1382,7 @@ Not modelled: support does not depend on the household's wealth or the child's i
 only one spell per child, the funded test does not set money aside for it, and no
 grandchildren.
 
-### Parental leave (opt-in)
+### 7.10 Parental leave (opt-in)
 
 `parental_leave: {"person", "months", "pay_fraction"}` on a child (default absent: none),
 and `second_parental_leave` with the same fields for the other parent's leave at the
@@ -1412,7 +1415,7 @@ starting after the birth month (both parents' leaves start in the birth month; u
 career-break event for a later block), loss of promotion or wage growth after leave,
 and leave before the job begins.
 
-### Healthcare
+### 7.11 Healthcare
 
 With `modeled` healthcare each adult is, month by month, on an employer plan, COBRA
 (18 months), the ACA marketplace, Medicare (from 65) or a custom amount. Premiums
@@ -1438,7 +1441,7 @@ insurance at full price: households withdrew from retirement accounts and re-sav
 a median $210,000 in taxable accounts before 65, and the HSA paid "medical" bills
 of $177,000 more than was spent on health.
 
-### Children on the health plan (opt-in)
+### 7.12 Children on the health plan (opt-in)
 
 `spending.healthcare.cover_children` (default false, with
 `children_coverage_end_age`, default 26, the ACA dependent-coverage age) charges
@@ -1480,7 +1483,7 @@ premiums in its health projection; the tax value of pre-tax employer premiums is
 ignored for adults and children alike; state children's programs (CHIP, Medicaid) are
 not modelled; a dependant over 18 who is covered is not a tax dependant after 23.
 
-### Long-term care
+### 7.13 Long-term care
 
 Each person may spend the end of their life in paid care. The probability depends
 on sex and age at death; the episode is scheduled backwards from the death month,
@@ -1498,7 +1501,7 @@ the portfolio. A care episode
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
 
-### Health states (opt-in)
+### 7.14 Health states (opt-in)
 
 By default medical costs, care and the age at death are drawn independently.
 With `assumptions.health_model: states` each adult moves once a year between
@@ -1550,7 +1553,7 @@ self-assessed `health`, which still scales mortality as before); health affectin
 work, earnings or the spending budget; a correlation of the two partners' states;
 the year's planned spending uses the average out-of-pocket cost, not the state's.
 
-### Medicaid for long-term care (opt-in)
+### 7.15 Medicaid for long-term care (opt-in)
 
 With `spending.healthcare.medicaid: true` Medicaid is the payer of last resort
 for the care episodes above, with the national default rules of 2026 (CMS SSI
@@ -1613,7 +1616,7 @@ Medicare premiums and cost-sharing (the person's own health costs are deducted
 from the liability instead), the spouse's wages in the income test, recovery
 liens during life, and waiting lists for home and community-based services.
 
-### Long-term-care insurance (opt-in)
+### 7.16 Long-term-care insurance (opt-in)
 
 `ltc_insurance` on a person adds a policy with the usual terms: a level annual
 premium (fixed in dollars of the plan's start), a daily benefit, a benefit pool of
@@ -1663,7 +1666,7 @@ life/LTC policies, partnership policies' Medicaid asset protection, shared pools
 for couples, benefits that depend on the care setting, a restoration of benefits,
 and the tax deduction of premiums.
 
-### Spousal caregiving
+### 7.17 Spousal caregiving (opt-in)
 
 Opt-in with `spending.healthcare.spousal_care: true` (a couple with long-term care
 on). While one partner is in paid care at home and the other is in the household,
@@ -1688,9 +1691,9 @@ Not modelled: the caregiver's own health (caregiving strain), care by children,
 the partner's time when they are themselves old and frail beyond being in care,
 and any limit on how many hours one person can provide.
 
-### Caring for a parent
+### 7.18 Caring for a parent (opt-in)
 
-Opt-in per parent with `care_support` (section 10 describes the parents). The
+Opt-in per parent with `care_support` (section 10.4 describes the parents). The
 care spell is the parent's paid long-term care at the end of life, drawn as for
 the household's own people. With `probability` (drawn once per path on the
 parent's own stream) the household takes part: it pays `annual_cost` a year
@@ -2082,7 +2085,7 @@ That is current law under the Trustees' assumptions; SSA's own "today's dollars"
 statements do not include it, so the engine will read higher than a statement. A
 trust-fund haircut (benefits at 79% from 2033) is available and off by default.
 
-### Adaptive claiming (opt-in)
+### 9.1 Adaptive claiming (opt-in)
 
 `social_security.claiming: adaptive { earliest (62), latest (70) }` (the default is
 the fixed `claim_age`) plans the claim at `latest`, which is also the claim age the
@@ -2105,7 +2108,9 @@ earner's test also counts the higher earner's remaining bridge: when money is sh
 the lower earner claims first and the higher earner keeps delaying. No random
 numbers are used. The claim shows in a trace as a life event naming the reason,
 followed by the usual "starts Social Security" event, and in the per-person
-claim-age column.
+claim-age column. A person receiving disability insurance (6.3) is left out of the
+decision: their benefit is already unreduced and converts to the retirement
+benefit at full retirement age.
 
 Measured on a test household (single, 61, $2,000 a month at full retirement age,
 $300,000 in a 60/40 account, $36,000 budget, no tax, 400 paths): fixed at 70,
@@ -2124,14 +2129,14 @@ person claims early only when essentials are being cut; the cache of benefit
 thresholds follows the claim age as decided (it uses the claimant's claim age, which
 only adaptive claiming moves).
 
-## 10. Longevity
+## 10. Longevity and changes in the household
 
 Each adult's age at death is drawn from the SSA 2023 period life table, improved
 along the cohort diagonal with the Trustees' rates (life expectancy at 65: 19.2
 years for men, 21.7 for women, matching the published cohort tables), with a
 mortality multiplier for health (default "good" = 0.85, which adds about 1.4 years
-at 65). Deaths of partners are independent unless linked lifespans are switched on (below). For a couple of 65 at the default
-setting, the chance that at least one is alive is 66% at 90, 38% at 95 and 14% at
+at 65). Deaths of partners are independent unless linked lifespans are switched on (10.1).
+For a couple of 65 at the default setting, the chance that at least one is alive is 66% at 90, 38% at 95 and 14% at
 100. A fixed lifespan can be set instead.
 
 When a partner dies: their jobs end, accounts pass to the survivor with a step-up
@@ -2139,7 +2144,7 @@ of taxable basis, the return is joint for that year and single after, shared
 spending falls by the survivor factor, and the survivor keeps the higher Social
 Security benefit.
 
-### Linked lifespans (opt-in)
+### 10.1 Linked lifespans (opt-in)
 
 With `longevity.couple_dependence: linked` the two partners' ages at death are
 drawn together. Two parts, both leaving each person's own survival curve exactly
@@ -2181,7 +2186,7 @@ spending, work or health costs; the copula was fitted on insured annuitants,
 whose dependence may differ from the population's, and combining it with the
 bereavement term may overstate short-term dependence a little.
 
-### Longevity and income (opt-in)
+### 10.2 Longevity and income (opt-in)
 
 With `longevity.income_gradient: true` each person's mortality is multiplied by a
 factor set by the household's rank in the national income distribution. The data
@@ -2222,7 +2227,7 @@ faster in 2001-2014), the gradient's narrowing at old ages beyond what a
 proportional shift gives, and any link between income and the health states'
 prevalence.
 
-### Divorce
+### 10.3 Divorce (opt-in)
 
 Opt-in, two ways: a `divorce` life event (a date, a probability, timing
 uncertainty, like any event) or `household.divorce_risk: typical`, which draws a
@@ -2241,8 +2246,8 @@ net worth, taken out of cash and invested accounts in proportion, with basis
 carried over (a transfer incident to divorce is not taxed); if the first person
 keeps the home (`keeps_home`, the default) the partner's share of its equity
 comes out of savings, otherwise the home is sold and the household rents. The
-partner's jobs, pensions, own budget lines and health costs stop being the
-household's; shared lines are multiplied by `spending_factor` (default 0.7, between
+partner's jobs, self-employment, pensions, own budget lines and health costs stop
+being the household's (their jobs end for the household as they would at a death); shared lines are multiplied by `spending_factor` (default 0.7, between
 the OECD square-root and modified equivalence scales, so two households cost 1.4
 times one); legal costs ($11,300 by default, the average attorney fees with a
 full-scope lawyer in the 2019 Martindale-Nolo survey) are paid; support is paid
@@ -2266,7 +2271,7 @@ understates it), the partner's income after the separation on that year's joint
 return, and the fact that divorce risk differs with age at marriage, education and
 previous marriages.
 
-### Parents and inheritance
+### 10.4 Parents and inheritance (opt-in)
 
 Opt-in through `household.parents` (up to four). Each parent's month of death is
 drawn from the same SSA life table as the household's own people (for their age,
@@ -2305,7 +2310,7 @@ inheritance in a divorce (it is split with everything else), and the household
 anticipating the inheritance: the funded test and the spending rules do not
 count it until it arrives.
 
-### Life insurance
+### 10.5 Life insurance (opt-in)
 
 Opt-in per person: `life_insurance` lists policies on that person's life, each a
 term policy with `years_remaining` or a permanent one, with a death benefit and an
@@ -2408,7 +2413,7 @@ A partner can stop work later (`partner_offset_years`). Coast-FI (the age at whi
 today's savings, with no more saving, would meet the test at the planned
 retirement age) is reported too.
 
-### Not retiring into a crash (opt-in)
+### 11.1 Not retiring into a crash (opt-in)
 
 Two settings on `when_funded` change the month a funded household retires; the FI
 age (the first month the test is met) does not move.
@@ -2449,7 +2454,7 @@ Not modelled: the decision does not weigh the margin over the target, age or how
 the job is going; a delay is always a whole year; a retired household does not
 reconsider (see going back to work below).
 
-### Going back to work (opt-in)
+### 11.2 Going back to work (opt-in)
 
 `retirement.return_to_work` (off by default) lets a retired household look for
 paid work again when its savings fall behind. Each January the funded test above
@@ -2468,8 +2473,11 @@ person's real pay when they retired, or of `former_annual_pay` for a household
 retired from the start. The wages are taxed, pay employee FICA, count toward the
 Social Security earnings record and the earnings test, and appear as wages in the
 year series and as a "back at work" event in a trace. Work stops in the first
-January the ratio is 1 or more again, or at `until_age`. Random numbers come from
-their own stream, one draw per person per month whatever happens.
+January the ratio is 1 or more again, or at `until_age`. A person who is disabled
+(6.3), who was pushed out of work for good by a late-career layoff (6.4), or who
+is in a long-term-care episode does not look for work and stops if already
+working. Random numbers come from their own stream, one draw per person per month
+whatever happens.
 
 Measured with the CLI (`firesight compare`, 3,000 paired paths, default settings):
 `early-career-saver` (retires at a median 39 on a 3.5% rule) goes from 15.8% to
@@ -2543,7 +2551,7 @@ $1.9M against $3.2M: the difference was spent.
 Alongside: the share of paths with a year below 90% and below 75% of plan, and by
 year the share of households depleted and how deep the shortfall is.
 
-### Where the money comes from
+### 12.1 Where the money comes from
 
 Each January a withdrawal plan is made for the year and carried out monthly.
 
@@ -2623,6 +2631,20 @@ a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
 
+Every opt-in feature that needs random numbers has a stream of its own
+(`docs/architecture.md` lists them with their identifiers), drawn a fixed number of
+times a month or a path whatever the household does. Switching a feature on
+therefore adds its own randomness and moves nothing else: a test
+(`tests/sim_richness.rs`) switches each of the fifty features of section 18 on
+alone, on each example, and checks month by month that the market series, the
+position of every person's career and health streams and the drawn lifespans are
+those of the same path without it. The exceptions are by design and are checked
+separately: the market features change the series they say they change (bonds
+priced from the yield only bonds, the valuation setting only the equity classes, a
+stress nothing before its start, moving income yields no return at all), and
+linked lifespans and the income gradient read the same longevity draws against a
+different mortality law.
+
 **Common random numbers.** That makes every comparison a paired experiment. The
 difference in success between two scenarios is estimated from the paths that flip
 (rescued and harmed), with the paired standard error
@@ -2658,7 +2680,11 @@ the simulation, no conservation failure, no non-finite value. 61,524 hostile cal
 through the WebAssembly module produced no trap.
 
 **Speed.** One Apple M4 core runs about 4,400 to 6,800 paths a second on the three
-examples (a path is 700 to 900 months); ten cores about 27,000 to 40,000.
+default-model examples (a path is 700 to 900 months); ten cores about 27,000 to
+40,000. The optional features cost time only when they are on: the three examples
+run within the regression tolerance of the speed recorded before the features
+existed, and the full-life example, which has about forty of them on, runs about
+2,750 paths a second on one core and 14,000 on ten.
 
 ## 15. Validation
 
@@ -2697,7 +2723,24 @@ against Cocco, Gomes and Maenhout; federal parameters against Rev. Proc. 2025-32
 
 **Regression tests.** Each audit finding that was fixed has a test that states the
 defect (`crates/firesight-core/tests/sim_audit.rs` and the module tests). Golden
-digests of the three demo households change only deliberately.
+digests of the four demo households change only deliberately; the three that use
+the default model throughout are bit-identical to what they were before the
+optional features of section 18 were added.
+
+**The optional features together.** Each feature was built and measured on its own
+(its subsection gives the measurement). `tests/sim_richness.rs` then runs the
+shipped examples with every feature on at once (in two variants, for the options
+that exclude one another: a home-equity line with the bootstrap extensions, or a
+reverse mortgage with the fat-tailed model), with each group of five on, with each
+feature alone and, as a slow test run by hand, with every pair, including
+households made to overspend so that every source of emergency money is reached.
+On each: the conservation checks hold every month, no number is infinite or NaN,
+the result does not depend on chunking or merge order, and it differs from the
+baseline. A further test reads the order of events on those paths for
+contradictions (section 18 lists the rules that came out of it). These tests show
+that the features compose without losing money or contradicting one another. They
+do not show that the combined model is calibrated: no joint target exists for a
+household with forty refinements on.
 
 ## 16. Data sources
 
@@ -2722,31 +2765,59 @@ are listed by a test (`tests/unverified_constants.rs`).
 
 ## 17. Known limitations and deliberate omissions
 
-Stated plainly, roughly in order of how much they could move an answer.
+Stated plainly, roughly in order of how much they could move an answer. Several
+limitations of the default model can now be removed by switching on an optional
+feature; those entries say so and name the switch. The default model is unchanged:
+a profile that switches nothing on still has the limitation. Limitations that the
+optional features bring with them are listed under each heading, after the
+default model's.
 
 **Markets**
 
 * The history is that of one country. The default 1.5-point reduction of stock
   returns is a judgement; so are the long-run levels of international stocks, gold
-  and crypto. There is no "lost generation" scenario beyond the stress overlays,
-  and the left tail of 30-year stock returns is thinner than the international
-  record suggests.
+  and crypto. The left tail of 30-year stock returns is thinner than the
+  international record suggests. *Optional:* a multi-decade stagnation and replays
+  of four historical episodes are available as stresses (`stress: lost_generation`,
+  `historical_episode`, section 2.8), and expected returns can start from today's
+  valuation (`market.valuation`, section 2.7). These are scenarios the user chooses,
+  not probabilities the model assigns.
 * Bootstrap: bond returns and the yield level on a path are not mutually
-  consistent; the pull of rates to their mean is a modelling device.
+  consistent; the pull of rates to their mean is a modelling device. *Optional:*
+  `market.bond_pricing: from_yield` prices each path's bond returns from its own
+  yield (section 2.1). The yield path itself still does not respond to the sampled
+  returns.
 * Regime model: real returns run above the calibration data (US stocks 7.5%
   against 7.2%, bills 0.6% against 0.3%) and real equity returns trend instead of
   mean-reverting (variance ratio 1.6 at ten years against 0.75 in history), so its
   long-horizon tails are too wide in both directions; home prices follow inflation
   more closely than in history (annual correlation 0.73 against 0.55).
-* Lognormal model: understates inflation and rate risk by construction.
+* Lognormal model: understates inflation and rate risk by construction. The
+  fat-tailed model (`market.kind: fat_tailed`, section 2.3) adds fat tails and
+  volatility clustering to it and shares its other limits: no mean reversion and a
+  constant yield. Its effect shows in drawdowns more than in success rates.
 * Crypto parameters are assumptions, not estimates.
+* With the optional features: the valuation tilt puts all of the reversion in
+  prices (there are no separate earnings shocks), and its half-life and normal
+  level are parameters, not estimates the model defends. A replayed episode
+  replays the market series only: unemployment and wages in those years follow the
+  model, not the record. The lost generation's -2% real stock drift is a judgement.
+  With `market.dynamic_yields`, listed real estate keeps a constant 4% yield, and
+  the speed at which dividends adjust is a judgement.
 
 **Taxes**
 
-* Not modelled: New York's recapture of lower brackets (understates state tax by
-  $500 to $2,600 for high earners), Utah's Social Security credit, California SDI
-  (1.3% of wages), the alternative minimum tax, the chained-CPI wedge, state
-  itemised deductions beyond the basics, most state credits.
+* Not modelled by default: New York's recapture of lower brackets (understates
+  state tax by $500 to $2,600 for high earners), Utah's Social Security credit and
+  California SDI (1.3% of wages). *Optional:* `assumptions.taxes.state_detail: full`
+  adds the three (section 5.2); New York's recapture for a head of household uses
+  the single schedule, and the 2026 worksheet was not available to check against.
+* Not modelled by default: the slower growth of thresholds indexed to chained CPI.
+  *Optional:* `assumptions.taxes.chained_cpi` (section 5.1), as a fixed wedge of
+  0.25 points a year, not tied to the path's inflation.
+* Not modelled at all: the alternative minimum tax, state itemised deductions
+  beyond the basics, most state credits and phase-outs, disability payroll taxes
+  of states other than California.
 * The first simulated year uses one inflation factor for 2027 rather than each
   published 2027 figure (tax effect under $20; contribution limits off by up to
   $250 to $1,000 at the cap).
@@ -2756,21 +2827,47 @@ Stated plainly, roughly in order of how much they could move an answer.
 * In the first, partial year a full year's retirement contributions are made in
   the remaining months, which understates that year's tax; it comes back in April.
 * A household abroad is taxed at one flat rate for the whole calendar year.
+* With the optional features: policy risk (section 5.3) is two independent draws
+  per path with probabilities the user sets; it has no cut that spares current
+  retirees, no change to the payroll cap or the retirement age, no change that
+  differs by bracket and no link between policy and the economy. Tax-loss
+  harvesting (5.4) works on whole asset-class holdings, not lots, assumes wash
+  sales are avoided and has no trading cost. Qualified charitable distributions
+  (5.5) treat a workplace plan as an IRA and cover only the Giving budget lines.
 
 **Spending, health and care**
 
-* No Medicaid: a household that exhausts its savings on care is a failure, where in
-  reality Medicaid would pay for the care.
-* Children are not charged health-insurance premiums (about $5,000 a child a year
-  for an unsubsidised early retiree), and employed parents pay single-coverage
-  contributions.
+* By default there is no Medicaid: a household that exhausts its savings on care is
+  a failure, where in reality Medicaid would pay for the care. *Optional:*
+  `spending.healthcare.medicaid` (section 7.15), with national default rules: no
+  state differences, no five-year look-back and no Medicaid planning. Paths on
+  which Medicaid paid are reported separately (`medicaid_rate`).
+* By default children are not charged health-insurance premiums (about $5,000 a
+  child a year for an unsubsidised early retiree), and employed parents pay
+  single-coverage contributions. *Optional:* `spending.healthcare.cover_children`
+  (section 7.12), for the modelled healthcare mode only.
 * The 1.5% a year age gradient of Medicare-phase costs is applied to Part B and D
   premiums too, which do not vary with age (overstates costs at 90 by about 12%).
-* Payroll deferrals continue while a household is paying penalties to withdraw or
-  cutting essentials.
+* By default payroll deferrals continue while a household is paying penalties to
+  withdraw or cutting essentials. *Optional:*
+  `portfolio.pause_deferrals_in_distress` (section 4.1); solo 401(k), HSA payroll
+  and employer contributions continue even then.
 * After depletion a path keeps running with essentials cut and an interest-free
   overdraft; statistics of failed paths after their depletion date describe that
   state and should not be read as a forecast.
+* With the optional features: vehicles (7.1) have no leases, no resale beyond the
+  trade-in and no repairs that rise with age. Five of the nine seasonal profiles
+  (7.2) are judgements. Category price wedges (7.3) are independent of one another,
+  of CPI and of markets. Detailed irregular expenses (7.4) do not depend on the age
+  of the home or the car. College costs (7.8) ignore loans and 529 plans, and with
+  the default settings lower the expected cost, because aid is taken off the
+  published price. Support for adult children (7.9) does not depend on the
+  household's wealth or the child's income. Health states (7.14) do not affect
+  work, earnings or the spending budget, and partners' states are independent.
+  Long-term-care insurance (7.16) must be owned at the start at a premium the user
+  enters; there is no underwriting, no purchase later and no reduced-benefit
+  option at a rate increase. Spousal care (7.17) has no effect on the carer's own
+  health and no limit on the hours given.
 
 **People**
 
@@ -2779,29 +2876,220 @@ Stated plainly, roughly in order of how much they could move an answer.
   falls after 100 is not charged (about 8% of mean lifetime care cost).
 * Survivor benefits are understated in three cases (a widow of an early claimer; a
   widow who works past 60; a worker who dies before 62).
-* Deaths of partners are independent; health and wealth do not affect each other.
+* By default deaths of partners are independent, and health and wealth do not
+  affect each other. *Optional:* `longevity.couple_dependence: linked` (section
+  10.1), `longevity.income_gradient` (10.2, an association with income, not an
+  effect of it) and `assumptions.health_model: states` (7.14, in which sick years
+  cost more and precede death). Still not modelled: health affecting earnings, and
+  wealth or spending affecting health.
 * The lifecycle wage curve falls 15 to 22% in real terms from 45 to 65, which
   reflects the data (including shorter hours) but will understate pay for someone
   who stays full-time in a stable job; use the flat profile.
+* By default a career has layoffs and wage shocks only. *Optional:* job changes
+  (section 6.1), recession pay (6.2), disability (6.3), late-career layoffs that
+  can end a career (6.4) and business failure (6.5). Most of their sizes are
+  judgements, as each subsection says; the age profile of disability is one
+  (age-specific incidence tables could not be retrieved), a disabled person has no
+  extra medical costs and no early Medicare, and recession pay is not
+  mean-preserving (it lowered lifetime pay by 2.7% when measured).
+* The household is otherwise fixed. *Optional:* uncertain births (7.7), parental
+  leave (7.10, per child, both leaves starting in the birth month; state paid
+  leave is not modelled), divorce (10.3), parents who die, leave an estate and may
+  need care (10.4, 7.18) and life insurance (10.5). Not modelled: remarriage,
+  custody, the departed partner's later life, estate and inheritance taxes, the
+  cash value of permanent life insurance. A divorce does not undo what was drawn
+  at the start of the path: with linked lifespans the former partners' deaths stay
+  linked, and a child planned for a later date is still born to the person who
+  stays.
 
 **Housing**
 
-* A last-resort home sale is always possible, immediate and at the path's value
-  less 6%; there is no reverse mortgage, no home-equity line and no downsizing
-  before savings run out.
-* Refinancing is a rule of thumb, cash-out refinancing is not modelled, and
-  mortgages are fixed-rate only.
+* By default a last-resort home sale is always possible, immediate and at the
+  path's value less 6%, and there is no borrowing against the home and no
+  downsizing before savings run out. *Optional:* slow sales at a discount in weak
+  markets (`assumptions.housing_liquidity: realistic`, section 8.1), a home-equity
+  line or a reverse mortgage (`retirement.home_equity_borrowing`, 8.2) and planned
+  downsizing (`retirement.downsize`, 8.2). With slow sales on, the sale in a
+  downsizing and the sale at a divorce still close in the month they are decided;
+  only planned `sell_property` events and last-resort sales take time.
+* Refinancing is a rule of thumb. By default cash-out refinancing is not modelled
+  and mortgages are fixed-rate. *Optional:* `debt_policy.cash_out_refinance` and
+  `debt_policy.mortgage_prepayment` (8.2), and adjustable-rate mortgages
+  (`mortgage.kind: arm`, 8.1; the index is the simulated bill yield, there is no
+  separate initial cap and no interest-only loan).
+* By default maintenance is a smooth percentage, property tax follows market value,
+  insurance grows with prices, rent grows at a fixed real rate and a rental has a
+  constant vacancy haircut. *Optional:* lumpy maintenance, capped assessments,
+  insurance repricing and market rents (8.1), and rentals with tenants who leave
+  (8.2). There are no metro-level price or rent indices, no rent control, and each
+  rental has its own rent index, uncorrelated with the others and with local house
+  prices.
+* With the optional features: lenders apply no income or credit test to a
+  home-equity line, a cash-out refinance or the mortgage on a smaller home; a
+  home-equity line has no fees; the reverse mortgage has no non-borrowing-spouse
+  rules, no tenure payments and no default on unpaid property tax. The home bought
+  in a downsizing sits in the old home's property slot, so it keeps the old tax,
+  insurance and maintenance rates. Rent taken on after any sale (downsizing to a
+  rental, a last-resort sale, a divorce) grows at the fixed real rate of rent
+  lines even when the household's own rent line follows the market index.
 
 **Decisions**
 
-* The household follows its rules mechanically. It does not go back to work,
-  move, or change its allocation in response to a bad decade, except through the
-  spending rule and the last-resort sale.
+* By default the household follows its rules mechanically: it does not go back to
+  work, move, or change its allocation in response to a bad decade, except through
+  the spending rule and the last-resort sale. *Optional:* going back to work
+  (`retirement.return_to_work`, section 11.2), claiming Social Security early when
+  savings run low (`social_security.claiming: adaptive`, 9.1), not retiring into a
+  crash (`when_funded.confirmation` and `one_more_year`, 11.1), belt-tightening
+  when unemployed (`spending.unemployment_cut`, 7.5) and downsizing (8.2). Panic
+  selling (`portfolio.behavior: panic_prone`, 4.2) is the opposite kind of
+  realism: a mistake the household may make. All of these are still rules with
+  fixed thresholds. Nothing is optimised, and none weighs life expectancy, tax or
+  the premium credit.
+* The job a retiree goes back to has no raises, layoffs, employer health cover or
+  workplace plan, and spending does not change while they work.
 * Flexible spending rules spend more in good times and can succeed slightly less
   often than constant spending (section 12).
 * The funded test does not include the tax cost of planned Roth conversions.
 
+**The optional features as a set**
+
+* Each was calibrated and measured alone, on the shipped examples. Together they
+  are tested for consistency (section 15), not calibrated: there is no joint
+  target for, say, disability, divorce and a market crash in one life, and the
+  features' random shocks are independent of one another except where a
+  subsection says otherwise (recessions drive layoffs, pay cuts, business
+  profits, slow home sales and lender freezes; nothing links health to work or
+  divorce to money).
+* Many of their parameters are judgements. They are named constants, most of them
+  registered in `data/actuarial/params.json` with a confidence note, and each
+  subsection says which of its numbers are measured and which are not.
+* Some features are not mean-preserving by design (recession pay, business
+  failure, disability, panic selling): switching them on makes the average
+  outcome worse as well as wider. Others keep the mean and add spread (job
+  changes, category inflation, lumpy maintenance, seasonal spending).
+
 **Statistics**
 
 * Intervals are sampling error only.
-* Failure causes are first-match labels (section 13).
+* Failure causes are first-match labels (section 13). The labels predate the
+  optional features: a path that fails after a disability or a divorce is labelled
+  by the first rule that holds (often job loss, health or overspending), not by
+  the event.
+
+## 18. The optional realism features
+
+Fifty refinements are off unless a profile switches them on. With all of them off
+the engine produces, bit for bit, what it produced before they existed. The table
+gives each switch as a path in the profile JSON, its default, and the section that
+describes it. The `full-life` example (`examples/full-life.json`) has about forty
+of them on.
+
+| Feature | Switch | Default | Section |
+|---|---|---|---|
+| Vehicle replacement cycles | `spending.vehicles[]` | empty | 7.1 |
+| Seasonal spending | `spending.seasonality: typical` | `off` | 7.2 |
+| Personal inflation by category | `spending.category_inflation: stochastic` | `off` | 7.3 |
+| Richer irregular expenses | `spending.shocks: detailed` | `typical` | 7.4 |
+| Belt-tightening when unemployed | `spending.unemployment_cut` (fraction) | 0 | 7.5 |
+| Children on the health plan | `spending.healthcare.cover_children` | false | 7.12 |
+| Uncertain arrival of planned children | `household.children[].arrival: {type: uncertain, ...}` | `certain` | 7.7 |
+| College cost uncertainty | `household.children[].college_cost: {type: stochastic, ...}` | `fixed` | 7.8 |
+| Adult children who need support | `household.children[].adult_support` | absent | 7.9 |
+| Parental leave | `household.children[].parental_leave`, `second_parental_leave` | absent | 7.10 |
+| Lumpy home maintenance | `properties[].maintenance: lumpy` (also on `buy_home`) | `smooth` | 8.1 |
+| Assessment cap | `properties[].assessment: {type: capped, annual_cap}` (also on `buy_home`) | `market` | 8.1 |
+| Insurance repricing | `properties[].insurance_real_growth: stochastic` (also on `buy_home`) | `fixed` | 8.1 |
+| Market rents | `spending.items[].rent_growth: market` (rent lines) | `fixed` | 8.1 |
+| Slow home sales | `assumptions.housing_liquidity: realistic` | `instant` | 8.1 |
+| Adjustable-rate mortgages | `properties[].mortgage.kind: {type: arm, ...}`, `buy_home.mortgage_kind` | `fixed` | 8.1 |
+| Job changes with pay jumps | job `risk.job_mobility: typical` or `high` | `off` | 6.1 |
+| Recession pay freezes and cuts | job `risk.recession_pay: typical` | `off` | 6.2 |
+| Disability | `household.people[].disability_risk: typical`, optional `ltd_insurance` | `off`, absent | 6.3 |
+| Late-career layoffs | job `risk.late_career: realistic` | `off` | 6.4 |
+| Business cycles and failure | self-employment `business_risk: typical` or `high`, optional `fallback_wage` | `off`, absent | 6.5 |
+| Chained-CPI indexing | `assumptions.taxes.chained_cpi` | false | 5.1 |
+| State detail | `assumptions.taxes.state_detail: full` | `basic` | 5.2 |
+| Policy risk | `assumptions.taxes.policy_risk: {...}` | absent | 5.3 |
+| Tax-loss harvesting | `portfolio.tax_loss_harvesting` | false | 5.4 |
+| Qualified charitable distributions | `retirement.qcd` | false | 5.5 |
+| Home-equity line of credit | `retirement.home_equity_borrowing: {type: heloc, ...}` | `none` | 8.2 |
+| Reverse mortgage | `retirement.home_equity_borrowing: {type: reverse_mortgage, ...}` | `none` | 8.2 |
+| Planned downsizing | `retirement.downsize: {when, to_value_fraction, ...}` | absent | 8.2 |
+| Cash-out refinancing | `debt_policy.cash_out_refinance: {...}` | absent | 8.2 |
+| Rate-aware mortgage prepayment | `debt_policy.mortgage_prepayment: {type: when_rate_above}` | `never` | 8.2 |
+| Rentals with tenants who leave | rental `use.dynamics: {type: realistic}` | `simple` | 8.2 |
+| Health states | `assumptions.health_model: {type: states}` | `independent` | 7.14 |
+| Linked lifespans | `assumptions.longevity.couple_dependence: {type: linked}` | `independent` | 10.1 |
+| Longevity and income | `assumptions.longevity.income_gradient` | false | 10.2 |
+| Medicaid for long-term care | `spending.healthcare.medicaid` | false | 7.15 |
+| Long-term-care insurance | `household.people[].ltc_insurance: {...}` | absent | 7.16 |
+| Bonds priced from the yield | `assumptions.market.bond_pricing: from_yield` (bootstrap) | `sampled` | 2.1 |
+| Valuation-aware expected returns | `assumptions.market.valuation: {...}` | absent | 2.7 |
+| Historical episodes, lost generation | `assumptions.market.stress[]: {type: historical_episode}`, `{type: lost_generation}` | none | 2.8 |
+| Fat tails and volatility clustering | `assumptions.market.kind: {type: fat_tailed}` | bootstrap | 2.3 |
+| Income yields that move | `assumptions.market.dynamic_yields` | false | 4 |
+| Going back to work | `retirement.return_to_work: {...}` | absent | 11.2 |
+| Panic selling | `portfolio.behavior: {type: panic_prone, ...}` | `disciplined` | 4.2 |
+| Adaptive Social Security claiming | `household.people[].social_security.claiming: {type: adaptive}` | `fixed` | 9.1 |
+| Pausing saving in distress | `portfolio.pause_deferrals_in_distress` | false | 4.1 |
+| Not retiring into a crash | `retirement.trigger.confirmation`, `retirement.trigger.one_more_year` (`when_funded`) | absent | 11.1 |
+| Divorce | `household.divorce_risk: {type: typical, ...}`, or an event of `type: divorce` | `off` | 10.3 |
+| Parents and inheritance | `household.parents[]` | empty | 10.4 |
+| Caring for a parent | `household.parents[].care_support` | absent | 7.18 |
+| Spousal caregiving | `spending.healthcare.spousal_care` | false | 7.17 |
+| Life insurance | `household.people[].life_insurance[]` | empty | 10.5 |
+
+The table has 52 rows for fifty features because two of them have two switches
+each (the assessment cap and insurance repricing; cash-out refinancing and
+prepayment).
+
+**Options that exclude one another.** A home-equity line and a reverse mortgage
+are two values of one field, so a profile has one or the other. Bonds priced from
+the yield apply to the bootstrap only, and the valuation setting does not apply to
+the historical replay: validation warns (`bond_pricing_ignored`,
+`valuation_ignored`) and the setting is ignored. The two leaves of one birth must
+name different people (`leave_same_person`, an error). No other pair is rejected:
+every other combination runs, under the rules below.
+
+**How the features combine.** These rules hold where two features touch the same
+thing. They are checked by `tests/sim_richness.rs`.
+
+* *When money is short*, the order is: planned withdrawals; a cash-out refinance,
+  when the alternative is a withdrawal with the early-withdrawal penalty and the
+  refinance costs less; every liquid account, penalised ones last; discretionary
+  spending is cut; a home-equity line or reverse mortgage is drawn;
+  property is sold (or listed, with slow sales; the months to closing are bridged
+  by an overdraft and are not depletion); essentials are cut. An adaptive claimant
+  claims when savings can no longer bridge the delay, which normally comes before
+  any of the last three steps. Medicaid applies only to long-term care.
+* *One home, one plan.* A cash-out refinance is not made on a home with a reverse
+  mortgage. A reverse mortgage repays the mortgage it replaces. A home-equity line
+  or reverse mortgage is repaid from the proceeds of any sale, and counts against
+  the home's equity for Medicaid and for a divorce settlement. A planned
+  downsizing lapses if the home is already listed for sale.
+* *Repairs are counted once.* With detailed irregular expenses, home repairs come
+  out of the home's maintenance rate; lumpy maintenance then spreads what is left;
+  a rental with realistic dynamics and lumpy maintenance takes its large repairs
+  from the lumpy model only.
+* *Rent is indexed once.* A rent line that follows the market index is exempt from
+  the shelter category's price wedge.
+* *Disability.* A person on disability insurance is not offered an early
+  retirement claim by adaptive claiming (the disability benefit converts at full
+  retirement age), does not go back to work under `return_to_work`, and, if they
+  also qualify for a survivor or spousal benefit, receives the larger of the two.
+  A benefit cut drawn by policy risk applies to disability insurance as well.
+* *Who can go back to work.* Not someone who is disabled, not someone in a
+  long-term-care episode, and not someone whom a late-career layoff pushed out
+  for good (`late_career: realistic`): that outcome means what it says.
+* *Divorce.* The departing partner's jobs and self-employment end for the
+  household as at a death: they no longer count as workplace-plan cover, as
+  unemployment, or as jobs that can change, be cut or be taken leave from. Their
+  life insurance and long-term-care policy go with them, their vehicle is no
+  longer replaced, and their parents' estates no longer come to the household.
+* *Policy risk and `social_security_haircut`* both apply if both are set
+  (validation warns, `policy_risk_stacks`).
+* *Career breaks.* Parental leave, a break to care for a parent, a cut in hours to
+  care for a partner and a `career_break` event all use one mechanism, and a
+  person can be on one break at a time: a second one that would start during the
+  first does not start.
