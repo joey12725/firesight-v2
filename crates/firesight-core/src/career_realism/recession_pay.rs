@@ -166,10 +166,10 @@ impl RecessionPayModel {
             } else {
                 1.0
             };
-        if employed {
-            state.cut_left = state.cut_left.saturating_sub(1);
-            state.cooldown = state.cooldown.saturating_sub(1);
-        }
+        // Both clocks run on calendar time: a cut or a freeze year that a layoff
+        // interrupts is over by the time the worker is back in a (new) job.
+        state.cut_left = state.cut_left.saturating_sub(1);
+        state.cooldown = state.cooldown.saturating_sub(1);
         PayFactors {
             wage,
             bonus,
