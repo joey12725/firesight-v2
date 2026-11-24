@@ -107,6 +107,17 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         kitchen_sink_lite(),
         2.0,
     )));
+    // The opt-in health, longevity and care features on every demo household.
+    let with_care: Vec<Profile> = profiles
+        .iter()
+        .take(3)
+        .map(|p| {
+            let mut p = common::care::all_care(p.clone());
+            p.name = format!("{} (care features)", p.name);
+            p
+        })
+        .collect();
+    profiles.extend(with_care);
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

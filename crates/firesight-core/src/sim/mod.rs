@@ -55,6 +55,7 @@ use std::ops::Range;
 use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
+mod care;
 mod cash_out;
 mod downsize;
 mod events;

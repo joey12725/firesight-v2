@@ -126,6 +126,14 @@ pub struct Healthcare {
     /// dependent-coverage age). Used only when `cover_children` is on.
     #[serde(skip_serializing_if = "is_default_coverage_end_age")]
     pub children_coverage_end_age: f64,
+    /// Medicaid as the payer of last resort for long-term care. Off (the default):
+    /// care is paid privately until savings run out. On: once countable savings are
+    /// spent down to the asset limit ($2,000), Medicaid pays for care; the person
+    /// pays their income less a small allowance, a spouse at home keeps part of the
+    /// savings and enough income to live on, and after both have died the state
+    /// recovers what it paid from the estate. National default rules; states vary.
+    #[serde(skip_serializing_if = "is_false")]
+    pub medicaid: bool,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -145,6 +153,7 @@ impl Default for Healthcare {
             quality: PlanTier::Silver,
             cover_children: false,
             children_coverage_end_age: 26.0,
+            medicaid: false,
         }
     }
 }

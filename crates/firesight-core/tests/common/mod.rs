@@ -1,6 +1,8 @@
 //! Shared builders for the simulation integration tests.
 #![allow(dead_code)]
 
+pub mod care;
+
 use firesight_core::data::Data;
 use firesight_core::model::*;
 use firesight_core::sim::{self, Plan, Workspace};

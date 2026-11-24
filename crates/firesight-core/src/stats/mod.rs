@@ -564,6 +564,10 @@ keyed_enum! {
         /// is paid off (by its schedule or by a sale) and none is taken out
         /// afterwards; NaN if it never had a mortgage or still has one at the end.
         MortgagePayoffAge => "mortgage_payoff_age",
+        /// Supplied: first person's age in the first month Medicaid paid for
+        /// someone's long-term care after savings were spent down
+        /// (`spending.healthcare.medicaid`); NaN if it never did. Appended last.
+        MedicaidAge => "medicaid_age",
     }
 }
 
@@ -591,6 +595,7 @@ impl PathScalar {
             | PathScalar::PersonRetirementAge0
             | PathScalar::PersonRetirementAge1
             | PathScalar::MortgagePayoffAge
+            | PathScalar::MedicaidAge
             | PathScalar::DeathAge1 => ScalarUnit::Age,
             PathScalar::InvestableAtRetirement
             | PathScalar::LongTermCareCost
@@ -708,6 +713,17 @@ keyed_enum! {
         LifeEvent => "life_event",
         /// Anything else.
         Other => "other",
+        /// A person's health state changed (`health_model: states`).
+        HealthState => "health_state",
+        /// A person's death followed the partner's within the bereavement window
+        /// (`couple_dependence: linked`).
+        Bereavement => "bereavement",
+        /// Medicaid began paying for a person's long-term care, or the state
+        /// recovered its costs from the estate (`spending.healthcare.medicaid`).
+        Medicaid => "medicaid",
+        /// Long-term-care insurance: a premium increase, the first benefit, the pool
+        /// used up, or a lapse (`person.ltc_insurance`).
+        LtcInsurance => "ltc_insurance",
     }
 }
 
@@ -971,7 +987,7 @@ mod tests {
         );
         assert_eq!(Status::COUNT, 6);
         assert_eq!(YearSeries::COUNT, 43);
-        assert_eq!(PathScalar::COUNT, 36);
+        assert_eq!(PathScalar::COUNT, 37);
         assert_eq!(YearSeries::from_key("mortgage"), Some(YearSeries::Mortgage));
         assert_eq!(PathScalar::from_index(0), Some(PathScalar::FiAge));
         assert_eq!(PathScalar::from_key("nope"), None);

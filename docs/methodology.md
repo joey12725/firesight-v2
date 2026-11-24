@@ -1187,10 +1187,176 @@ health and excess inflation, from 65: mean $114k for men, $227k for women, 95th
 percentile $618k and $997k.
 
 Care is the dominant cause of failure for well-funded retirees: on the family
-example, switching it off halves depletion risk. Medicaid is not modelled; "health"
-as a failure cause means private-pay care exhausted the portfolio. A care episode
+example, switching it off halves depletion risk. Medicaid is not modelled unless
+switched on (below); "health" as a failure cause means private-pay care exhausted
+the portfolio. A care episode
 under way is in the year's plan, and the spending rules do not raise spending
 during one.
+
+### Health states (opt-in)
+
+By default medical costs, care and the age at death are drawn independently.
+With `assumptions.health_model: states` each adult moves once a year between
+three states: healthy, chronic (two or more chronic conditions) and frail (the
+Fried phenotype). From age 50 the yearly chance of becoming chronic is
+`logistic(-4.155 + 0.050 (age - 50))` (1.5% at 50, 4.1% at 70); chronic to frail
+is `logistic(-2.743 + 0.061 (age - 80))` (3.4% at 70, 6.0% at 80, 10.6% at 90);
+healthy to frail directly a quarter of that; a frail person recovers to chronic
+with 10% a year; chronic is permanent. The four coefficients were fitted so that
+the chain, run from 18 on the 2023 period table, reproduces US prevalence: two or
+more chronic conditions in 6.9% / 30.5% / 67.1% of adults at 18-44 / 45-64 / 65+
+(NHIS 2018, Boersma et al. 2020: 6.7 / 33.0 / 63.7) and frailty in 8.3% at 65-69,
+17.0% at 65+ and 34.7% at 90+ (NHATS 2011, Bandeen-Roche et al. 2015: 9 / 15 /
+38). The direct healthy-to-frail share and the recovery rate are judgements.
+
+The state multiplies three things, each normalised so that the population
+average is unchanged:
+
+* **Mortality**: hazard ratios 1.73 for chronic (Nunes et al. 2016 meta-analysis,
+  two or more morbidities) and 2.79 for frail (Crow et al. 2018, NHANES
+  1999-2004, frail against robust),
+  relative to healthy at the same age, scaled every year so that the hazard
+  averaged over the survivors' states equals the person's own life-table rate
+  exactly. Deaths are therefore not redrawn: the age at death comes from the
+  person's longevity draw as before, and the health path is drawn *given* it
+  (forward filtering, backward sampling; exact for the joint model). Life
+  expectancy is unchanged to the bit and a frail year is far more likely just
+  before death.
+* **Out-of-pocket costs**: 1.91 times for chronic (AHRQ MEPS Statistical Brief
+  498, elderly with supplemental coverage: $1,685 against $883) and 2.79 for
+  frail (that ratio times the severe-disability ratio of Park and Stimpson 2024,
+  a judgement), divided by their average among the living of that age.
+* **Paid long-term care**: the episode probability is multiplied by 0.5 / 1 / 2
+  for the state at death (a judgement), divided by its average over the states
+  of the people dying at that age, so the ASPE incidence targets still hold.
+
+Measured (unit and simulation tests): every death age is identical with the
+feature on; the share of 70-year-old women using paid care and its mean cost move
+by less than sampling noise; for a 70-year-old man, health spending in the last
+two years of life rises by about $26 a month (premiums included) and by $1 a month
+before. On the dual-income example (4,000 paired paths): success 91.5% against
+91.4%, depletion 8.5% against 8.6%, both within noise; median terminal net worth
++$16k. The feature redistributes cost toward the end of life rather than adding
+it.
+
+Not modelled: states before 18 or a state reported by the user (the starting
+state is drawn from the prevalence at the person's age, whatever the
+self-assessed `health`, which still scales mortality as before); health affecting
+work, earnings or the spending budget; a correlation of the two partners' states;
+the year's planned spending uses the average out-of-pocket cost, not the state's.
+
+### Medicaid for long-term care (opt-in)
+
+With `spending.healthcare.medicaid: true` Medicaid is the payer of last resort
+for the care episodes above, with the national default rules of 2026 (CMS SSI
+and spousal impoverishment standards; 42 U.S.C. 1396a(q), 1396r-5 and 1396p):
+
+* **Spend-down.** Care is paid privately while countable assets (every account,
+  plus the equity in property other than the home) are above the $2,000 asset
+  limit, a dollar figure fixed since 1989 and not indexed. In the month they no
+  longer cover the cost above the limit, Medicaid starts paying (the month's
+  income counts toward the liability below, not also as an asset). A single person
+  with home equity above $752,000 is not eligible; the home is otherwise exempt.
+* **Patient liability.** The person then pays all of their own income (Social
+  Security and the pensions, annuities and other streams they own) less a
+  personal needs allowance of $60 a month in a nursing home (a judgement: the
+  federal minimum is $30 and most states set more) or the special income level
+  ($2,982, 300% of the SSI benefit) for care at home or in assisted living, less
+  their own premiums and out-of-pocket costs. Medicaid pays the rest of the cost.
+* **Spousal impoverishment.** With a spouse at home, half of the countable
+  assets in the first month of care (the snapshot) is protected, at least
+  $32,532 and at most $162,660 (the 2026 community spouse resource allowance),
+  and the spouse keeps enough of the patient's income to bring their own up to
+  $2,643.75 a month (the minimum maintenance needs allowance of July 2025 to June
+  2026). Indexed figures rise with the path's prices.
+* **Estate recovery.** When the path ends with the deaths of the recipient and
+  any spouse, the state recovers what Medicaid paid, up to the estate, which
+  lowers the estate tested against the bequest target. A path that ends with
+  someone alive at the horizon has nothing recovered yet.
+
+A month in which Medicaid pays for a nursing-home resident with no spouse at
+home is covered by the safety net and is not counted as depletion: the nursing
+home provides room and board and the person lives on the personal needs
+allowance, so the household budget the engine still charges is not a real need.
+Medicaid paying for care at home or in assisted living does not cover rent and
+food, so a shortfall there is still depletion. Such paths are reported on their own (`medicaid_rate` in the
+headline, `medicaid_age` per path, and "medicaid" trace events for the start of
+coverage and for the estate recovery), as `home_sale_rate` is for a home sold.
+A spouse at home who runs out is still depleted. Care that Medicaid pays is not
+in `long_term_care_cost`, which is what the household paid.
+
+Measured (simulation tests): for a widow of 78 with $150,000 and Social Security
+covering her budget (3,000 paths), depletion falls from 34% to 15% of paths and
+Medicaid pays on 32%; paths on which it never pays are identical bit for bit;
+every Medicaid path that ends with her death has its cost recovered from her
+home. Most of the remaining depletion is care at home: Medicaid pays the care
+but her Social Security, less her Medicare premiums and out-of-pocket costs
+(which Medicaid would partly cover in reality, not modelled), falls short of her
+budget. For a couple, Medicaid begins with at least the protected allowance
+still held. On the dual-income example (4,000 paired paths) success rises from
+91.5% to 97.5% (95% interval of the change +5.3 to +6.8 points) and depletion
+falls from 8.5% to 2.5%; Medicaid pays on 14.4% of paths, more than were
+depleted without it, because a couple qualifies while the spouse at home keeps
+up to $162,660.
+
+Not modelled: state rules (asset limits, income caps, medically needy
+spend-down, more generous allowances, which settings a state's waivers pay for:
+here every care type is covered), the five-year look-back on gifts and Medicaid
+planning (trusts, annuities, spending on exempt assets), the higher maximum
+maintenance allowance by court order or excess shelter costs, Medicaid paying
+Medicare premiums and cost-sharing (the person's own health costs are deducted
+from the liability instead), the spouse's wages in the income test, recovery
+liens during life, and waiting lists for home and community-based services.
+
+### Long-term-care insurance (opt-in)
+
+`ltc_insurance` on a person adds a policy with the usual terms: a level annual
+premium (fixed in dollars of the plan's start), a daily benefit, a benefit pool of
+daily benefit x 365 x benefit years, an elimination period in days of paid care
+(rounded up to whole months) and an optional compound inflation rider that grows
+the daily benefit and the unused pool each year. Premiums are paid monthly as
+healthcare spending until the person's care episode begins, then waived. From the
+month after the elimination period the policy pays the cost of care up to the
+monthly benefit (daily x 365 / 12) until the pool is used up; the benefit pays the
+provider, so the household's long-term-care spending falls by it (benefits of a
+tax-qualified policy are not income, IRC 7702B; premiums are not deducted).
+Medicaid, when on, pays only what the policy does not.
+
+**Premium increases.** Premiums of a policy class are not guaranteed. With
+`premium_increase_risk` on, each policy year the class (one for the household)
+gets an approved increase with probability 8%, uniform between 10% and 30%,
+drawn from the new `Stream::LtcPremiumRates` (two uniforms a year, always). These
+are judgements calibrated to the record: an average cumulative increase of 31%
+since 2001 on policies sold under the NAIC rate-stability rules and 55% on older
+ones (LTC Shop data reported by InvestmentNews, 2018); the model gives a geometric-mean
+cumulative factor of about 1.28 over 17 years (a unit test).
+
+**Lapse.** At each policy anniversary, before a claim, a policy lapses (no more
+premiums, no benefits, no non-forfeiture value) if the household was depleted in
+any month of the past year, or if the year's premium is above 10% of its
+resources: the past year's wages, self-employment income, Social Security and
+taxable pensions plus 4% of its investable assets. Both thresholds are
+judgements.
+
+Measured (simulation tests): for a woman of 70 with a $3,000 policy paying $200 a
+day for three years after 90 days (3,000 paired paths), the deaths are identical,
+the care the household pays never rises on any path and its mean falls by between
+20% and 80%, premiums add roughly $3,000 a year of remaining life, most paths see
+a premium increase, and a widow with $20,000 and $1,500 a month whose $5,000
+premium is unaffordable lapses at the first anniversary on every path without an
+earlier claim. On the dual-income example with a $1,500 policy each ($200 a day,
+three years, 90 days, 3% compound rider) bought at the start (4,000 paired
+paths): success rises from 91.5% to 93.0% (95% interval of the change +1.1 to
++2.1 points), depletion falls from 8.5% to 7.0%, median retirement age is 0.3
+years later (the premiums are budgeted), and the 10th percentile of terminal net
+worth rises by $142k; with Medicaid also on, success is 98.1%.
+
+Not modelled: premiums that depend on the age and health at purchase (the user
+enters the premium), underwriting and buying a policy later in the plan,
+non-forfeiture and reduced-benefit options offered at a rate increase, hybrid
+life/LTC policies, partnership policies' Medicaid asset protection, shared pools
+for couples, benefits that depend on the care setting, a restoration of benefits,
+and the tax deduction of premiums.
 
 ## 8. Housing and debt
 
@@ -1563,7 +1729,7 @@ Each adult's age at death is drawn from the SSA 2023 period life table, improved
 along the cohort diagonal with the Trustees' rates (life expectancy at 65: 19.2
 years for men, 21.7 for women, matching the published cohort tables), with a
 mortality multiplier for health (default "good" = 0.85, which adds about 1.4 years
-at 65). Deaths of partners are independent. For a couple of 65 at the default
+at 65). Deaths of partners are independent unless linked lifespans are switched on (below). For a couple of 65 at the default
 setting, the chance that at least one is alive is 66% at 90, 38% at 95 and 14% at
 100. A fixed lifespan can be set instead.
 
@@ -1571,6 +1737,89 @@ When a partner dies: their jobs end, accounts pass to the survivor with a step-u
 of taxable basis, the return is joint for that year and single after, shared
 spending falls by the survivor factor, and the survivor keeps the higher Social
 Security benefit.
+
+### Linked lifespans (opt-in)
+
+With `longevity.couple_dependence: linked` the two partners' ages at death are
+drawn together. Two parts, both leaving each person's own survival curve exactly
+as above:
+
+* **Shared frailty.** A Frank copula on the two longevity uniforms with
+  association 7.065, the estimate of Dufresne, Hashorva, Ratovomirija and
+  Toukourou (2018, Table 4.1, IFM, no age-difference term) on the joint-and-last-
+  survivor annuity data of a large Canadian insurer analysed by Frees, Carriere
+  and Valdez (1996). Frees, Carriere and Valdez's own Frank fit to the same data
+  was weaker (association about 3.4, Spearman's rho about 0.5), so the strength
+  of the link is uncertain by a factor of about two. Kendall's tau 0.56; the Pearson correlation of the two
+  simulated death ages of a couple of 66 and 64 is about 0.75.
+* **Bereavement.** The survivor's risk of dying in the six months after the
+  partner's death is raised by the relative risk 1.41 of the Moon, Kondo, Glymour
+  and Subramanian (2011) meta-analysis of 15 cohorts. It is a mixture component
+  whose joint mass is the independent chance of each such pair times 0.41, and
+  the copula's residual curves have that mass taken out, so the margins stay
+  exact (a unit test checks them to 1e-12, including a 28-year age gap). The
+  lasting excess after six months (RR 1.14) is taken to be part of the shared
+  frailty and is not added. A death drawn this way is logged ("bereavement").
+
+Draws: the first uniform of each person's longevity stream (the one the
+independent draw uses) and two uniforms of the new `Stream::CoupleLongevity`,
+whatever the household does.
+
+Measured: for a couple of 66 and 64 (4,000 paths) mean death ages are unchanged
+within noise, the average gap between the two deaths falls from 10.9 to 6.0
+years and the last survivor's expected death age from 92.1 to 89.4. On the
+dual-income example (4,000 paired paths) success moves 91.5% to 91.1% (within
+noise), depletion 8.5% to 8.8% (within noise), and reaching retirement 99.5% to
+98.6% (both partners dying young together is more likely); median lifetime tax
+falls by $36k.
+
+Not modelled: the dependence of the association on the age difference (the
+paper's alpha(d)); dependence for unmarried partners or a partner who joins
+later (it applies to the first two adults from the start); bereavement effects on
+spending, work or health costs; the copula was fitted on insured annuitants,
+whose dependence may differ from the population's, and combining it with the
+bereavement term may overstate short-term dependence a little.
+
+### Longevity and income (opt-in)
+
+With `longevity.income_gradient: true` each person's mortality is multiplied by a
+factor set by the household's rank in the national income distribution. The data
+are Chetty, Stepner, Abraham et al. (2016, JAMA), online table 1: race-adjusted
+period life expectancy at 40 by percentile of household income, by sex, US
+2001-2014 (men 72.7 / 81.7 / 87.3 years at the 1st / 50th / 100th percentile,
+women 78.8 / 85.0 / 88.9). The factor is the constant multiplier on the SSA 2023
+period table that moves its life expectancy at 40 by the percentile's gap from
+the average over the percentiles (found by bisection), applied on top of the
+`health` multiplier through the same mortality curve, so every later draw, the
+health states and the linked lifespans see it. It is an association: higher income
+goes with longer lives for many reasons (health, education, work, place), and the
+model does not claim income causes them.
+
+The rank comes from `income_percentile` (1 to 100) when given; otherwise from the
+gross pay of the jobs and the net self-employment income running at the start,
+converted to 2012 dollars with CPI-U (1.4676, the project's own CPI series) and
+placed between the percentile means of the table. With no earnings at the start
+(a retired household) the 50th percentile is used and validation warns: the paper
+ranks people past 61 by their income at 61 to 63, which a profile of retirees does
+not hold, so `income_percentile` should be set. With the option off the
+multiplier is exactly 1 and nothing changes.
+
+Measured: for a woman of 70 (3,000 paths) the 95th percentile moves the mean age
+at death up by between one and four years and the 5th down by a similar amount
+(a simulation test); each paired death moves only later at the 95th percentile.
+On the dual-income example (4,000 paired paths) the earnings rank the household
+near the 90th percentile (the result is within noise of `income_percentile: 90`):
+success falls from 91.5% to 89.8% (95% interval of the change -2.3 to -1.0
+points) and depletion rises from 8.5% to 10.2%, because longer lives must be
+paid for; median terminal net worth falls by $166k. At the 10th percentile success
+rises to 93.7%.
+
+Not modelled: ranking by lifetime rather than current earnings (a high earner
+early in a career or a low earner by choice is misranked; set the percentile),
+the paper's differences by place and over time (life expectancy at the top rose
+faster in 2001-2014), the gradient's narrowing at old ages beyond what a
+proportional shift gives, and any link between income and the health states'
+prevalence.
 
 ## 11. When retirement happens
 

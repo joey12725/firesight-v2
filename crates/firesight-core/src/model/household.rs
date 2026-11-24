@@ -59,6 +59,10 @@ pub struct Person {
     /// on. Leave empty for none.
     #[serde(default, skip_serializing_if = "crate::career_realism::is_default")]
     pub ltd_insurance: Option<LtdInsurance>,
+    /// A long-term-care insurance policy this person owns, if any. Leave empty for
+    /// none (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ltc_insurance: Option<super::LtcInsurance>,
 }
 
 /// Whether a long-term work-limiting disability is simulated.
@@ -109,6 +113,7 @@ impl Default for Person {
             social_security: SocialSecurity::default(),
             disability_risk: DisabilityRisk::default(),
             ltd_insurance: None,
+            ltc_insurance: None,
         }
     }
 }

@@ -493,6 +493,8 @@ pub struct Plan {
     /// Housing decisions (home-equity borrowing, downsizing, refinancing, rental
     /// dynamics), all opt-in.
     pub(crate) hd: super::housing_decisions::HdPlan,
+    /// The opt-in health, longevity and care features (`sim/care.rs`).
+    pub(crate) care: super::care::CarePlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -620,13 +622,14 @@ impl Plan {
         let mut growth_pay = [0.0f64; MAX_PEOPLE];
         let mut survival: Vec<Vec<f64>> = Vec::new();
         let mut mortality = Vec::new();
-        for person in &profile.household.people {
-            let m = MortalityModel::new(
+        for (i, person) in profile.household.people.iter().enumerate() {
+            let m = MortalityModel::new_scaled(
                 person.birth,
                 person.sex,
                 person.health,
                 start,
                 &profile.assumptions.longevity,
+                crate::longevity_links::income_multiplier(profile, i, data),
                 data,
             );
             survival.push(m.survival_table().to_vec());
@@ -787,6 +790,7 @@ impl Plan {
             });
         }
         let income_rate0: f64 = earnings.iter().sum();
+        let care = super::care::CarePlan::compile(profile, &people, data);
 
         // Budget.
         let items: Vec<ItemPlan> = profile
@@ -1346,6 +1350,7 @@ impl Plan {
             eq12_months,
             income_rate0,
             hd,
+            care,
         })
     }
 

@@ -102,8 +102,14 @@ impl Recorder for Checked {
 #[test]
 fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
     for example in Profile::examples(START) {
-        for kind in MARKETS {
-            let plan = compile(&with_market(example.profile.clone(), kind));
+        // Each demo as shipped and with the opt-in health, longevity and care
+        // features on.
+        for (kind, profile) in MARKETS
+            .iter()
+            .map(|&k| (k, example.profile.clone()))
+            .chain([(MARKETS[0], care::all_care(example.profile.clone()))])
+        {
+            let plan = compile(&with_market(profile, kind));
             let mut ws = Workspace::new(&plan);
             let mut rec = Checked {
                 inner: plan.new_accumulator(),

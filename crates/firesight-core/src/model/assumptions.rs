@@ -26,6 +26,14 @@ pub struct Assumptions {
     /// markets.
     #[serde(skip_serializing_if = "super::housing_realism::is_default")]
     pub housing_liquidity: HousingLiquidity,
+    /// How each adult's health evolves. "independent" (the default): medical costs,
+    /// long-term care and mortality are drawn separately from each other.
+    /// "states": each adult moves year by year between healthy, chronic conditions
+    /// and frail; a sicker state raises out-of-pocket costs, the chance of
+    /// long-term care and the risk of dying, so expensive years come before death.
+    /// Life expectancy and average costs are kept the same as with "independent".
+    #[serde(skip_serializing_if = "HealthModelKind::is_independent")]
+    pub health_model: HealthModelKind,
 }
 
 impl Default for Assumptions {
@@ -37,7 +45,33 @@ impl Default for Assumptions {
             career_risk: true,
             health_risk: true,
             housing_liquidity: HousingLiquidity::Instant,
+            health_model: HealthModelKind::Independent,
         }
+    }
+}
+
+/// How health, costs and mortality relate (`assumptions.health_model`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HealthModelKind {
+    /// Medical costs, long-term care and the age at death are drawn independently
+    /// of each other. The default.
+    #[default]
+    Independent,
+    /// A yearly Markov chain of health states (healthy, two or more chronic
+    /// conditions, frail) calibrated to US prevalence data. The state multiplies
+    /// out-of-pocket costs (about 1.9 times for chronic and 2.8 times for frail
+    /// relative to healthy), the chance that the end of life needs paid care, and the
+    /// mortality hazard (1.73 and 2.79 times), all normalised so that life
+    /// expectancy and average costs are unchanged.
+    States,
+}
+
+impl HealthModelKind {
+    /// True for the default (left out when a profile is written, so profiles saved
+    /// before the option existed read and write back unchanged).
+    pub fn is_independent(&self) -> bool {
+        *self == HealthModelKind::Independent
     }
 }
 
@@ -329,6 +363,28 @@ pub enum Longevity {
         /// or two of life expectancy for younger people.
         #[serde(default = "d_true")]
         improvement: bool,
+        /// Whether the two partners' lifespans are linked. "independent" (the
+        /// default): each age at death is drawn on its own. "linked": couples tend
+        /// to live similarly long (shared lifestyle and circumstances, as measured on
+        /// joint annuity contracts), and the survivor's risk of dying rises for six
+        /// months after the partner's death. Each person's own life expectancy is
+        /// unchanged; only how the two lifespans move together changes.
+        #[serde(default, skip_serializing_if = "CoupleDependence::is_independent")]
+        couple_dependence: CoupleDependence,
+        /// Scale mortality by the household's income rank: in US data people with
+        /// higher household incomes live longer (about 15 years more at the top 1%
+        /// than at the bottom 1% for men, 10 for women; Chetty et al. 2016). This is
+        /// an association, not a claim that income itself causes longer lives. The
+        /// rank comes from the gross incomes running at the start unless
+        /// `income_percentile` is given. Off by default.
+        #[serde(default, skip_serializing_if = "is_false")]
+        income_gradient: bool,
+        /// The household's percentile (1 to 100) in the national income
+        /// distribution, used by `income_gradient` instead of ranking the incomes
+        /// in the profile. Use it when current income is not a fair picture of
+        /// lifetime income (for example early in a career or in retirement).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        income_percentile: Option<f64>,
     },
     /// Everyone lives to exactly this age. Simple, but hides the risk of living longer.
     FixedAge {
@@ -341,9 +397,41 @@ fn d_true() -> bool {
     true
 }
 
+/// How the partners' lifespans relate (`longevity.couple_dependence`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CoupleDependence {
+    /// The two ages at death are drawn independently. The default.
+    #[default]
+    Independent,
+    /// Shared frailty (a Frank copula fitted to joint-life annuity data) and a
+    /// raised risk for the survivor in the six months after bereavement (relative
+    /// risk 1.41). Has no effect for a single person.
+    Linked,
+}
+
+impl CoupleDependence {
+    /// True for the default (left out when a profile is written).
+    pub fn is_independent(&self) -> bool {
+        *self == CoupleDependence::Independent
+    }
+}
+
+impl Longevity {
+    /// Stochastic lifespans with every option at its default except `improvement`.
+    pub fn stochastic(improvement: bool) -> Longevity {
+        Longevity::Stochastic {
+            improvement,
+            couple_dependence: CoupleDependence::Independent,
+            income_gradient: false,
+            income_percentile: None,
+        }
+    }
+}
+
 impl Default for Longevity {
     fn default() -> Self {
-        Longevity::Stochastic { improvement: true }
+        Longevity::stochastic(true)
     }
 }
 

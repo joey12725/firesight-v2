@@ -383,10 +383,20 @@ impl State {
         // Outcome.
         let kinds = self.acc.by_kind();
         let (value, mortgage) = self.property_totals();
-        let estate = (kinds.iter().sum::<f64>() + value - mortgage - self.debt_total()) / end_price;
+        let mut estate = kinds.iter().sum::<f64>() + value - mortgage - self.debt_total();
         let bequest = plan.profile.retirement.bequest_target;
         let age_end = age_at(months as i32);
         let everyone_died = (0..self.n).all(|i| self.death_month[i] as usize <= months);
+        if plan.care.active {
+            if self.care.medicaid_month != i32::MAX {
+                end.set(PathScalar::MedicaidAge, age_at(self.care.medicaid_month));
+            }
+            estate -= self.care_estate_recovery(plan, months, estate, everyone_died, end_price);
+            for event in self.trace_events.drain(..) {
+                rec.record_event(event);
+            }
+        }
+        let estate = estate / end_price;
         let retired_in_time =
             self.retired || (everyone_died && age_end < plan.latest_retirement_age);
         let success =

@@ -83,7 +83,11 @@ Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             joins: Option<YearMonth>,               // future partner: not in household before this
             social_security: SocialSecurity,
             disability_risk: Off|Typical,           // opt-in long-term disability: ends work, pays SSDI (methodology 6.3)
-            ltd_insurance: Option<LtdInsurance{ replacement (0..=1, default 0.6), to_age (default 65) }> }
+            ltd_insurance: Option<LtdInsurance{ replacement (0..=1, default 0.6), to_age (default 65) }>,
+            ltc_insurance: Option<LtcInsurance> }      // None (default): no policy
+LtcInsurance { annual_premium, daily_benefit, benefit_years, elimination_days,   // start-of-plan dollars, level premium
+               inflation_rider: None | Compound{rate},
+               premium_increase_risk: bool (true) }    // class-wide increases from Stream::LtcPremiumRates; lapse when unaffordable
 SocialSecurity { claim_age: f64 (62..=70, default 67),
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $
@@ -139,7 +143,8 @@ Spending { items: Vec<BudgetItem>,
            healthcare: Healthcare { mode: Modeled|InBudget, early_retirement: Aca|Cobra|Custom{annual},
                                     long_term_care: bool, quality: Bronze|Silver|Gold,
                                     cover_children: bool (false),            // children on the household plan
-                                    children_coverage_end_age: f64 (26) },
+                                    children_coverage_end_age: f64 (26),
+                                    medicaid: bool (false) },  // spend-down, spousal allowances, estate recovery; medicaid_rate
            survivor_factor: f64 (0.7),
            // Spending realism, all opt-in (defaults leave results bit-identical):
            vehicles: Vec<Vehicle>,                 // lumpy replacement purchases, empty by default
@@ -249,9 +254,14 @@ Assumptions {
                     state_detail: Basic | Full,    // Full: CA SDI on wages, NY bracket recapture, UT Social Security credit
                     policy_risk: Option<{ ss_haircut_probability, ss_haircut_factor, earliest_year,
                                           tax_increase_probability, tax_increase_points }> },  // per-path policy draw
-  longevity: Stochastic{ improvement: bool } | FixedAge{ age },
+  longevity: Stochastic{ improvement: bool,
+                         couple_dependence: Independent (default) | Linked,  // Frank copula + bereavement; Stream::CoupleLongevity
+                         income_gradient: bool (false),                     // Chetty et al. 2016 multiplier on mortality
+                         income_percentile: Option<f64> }                   // 1-100, overrides the ranked income
+           | FixedAge{ age },
   career_risk: bool (true), health_risk: bool (true),
   housing_liquidity: Instant | Realistic (Instant),  // Realistic: sales take months and may close at a discount
+  health_model: Independent (default) | States,   // yearly healthy/chronic/frail chain scaling OOP, care and mortality; Stream::HealthStates(person)
 }
 SimulationSettings { paths: u32 (10_000), seed: u64, end_age: u32 (100) }
 ```
