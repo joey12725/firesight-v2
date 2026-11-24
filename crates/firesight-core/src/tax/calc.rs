@@ -523,15 +523,21 @@ fn deductions(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 
     let before_qbi = (w.agi - w.deduction - w.senior).max(0.0);
     let business = w.qbi - w.half_se;
-    let width = f.qbi_phase_in_width[s];
-    let phase = if width > 0.0 {
-        (1.0 - (before_qbi - f.qbi_threshold[s]) / width).clamp(0.0, 1.0)
-    } else if before_qbi <= f.qbi_threshold[s] {
-        1.0
+    w.qbi = if business > 0.0 {
+        let width = f.qbi_phase_in_width[s];
+        let phase = if width > 0.0 {
+            (1.0 - (before_qbi - f.qbi_threshold[s]) / width).clamp(0.0, 1.0)
+        } else if before_qbi <= f.qbi_threshold[s] {
+            1.0
+        } else {
+            0.0
+        };
+        f.qbi_rate * business.min((before_qbi - w.pref_income).max(0.0)) * phase
     } else {
+        // No business income (most returns): the product below is the rate times
+        // zero times a phase in [0, 1], which is zero.
         0.0
     };
-    w.qbi = f.qbi_rate * business.max(0.0).min((before_qbi - w.pref_income).max(0.0)) * phase;
 
     w.taxable_income = (before_qbi - w.qbi).max(0.0);
     w.pref_taxable = w.pref_income.min(w.taxable_income);
@@ -596,9 +602,9 @@ fn on_marketplace(x: &TaxInputs) -> bool {
     x.aca_household_size > 0 && x.aca_months > 0
 }
 
-/// ACA premium credit and IRMAA (step 8).
+/// ACA premium credit and, with `IRMAA`, the IRMAA tier (step 8).
 #[inline(always)]
-fn health(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
+fn health<const IRMAA: bool>(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     let f = &p.federal;
     if on_marketplace(x) {
         let income = w.magi_aca.max(0.0);
@@ -615,6 +621,9 @@ fn health(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
             w.aca_credit = (x.aca_benchmark_premium - w.aca_applicable * income).max(0.0) * months;
         }
     }
+    if !IRMAA {
+        return;
+    }
     w.irmaa_tier = irmaa_tier(p, x.filing_status, w.agi);
     let mut enrolled = 0.0;
     for &on_medicare in &x.on_medicare {
@@ -625,9 +634,9 @@ fn health(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     w.irmaa_surcharge = 12.0 * enrolled * f.irmaa[x.filing_status.index()].monthly[w.irmaa_tier];
 }
 
-/// The whole working of one return.
+/// The working of one return up to taxable income (steps 1 to 5).
 #[inline(always)]
-pub(super) fn work(p: &TaxYearParams, x: &TaxInputs) -> Work {
+fn work_to_taxable(p: &TaxYearParams, x: &TaxInputs) -> Work {
     let mut w = Work {
         mode: mode(p),
         ..Work::default()
@@ -652,8 +661,25 @@ pub(super) fn work(p: &TaxYearParams, x: &TaxInputs) -> Work {
     social_security(p, x, &mut w);
     w.state = state_tax(p, x, &w);
     deductions(p, x, &mut w);
+    w
+}
+
+/// The whole working of one return.
+#[inline(always)]
+pub(super) fn work(p: &TaxYearParams, x: &TaxInputs) -> Work {
+    work_with::<true>(p, x)
+}
+
+/// The whole working of one return; without `IRMAA` the IRMAA tier and surcharge
+/// are left at zero (nothing else depends on them).
+#[inline(always)]
+fn work_with<const IRMAA: bool>(p: &TaxYearParams, x: &TaxInputs) -> Work {
+    let mut w = work_to_taxable(p, x);
+    if w.mode != Mode::Us {
+        return w;
+    }
     federal_tax(p, x, &mut w);
-    health(p, x, &mut w);
+    health::<IRMAA>(p, x, &mut w);
     let mut payroll_total = 0.0;
     for i in 0..MAX_PEOPLE {
         payroll_total += w.fica[i] + w.se_tax[i];
@@ -717,6 +743,20 @@ pub fn compute(params: &TaxYearParams, inputs: &TaxInputs) -> TaxResult {
         "TaxInputs.state must match the state the parameters were built for"
     );
     result(&work(params, inputs))
+}
+
+/// [`compute`] without the IRMAA figures (`irmaa_tier` and `irmaa_surcharge` are
+/// left at zero; every other field is the same to the bit). For callers that read
+/// the surcharge elsewhere ([`irmaa_monthly_surcharge`]): the simulation.
+#[inline]
+pub fn compute_no_irmaa(params: &TaxYearParams, inputs: &TaxInputs) -> TaxResult {
+    result(&work_with::<false>(params, inputs))
+}
+
+/// `compute(params, inputs).taxable_income`, without working out the tax itself.
+#[inline]
+pub fn taxable_income(params: &TaxYearParams, inputs: &TaxInputs) -> f64 {
+    work_to_taxable(params, inputs).taxable_income
 }
 
 /// IRMAA tier (0 = no surcharge) for a MAGI and filing status. The caller applies the

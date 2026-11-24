@@ -24,7 +24,7 @@
 
 use crate::accounts::{self, Bucket, PersonSavings, SavingsContext};
 use crate::career::Employment;
-use crate::decumulation::{plan_year_from, Funding, PlanInputs, SpendingInputs};
+use crate::decumulation::{plan_year_memo, Funding, PlanInputs, PlanMemo, SpendingInputs};
 use crate::economy::EconomyPath;
 use crate::health::{CoveragePhase, HealthContext};
 use crate::math;
@@ -388,7 +388,8 @@ impl State {
         if months < 12 {
             scale_inputs(&mut x, annualise);
         }
-        let r = tax::compute(&self.params, &x);
+        // The IRMAA surcharge is charged from `magi_hist`, not from this result.
+        let r = tax::compute_no_irmaa(&self.params, &x);
         let back = 1.0 / annualise;
         let mut payroll = 0.0;
         for i in 0..MAX_PEOPLE {
@@ -729,7 +730,9 @@ impl State {
         if annualise > 1.0 {
             scale_inputs(&mut base, annualise);
         }
-        let base_result = tax::compute(&self.params, &base);
+        // Nothing here reads the IRMAA figures (the surcharge is set below from
+        // `irmaa_monthly_surcharge`).
+        let base_result = tax::compute_no_irmaa(&self.params, &base);
         let mut fica_est = 0.0;
         let mut se_est = 0.0;
         for p in 0..MAX_PEOPLE {
@@ -859,7 +862,10 @@ impl State {
         self.aca_advance_m = 0.0;
         // The plan depends on the premium credit (it lowers what must be withdrawn)
         // and the credit on the plan (withdrawals are income): cost the plan, and
-        // once more if the credit it earns is not the one assumed.
+        // once more if the credit it earns is not the one assumed. The second costing
+        // changes only the need and the cash target, and takes the year's tax limits
+        // from the first (`memo`).
+        let mut memo = PlanMemo::default();
         for pass in 0..2 {
             let spend_month =
                 budget - self.disc_real * price * (1.0 - self.disc_mult) + rate.total() - advance;
@@ -896,25 +902,20 @@ impl State {
                     cash_floor: 0.0,
                     in_drawdown: self.in_drawdown(),
                 };
-                self.wplan = plan_year_from(
+                self.wplan = plan_year_memo(
                     &plan.profile.retirement.withdrawal_order,
                     plan.profile.retirement.early_access,
                     &self.acc,
                     &self.pinputs,
                     &self.params,
                     &base_result,
+                    &mut memo,
                 );
                 self.exec_frac = 1.0 / (m_left * annualise);
                 self.plan_fresh = true;
                 est_total = self.wplan.estimated_tax / annualise;
-                let gain_share = {
-                    let value = self.acc.total(Bucket::Taxable);
-                    if value > 0.0 {
-                        (self.acc.unrealized_gain() / value).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    }
-                };
+                // The plan measured it on the same accounts, the same way.
+                let gain_share = memo.gain_share;
                 for p in 0..MAX_PEOPLE {
                     est_inputs.traditional_distributions += self.wplan.from_traditional[p];
                     est_inputs.roth_conversions += self.wplan.roth_conversion[p];
@@ -926,7 +927,12 @@ impl State {
             if rate.aca_people == 0 {
                 break;
             }
-            let credit = tax::compute(&self.params, &est_inputs).aca_premium_credit / annualise;
+            // Without a plan the estimate is the base return, already computed.
+            let credit = if self.has_plan {
+                tax::compute_no_irmaa(&self.params, &est_inputs).aca_premium_credit
+            } else {
+                base_result.aca_premium_credit
+            } / annualise;
             self.aca_advance_m = (credit - self.aca_advance_ytd).max(0.0) / m_left;
             let expected = self.aca_advance_m.min(rate.aca_premium);
             if pass > 0
