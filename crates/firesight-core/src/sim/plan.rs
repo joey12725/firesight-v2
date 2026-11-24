@@ -1362,6 +1362,14 @@ impl Plan {
     /// record (the seed is not the one the run used) is left out.
     pub fn summarize_seeded(&self, acc: &Accumulator, seed: u64) -> Summary {
         let mut summary = Summary::from_accumulator(acc, &self.summary_context());
+        self.fill_pick_paths(&mut summary, acc, seed);
+        summary
+    }
+
+    /// Fills `summary.pick_paths` for a summary of `acc` (run with `seed`) made
+    /// without them: the part of [`Plan::summarize_seeded`] after
+    /// `Summary::from_accumulator`, for a caller that already has the summary.
+    pub fn fill_pick_paths(&self, summary: &mut Summary, acc: &Accumulator, seed: u64) {
         let mut workspace = super::Workspace::new(self);
         let mut recorder = crate::stats::SampleRecorder::default();
         for pick in &summary.picks {
@@ -1382,7 +1390,6 @@ impl Plan {
                 summary.pick_paths.push(recorder.sample.clone());
             }
         }
-        summary
     }
 
     /// Number of start months the `historical` market model can replay (0 for the

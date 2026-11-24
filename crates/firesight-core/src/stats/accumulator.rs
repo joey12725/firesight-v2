@@ -303,6 +303,92 @@ pub enum AccumulatorError {
     Decode(String),
 }
 
+/// The per-year totals of an accumulator other than its histograms, borrowed from
+/// an accumulator or from decoded bytes.
+struct Totals<'a> {
+    paths: u64,
+    status: &'a [u32],
+    months: &'a [u64],
+    cuts: &'a [u32],
+    sums: &'a [i64],
+    shortfall: &'a [i64],
+}
+
+impl<'a> Totals<'a> {
+    fn of(acc: &'a Accumulator) -> Totals<'a> {
+        Totals {
+            paths: acc.paths,
+            status: &acc.status,
+            months: &acc.months,
+            cuts: &acc.cuts,
+            sums: &acc.sums,
+            shortfall: &acc.shortfall,
+        }
+    }
+}
+
+/// Decodes serialised bytes and checks every structural invariant except the packed
+/// histograms (the caller unpacks or adds them, which checks them).
+fn decode_wire(bytes: &[u8]) -> Result<WireOwned, AccumulatorError> {
+    let decode = |e: postcard::Error| AccumulatorError::Decode(e.to_string());
+    let bad = |what: &str| AccumulatorError::Decode(what.to_string());
+    let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(decode)?;
+    if version != Accumulator::VERSION {
+        return Err(AccumulatorError::Decode(format!(
+            "version {} is not supported (expected {})",
+            version,
+            Accumulator::VERSION
+        )));
+    }
+    let wire: WireOwned = postcard::from_bytes(bytes).map_err(decode)?;
+    if wire.years > MAX_YEARS {
+        return Err(bad("horizon is implausibly long"));
+    }
+    let y = wire.years as usize;
+    if wire.status.len() != y * Status::COUNT
+        || wire.months.len() != y
+        || wire.cuts.len() != y * CUT_COUNTS
+        || wire.sums.len() != y * YearSeries::COUNT
+        || wire.shortfall.len() != y
+    {
+        return Err(bad("array sizes do not match the horizon"));
+    }
+    let mut rows = 0u64;
+    let mut prev_end = None;
+    for c in &wire.scalars {
+        if c.values.is_empty() || c.values.len() % PathScalar::COUNT != 0 {
+            return Err(bad("scalar chunk has a partial row"));
+        }
+        let end = c
+            .first_path
+            .checked_add(c.paths())
+            .ok_or_else(|| bad("scalar chunk overflows"))?;
+        if prev_end.is_some_and(|p| c.first_path <= p) {
+            return Err(bad("scalar chunks are not sorted and separated"));
+        }
+        prev_end = Some(end);
+        rows += c.paths();
+    }
+    if rows != wire.paths {
+        return Err(bad("path count does not match the scalar rows"));
+    }
+    if wire
+        .samples
+        .windows(2)
+        .any(|w| w[0].path_index >= w[1].path_index)
+    {
+        return Err(bad("sample paths are not sorted"));
+    }
+    Ok(wire)
+}
+
+/// Adds histogram counts element-wise.
+fn add_counts(into: &mut [u32], from: &[u32]) {
+    for (a, b) in into.iter_mut().zip(from) {
+        *a += b;
+    }
+}
+
 /// Number of per-year spending-delivery counters.
 const CUT_COUNTS: usize = 3;
 
@@ -367,21 +453,96 @@ impl Accumulator {
     /// Adds another accumulator's paths to this one. Exact and order-independent.
     /// Fails without modifying `self` if the two are incompatible or share paths.
     pub fn merge(&mut self, other: &Accumulator) -> Result<(), AccumulatorError> {
-        if self.version != other.version || self.years != other.years {
-            return Err(AccumulatorError::Incompatible(format!(
-                "version {} / {} years versus version {} / {} years",
-                self.version, self.years, other.version, other.years
-            )));
+        self.check_sizes(other)?;
+        self.check_mergeable(other.version, other.years, &other.scalars)?;
+        add_counts(&mut self.hist, &other.hist);
+        self.absorb(Totals::of(other), other.scalars.clone(), other.samples.clone());
+        Ok(())
+    }
+
+    /// [`Accumulator::merge`] taking `other` by value: its scalar rows move instead
+    /// of being copied.
+    pub fn merge_owned(&mut self, other: Accumulator) -> Result<(), AccumulatorError> {
+        self.check_sizes(&other)?;
+        self.check_mergeable(other.version, other.years, &other.scalars)?;
+        add_counts(&mut self.hist, &other.hist);
+        let totals = Totals {
+            paths: other.paths,
+            status: &other.status,
+            months: &other.months,
+            cuts: &other.cuts,
+            sums: &other.sums,
+            shortfall: &other.shortfall,
+        };
+        self.absorb(totals, other.scalars, other.samples);
+        Ok(())
+    }
+
+    /// Merges the serialised form of another accumulator ([`Accumulator::to_bytes`])
+    /// into this one. Equal to `merge(&Accumulator::from_bytes(bytes)?)`, but the
+    /// packed histograms are added run by run, so the several MB of dense counts
+    /// are never materialised (the coordinator does this once per chunk). Fails
+    /// without modifying `self` on bytes that do not decode or do not fit.
+    pub fn merge_bytes(&mut self, bytes: &[u8]) -> Result<(), AccumulatorError> {
+        let wire = decode_wire(bytes)?;
+        self.check_mergeable(wire.version, wire.years, &wire.scalars)?;
+        if !hist::add_packed(&wire.hist, &mut self.hist) {
+            return Err(AccumulatorError::Decode("histograms are malformed".into()));
         }
-        if self.hist.len() != other.hist.len()
-            || self.status.len() != other.status.len()
-            || self.months.len() != other.months.len()
-            || self.cuts.len() != other.cuts.len()
-            || self.sums.len() != other.sums.len()
+        let totals = Totals {
+            paths: wire.paths,
+            status: &wire.status,
+            months: &wire.months,
+            cuts: &wire.cuts,
+            sums: &wire.sums,
+            shortfall: &wire.shortfall,
+        };
+        self.absorb(totals, wire.scalars, wire.samples);
+        Ok(())
+    }
+
+    /// Rejects an accumulator whose arrays do not have this one's sizes.
+    fn check_sizes(&self, other: &Accumulator) -> Result<(), AccumulatorError> {
+        if self.version == other.version
+            && self.years == other.years
+            && (self.hist.len() != other.hist.len()
+                || self.status.len() != other.status.len()
+                || self.months.len() != other.months.len()
+                || self.cuts.len() != other.cuts.len()
+                || self.sums.len() != other.sums.len()
+                || self.shortfall.len() != other.shortfall.len())
         {
             return Err(AccumulatorError::Incompatible("array sizes differ".into()));
         }
-        let mut chunks: Vec<&ScalarChunk> = self.scalars.iter().chain(&other.scalars).collect();
+        Ok(())
+    }
+
+    /// The checks of a merge that come before anything is modified: same layout,
+    /// same horizon, array sizes, and no path in both.
+    fn check_mergeable(
+        &self,
+        version: u32,
+        years: u32,
+        scalars: &[ScalarChunk],
+    ) -> Result<(), AccumulatorError> {
+        if self.version != version || self.years != years {
+            return Err(AccumulatorError::Incompatible(format!(
+                "version {} / {} years versus version {} / {} years",
+                self.version, self.years, version, years
+            )));
+        }
+        let y = years as usize;
+        if self.hist.len() != HistSeries::COUNT * y * HIST_BINS
+            || self.status.len() != y * Status::COUNT
+            || self.months.len() != y
+            || self.cuts.len() != y * CUT_COUNTS
+            || self.sums.len() != y * YearSeries::COUNT
+        {
+            return Err(AccumulatorError::Incompatible("array sizes differ".into()));
+        }
+        // Both lists are sorted and separated, so a path in both shows up as two
+        // neighbours that overlap once the lists are interleaved.
+        let mut chunks: Vec<&ScalarChunk> = self.scalars.iter().chain(scalars).collect();
         chunks.sort_by_key(|c| c.first_path);
         for pair in chunks.windows(2) {
             if pair[1].first_path < pair[0].end() {
@@ -391,41 +552,56 @@ impl Accumulator {
                 ));
             }
         }
-        // Coalesce adjacent chunks so the representation does not depend on how the
-        // run was split.
-        let mut merged: Vec<ScalarChunk> = Vec::with_capacity(chunks.len());
-        for c in chunks {
+        Ok(())
+    }
+
+    /// Adds everything but the histograms, once [`Accumulator::check_mergeable`]
+    /// has passed.
+    fn absorb(&mut self, other: Totals, scalars: Vec<ScalarChunk>, samples: Vec<SamplePath>) {
+        // Interleave the two sorted chunk lists, moving this accumulator's chunks
+        // instead of copying them (they hold every row merged so far), and coalesce
+        // adjacent chunks so the representation does not depend on how the run was
+        // split.
+        let mine = std::mem::take(&mut self.scalars);
+        let mut merged: Vec<ScalarChunk> = Vec::with_capacity(mine.len() + scalars.len());
+        let mut a = mine.into_iter().peekable();
+        let mut b = scalars.into_iter().peekable();
+        loop {
+            let next = match (a.peek(), b.peek()) {
+                (Some(x), Some(y)) if y.first_path < x.first_path => b.next(),
+                (Some(_), _) => a.next(),
+                (None, _) => b.next(),
+            };
+            let Some(c) = next else { break };
             match merged.last_mut() {
                 Some(last) if last.end() == c.first_path => {
                     last.values.extend_from_slice(&c.values);
                 }
-                _ => merged.push(c.clone()),
+                _ => merged.push(c),
             }
         }
         self.scalars = merged;
 
-        for (a, b) in self.hist.iter_mut().zip(&other.hist) {
+        for (a, b) in self.status.iter_mut().zip(other.status) {
             *a += b;
         }
-        for (a, b) in self.status.iter_mut().zip(&other.status) {
+        for (a, b) in self.months.iter_mut().zip(other.months) {
             *a += b;
         }
-        for (a, b) in self.months.iter_mut().zip(&other.months) {
+        for (a, b) in self.cuts.iter_mut().zip(other.cuts) {
             *a += b;
         }
-        for (a, b) in self.cuts.iter_mut().zip(&other.cuts) {
+        for (a, b) in self.sums.iter_mut().zip(other.sums) {
             *a += b;
         }
-        for (a, b) in self.sums.iter_mut().zip(&other.sums) {
-            *a += b;
-        }
-        for (a, b) in self.shortfall.iter_mut().zip(&other.shortfall) {
+        for (a, b) in self.shortfall.iter_mut().zip(other.shortfall) {
             *a += b;
         }
         self.paths += other.paths;
-        self.samples.extend(other.samples.iter().cloned());
-        self.samples.sort_by_key(|s| s.path_index);
-        Ok(())
+        if !samples.is_empty() {
+            self.samples.extend(samples);
+            self.samples.sort_by_key(|s| s.path_index);
+        }
     }
 
     /// Serialises to the compact binary form passed between workers: postcard, with
@@ -453,57 +629,9 @@ impl Accumulator {
     /// Decodes [`Accumulator::to_bytes`] output, checking the version first and then
     /// every structural invariant, so corrupt input is an error and never a panic.
     pub fn from_bytes(bytes: &[u8]) -> Result<Accumulator, AccumulatorError> {
-        let decode = |e: postcard::Error| AccumulatorError::Decode(e.to_string());
-        let bad = |what: &str| AccumulatorError::Decode(what.to_string());
-        let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(decode)?;
-        if version != Self::VERSION {
-            return Err(AccumulatorError::Decode(format!(
-                "version {} is not supported (expected {})",
-                version,
-                Self::VERSION
-            )));
-        }
-        let wire: WireOwned = postcard::from_bytes(bytes).map_err(decode)?;
-        if wire.years > MAX_YEARS {
-            return Err(bad("horizon is implausibly long"));
-        }
-        let y = wire.years as usize;
-        if wire.status.len() != y * Status::COUNT
-            || wire.months.len() != y
-            || wire.cuts.len() != y * CUT_COUNTS
-            || wire.sums.len() != y * YearSeries::COUNT
-            || wire.shortfall.len() != y
-        {
-            return Err(bad("array sizes do not match the horizon"));
-        }
-        let hist = hist::unpack(&wire.hist, HistSeries::COUNT * y)
-            .ok_or_else(|| bad("histograms are malformed"))?;
-        let mut rows = 0u64;
-        let mut prev_end = None;
-        for c in &wire.scalars {
-            if c.values.is_empty() || c.values.len() % PathScalar::COUNT != 0 {
-                return Err(bad("scalar chunk has a partial row"));
-            }
-            let end = c
-                .first_path
-                .checked_add(c.paths())
-                .ok_or_else(|| bad("scalar chunk overflows"))?;
-            if prev_end.is_some_and(|p| c.first_path <= p) {
-                return Err(bad("scalar chunks are not sorted and separated"));
-            }
-            prev_end = Some(end);
-            rows += c.paths();
-        }
-        if rows != wire.paths {
-            return Err(bad("path count does not match the scalar rows"));
-        }
-        if wire
-            .samples
-            .windows(2)
-            .any(|w| w[0].path_index >= w[1].path_index)
-        {
-            return Err(bad("sample paths are not sorted"));
-        }
+        let wire = decode_wire(bytes)?;
+        let hist = hist::unpack(&wire.hist, HistSeries::COUNT * wire.years as usize)
+            .ok_or_else(|| AccumulatorError::Decode("histograms are malformed".into()))?;
         Ok(Accumulator {
             version: wire.version,
             years: wire.years,
@@ -647,9 +775,11 @@ impl Recorder for Accumulator {
         }
         self.status[year_index * Status::COUNT + record.status.index()] += 1;
         self.months[year_index] += u64::from(months);
-        for (s, v) in record.values.iter().enumerate() {
+        // One column of `years` sums per series: indexing a column whose length the
+        // iterator fixes needs no bounds check per series.
+        for (column, v) in self.sums.chunks_exact_mut(years).zip(&record.values) {
             // `as` saturates and maps NaN to 0, identically on every platform.
-            self.sums[s * years + year_index] += v.round() as i64;
+            column[year_index] += v.round() as i64;
         }
         if record.status == Status::Depleted {
             let short = (record.get(YearSeries::SpendPlanned)
@@ -970,6 +1100,54 @@ mod tests {
         assert_eq!(right.to_bytes(), whole_bytes);
         assert_eq!(whole.samples.len(), SAMPLE_PATHS as usize);
         assert_eq!(whole.scalars.len(), 1);
+    }
+
+    #[test]
+    fn merging_bytes_or_by_value_equals_merging_decoded_chunks() {
+        let kit = Synthetic::default();
+        let whole = run(&kit, 0..1_000);
+        let chunks: Vec<Vec<u8>> = [0..130, 610..1_000, 130..610]
+            .into_iter()
+            .map(|r| run(&kit, r).to_bytes())
+            .collect();
+        let mut by_bytes = Accumulator::from_bytes(&chunks[0]).unwrap();
+        let mut by_value = Accumulator::new(kit.years);
+        by_value
+            .merge_owned(Accumulator::from_bytes(&chunks[0]).unwrap())
+            .unwrap();
+        for c in &chunks[1..] {
+            by_bytes.merge_bytes(c).unwrap();
+            by_value
+                .merge_owned(Accumulator::from_bytes(c).unwrap())
+                .unwrap();
+        }
+        assert_eq!(by_bytes, whole);
+        assert_eq!(by_value, whole);
+        assert_eq!(by_bytes.to_bytes(), whole.to_bytes());
+
+        // Bad input leaves the target as it was.
+        let mut a = run(&kit, 0..10);
+        let before = a.clone();
+        let overlapping = run(&kit, 5..15).to_bytes();
+        assert_eq!(
+            a.merge_bytes(&overlapping),
+            Err(AccumulatorError::Overlap(5, 10))
+        );
+        let good = run(&kit, 10..20).to_bytes();
+        for cut in [1, good.len() / 3, good.len() - 1] {
+            assert!(a.merge_bytes(&good[..cut]).is_err());
+        }
+        for at in (1..good.len()).step_by(97) {
+            let mut b = good.clone();
+            b[at] ^= 0x55;
+            if a.merge_bytes(&b).is_err() {
+                assert_eq!(a, before, "corruption at {at} modified the target");
+            } else {
+                a = before.clone();
+            }
+        }
+        assert!(a.merge_bytes(&Accumulator::new(kit.years + 1).to_bytes()).is_err());
+        assert_eq!(a, before);
     }
 
     #[test]

@@ -771,9 +771,15 @@ impl YearRecord {
     /// The histogrammed quantities, indexed by `HistSeries::index()` (not
     /// annualised).
     pub fn hist_values(&self) -> [f64; HistSeries::COUNT] {
+        // Net worth starts from the same investable sum (`net_worth_of`), so it is
+        // computed once.
+        let investable = self.investable();
+        let v = &self.values;
         [
-            self.net_worth(),
-            self.investable(),
+            investable + v[YearSeries::PropertyValue.index()]
+                - v[YearSeries::Mortgage.index()]
+                - v[YearSeries::Debt.index()],
+            investable,
             self.spending(),
             self.gross_income(),
             self.total_tax(),

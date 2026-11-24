@@ -562,33 +562,56 @@ pub struct PlanMoments {
     pub mortgage_payoff_share: f64,
 }
 
-/// Row access to the scalar table.
-struct Table<'a> {
+/// The scalar table by column. The accumulator stores it by row (one row per
+/// path); nearly everything here reads one quantity across all paths, so it is
+/// transposed once instead of gathered from every row for each column.
+struct Table {
     paths: Vec<u64>,
-    rows: Vec<&'a [f32]>,
+    /// `PathScalar::COUNT` columns of `paths.len()` values each.
+    cols: Vec<f32>,
+    /// Per path: true if it failed (`Success` is not 1).
+    failed: Vec<bool>,
 }
 
-impl<'a> Table<'a> {
-    fn new(acc: &'a Accumulator) -> Table<'a> {
-        let (paths, rows) = acc.rows().unzip();
-        Table { paths, rows }
+impl Table {
+    fn new(acc: &Accumulator) -> Table {
+        let paths: Vec<u64> = acc.rows().map(|(p, _)| p).collect();
+        let n = paths.len();
+        let mut cols = vec![0.0f32; PathScalar::COUNT * n];
+        for (r, (_, row)) in acc.rows().enumerate() {
+            for (s, v) in row.iter().enumerate() {
+                cols[s * n + r] = *v;
+            }
+        }
+        let success = &cols[PathScalar::Success.index() * n..][..n];
+        let failed = success.iter().map(|v| *v != 1.0).collect();
+        Table {
+            paths,
+            cols,
+            failed,
+        }
     }
 
     fn n(&self) -> u64 {
-        self.rows.len() as u64
+        self.paths.len() as u64
     }
 
-    fn col(&self, s: PathScalar) -> impl Iterator<Item = f32> + Clone + '_ {
-        let i = s.index();
-        self.rows.iter().map(move |r| r[i])
+    /// One quantity across all paths, in path order.
+    fn column(&self, s: PathScalar) -> &[f32] {
+        let n = self.paths.len();
+        &self.cols[s.index() * n..][..n]
+    }
+
+    fn col(&self, s: PathScalar) -> std::iter::Copied<std::slice::Iter<'_, f32>> {
+        self.column(s).iter().copied()
     }
 
     fn sorted(&self, s: PathScalar) -> Vec<f32> {
         sorted_finite(self.col(s))
     }
 
-    fn failed(&self) -> impl Iterator<Item = bool> + Clone + '_ {
-        self.col(PathScalar::Success).map(|v| v != 1.0)
+    fn failed(&self) -> std::iter::Copied<std::slice::Iter<'_, bool>> {
+        self.failed.iter().copied()
     }
 }
 
@@ -1174,7 +1197,7 @@ fn distribution(scalar: PathScalar, sorted: &[f32], n: u64) -> ScalarDistributio
 }
 
 fn scatter(table: &Table) -> Scatter {
-    let n = table.rows.len();
+    let n = table.paths.len();
     let take = n.min(SCATTER_MAX);
     // Evenly spaced rows: path indices carry no information, so a systematic sample
     // is as good as a random one and is stable from run to run.
@@ -1189,7 +1212,7 @@ fn scatter(table: &Table) -> Scatter {
                     .iter()
                     .map(|r| {
                         round_dp(
-                            f64::from(table.rows[*r][s.index()]),
+                            f64::from(table.column(*s)[*r]),
                             unit_decimals(s.unit()),
                         )
                     })
@@ -1220,20 +1243,19 @@ fn failure(table: &Table, sorted: &[Vec<f32>]) -> FailureAttribution {
     let mut cause_counts = [0u64; FailureCause::COUNT];
     let mut never_retired = 0;
     let mut depleted = 0;
-    for row in table
-        .rows
-        .iter()
-        .filter(|r| r[PathScalar::Success.index()] != 1.0)
-    {
-        let cause = row[PathScalar::FailureCause.index()];
+    let causes = table.column(PathScalar::FailureCause);
+    let retirement = table.column(PathScalar::RetirementAge);
+    let depletion = table.column(PathScalar::DepletionAge);
+    for (r, _) in table.failed().enumerate().filter(|(_, f)| *f) {
+        let cause = causes[r];
         let cause = if cause >= 0.0 {
             FailureCause::from_index(cause as usize).unwrap_or(FailureCause::Other)
         } else {
             FailureCause::Other
         };
         cause_counts[cause.index()] += 1;
-        never_retired += u64::from(row[PathScalar::RetirementAge.index()].is_nan());
-        depleted += u64::from(row[PathScalar::DepletionAge.index()].is_finite());
+        never_retired += u64::from(retirement[r].is_nan());
+        depleted += u64::from(depletion[r].is_finite());
     }
     let zero_if_nan = |v: f64| if v.is_nan() { 0.0 } else { v };
 
@@ -1325,11 +1347,11 @@ fn failure(table: &Table, sorted: &[Vec<f32>]) -> FailureAttribution {
 fn picks(table: &Table) -> Vec<PathPick> {
     let pairs = |s: PathScalar, only_failed: bool| -> Vec<(f32, u64)> {
         table
-            .rows
-            .iter()
+            .col(s)
+            .zip(table.failed())
             .zip(&table.paths)
-            .filter(|(r, _)| !only_failed || r[PathScalar::Success.index()] != 1.0)
-            .map(|(r, p)| (r[s.index()], *p))
+            .filter(|((_, failed), _)| !only_failed || *failed)
+            .map(|((v, _), p)| (v, *p))
             .filter(|(v, _)| v.is_finite())
             .collect()
     };
@@ -1359,10 +1381,9 @@ fn picks(table: &Table) -> Vec<PathPick> {
     );
     let failing = pick_at(&mut pairs(PathScalar::DepletionAge, true), 0.5).or_else(|| {
         table
-            .rows
-            .iter()
+            .failed()
             .zip(&table.paths)
-            .find(|(r, _)| r[PathScalar::Success.index()] != 1.0)
+            .find(|(failed, _)| *failed)
             .map(|(_, p)| (f32::NAN, *p))
     });
     push("failing", PathScalar::DepletionAge, failing);

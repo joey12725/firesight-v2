@@ -123,10 +123,22 @@ pub(crate) fn quantiles(counts: &[u32], levels: &[f64], out: &mut [f64]) {
     let mut cum = 0u64;
     let mut li = 0;
     let mut last_hi = 0.0;
-    for (bin, &c) in counts.iter().enumerate() {
+    let mut bin = 0;
+    while bin < counts.len() {
+        // Most bins are empty: step over them eight at a time.
+        if counts
+            .get(bin..bin + 8)
+            .is_some_and(|g| g.iter().fold(0, |a, &c| a | c) == 0)
+        {
+            bin += 8;
+            continue;
+        }
+        let c = counts[bin];
+        bin += 1;
         if c == 0 {
             continue;
         }
+        let bin = bin - 1;
         let next = cum + u64::from(c);
         let (lo, hi) = hist_bin_edges(bin);
         while li < levels.len() && levels[li] * n <= next as f64 {
@@ -178,6 +190,17 @@ const RUN_BREAK: usize = 3;
 fn for_each_run(block: &[u32], mut f: impl FnMut(usize, usize)) {
     let mut i = 0;
     while i < block.len() {
+        // Most of a block is empty: skip empty bins eight at a time (an OR of eight
+        // counts is one vector compare) before looking at single bins.
+        while let Some(group) = block.get(i..i + 8) {
+            if group.iter().fold(0, |a, &c| a | c) != 0 {
+                break;
+            }
+            i += 8;
+        }
+        if i >= block.len() {
+            break;
+        }
         if block[i] == 0 {
             i += 1;
             continue;
@@ -204,26 +227,34 @@ fn for_each_run(block: &[u32], mut f: impl FnMut(usize, usize)) {
 pub(crate) fn pack(hist: &[u32]) -> Vec<u8> {
     debug_assert_eq!(hist.len() % HIST_BINS, 0);
     let mut out = Vec::with_capacity(hist.len() / 32);
+    // The runs of the block being packed: found in one scan of the block, then
+    // written after their count.
+    let mut runs: Vec<(usize, usize)> = Vec::with_capacity(64);
     for block in hist.chunks_exact(HIST_BINS) {
-        let mut runs = 0u64;
-        for_each_run(block, |_, _| runs += 1);
-        put_varint(runs, &mut out);
+        runs.clear();
+        for_each_run(block, |start, end| runs.push((start, end)));
+        put_varint(runs.len() as u64, &mut out);
         let mut prev_end = 0;
-        for_each_run(block, |start, end| {
+        for &(start, end) in &runs {
             put_varint((start - prev_end) as u64, &mut out);
             put_varint((end - start) as u64, &mut out);
             for &c in &block[start..end] {
                 put_varint(u64::from(c), &mut out);
             }
             prev_end = end;
-        });
+        }
     }
     out
 }
 
-/// Inverse of [`pack`] for `blocks` blocks. `None` if the bytes are malformed.
-pub(crate) fn unpack(bytes: &[u8], blocks: usize) -> Option<Vec<u32>> {
-    let mut hist = vec![0u32; blocks * HIST_BINS];
+/// Walks packed bytes for `hist.len() / HIST_BINS` blocks, calling `f(slot, count)`
+/// for every packed count. `None` (after possibly some calls) if the bytes are
+/// malformed.
+fn for_each_packed(
+    bytes: &[u8],
+    hist: &mut [u32],
+    mut f: impl FnMut(&mut u32, u32),
+) -> Option<()> {
     let mut pos = 0;
     for block in hist.chunks_exact_mut(HIST_BINS) {
         let runs = get_varint(bytes, &mut pos)?;
@@ -237,12 +268,64 @@ pub(crate) fn unpack(bytes: &[u8], blocks: usize) -> Option<Vec<u32>> {
                 return None;
             }
             for slot in &mut block[start..end] {
-                *slot = u32::try_from(get_varint(bytes, &mut pos)?).ok()?;
+                f(slot, u32::try_from(get_varint(bytes, &mut pos)?).ok()?);
             }
             at = end;
         }
     }
-    (pos == bytes.len()).then_some(hist)
+    (pos == bytes.len()).then_some(())
+}
+
+/// Inverse of [`pack`] for `blocks` blocks. `None` if the bytes are malformed.
+pub(crate) fn unpack(bytes: &[u8], blocks: usize) -> Option<Vec<u32>> {
+    let mut hist = vec![0u32; blocks * HIST_BINS];
+    for_each_packed(bytes, &mut hist, |slot, c| *slot = c)?;
+    Some(hist)
+}
+
+/// Adds packed counts ([`pack`] output for `hist.len() / HIST_BINS` blocks) to
+/// `hist`: the same as adding [`unpack`]'s result element-wise, touching only the
+/// packed bins. Returns false, with `hist` unchanged, if the bytes are malformed.
+pub(crate) fn add_packed(bytes: &[u8], hist: &mut [u32]) -> bool {
+    // A dry run first (it writes nothing), so malformed input changes nothing.
+    if !packed_is_valid(bytes, hist.len() / HIST_BINS) {
+        return false;
+    }
+    for_each_packed(bytes, hist, |slot, c| *slot += c).is_some()
+}
+
+/// True if `bytes` is a well-formed packing of `blocks` blocks.
+fn packed_is_valid(bytes: &[u8], blocks: usize) -> bool {
+    let mut pos = 0;
+    for _ in 0..blocks {
+        let Some(runs) = get_varint(bytes, &mut pos) else {
+            return false;
+        };
+        let mut at = 0usize;
+        for _ in 0..runs {
+            let (Some(skip), Some(len)) = (get_varint(bytes, &mut pos), get_varint(bytes, &mut pos))
+            else {
+                return false;
+            };
+            let (Ok(skip), Ok(len)) = (usize::try_from(skip), usize::try_from(len)) else {
+                return false;
+            };
+            let Some(end) = at.checked_add(skip).and_then(|s| s.checked_add(len)) else {
+                return false;
+            };
+            if len == 0 || end > HIST_BINS {
+                return false;
+            }
+            for _ in 0..len {
+                match get_varint(bytes, &mut pos) {
+                    Some(c) if u32::try_from(c).is_ok() => {}
+                    _ => return false,
+                }
+            }
+            at = end;
+        }
+    }
+    pos == bytes.len()
 }
 
 #[cfg(test)]
