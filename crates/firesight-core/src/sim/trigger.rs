@@ -6,6 +6,7 @@
 //! wealth      = investable assets - non-mortgage debt        (basis: investable)
 //!             = that + property value - mortgages             (basis: net_worth)
 //! need        = retirement budget + home running costs + modelled healthcare
+//!               + the average yearly cost of replacing `spending.vehicles`
 //!               - income already being received that continues
 //!               + tax on the withdrawals that pay for it
 //! gross       = need / withdrawal_rate
@@ -173,6 +174,9 @@ impl State {
         };
         let (ess, disc, _) = self.budget_as(plan, t, true, retire_month);
         let mut need = (ess + disc) * 12.0;
+        if !plan.sx.vehicles.is_empty() {
+            need += self.sx_vehicle_need(plan, ti, retire_month);
+        }
         let mut lumps = 0.0;
 
         // Homes cost money to run for ever; their mortgages are a debt to clear.

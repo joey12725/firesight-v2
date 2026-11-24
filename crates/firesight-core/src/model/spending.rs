@@ -39,6 +39,7 @@ pub struct Spending {
     /// `replace_every_years` (with a small random jitter) instead of a smooth cost.
     /// Leave the purchase and depreciation of these vehicles out of the Transport
     /// budget lines (keep fuel, insurance and maintenance) or they are counted twice.
+    /// A household that retires when funded counts their average yearly cost.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub vehicles: Vec<Vehicle>,
     /// Spread each budget line's annual amount unevenly over the months (holiday

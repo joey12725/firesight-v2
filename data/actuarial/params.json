@@ -1478,12 +1478,13 @@
     },
     "seasonality": {
       "model": "Monthly weights per category, rescaled in code to average exactly 1, so a line's annual total is unchanged. January first.",
-      "confidence": "judgement. The shapes follow well-known qualitative patterns (EIA: residential natural gas use peaks in winter and electricity has winter and summer peaks; industry estimates that about 30% of annual charitable giving falls in December, not confirmed against a primary source; summer travel; term-time tuition) but no monthly consumer-expenditure table was fetched, because the BLS Consumer Expenditure Survey publishes annual means, not monthly ones. The numbers are not fitted to data.",
+      "source": "utilities: Federal Reserve G.17, industrial production of electric and gas utilities, not seasonally adjusted (IPG2211A2N). groceries, dining, transport: US Census Bureau Monthly Retail Trade, sales not seasonally adjusted, of grocery stores (MRTSSM4451USN), food services and drinking places (MRTSSM722USN) and gasoline stations (MRTSSM447USN). All retrieved from FRED (Federal Reserve Bank of St. Louis) on 2026-11-24 and averaged by tools/calibrate_seasonality.py: each month over its calendar year's monthly mean, 2010-2019.",
+      "confidence": "utilities, groceries, dining, transport: medium for the data, medium-low as a description of a household's line, because each series is a proxy (energy delivered to all customers, not household bills, and a utilities line also holds water, internet and phone, which are flat; fuel is only part of transport; store sales include some non-household buyers). travel, education, entertainment, personal, giving: judgement, not fitted to data. They follow well-known qualitative patterns (summer and year-end travel, term-time tuition bills, holiday shopping; industry estimates that about 30% of annual charitable giving falls in December, not confirmed against a primary source). For scale, the same Census source puts December sales of clothing stores (MRTSSM448USN) at 1.57 times and of sporting goods, hobby, musical instrument and book stores (MRTSSM451USN) at 1.59 times their monthly mean; personal and entertainment lines also hold services that do not peak (gym, grooming, streaming), so their December weight is set well below that. The BLS Consumer Expenditure Survey publishes annual and quarterly means, not a monthly table, so it was not used.",
       "weights": {
-        "utilities": [1.25, 1.15, 1.0, 0.85, 0.8, 0.9, 1.05, 1.1, 0.9, 0.8, 0.9, 1.15],
-        "groceries": [0.97, 0.93, 1.0, 0.99, 1.0, 0.98, 1.0, 1.0, 0.98, 0.99, 1.03, 1.13],
-        "dining": [0.92, 0.93, 1.0, 1.0, 1.04, 1.04, 1.05, 1.04, 0.98, 1.0, 0.98, 1.02],
-        "transport": [0.93, 0.9, 1.0, 1.0, 1.04, 1.07, 1.08, 1.07, 1.0, 0.98, 0.95, 0.98],
+        "utilities": [1.16, 1.051, 0.979, 0.866, 0.889, 0.995, 1.096, 1.085, 0.976, 0.892, 0.936, 1.074],
+        "groceries": [0.983, 0.914, 1.001, 0.972, 1.029, 0.998, 1.023, 1.018, 0.98, 1.006, 1.013, 1.063],
+        "dining": [0.908, 0.911, 1.032, 1.005, 1.049, 1.014, 1.027, 1.033, 0.983, 1.021, 0.975, 1.041],
+        "transport": [0.889, 0.859, 0.995, 1.012, 1.08, 1.059, 1.075, 1.076, 1.016, 1.038, 0.957, 0.944],
         "education": [1.5, 0.3, 0.3, 0.3, 0.3, 0.4, 0.6, 2.5, 1.6, 0.3, 0.3, 0.3],
         "travel": [0.7, 0.7, 0.9, 0.9, 1.0, 1.4, 1.6, 1.4, 0.9, 0.9, 0.9, 1.5],
         "entertainment": [0.9, 0.9, 0.95, 0.95, 1.0, 1.05, 1.1, 1.05, 0.95, 1.0, 1.0, 1.2],

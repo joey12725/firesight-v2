@@ -193,6 +193,55 @@ fn vehicles_lower_terminal_wealth_by_about_what_they_cost() {
     assert!((55_000.0..250_000.0).contains(&m), "mean cost {m}");
 }
 
+#[test]
+fn the_funded_test_counts_the_average_cost_of_replacing_vehicles() {
+    // A vehicle is a cost the retirement has to carry, like a home's running costs:
+    // 40,000 less a 25% trade-in every ten years is 3,000 a year of need, which at
+    // the 4% rule is 75,000 of savings before the tax on withdrawing it.
+    let base = retiree_base();
+    let mut with = base.clone();
+    with.spending.vehicles = vec![car(40_000.0, 10.0)];
+    let (a, b) = (compile(&base).preview(), compile(&with).preview());
+    assert!(
+        (b.retirement_need - a.retirement_need - 3_000.0).abs() < 1e-6,
+        "{} {}",
+        a.retirement_need,
+        b.retirement_need
+    );
+    let extra = b.funded_requirement - a.funded_requirement;
+    assert!((75_000.0 - 1e-6..100_000.0).contains(&extra), "{extra}");
+    // A vehicle that is no longer replaced costs the retirement nothing.
+    with.spending.vehicles[0].end = Some(When::Date { at: START });
+    let c = compile(&with).preview();
+    assert_eq!(c.retirement_need, a.retirement_need);
+    assert_eq!(c.funded_requirement, a.funded_requirement);
+}
+
+#[test]
+fn a_household_that_retires_when_funded_works_longer_to_pay_for_its_cars() {
+    // The shipped family retires when the funded test is met. Two cars costing
+    // 38,000 x 0.75 / 10 + 32,000 x 0.75 / 9 = 5,517 a year raise the requirement by
+    // about 138,000 plus tax, which this household saves in roughly a year, and the
+    // purchases made before retiring delay it further: 1.75 years measured. Before
+    // the funded test counted the cars the delay was 0.9 years (the purchases alone)
+    // and the household retired unable to afford the next ones.
+    let family = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    let mut with = family.clone();
+    let mut second = car(32_000.0, 9.0);
+    second.id = "second".into();
+    second.age_years = 6.0;
+    let mut first = car(38_000.0, 10.0);
+    first.age_years = 4.0;
+    with.spending.vehicles = vec![first, second];
+    let a = summary(&family, 1, 1_000).headline.median_retirement_age;
+    let b = summary(&with, 1, 1_000).headline.median_retirement_age;
+    assert!((1.25..2.5).contains(&(b - a)), "without {a}, with {b}");
+}
+
 // ----------------------------------------------------------------------------------
 // Monthly capture, shared by the features below
 // ----------------------------------------------------------------------------------
@@ -269,16 +318,21 @@ fn typical_seasonality_follows_the_weights_and_keeps_the_annual_total() {
     for (_, v) in &a.months {
         assert!((v[0] - 1_500.0).abs() < 1e-6 && (v[1] - 200.0).abs() < 1e-6);
     }
-    // On, by hand. The utilities weights sum to 11.85 (mean 0.9875), so January is
-    // 500 x 1.25 / 0.9875 = 632.911; insurance is flat at 1,000. Giving: eleven months at
-    // 0.76 and December at 3.6 (mean 0.996667): January 200 x 0.76 / 0.996667 = 152.508,
-    // December 200 x 3.6 / 0.996667 = 722.408.
+    // On, by hand. The utilities weights (Federal Reserve G.17, January 1.16) sum to
+    // 11.999 (mean 0.999917), so January is 500 x 1.16 / 0.999917 = 580.048; insurance
+    // is flat at 1,000. Giving: eleven months at 0.76 and December at 3.6 (mean
+    // 0.996667): January 200 x 0.76 / 0.996667 = 152.508, December
+    // 200 x 3.6 / 0.996667 = 722.408.
     let jan = b.months.iter().find(|(m, _)| *m == 1).unwrap();
     assert!(
-        (jan.1[0] - (500.0 * 1.25 / 0.9875 + 1_000.0)).abs() < 1e-6,
+        (jan.1[0] - (500.0 * 1.16 / (11.999 / 12.0) + 1_000.0)).abs() < 1e-6,
         "{:?}",
         jan
     );
+    assert!((jan.1[0] - 1_580.048).abs() < 1e-3, "{:?}", jan);
+    // April is the trough of the energy year: 500 x 0.866 / 0.999917 = 433.036.
+    let apr = b.months.iter().find(|(m, _)| *m == 4).unwrap();
+    assert!((apr.1[0] - 1_433.036).abs() < 1e-3, "{:?}", apr);
     assert!(
         (jan.1[1] - 200.0 * 0.76 / (11.96 / 12.0)).abs() < 1e-6,
         "{:?}",

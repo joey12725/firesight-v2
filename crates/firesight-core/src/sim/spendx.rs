@@ -559,6 +559,24 @@ impl State {
         (ess, disc, keep)
     }
 
+    /// What the vehicles the household is still replacing cost a year on average, in
+    /// today's dollars: each one's price net of trade-in spread over its cycle. The
+    /// funded test adds it to the annual need, like a home's running costs: the
+    /// replacements are lumpy, but they are a cost the retirement has to carry. A
+    /// vehicle whose owner is gone or whose `end` date has passed (read against
+    /// `retire_month`) is left out. Loan interest on a financed vehicle is not counted.
+    pub(crate) fn sx_vehicle_need(&self, plan: &Plan, ti: i32, retire_month: i32) -> f64 {
+        let mut annual = 0.0;
+        for v in &plan.sx.vehicles {
+            let owner_gone = v.owner.is_some_and(|o| o >= MAX_PEOPLE || !self.present[o]);
+            if owner_gone || ti >= v.end.month(retire_month) {
+                continue;
+            }
+            annual += v.price * (1.0 - v.trade_in) * 12.0 / f64::from(v.cycle_months);
+        }
+        annual
+    }
+
     /// Replaces vehicles that are due this month.
     #[inline]
     pub(crate) fn sx_vehicles(&mut self, plan: &Plan, t: usize, price: f64) {

@@ -383,6 +383,12 @@ vehicle is still being replaced (after its `end` date or its owner's death the s
 runs on and nothing is bought), so a scenario that changes anything else sees the same
 replacement dates.
 
+The funded test counts the vehicles: each one still being replaced adds its net price
+spread over its cycle to the annual need (two cars at $38,000 every ten years and
+$32,000 every nine with a 25% trade-in: $5,517 a year, $138,000 of savings at a 4%
+rule), as a home's running costs do. Without that a household that retires when funded
+would stop work with the next cars unpaid for. Loan interest is not counted there.
+
 What the user must do: take the purchase and depreciation of these vehicles out of the
 Transport budget lines (keep fuel, insurance, maintenance). The validator warns when
 the average annual cost of the listed vehicles is more than half of the Transport lines.
@@ -390,9 +396,14 @@ the average annual cost of the listed vehicles is more than half of the Transpor
 Measured (shipped `dual-income-family`, 3,000 paired paths, two cars: $38,000 every ten
 years, 4 years old; $32,000 every nine years, 6 years old, financed 90% at 7% over 60
 months; 25% trade-in; the existing transport line left as it is, so this is extra
-cost): success 91.8% to 87.4% (-4.4 points, 95% interval -5.2 to -3.6), median
-retirement age 53.4 to 54.3, median terminal net worth $1.73 million to $1.41 million,
-median lifetime spending +$131,000 (today's dollars).
+cost): the household retires when funded, so it pays for the cars by working longer,
+not by failing more often. Median retirement age 53.4 to 55.2 (+1.75 years), success
+91.8% to 91.9% (+0.1 points, 95% interval -0.5 to +0.7, within noise; 43 paths rescued,
+39 harmed), median terminal net worth $1.73 million to $1.79 million, median lifetime
+spending +$324,000 (today's dollars: the cars, and nearly two more working years at the
+working budget). With the retirement age fixed at 54 instead, the same cars cost 9.7
+points of success (77.1% to 67.4%, 95% interval -10.8 to -8.6; no path rescued, 291
+harmed) and $524,000 of median terminal net worth.
 
 Not modelled: depreciation and resale value beyond the trade-in share, vehicle prices
 moving differently from CPI, repair costs rising with vehicle age (the detailed
@@ -405,17 +416,24 @@ and the payment is recomputed), leasing.
 Opt-in through `spending.seasonality = "typical"`. Each category has twelve monthly
 weights, rescaled in code to average exactly 1, so a line's annual amount is unchanged
 and only its timing moves (utilities peak in winter and summer, dining and travel in
-summer, gifts and giving in December, flat categories such as rent stay even). The
-weights are a judgement: they follow the qualitative patterns reported by the EIA for
-household energy use, but no monthly Consumer Expenditure table was fetched (the BLS
-survey publishes annual means), so they are not fitted to data (see
+summer, gifts and giving in December, flat categories such as rent stay even). Four
+categories are fitted to monthly, not seasonally adjusted national series, each month
+averaged over its calendar year's mean for 2010 to 2019 by
+`tools/calibrate_seasonality.py`: utilities to the Federal Reserve's G.17 output index
+of electric and gas utilities (January 1.16, April 0.87, July 1.10), groceries, dining
+and transport to US Census Bureau Monthly Retail Trade sales of grocery stores
+(December 1.06, February 0.91), food services and drinking places (January 0.91, May
+1.05) and gasoline stations (February 0.86, May 1.08), all retrieved from FRED. Each is
+a proxy for a household's line (energy delivered to all customers, fuel as a part of
+transport). Travel, education, entertainment, personal and giving are judgements, not
+fitted to data: the BLS Consumer Expenditure Survey publishes no monthly table (see
 `spending_realism.seasonality` in `params.json`). Seasonality acts on the monthly
 budget, so it matters for the month a cash shortfall or a withdrawal appears, not for
 the year's spending.
 
 Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.8%
 (6 paths rescued, 5 harmed), median retirement age unchanged, median terminal net worth
-+$8,300 (0.5%), median lifetime spending -$4,600 (0.06%). As expected, it is a timing
++$2,200 (0.1%), median lifetime spending -$4,700 (0.06%). As expected, it is a timing
 feature: the differences are the noise of which month a withdrawal falls in.
 
 Not modelled: seasonal income, regional or household-specific patterns, weights that
