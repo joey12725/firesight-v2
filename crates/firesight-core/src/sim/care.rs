@@ -391,12 +391,19 @@ impl State {
     }
 
     /// The household's countable assets for Medicaid (investable accounts plus the
-    /// equity in property other than the home) and its home equity, nominal.
+    /// equity in property other than the home) and its home equity, nominal. A
+    /// home-equity line or reverse mortgage (`housing_decisions.rs`) is a lien on its
+    /// property and reduces that property's equity.
     fn medicaid_assets(&self) -> (f64, f64) {
         let (mut home_equity, mut other_property) = (0.0, 0.0);
-        for p in &self.props {
+        for (slot, p) in self.props.iter().enumerate() {
             if p.owned {
-                let equity = (p.value - p.mortgage_balance()).max(0.0);
+                let lien = if self.hd.any_line {
+                    self.hd.lien(slot)
+                } else {
+                    0.0
+                };
+                let equity = (p.value - p.mortgage_balance() - lien).max(0.0);
                 if matches!(p.usage, PropertyUse::Primary) {
                     home_equity += equity;
                 } else {
