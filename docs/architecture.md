@@ -424,8 +424,52 @@ Measuring: wall-clock numbers on a busy machine are noisy, and the position of
 the main thread's stack alone moves them by about 5% (the bench therefore times on
 a spawned thread). To compare two builds use instructions retired, which does not
 depend on load: `/usr/bin/time -l firesight run <profile> --paths 4000 --threads 1`
-on macOS, `perf stat` on Linux. The dual-income example takes about 3.64 million
-instructions per simulated life.
+on macOS, `perf stat` on Linux. The dual-income example takes about 3.40 million
+instructions per simulated life (3.64 million before the second round below).
+
+#### Second round
+
+Thirty-four further changes, every one bit-identical (a 108-run oracle of three
+examples by eighteen feature variants by two seeds, the golden digests, and the
+wasm chunk, summary and digest bytes all unchanged), each kept only if it measurably
+reduced instructions or removed a structural cost:
+
+* **Month loop and ledger.** The investable total is summed during the returns
+  step; buckets known to be empty (`Accounts::empty`) are skipped by it; job start
+  and end dates are checked only in months where one can fall; ages are computed
+  once a month; career inputs are built only for jobs that step.
+* **Tax and the annual plan.** Returns inside the simulation skip IRMAA (nothing
+  reads it); bracket-room probes stop at taxable income; the allocator's starting
+  state is built once per plan, not per gross-up candidate; a mid-year shortfall no
+  longer builds a whole `PlanInputs`; the January plan's two ACA costings share
+  their limits (`PlanMemo`); the QBI phase-in is skipped without business income.
+* **Funded test.** One pass over the holdings gives the investable, bucket and
+  taxable totals.
+* **Random streams nobody reads.** Once every job of a person has ended for good
+  and they run no business, their career stream is no longer advanced; once every
+  job has, neither is the equity stream.
+* **Models and the economy.** Shock tables of fixed size (no bounds checks); the
+  generator keeps its streams in locals; health prices cached per year, phase and
+  age; drawn words turned into uniforms or normals only where a branch uses them
+  (health, jobs, housing); full retirement age without a table scan for recent
+  birth years; AIME summed in place; self-employment growth from a table of whole
+  months.
+* **Recording and merging.** Each rayon split folds into one workspace and one
+  accumulator; merges move rows instead of copying them (the coordinator's merge
+  was quadratic in chunks); `merge_bytes` adds packed histograms without building
+  the dense grid; the wasm `Merger` keeps its compiled plan between progressive
+  summaries and fills the picked paths into the one summary it makes; histogram
+  packing and quantiles step over empty bins eight at a time; the summary
+  transposes its table once; the radix sort counts all digits in one pass and skips
+  identity passes; the year sums and year-end balances are written without
+  redundant work.
+
+Instructions retired, 4,000 paths on one thread, before and after: dual-income
+14.59 to 13.61 billion (-6.7%), early-career 13.40 to 12.51 (-6.6%), landlord
+11.23 to 10.27 (-8.6%). In wasm (node, one thread, simulation plus merge and
+summary): -5.6%, -6.4% and -8.2% at 8,000 paths, -6.1% at 100,000 paths for the
+dual-income example, where merging took 68 ms instead of 163 and the summary 183
+ms instead of 283. `tools/wasm-bench.mjs` measures the wasm side.
 
 ## 8. Testing
 
