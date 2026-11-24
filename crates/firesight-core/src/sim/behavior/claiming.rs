@@ -106,6 +106,11 @@ impl State {
             if age >= latest {
                 continue;
             }
+            // Already decided (the claim is set but nothing paid yet, e.g. withheld
+            // in full by the earnings test): the decision stands.
+            if (c.claim_age * 12.0).round() as i32 <= age {
+                continue;
+            }
             let fra = plan.ss.full_retirement_age_months(c.birth.year());
             let now = plan.ss.claim_factor(age.max(earliest) as u32, fra) * pia.max(0.0);
             bridges[i] = bridge(age, earliest, latest, now);

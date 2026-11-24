@@ -301,11 +301,14 @@ peak, or after `reentry.max_months` (36) in any case. A fall ends at a new high;
 only then can the next one trigger a decision. One draw a month from its own stream.
 
 The defaults are calibrated to how US retirement-plan savers behaved in 2008:
-Vanguard (How America Saves 2009) reports that 16% of participants traded, 2%
-abandoned equities entirely, and on net traders moved 4% of assets from equities to
-fixed income. An 8% chance of selling half makes the expected share of stocks sold
-in a fall 4%. Morningstar's Mind the Gap (2024) puts the cost of investors' timing
-at about 1.1 points a year across all US funds over the ten years to 2023, which
+Vanguard (How America Saves 2009, as reported by PLANSPONSOR) reports that 16% of
+participants traded, 2% abandoned equities entirely, and that of the fall in the
+equity share of plan assets from 73% to 61% over 2008, about 4 percentage points came
+from participants shifting to fixed income (the rest from prices). Four points of a
+73% equity share is about 5.5% of the equities held. An 8% chance of selling half
+makes the expected share of stocks sold in a fall 4%, at the low end of that
+figure. Morningstar's Mind the Gap (2024) puts the cost of investors' timing at
+about 1.1 points a year across all US funds over the ten years to 2023, which
 covers much more than panic selling and is an order-of-magnitude check only. The
 re-entry rule is a judgement. Plan savers are among the most inert investors; a
 retail investor may well be more panic-prone, which is why the probability is the
@@ -581,8 +584,8 @@ raises the funded-test bridge); `early-career-saver` within noise (15.8% ->
 Not modelled: the decision does not weigh life expectancy, health, tax or the
 marketplace premium credit; a claim is never withdrawn or suspended; a working
 person claims early only when essentials are being cut; the cache of benefit
-thresholds still uses the planned claim age, which only matters for the return of
-months withheld by the earnings test.
+thresholds follows the claim age as decided (it uses the claimant's claim age, which
+only adaptive claiming moves).
 
 ## 10. Longevity
 

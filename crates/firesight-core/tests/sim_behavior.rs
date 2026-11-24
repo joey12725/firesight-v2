@@ -609,3 +609,72 @@ fn confirmation_settings_are_validated() {
         .any(|e| e.path == "/retirement/trigger/confirmation/max_equity_drawdown"));
     assert!(r.warnings.iter().any(|w| w.code == "one_more_year_likely"));
 }
+
+// ---- Stream discipline ------------------------------------------------------------
+
+/// The months of the events whose label starts with `prefix` on a traced path.
+fn event_months(plan: &firesight_core::sim::Plan, path: u64, prefix: &str) -> Vec<i32> {
+    let trace = sim::trace_path(plan, SEED, path);
+    let start = trace.start;
+    trace
+        .events
+        .iter()
+        .filter(|e| e.label.starts_with(prefix))
+        .map(|e| e.month - start)
+        .collect()
+}
+
+#[test]
+fn panic_decisions_do_not_depend_on_unrelated_household_decisions() {
+    // The panic decision uses the stock index and the PanicSelling stream only: a
+    // household that spends a third more (and so holds different balances, sells
+    // different amounts and may run out of money) panics in exactly the same months.
+    let mut a = taxed_retiree();
+    a.portfolio.behavior = panic_prone(0.3);
+    let mut b = a.clone();
+    for item in &mut b.spending.items {
+        item.amount *= 4.0 / 3.0;
+    }
+    let (pa, pb) = (compile(&a), compile(&b));
+    let mut sales = 0;
+    for path in 0..80 {
+        let ma = event_months(&pa, path, "Panic sale");
+        let mb = event_months(&pb, path, "Panic sale");
+        assert_eq!(ma, mb, "path {path}");
+        sales += ma.len();
+    }
+    assert!(sales > 3, "only {sales} panic sales in 80 paths");
+}
+
+#[test]
+fn switching_every_behaviour_on_leaves_market_and_longevity_draws_alone() {
+    // Market returns and the length of life come from their own streams: switching
+    // all five features on (which changes saving, claiming, work and the portfolio)
+    // must not move them on any path.
+    for p in [underfunded(), example("dual-income-family")] {
+        let off = compile(&p);
+        let on = compile(&with_behaviors(p.clone()));
+        for path in 0..30 {
+            let a = sim::trace_path(&off, SEED, path);
+            let b = sim::trace_path(&on, SEED, path);
+            for key in ["return_us_stocks", "return_bonds", "inflation"] {
+                if let (Some(x), Some(y)) = (a.column(key), b.column(key)) {
+                    assert_eq!(x, y, "{key} on path {path}");
+                }
+            }
+            assert_eq!(
+                a.columns[0].values.len(),
+                b.columns[0].values.len(),
+                "path {path} length"
+            );
+            let deaths = |t: &firesight_core::stats::PathTrace| -> Vec<i32> {
+                t.events
+                    .iter()
+                    .filter(|e| e.kind == TraceEventKind::Died)
+                    .map(|e| e.month - t.start)
+                    .collect()
+            };
+            assert_eq!(deaths(&a), deaths(&b), "deaths on path {path}");
+        }
+    }
+}

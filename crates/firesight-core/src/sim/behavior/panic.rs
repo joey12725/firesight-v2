@@ -20,10 +20,11 @@
 //! # Calibration (a behavioural assumption)
 //!
 //! Vanguard (How America Saves 2009): in 2008 16% of its defined-contribution
-//! participants traded, 2% abandoned equities entirely, and on net traders moved 4%
-//! of assets from equities to fixed income. The defaults (8% chance of selling half
+//! participants traded, 2% abandoned equities entirely, and participants' shifts to
+//! fixed income cut the equity share of plan assets by about 4 percentage points
+//! (of 73%, so about 5.5% of equities held). The defaults (8% chance of selling half
 //! the stocks in a fall of 25% or more) make the expected share of stock sold in such
-//! a fall 4%, the net 2008 figure. Morningstar (Mind the Gap 2024) measures the cost
+//! a fall 4%, at the low end of that figure. Morningstar (Mind the Gap 2024) measures the cost
 //! of investors' timing at 1.1 points a year over the ten years to 2023 across all
 //! funds; that gap includes much more than panic selling and is a check on the order
 //! of magnitude, not a calibration target. The re-entry rule is a judgement.

@@ -649,7 +649,9 @@ impl State {
                 continue;
             }
             let fra = plan.ss.full_retirement_age_months(person.birth.year()) as i32;
-            let claim = (person.claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
+            // The claimant's claim age (moved by adaptive claiming), else the plan's.
+            let claim_age = self.claimants[i].map_or(person.claim_age, |c| c.claim_age);
+            let claim = (claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
             let withheld = self.claimants[i].map_or(0.0, |c| c.withheld_months).ceil() as i32;
             for age in [
                 60 * 12,
