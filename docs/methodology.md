@@ -330,8 +330,9 @@ Measured on 3,000 paths of the dual-income example (same seed, option on against
 off): median lifetime tax $963k to $1,004k (+4.2%), success rate 91.8% to 91.4%,
 median terminal net worth $1.726m to $1.720m. Not modelled: the CPI-U path is the
 simulated one, so the wedge is a fixed rate rather than something that varies with
-the inflation regime (the historical wedge is larger when inflation is high); the
-QCD limit, also on the chained index by statute, follows the CPI-U.
+the inflation regime (the historical wedge is larger when inflation is high). The
+qualified charitable distribution limit (IRC 408(d)(8)(G), also a section 1(f)(3)
+adjustment) takes the same chained factor.
 
 ### State detail (`assumptions.taxes.state_detail: full`, `basic` by default)
 
@@ -444,7 +445,8 @@ From age 70 and a half, the budget's Giving lines are paid straight from the per
 traditional account (the engine keeps one traditional balance per person, so a
 401(k) is treated as already rolled into an IRA) up to the annual limit per person: $111,000 for 2026 (IRS Notice
 2025-67, the SECURE 2.0 Act indexed amount, $108,000 in 2025), then indexed with prices
-and rounded to $1,000 (the rounding is an assumption). The money never enters taxable
+(the chained index when `chained_cpi` is on) and rounded to $1,000 (the rounding is an
+assumption). The money never enters taxable
 income, so it lowers the taxable share of Social Security, the Medicare income-related
 surcharge (IRMAA) and state tax, and it counts toward the required distribution, which
 the annual plan reduces by what it expects to give. The giving itself, its amounts and

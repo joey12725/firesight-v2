@@ -213,9 +213,17 @@ impl State {
         total * price
     }
 
-    /// The annual QCD limit per person this year, nominal.
-    fn qcd_limit(&self) -> f64 {
-        index_rounded(QCD_LIMIT_2026, self.params.cpi_factor, QCD_ROUNDING)
+    /// The annual QCD limit per person this year, nominal. IRC 408(d)(8)(G) indexes
+    /// it with the section 1(f)(3) adjustment, so with `chained_cpi` it takes the same
+    /// chained factor as the brackets.
+    fn qcd_limit(&self, plan: &Plan) -> f64 {
+        let law = &plan.law;
+        let chained_years = if law.chained_cpi && law.index_brackets {
+            Some(self.params.year - law.base_year - 1)
+        } else {
+            None
+        };
+        qcd_limit_for(self.params.cpi_factor, chained_years)
     }
 
     /// Whether person `i` is old enough for a QCD in month `t`.
@@ -239,7 +247,7 @@ impl State {
         if giving <= 0.0 {
             return;
         }
-        let limit = self.qcd_limit();
+        let limit = self.qcd_limit(plan);
         let mut pool = giving * m_left;
         for i in 0..self.n {
             if !self.present[i] {
@@ -271,7 +279,7 @@ impl State {
         if pool <= 0.0 {
             return;
         }
-        let limit = self.qcd_limit();
+        let limit = self.qcd_limit(plan);
         for i in 0..self.n {
             if pool <= 0.0 {
                 break;
@@ -312,6 +320,17 @@ impl State {
             }
         }
     }
+}
+
+/// The QCD limit for a year whose thresholds are indexed by `cpi_factor`. With
+/// `chained_years` (the chained-CPI option on), the factor also loses
+/// [`crate::tax::CHAINED_CPI_WEDGE`] a year for that many years, as the brackets do.
+fn qcd_limit_for(cpi_factor: f64, chained_years: Option<i32>) -> f64 {
+    let mut factor = cpi_factor;
+    if let Some(years) = chained_years {
+        factor *= math::powi(1.0 - crate::tax::CHAINED_CPI_WEDGE, years.max(0));
+    }
+    index_rounded(QCD_LIMIT_2026, factor, QCD_ROUNDING)
 }
 
 /// Resets the basis of every holding that stands at least [`TLH_LOSS_THRESHOLD`]
@@ -394,6 +413,13 @@ mod tests {
         assert_eq!(index_rounded(QCD_LIMIT_2026, 1.0, QCD_ROUNDING), 111_000.0);
         assert_eq!(index_rounded(QCD_LIMIT_2026, 1.10, QCD_ROUNDING), 122_000.0);
         assert_eq!(index_rounded(QCD_LIMIT_2026, 1.04, QCD_ROUNDING), 115_000.0);
+        // Through the helper: off, 2036 at a 30% price rise is 144,300 -> 144,000.
+        // With chained CPI nine years lose 0.25 points each: 1.3 x 0.9975^9 = 1.27104,
+        // 141,085 -> 141,000. The first year after the base is not slowed.
+        assert_eq!(qcd_limit_for(1.3, None), 144_000.0);
+        assert_eq!(qcd_limit_for(1.3, Some(9)), 141_000.0);
+        assert_eq!(qcd_limit_for(1.04, Some(0)), 115_000.0);
+        assert_eq!(qcd_limit_for(1.04, Some(-1)), 115_000.0);
         // 70 and a half is 846 months.
         assert_eq!(QCD_MIN_AGE_MONTHS, 846);
     }
