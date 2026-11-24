@@ -8,9 +8,7 @@
 
 use super::sleeves::{AssetExt, ExtRt, Loss, WORDS_PER_MONTH};
 use super::*;
-use crate::model::{
-    CryptoDynamics, CryptoOutlook, CryptoToken, LossEvent, MarketModel, Uncertain,
-};
+use crate::model::{CryptoDynamics, CryptoOutlook, CryptoToken, LossEvent, MarketModel, Uncertain};
 use crate::rng::Stream;
 
 const SEED: u64 = 0x00A2_5EED;
@@ -209,6 +207,61 @@ fn defaults_need_no_extension_and_draw_nothing() {
     );
 }
 
+/// The default crypto sleeve is built exactly as it was before the options
+/// existed: the original construction, written out here, gives the same bits.
+#[test]
+fn the_default_crypto_sleeve_is_bit_identical_to_the_original_construction() {
+    for (name, kind) in KINDS {
+        let m = model(kind, &PortfolioPolicy::default());
+        let base = &m.base;
+        let spec = base.crypto;
+        let sigma_c = spec.sigma_annual;
+        let eq_vol = (base.eq_sd * SQRT_12).max(1e-6);
+        let crypto_beta = spec.equity_corr * sigma_c / eq_vol;
+        let crypto_beta_extra = (spec.drawdown_corr - spec.equity_corr).max(0.0) * sigma_c / eq_vol;
+        let (_, link_sd, _) = fit::mean_sd(
+            base.rows
+                .iter()
+                .map(|r| math::ln(base.crypto_link(crypto_beta, crypto_beta_extra, r.eq))),
+        );
+        let total_var = sigma_c * sigma_c / 12.0;
+        let idio_var = (total_var - link_sd * link_sd).max(CRYPTO_MIN_IDIO_SHARE * total_var);
+        let idio_sd = idio_var.sqrt();
+        let crypto_shock = sampler::student_t(spec.dof).transformed(|x| {
+            math::exp(idio_sd * x.clamp(-CRYPTO_SHOCK_CAP_SD, CRYPTO_SHOCK_CAP_SD))
+        });
+        let link_arithmetic = fit::mean_sd(
+            base.rows
+                .iter()
+                .map(|r| base.crypto_link(crypto_beta, crypto_beta_extra, r.eq)),
+        )
+        .0;
+        let crypto_ruin = probability_bits(monthly_hazard(spec.ruin_annual));
+        let survive = 1.0 - crypto_ruin as f64 / TWO_POW_32;
+        let crypto_norm = math::pow(1.0 + spec.expected_real_return, 1.0 / 12.0)
+            / (link_arithmetic * crypto_shock.mean() * survive).max(1e-9);
+        assert_eq!(
+            m.assets.crypto_beta.to_bits(),
+            crypto_beta.to_bits(),
+            "{name}"
+        );
+        assert_eq!(
+            m.assets.crypto_beta_extra.to_bits(),
+            crypto_beta_extra.to_bits()
+        );
+        assert_eq!(m.assets.crypto_norm.to_bits(), crypto_norm.to_bits());
+        assert_eq!(m.assets.crypto_ruin, crypto_ruin);
+        let mut rng = Rng::from_seed(3);
+        for _ in 0..20_000 {
+            let w = rng.next_u64();
+            assert_eq!(
+                m.crypto_shock.sample(w).to_bits(),
+                crypto_shock.sample(w).to_bits()
+            );
+        }
+    }
+}
+
 /// The unit-variance tables behind the two fat shapes: how often a draw is beyond
 /// four standard deviations. Student-t(4) with unit variance is `T / sqrt 2`, so
 /// the event is `|T| > 5.657`, probability 0.00481 by the closed-form CDF (once in
@@ -295,7 +348,10 @@ fn fat_stock_sleeve_has_the_same_moments_and_wilder_extremes() {
     let thin = lognormal(&stock(0.5, TailShape::Normal, Some(0.0)));
     let fat = lognormal(&stock(0.5, TailShape::Fat, Some(0.0)));
     only_these_differ(&thin, &fat, &[STOCK], "fat stock");
-    let (a, b) = (column(&thin, STOCK, 500, 600), column(&fat, STOCK, 500, 600));
+    let (a, b) = (
+        column(&thin, STOCK, 500, 600),
+        column(&fat, STOCK, 500, 600),
+    );
     let ((ma, sa), (mb, sb)) = (mean_sd(&a), mean_sd(&b));
     // Monthly sd about 0.145, 300,000 months: the standard error of a mean is
     // 0.00026; the two columns share every market move, so their difference is
@@ -327,7 +383,10 @@ fn a_stated_ruin_hazard_overrides_the_preset_and_keeps_the_mean() {
     assert!((q - 0.010_596).abs() < 1e-6, "{q}");
     assert!((high.assets.stock_survivor_boost * (1.0 - q) - 1.0).abs() < 1e-15);
     only_these_differ(&none, &high, &[STOCK], "ruin hazard");
-    let (a, b) = (column(&none, STOCK, 600, 600), column(&high, STOCK, 600, 600));
+    let (a, b) = (
+        column(&none, STOCK, 600, 600),
+        column(&high, STOCK, 600, 600),
+    );
     let lost = share(&b, |r| r == -1.0);
     // 360,000 months: standard error sqrt(q (1 - q) / n) = 0.00017.
     assert!((lost - q).abs() < 0.0007, "{lost}");
@@ -553,6 +612,8 @@ fn the_cycle_chain_has_the_stated_spells_and_clusters_volatility() {
         / (months as f64 - 1.0)
         / (sd * sd);
     assert!(lag1 > 0.09 && lag1 < 0.17, "lag-one correlation {lag1}");
+    // For the figure in docs/methodology.md (run with --nocapture).
+    println!("lag-one correlation of absolute log moves: {lag1:.3}");
 }
 
 /// In the generator: three `AssetExt` words a month in every market kind, nothing
@@ -580,7 +641,10 @@ fn cycles_in_the_generator_touch_only_crypto() {
         }
         assert_eq!(after.next_u64(), expect.next_u64(), "{name}: draw count");
         generate(&cycles, SEED, 5, 120, &mut b);
-        assert!(a.returns[CRYPTO][..120] == b.returns[CRYPTO][..120], "{name}");
+        assert!(
+            a.returns[CRYPTO][..120] == b.returns[CRYPTO][..120],
+            "{name}"
+        );
         generate(&steady, SEED, 5, months, &mut b);
         for t in 0..months {
             assert_eq!(
@@ -874,18 +938,57 @@ fn report_sleeve_shapes() {
         line(label, &model(kind, &p), STOCK);
     }
     println!("-- crypto");
+    {
+        let m = model(
+            kind,
+            &crypto(
+                CryptoOutlook::Neutral,
+                CryptoToken::BitcoinOrEther,
+                CryptoDynamics::cycles(),
+            ),
+        );
+        let c = m.ext.cycles.as_deref().unwrap();
+        let steady = model(kind, &PortfolioPolicy::default());
+        let s = math::ln(steady.crypto_shock.sample(u64::MAX >> 1)) / CRYPTO_SHOCK_CAP_SD;
+        println!(
+            "cycles: own (idiosyncratic) volatility a year: steady {:.1}%, calm {:.1}%, wild {:.1}%",
+            s * SQRT_12 * 100.0,
+            c.sigma[0] * SQRT_12 * 100.0,
+            c.sigma[1] * SQRT_12 * 100.0
+        );
+    }
     let btc = CryptoToken::BitcoinOrEther;
     for (label, outlook, token, dynamics) in [
-        ("neutral, steady (default)", CryptoOutlook::Neutral, btc, CryptoDynamics::Steady),
-        ("skeptic", CryptoOutlook::Skeptic, btc, CryptoDynamics::Steady),
-        ("believer", CryptoOutlook::Believer, btc, CryptoDynamics::Steady),
+        (
+            "neutral, steady (default)",
+            CryptoOutlook::Neutral,
+            btc,
+            CryptoDynamics::Steady,
+        ),
+        (
+            "skeptic",
+            CryptoOutlook::Skeptic,
+            btc,
+            CryptoDynamics::Steady,
+        ),
+        (
+            "believer",
+            CryptoOutlook::Believer,
+            btc,
+            CryptoDynamics::Steady,
+        ),
         (
             "neutral, other tokens",
             CryptoOutlook::Neutral,
             CryptoToken::OtherTokens,
             CryptoDynamics::Steady,
         ),
-        ("neutral, cycles", CryptoOutlook::Neutral, btc, CryptoDynamics::cycles()),
+        (
+            "neutral, cycles",
+            CryptoOutlook::Neutral,
+            btc,
+            CryptoDynamics::cycles(),
+        ),
     ] {
         let m = model(kind, &crypto(outlook, token, dynamics));
         line(label, &m, CRYPTO);

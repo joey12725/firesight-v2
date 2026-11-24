@@ -13,7 +13,10 @@
 //! * `generate` draws only from the `Market` and `Inflation` streams handed in, and
 //!   their number per month is fixed for a given model kind. The opt-in per-path
 //!   overlays ([`EconomyModel::apply_path_overlays`], see [`overlay`]) draw from the
-//!   `MarketParams` and `Disaster` streams, a fixed number of words per path. Nothing about the household
+//!   `MarketParams` and `Disaster` streams, a fixed number of words per path. The
+//!   opt-in crypto cycles and custom loss events (see [`sleeves`]) draw 3 words a
+//!   month from the `AssetExt` stream handed to [`EconomyModel::generate_with`].
+//!   Nothing about the household
 //!   influences the draws: all nine asset classes are always generated, and the
 //!   single-stock and custom-asset parameters only rescale draws that are taken
 //!   anyway. Two scenarios of one profile therefore see the same economy on the same
@@ -60,15 +63,19 @@
 //!   deviation below average, Student-t(4) shocks sized so total volatility is 70% a
 //!   year, and each month a `1%/12` chance of a collapse (return -100%). After a
 //!   collapse the process continues: money rebalanced into the sleeve later is buying
-//!   a successor asset; what was lost stays lost.
+//!   a successor asset; what was lost stays lost. `portfolio.crypto` can pick
+//!   another outlook or token type and switch on volatility cycles ([`sleeves`]).
 //! * `SingleStock`: `(1 + bill + beta (equity - bill)) * L - 1` with `L` lognormal,
 //!   mean exactly 1, sized so total volatility is `single_stock.volatility`; plus a
 //!   small monthly hazard of a total loss, interpolated from the presets in
 //!   `params.json` (`equity_compensation.single_public_stock`), with survivors'
 //!   returns raised by the same amount so the expected return is exactly what the
 //!   market exposure implies. Concentration adds risk and volatility drag, not return.
+//!   `tails: fat` swaps the lognormal for a fat-tailed factor with the same mean
+//!   and standard deviation, and `ruin_hazard` states the hazard ([`sleeves`]).
 //! * `Custom`: monthly mean from the user's annual mean, `beta = corr * vol / equity
-//!   vol` on the equity return's deviation from its mean, normal residual.
+//!   vol` on the equity return's deviation from its mean, normal residual
+//!   (Student-t(6) with `tails: fat`), and optional loss events ([`sleeves`]).
 //! * `Cash`: the bill return.
 //!
 //! # Adjustments
@@ -1084,7 +1091,8 @@ impl EconomyModel {
         let adjust = Adjust::new(market);
 
         // Crypto at the library defaults: see `sleeves::crypto_setup`.
-        let crypto = sleeves::crypto_setup(&base, &base.crypto, CryptoAssumptions::default().dynamics);
+        let crypto =
+            sleeves::crypto_setup(&base, &base.crypto, CryptoAssumptions::default().dynamics);
 
         let assets = AssetParams {
             eq_mean: (1.0 + base.eq_mean) * adjust.equity * adjust.inflation - 1.0,
@@ -1129,8 +1137,11 @@ impl EconomyModel {
         // Crypto: rebuilt only when the profile departs from the defaults that
         // `new` has already applied.
         if portfolio.crypto != CryptoAssumptions::default() {
-            let spec =
-                sleeves::crypto_spec(self.base.crypto, &self.base.crypto_presets, &portfolio.crypto);
+            let spec = sleeves::crypto_spec(
+                self.base.crypto,
+                &self.base.crypto_presets,
+                &portfolio.crypto,
+            );
             let crypto = sleeves::crypto_setup(&self.base, &spec, portfolio.crypto.dynamics);
             self.assets.crypto_beta = crypto.beta;
             self.assets.crypto_beta_extra = crypto.beta_extra;

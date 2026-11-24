@@ -465,6 +465,8 @@ If the stock is the user's employer, multiply that earner's job-loss hazard by 3
 
 Knobs: private stage, paper value, include in base plan (default no); single-stock preset and a diversification schedule.
 
+As built, the portfolio's single-stock sleeve uses a lognormal factor by default; the Student-t(4) shape above is the opt-in `portfolio.single_stock.tails: fat`, and `ruin_hazard` can be stated directly (docs/methodology.md 2.11).
+
 Left out: exercise strategy, AMT, 83(b), QSBS (tax module); preference waterfalls.
 
 ---

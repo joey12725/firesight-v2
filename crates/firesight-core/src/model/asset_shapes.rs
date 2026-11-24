@@ -74,7 +74,7 @@ pub enum CryptoDynamics {
         #[serde(default = "d_wild_months")]
         wild_months: f64,
         /// Volatility in a wild spell divided by volatility in a calm one, from 1 to
-        /// 5. The default 2.5 gives about 45% a year when calm and 110% when wild.
+        /// 5. The default 2.5 gives about 50% a year when calm and 105% when wild.
         #[serde(default = "d_volatility_ratio")]
         volatility_ratio: f64,
     },

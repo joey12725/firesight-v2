@@ -350,10 +350,7 @@ fn bad_settings_are_reported_at_their_paths() {
         "/portfolio/custom_asset/loss_event/loss/high",
     );
     check_error(
-        loss(Uncertain::Normal {
-            mean: 0.1,
-            sd: 0.1,
-        }),
+        loss(Uncertain::Normal { mean: 0.1, sd: 0.1 }),
         "out_of_range",
         "/portfolio/custom_asset/loss_event/loss/sd",
     );
@@ -433,6 +430,8 @@ fn retiree_stats(
     paths: u64,
 ) -> (f64, Vec<f64>) {
     let mut p = retiree(1_000_000.0, 0.6, 40_000.0, 30.0);
+    // The default market model, cautious equity adjustment included.
+    p.assumptions.market = MarketModel::default();
     p.portfolio.target = Allocation::from_pairs(&[
         (AssetClass::UsStocks, 0.6 * (1.0 - share)),
         (AssetClass::Bonds, 0.4 * (1.0 - share)),
@@ -496,8 +495,7 @@ fn effects_go_the_right_way_for_a_retiree() {
     }
     let (base_rate, base) = fund(|_| {});
     // Losses on top of the stated return: lower everywhere.
-    let (rate, worth) =
-        fund(|p| p.custom_asset.as_mut().unwrap().loss_event = Some(event(false)));
+    let (rate, worth) = fund(|p| p.custom_asset.as_mut().unwrap().loss_event = Some(event(false)));
     assert!(rate < base_rate - 0.01, "{rate} vs {base_rate}");
     for p in [0.1, 0.5, 0.9] {
         assert!(q(&worth, p) < q(&base, p), "quantile {p}");
@@ -507,7 +505,7 @@ fn effects_go_the_right_way_for_a_retiree() {
     let (rate_in, worth_in) =
         fund(|p| p.custom_asset.as_mut().unwrap().loss_event = Some(event(true)));
     assert!(rate_in > rate, "{rate_in} vs {rate}");
-    assert!(q(&worth_in, 0.05) < q(&base, 0.05));
+    assert!(q(&worth_in, 0.2) < q(&base, 0.2));
     assert!(q(&worth_in, 0.9) > q(&base, 0.9));
 
     // A single stock, 40% of the portfolio: a higher chance of total loss at the
@@ -564,10 +562,7 @@ fn shapes_show_in_the_traced_returns() {
     let (spread_cycles, extreme_fat) = stats(&shaped);
     // Average absolute monthly move per calendar year: its 90th percentile over
     // its 10th.
-    assert!(
-        spread_cycles > 1.25 * spread,
-        "{spread_cycles} vs {spread}"
-    );
+    assert!(spread_cycles > 1.25 * spread, "{spread_cycles} vs {spread}");
     assert!(extreme_fat > 1.5 * extreme, "{extreme_fat} vs {extreme}");
 }
 

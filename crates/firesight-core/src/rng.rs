@@ -89,8 +89,8 @@ pub enum Stream {
     /// The rare-disaster jump process: whether a disaster strikes, how deep and how
     /// long. Opt-in market models only.
     Disaster,
-    /// Extra draws for derived asset sleeves, such as crypto regimes and fat-tailed
-    /// single stocks. Opt-in market models only.
+    /// Extra draws for derived asset sleeves: crypto volatility cycles and loss
+    /// events on the custom asset, three words a month. Opt-in market models only.
     AssetExt,
     /// Extra career draws for one person (index into `people`): mixture wage shocks,
     /// duration-dependent unemployment. Opt-in career models only.

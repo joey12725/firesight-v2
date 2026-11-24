@@ -2499,7 +2499,7 @@
       "months_min": 1.0,
       "months_max": 600.0,
       "volatility_ratio_max": 5.0,
-      "reasoning": "crypto.reasoning.volatility above records drawdowns of 75-85% in 2014, 2018 and 2022 with quieter stretches between: roughly one wild year in three or four. Thirty calm months and twelve wild ones put 29% of months in the wild state; a ratio of 2.5 gives about 45% a year when calm and 105% when wild at the default 70% overall. The spell lengths and the ratio are round numbers chosen to look like that record, not estimates from it.",
+      "reasoning": "crypto.reasoning.volatility above records drawdowns of 75-85% in 2014, 2018 and 2022 with quieter stretches between: roughly one wild year in three or four. Thirty calm months and twelve wild ones put 29% of months in the wild state; a ratio of 2.5 gives about 50% a year when calm and 105% when wild at the default 70% overall (40% and 99% for the sleeve's own shock, before its link to the stock market). The spell lengths and the ratio are round numbers chosen to look like that record, not estimates from it.",
       "confidence": "low; a judgement"
     },
     "custom_fat_tails": {

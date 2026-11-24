@@ -531,6 +531,19 @@ give the same results:
   inflation_probability, inflation }`, where `depth`, `years` and `inflation` are
   uncertain numbers.
 
+* `portfolio.single_stock.tails` (`"normal"` | `"fat"`, default `normal`) and
+  `portfolio.single_stock.ruin_hazard` (a yearly probability from 0 to 0.5, or null,
+  default null: set from the volatility).
+* `portfolio.crypto`: `{ outlook ("skeptic" | "neutral" | "believer", default
+  neutral), token ("bitcoin_or_ether" | "other_tokens", default bitcoin_or_ether),
+  dynamics ({"type": "steady"} | {"type": "cycles", calm_months, wild_months,
+  volatility_ratio}, default steady) }`.
+* `portfolio.custom_asset.tails` (`"normal"` | `"fat"`, default `normal`) and
+  `portfolio.custom_asset.loss_event` (`{ annual_probability, loss,
+  mean_includes_losses }` or null, default null), where `loss` is an uncertain
+  number between 0 and 1.
+
 The `adjusted_history` warning is also raised, at the option's own path, when the
-historical replay is run with a long-run uncertainty or disasters switched on. No
-output document changes shape.
+historical replay is run with a long-run uncertainty or disasters switched on. The
+sleeve options add no warning codes; out-of-range values are `out_of_range` or
+`dist_order` errors at the field's path. No output document changes shape.

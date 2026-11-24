@@ -142,8 +142,16 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   expense_ratio: f64, advisory_fee: f64,
                   emergency_months: f64 (6),          // of current spending, recomputed every year
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
-                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
-                  single_stock: SingleStock{ volatility, beta } }
+                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield,
+                                                    tails: Normal | Fat,                       // default Normal
+                                                    loss_event: Option<LossEvent{ annual_probability, loss: Uncertain,
+                                                                                  mean_includes_losses (true) }> }>,
+                  single_stock: SingleStock{ volatility, beta, tails: Normal | Fat,            // default Normal
+                                             ruin_hazard: Option<f64> },                       // None = from volatility
+                  crypto: CryptoAssumptions{ outlook: Skeptic | Neutral | Believer,            // default Neutral
+                                             token: BitcoinOrEther | OtherTokens,
+                                             dynamics: Steady | Cycles{ calm_months (30), wild_months (12),
+                                                                        volatility_ratio (2.5) } } }
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 
@@ -283,7 +291,7 @@ for each month t:
 | `rng` | SplitMix64 seeding, xoshiro256++, normal / student-t / lognormal / exponential / poisson, named streams |
 | `dist` | `Uncertain` (a number given as a range in the profile) compiled to `CompiledDist`, a one-uniform quantile sampler with an exact mean; the shared validation check; `sampler` re-exports the economy's one-draw shock tables |
 | `data` | Embedded datasets parsed once: `data/history/monthly.csv`, `data/tax/*.json`, `data/actuarial/*` |
-| `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise |
+| `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise; opt-in sleeve shapes (fat tails, crypto cycles, custom loss events; 3 words a month from `AssetExt` when cycles or loss events are on) |
 | `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
 | `benefits` | Social Security: indexed earnings record -> AIME -> PIA -> claim adjustment, spousal and survivor, trust-fund haircut |
 | `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation |

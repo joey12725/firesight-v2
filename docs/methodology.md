@@ -146,9 +146,10 @@ otherwise).
   replay keeps the record as it was.
 * **Listed real estate**: equity beta 0.70, volatility 19%, no alpha (4.4% real
   geometric); conservative against the REIT record.
-* **A single stock**: the market return times its beta plus idiosyncratic noise
-  with fat tails, mean-preserving, with a ruin hazard (15% of companies gone in 30
-  years at the default settings). Volatility 36% by default.
+* **A single stock**: the market return times its beta, times a company-specific
+  factor with mean one (lognormal by default; fat-tailed on request, see 2.11),
+  with a ruin hazard (15% of companies gone in 30 years at the default settings)
+  that can also be stated directly. Volatility 36% by default.
 * **Crypto**: 70% volatility, Student-t(4) shocks capped at 8 standard deviations,
   correlation with equities 0.35 rising to 0.6 in sell-offs, and a 1% a year chance
   of total loss. The preset fixes the **expected** (arithmetic) real return,
@@ -157,7 +158,12 @@ otherwise).
   value a year while a few gain enormously. Before the audit the *median* was fixed
   at zero, which made the expected return +26% a year and let a crypto sleeve improve
   the median plan. After: moving 10 points from US stocks to crypto on the
-  early-career example lowers success by 9.6 points.
+  early-career example lowers success by 9.6 points. The outlook, the kind of token
+  (8% a year chance of total loss for tokens other than bitcoin and ether) and
+  calm and wild spells of volatility are options (2.11).
+* **A custom asset**: the stated mean, plus a share of the stock market's
+  surprise set by the stated correlation, plus a normal residual sized to the
+  stated volatility. Fat tails and occasional sudden losses are options (2.11).
 
 ### 2.6 What the models produce
 
@@ -352,6 +358,109 @@ Not modelled: a recovery; default on government bonds; a fall in home prices;
 more than three episodes in one life (which matters only at hazards far above the
 suggested one); any link between a disaster and the household's own job beyond the
 recession flag.
+
+### 2.11 Shapes of the single stock, crypto and the custom asset (opt-in)
+
+Three sleeves are built from a formula instead of from history. Each has options
+under `portfolio` that change the shape of its returns. All are off by default, and
+a profile that does not set them gives the same results as before, bit for bit.
+Every number below that is not a measurement is a judgement (`asset_shapes` in
+`data/actuarial/params.json`).
+
+**Single stock: fat tails** (`single_stock.tails: fat`). By default the company's
+own monthly factor is lognormal. With `fat` it is the exponential of a scaled
+Student-t(4) draw, limited to eight standard deviations and to a factor of five
+either way in one month, rescaled so its mean is exactly 1 and solved so its
+standard deviation equals the lognormal factor's. The average return and the
+volatility are therefore unchanged; what changes is how the risk arrives. The same
+random word is read through a different table, so nothing else moves. Measured
+(bootstrap, 35% volatility, beta 1.1, 2,000 paths of 30 years): monthly volatility
+10.4% either way; months worse than -30% go from 0.20% to 0.38% of months, months
+better than +40% from 0.16% to 0.42%, and months within five points of flat from
+39% to 45%. Over ten years the two shapes are close to indistinguishable (real
+growth of 1 at the 25th / 50th / 75th percentile: 0.52 / 1.16 / 2.47 lognormal,
+0.53 / 1.18 / 2.47 fat; 20,000 paths), and a 30-year retiree drawing 4% with a
+fifth of the portfolio in the stock and the rest 60/40 succeeds 84.6% of the time
+against 84.7% (10,000 paths). The option matters for what a bad month looks like, not for the
+long-run verdict.
+
+**Single stock: chance of total loss** (`single_stock.ruin_hazard`). Left empty,
+the yearly chance that the company fails is interpolated from its volatility (0.3%
+for a large company, 1% for a growth company, 3% for a small one). A stated value
+between 0 and 0.5 replaces it. Survivors' returns are raised to compensate, as
+before, so the expected return does not change: a higher hazard moves money from
+the typical path to the lucky ones. Measured at 3% a year against the default
+(about 0.5% at these settings): the share of ten-year holdings that lose more than
+nine tenths rises from 6.5% to 26.6% (1 - 0.97^10 = 26.3% from the hazard alone)
+while average real growth over the ten years is 2.09 either way; the retiree above
+succeeds 83.4% of the time against 84.7%.
+
+**Crypto: outlook and token type** (`crypto.outlook`, `crypto.token`). The presets
+that `params.json` has always listed can now be chosen: an expected real return,
+collapses included, of -5% (`skeptic`), 0% (`neutral`, the default) or +6%
+(`believer`) a year, and a yearly chance of permanent total loss of 1%
+(`bitcoin_or_ether`, the default) or 8% (`other_tokens`). They feed the same
+formula; no random number moves. The token type changes the hazard only: the
+expected return is still the outlook's, so with `other_tokens` survivors earn more
+and far fewer paths survive. Measured (bootstrap, 20,000 paths of 10 years), median
+real value of 1 after ten years and share of paths that lost more than nine tenths:
+neutral 0.08 and 53%; skeptic 0.05 and 61%; believer 0.15 and 44%; other tokens
+0.00 and 72%. A 30-year retiree drawing 4% with a tenth of the portfolio in crypto
+(10,000 paths) succeeds 75.9% of the time at neutral, 71.3% skeptic, 80.8%
+believer, 74.8% with other tokens; without any crypto, 88.5%.
+
+**Crypto: cycles** (`crypto.dynamics: cycles`). By default every month has the
+same volatility. With cycles the sleeve alternates between a calm and a wild state:
+a calm month is followed by a wild one with probability 1 / `calm_months` (default
+30), a wild one by a calm one with probability 1 / `wild_months` (default 12), so
+29% of months are wild; volatility in the wild state is `volatility_ratio` (default
+2.5) times the calm one. The calm level is solved so that the long-run variance of
+the monthly log shock equals the steady model's, and each state's shock is scaled
+to mean exactly 1, so the expected return in every month, the long-run volatility
+and the collapse hazard are those of the steady model. The state says nothing about
+direction. At the defaults the sleeve's own volatility is 40% a year when calm and
+99% when wild (62% steady; with the stock-market link, about 50%, 105% and 70%).
+The state uses one word a month from the `AssetExt` stream; the shock itself is the
+same `Market` word read at the state's scale. Measured (bootstrap, 2,000 paths of
+30 years): volatility within a calendar year is 39% / 58% / 91% at the 10th / 50th
+/ 90th percentile when steady and 31% / 52% / 100% with cycles; the lag-one
+correlation of the size of monthly moves is 0.15 against zero (1.2 million months
+of the chain alone). Ten-year outcomes barely differ (median real value 0.09
+against 0.08, 52% against 53% losing more than nine tenths), and the retiree above
+succeeds 75.9% of the time either way. Like fat tails, this changes how the ride feels more than where it
+ends.
+
+**Custom asset: fat tails** (`custom_asset.tails: fat`). The normal residual
+becomes a unit-variance Student-t(6), the shape listed real estate uses, read from
+the same word: same mean, same volatility. Measured for a fund with an 8% mean, 6%
+volatility and 0.3 correlation: months worse than -6% go from 0.01% to 0.16% of
+months; ten-year outcomes are unchanged to two decimals.
+
+**Custom asset: loss events** (`custom_asset.loss_event`). Each month there is a
+chance, `1 - (1 - annual_probability)^(1/12)`, of a sudden permanent loss of a
+share of the holding drawn from the stated range (0 to 1). `mean_includes_losses`
+says what the asset's stated mean describes. True (the default): the long-run
+average with losses counted; every month's gross return is raised by
+`1 / (1 - q E[L])` (monthly chance times average loss), so the expected return is
+exactly the stated one and ordinary months earn slightly more. False: the return of
+ordinary months; the losses come on top and the long-run average is lower by about
+the yearly chance times the average loss. Either way the stated volatility
+describes months without a loss, and the events add risk beyond it. Two words a
+month from the `AssetExt` stream decide whether a loss happens and how large it
+is. Measured for the fund above with the default event (2% a year, most likely a
+30% loss, between 10% and 60%; 20,000 paths of 10 years): with the mean including
+losses the average return stays 8.0% a year, measured volatility rises from 6.0% to
+7.6%, the worst fall within ten years goes from 11% to 33% at the 90th percentile
+and from 16% to 50% at the 99th, and real growth of 1 over ten years goes from
+1.02 / 1.59 to 0.88 / 1.61 at the 5th / 50th percentile. With the losses on top the
+average return is 7.3% and the median 1.51. A 30-year retiree drawing 4% with 30%
+of the portfolio in the fund (10,000 paths) succeeds 93.9% of the time without the
+event, 93.7% with it inside the mean and 92.3% with it on top.
+
+Not modelled: any link between a cycle state or a loss event and the stock market
+or a recession; recovery after a loss event; different tail shapes in the calm and
+wild states; a failure hazard that rises as a stock falls. Employer stock held as
+equity compensation (section 6) keeps its own, normal, shape.
 
 ## 3. Inflation and what follows it
 
@@ -827,7 +936,9 @@ amounts, benefactors' lifespans, spending processes, policy, local housing marke
 so switching one on never moves a draw of the default model (market parameters: two
 words a path when a long-run uncertainty is set; rare disasters: fifteen words a
 path when they are on; matched bootstrap joins reuse the restart word and draw
-nothing extra). The number of draws from
+nothing extra; extra asset draws: three words a month when crypto cycles or custom
+loss events are on, while fat tails, the stock's stated hazard and the crypto
+presets reuse words that are drawn anyway). The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
@@ -950,7 +1061,12 @@ Stated plainly, roughly in order of how much they could move an answer.
   long-horizon tails are too wide in both directions; home prices follow inflation
   more closely than in history (annual correlation 0.73 against 0.55).
 * Lognormal model: understates inflation and rate risk by construction.
-* Crypto parameters are assumptions, not estimates.
+* Crypto parameters are assumptions, not estimates. That includes the outlooks,
+  the token hazards and the spell lengths of the opt-in cycles (2.11).
+* The single stock's own shocks are lognormal and the custom asset's normal unless
+  fat tails are asked for (2.11); the fat shapes are a judgement, not a fit.
+  Volatility is constant within a path for every asset except crypto with cycles
+  on. Employer stock held as equity compensation always uses the normal shape.
 
 **Taxes**
 
