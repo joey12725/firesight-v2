@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod behavior;
 mod care;
 mod family;
 mod housing;
@@ -202,6 +203,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.family();
     c.realism();
     c.care_errors();
+    c.behavior();
     if c.r.errors.is_empty() {
         // Lints read the profile as a whole and assume it is structurally sound.
         c.plausibility();

@@ -474,7 +474,11 @@ impl State {
                 max_month,
                 ..
             } => {
-                if (funded && ti + 1 >= min_month) || ti + 1 >= max_month {
+                let mut go = funded && ti + 1 >= min_month;
+                if plan.beh.any {
+                    go = self.confirm_retirement(plan, t, go);
+                }
+                if go || ti + 1 >= max_month {
                     self.retire_month = ti + 1;
                 }
             }

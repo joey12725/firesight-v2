@@ -305,6 +305,8 @@ pub(crate) struct State {
     pub care: super::care::CareState,
     /// Market annotations of the traced path, due month first (`market_notes.rs`).
     pub market_notes: super::market_notes::MarketNotes,
+    /// Behaviour features (`sim/behavior`).
+    pub beh: super::behavior::BehaviorState,
 }
 
 impl State {
@@ -496,6 +498,7 @@ impl State {
             hd: super::housing_decisions::HdState::new(plan),
             care: super::care::CareState::default(),
             market_notes: Default::default(),
+            beh: super::behavior::BehaviorState::default(),
         }
     }
 
@@ -577,6 +580,7 @@ impl State {
         }
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
         self.sx.begin(plan, seed, path);
+        self.beh.begin(&plan.beh, seed, path);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }

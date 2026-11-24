@@ -90,6 +90,7 @@ LtcInsurance { annual_premium, daily_benefit, benefit_years, elimination_days,  
                inflation_rider: None | Compound{rate},
                premium_increase_risk: bool (true) }    // class-wide increases from Stream::LtcPremiumRates; lapse when unaffordable
 SocialSecurity { claim_age: f64 (62..=70, default 67),
+                 claiming: Fixed (default) | Adaptive{ earliest (62), latest (70) },  // sim/behavior/claiming.rs
                  basis: FromEarnings { career_start_age (default 22) }
                       | KnownBenefit { monthly_at_fra }      // from an SSA statement, today's $
                       | None }
@@ -177,7 +178,12 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
                   custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
                   single_stock: SingleStock{ volatility, beta },
-                  tax_loss_harvesting: bool (false) }   // realise losses, stay invested, reset basis
+                  tax_loss_harvesting: bool (false),    // realise losses, stay invested, reset basis
+                  behavior: Disciplined (default)             // sim/behavior/panic.rs
+                          | PanicProne{ drawdown_trigger (0.25), probability (0.08), share (0.5),
+                                        reentry: { recovered_within (0.05), max_months (36) } },
+                  pause_deferrals_in_distress: bool (false),  // sim/behavior/distress.rs
+                  distress: { keep_match (true), high_interest_rate (0.08) } }
 Allocation = map AssetClass -> weight (normalised)
 AssetClass = UsStocks | IntlStocks | Bonds | Cash | RealEstate | Gold | Crypto | SingleStock | Custom
 
@@ -218,7 +224,9 @@ EventKind =
 RetirementPlan {
   trigger: AtAge{person, age} | AtDate{at}
          | WhenFunded{ withdrawal_rate (0.04), basis: Investable|NetWorth, count_future_income: bool,
-                       min_age, max_age }
+                       min_age, max_age,
+                       confirmation: Option<{ months (6), max_equity_drawdown (0.2) }>,  // sim/behavior/confirm.rs
+                       one_more_year: Option<{ probability (0.25) }> }
          | FixedNumber{ amount, basis }
          | AlreadyRetired,
   partner_offset_years: f64,                     // second earner keeps working this much longer (can be negative)
@@ -239,6 +247,9 @@ RetirementPlan {
                           | WhenFundedRatioBelow{ ratio },
                     to_value_fraction (0.6), rent_instead (false),
                     selling_cost_fraction (0.06), buying_cost_fraction (0.03) }>,
+  return_to_work: Option<{ funded_ratio_below (0.8), until_age (70), pay_fraction (0.5),
+                           former_annual_pay: Option<f64>,
+                           search: Typical | Fixed{months} }>,  // off by default; sim/behavior/work.rs
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

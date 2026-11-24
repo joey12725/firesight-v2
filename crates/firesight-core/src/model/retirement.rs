@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::behavior::{OneMoreYear, RetirementConfirmation};
 use super::{Downsize, HomeEquityBorrowing, YearMonth};
 
 /// The retirement plan.
@@ -44,6 +45,69 @@ pub struct RetirementPlan {
     /// fall behind the plan. Leave empty to stay put.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub downsize: Option<Downsize>,
+    /// Going back to work when retirement savings fall short. Leave empty (the
+    /// default) for a household that never works again once retired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_to_work: Option<ReturnToWork>,
+}
+
+/// A retired household that looks for paid work again when its savings fall
+/// behind its plan.
+///
+/// Each January the funded test is run on the retired household (savings against
+/// what the retirement budget needs, as when deciding to retire). When the funded
+/// ratio is below `funded_ratio_below`, every adult younger than `until_age` who has
+/// stopped working starts looking. The search takes a random number of months,
+/// longer for older people and in recessions; then they work at `pay_fraction` of
+/// their former real pay until the plan is fully funded again (ratio 1 or more, judged
+/// each January) or they reach `until_age`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct ReturnToWork {
+    /// Start looking for work when savings cover less than this share of what the
+    /// retirement plan needs (the funded ratio of the retirement test). 0.8 means
+    /// "when savings are 20% short".
+    pub funded_ratio_below: f64,
+    /// Nobody looks for work, or keeps working, from this age on.
+    pub until_age: f64,
+    /// Pay on re-employment as a share of the person's real pay when they retired:
+    /// 0.5 is a half-time job or a full-time job at half the pay. Former pay is the
+    /// real salary of the jobs that ended at retirement.
+    pub pay_fraction: f64,
+    /// Former pay to use instead, today's dollars a year (for a household that was
+    /// already retired at the start, whose old salary the profile does not hold).
+    /// Leave empty to use the pay at retirement.
+    pub former_annual_pay: Option<f64>,
+    /// How long finding a job takes.
+    pub search: JobSearch,
+}
+
+impl Default for ReturnToWork {
+    fn default() -> Self {
+        Self {
+            funded_ratio_below: 0.8,
+            until_age: 70.0,
+            pay_fraction: 0.5,
+            former_annual_pay: None,
+            search: JobSearch::Typical,
+        }
+    }
+}
+
+/// How long a retired person's search for work lasts.
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum JobSearch {
+    /// A random spell from the engine's unemployment-duration model (BLS-calibrated
+    /// lognormal: median 2.2 months in expansions, 4 in and after recessions), 1.4
+    /// times longer from 55 and a further 1.1 times from 65.
+    #[default]
+    Typical,
+    /// Always exactly this many months.
+    Fixed {
+        /// Months of searching before the job starts.
+        months: f64,
+    },
 }
 
 fn is_false(b: &bool) -> bool {
@@ -80,6 +144,7 @@ impl Default for RetirementPlan {
             qcd: false,
             home_equity_borrowing: HomeEquityBorrowing::None,
             downsize: None,
+            return_to_work: None,
         }
     }
 }
@@ -142,6 +207,15 @@ pub struct WhenFunded {
     pub min_age: Option<f64>,
     /// Retire at this age of the first person at the latest, funded or not. Default 70.
     pub max_age: f64,
+    /// Before retiring, require the test to hold for some months in a row and stocks
+    /// not to be deep in a fall. Leave empty to retire the month after the test is
+    /// first met.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmation: Option<RetirementConfirmation>,
+    /// The chance of deciding to work one more year each time the household would
+    /// retire. Leave empty for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub one_more_year: Option<OneMoreYear>,
 }
 
 impl Default for WhenFunded {
@@ -152,6 +226,8 @@ impl Default for WhenFunded {
             count_future_income: true,
             min_age: None,
             max_age: 70.0,
+            confirmation: None,
+            one_more_year: None,
         }
     }
 }

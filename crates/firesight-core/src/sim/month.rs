@@ -202,6 +202,11 @@ impl State {
                 self.wage_like += gross;
                 let pay = jm.wages + jm.bonus + jm.commission;
                 if let (Some(ep), true) = (self.jobs[j].plan, pay > 0.0) {
+                    let ep = if plan.beh.any {
+                        self.deferral_plan(plan, ep)
+                    } else {
+                        ep
+                    };
                     let d = self.acc.payroll_deferral(
                         p,
                         &ep,
@@ -365,6 +370,10 @@ impl State {
             if plan.rz.any {
                 self.rz_se_fallback(plan, k, p, t, price);
             }
+        }
+
+        if plan.beh.any {
+            self.behavior_income(plan, econ, t);
         }
 
         // 4. Other income: pensions, annuities, other streams, Social Security.
@@ -705,6 +714,9 @@ impl State {
                 self.rebalance(plan);
             }
         }
+        if plan.beh.any {
+            self.behavior_after_returns(plan, econ, t);
+        }
 
         // 11. Financial independence and the retirement trigger.
         if !self.retired {
@@ -725,7 +737,9 @@ impl State {
                 continue;
             }
             let fra = plan.ss.full_retirement_age_months(person.birth.year()) as i32;
-            let claim = (person.claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
+            // The claimant's claim age (moved by adaptive claiming), else the plan's.
+            let claim_age = self.claimants[i].map_or(person.claim_age, |c| c.claim_age);
+            let claim = (claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
             let withheld = self.claimants[i].map_or(0.0, |c| c.withheld_months).ceil() as i32;
             for age in [
                 60 * 12,
@@ -1500,7 +1514,9 @@ impl State {
         } else {
             self.efund_target
         } + self.tax_reserve();
-        if self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
+        // In distress (opt-in) the surplus pays high-interest debt and stays in cash.
+        let hold = plan.beh.any && self.distress_settle(plan, t, cap);
+        if !hold && self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
             if plan.hd.surplus {
                 self.hd_surplus(plan, t, cap);
             }

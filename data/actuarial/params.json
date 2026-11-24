@@ -2093,6 +2093,65 @@
       "spending reductions at first death (handled by the household module: default survivor spends 70% of the couple's baseline)"
     ]
   },
+  "household_behavior": {
+    "summary": "Parameters of the opt-in household-behaviour features (crates/firesight-core/src/sim/behavior). Each entry names the code constant it documents; unit tests in that module keep the two equal.",
+    "return_to_work": {
+      "older_search_multiplier": {
+        "value": 1.1,
+        "code": "sim::behavior::work::OLDER_SEARCH_MULTIPLIER",
+        "model": "Median job-search length from 65 = unemployment-model median for 55+ times this.",
+        "evidence": "BLS Current Population Survey, 2024 annual averages, table 31 (Unemployed persons by age and duration of unemployment): mean duration 28.9 weeks at 65 and over against 26.2 weeks at 55 to 64 (ratio 1.10); medians 10.9 against 12.0 weeks (ratio 0.91).",
+        "source": "https://www.bls.gov/cps/data/aa2024/cpsaat31.htm",
+        "confidence": "low (judgement: means and medians disagree in direction, and a retiree re-entering the labour force is not an unemployed worker)"
+      },
+      "resume_retirement_ratio": {
+        "value": 1.0,
+        "code": "sim::behavior::work::RESUME_RETIREMENT_RATIO",
+        "model": "A household that went back to work stops again in the first January its funded ratio is at least this.",
+        "confidence": "judgement (the plan is fully funded again)"
+      }
+    },
+    "panic_selling": {
+      "code": "model::PanicSelling::default()",
+      "drawdown_trigger": 0.25,
+      "probability": 0.08,
+      "share": 0.5,
+      "reentry_recovered_within": 0.05,
+      "reentry_max_months": 36,
+      "evidence": "Vanguard, How America Saves 2009: in 2008 16% of defined-contribution participants traded, 2% abandoned equities entirely, and of the fall in the equity share of plan assets from 73% to 61% over 2008 about 4 percentage points came from participants shifting to fixed income (the rest from prices), i.e. about 5.5% of equities held. probability x share = 0.08 x 0.5 = 4% of stocks sold per fall of 25% or more, at the low end of that figure. Morningstar, Mind the Gap 2024: investor returns trailed fund total returns by about 1.1 points a year over the ten years to 2023 (all US funds; timing of purchases and sales).",
+      "source": "Vanguard How America Saves 2009 (as reported by PLANSPONSOR, 2009); https://www.morningstar.com/lp/mind-the-gap",
+      "confidence": "low (a behavioural assumption: plan savers are inert; the re-entry rule and the trigger depth are judgements)"
+    },
+    "adaptive_claiming": {
+      "reserve_months": {
+        "value": 12.0,
+        "code": "sim::behavior::claiming::RESERVE_MONTHS",
+        "model": "Claim now when investable savings < reserve_months x monthly budget + the benefit given up until the latest claim age.",
+        "confidence": "judgement (a year of spending as a cash reserve is a rule of thumb, not a measured quantity)"
+      }
+    },
+    "distress_pause": {
+      "high_interest_rate": {
+        "value": 0.08,
+        "code": "model::DistressRules::default().high_interest_rate",
+        "evidence": "Federal Reserve G.19 Consumer Credit: commercial bank interest rate on credit card plans, all accounts, 21.58% in 2024 (annual average). Student and auto loans in the shipped examples are at 5% and 6.5%.",
+        "source": "https://www.federalreserve.gov/releases/g19/",
+        "confidence": "judgement (the 8% line separates card and personal-loan rates from typical secured and student loans; it is not a published threshold)"
+      },
+      "penalty_months": {
+        "value": 3,
+        "code": "sim::behavior::distress::PENALTY_MONTHS",
+        "confidence": "judgement (a retired household draws a quarter's money at a time)"
+      }
+    },
+    "retirement_confirmation": {
+      "code": "model::RetirementConfirmation::default(), model::OneMoreYear::default()",
+      "months": 6,
+      "max_equity_drawdown": 0.2,
+      "one_more_year_probability": 0.25,
+      "confidence": "judgement (no agreed estimate of how long households wait for confirmation or how often they add a year; the defaults are illustrative and the user's to set)"
+    }
+  },
   "housing": {
     "summary": "Transaction and carrying-cost parameters for an owned home, and the idiosyncratic price risk to layer on top of the national home price index produced by the scenario generator.",
     "closing_costs": {

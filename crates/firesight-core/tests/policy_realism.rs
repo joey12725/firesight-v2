@@ -180,6 +180,7 @@ fn pensioner() -> Profile {
         basis: SocialSecurityBasis::KnownBenefit {
             monthly_at_fra: 2_500.0,
         },
+        ..SocialSecurity::default()
     };
     p.assumptions.longevity = Longevity::FixedAge { age: 95.0 };
     p

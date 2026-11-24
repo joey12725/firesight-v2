@@ -486,6 +486,80 @@ Not modelled: listed real estate keeps its constant 4% (REIT payouts follow rent
 not prices); the qualified share of dividends is fixed; bond funds pay the current
 yield, not the book yield of bonds bought earlier; special dividends and buybacks.
 
+### Stopping saving in distress (opt-in)
+
+`portfolio.pause_deferrals_in_distress: true` (default false) stops a household
+saving for retirement while it is in trouble. A month is one of distress when the
+household paid an early-withdrawal penalty within the last three months (a retired
+household draws a quarter at a time; the three is a judgement), cut essential
+spending, carries a non-mortgage debt at `distress.high_interest_rate` or more
+(default 8%: credit cards averaged 21.6% in 2024, Federal Reserve G.19; the line
+itself is a judgement), or, while working, holds less cash than its emergency-fund
+target. In such a month, cash above the month's cash target first pays down the
+high-interest debts, dearest first; then nothing else is invested (no IRA, HSA,
+after-tax 401(k) or taxable contribution from the surplus), so the remainder
+rebuilds the emergency fund. In the next month's pay the employee deferral drops
+to what earns the full employer match (`distress.keep_match`, default true; false
+stops it) and the after-tax route closes. Saving resumes the month after a month
+without distress. Pauses and resumptions are trace events; the debt paid shows
+in the debt-service spending line. No random numbers.
+
+Measured on a test household (35, $100,000, 15% into a 401(k) with a 50% match on
+6%, $25,000 on a 22% card, no tax): the card is gone within a year instead of
+dragging on at minimum payments, the deferral is $500 a month instead of $1,250
+while it lasts, and terminal net worth is higher on paired paths. With the CLI
+(3,000 paired paths) the shipped examples barely move, because their debts are
+small or cheap: `dual-income-family` median terminal net worth +$30,000 (success
+91.8% -> 91.7%, within noise), `early-career-saver` -$21,000, `side-hustle-landlord`
+-$4,000; each within noise on success.
+
+Not modelled: solo 401(k) and HSA payroll contributions continue, as do the
+employer's own; there are no hardship withdrawals or 401(k) loans; the household
+does not cut spending to save more.
+
+### Panic selling (opt-in, a behavioural assumption)
+
+`portfolio.behavior: panic_prone` (the default is `disciplined`) lets the household
+sell stocks after a crash. The engine follows the US stock index and its running
+peak; a fall of at least `drawdown_trigger` (default 25%) from the peak is one fall,
+and in its first month the household decides once, with probability `probability`
+(default 8%), whether to panic. If it does, `share` (default half) of its US and
+international stock weight moves to cash in its target mix and it trades to that
+mix at once through the ordinary rebalance, so taxable sales realise their gain or
+loss at average cost; new savings buy the panic mix. It buys back at the plan's own
+target when the index is back within `reentry.recovered_within` (5%) of the old
+peak, or after `reentry.max_months` (36) in any case. A fall ends at a new high;
+only then can the next one trigger a decision. One draw a month from its own stream.
+
+The defaults are calibrated to how US retirement-plan savers behaved in 2008:
+Vanguard (How America Saves 2009, as reported by PLANSPONSOR) reports that 16% of
+participants traded, 2% abandoned equities entirely, and that of the fall in the
+equity share of plan assets from 73% to 61% over 2008, about 4 percentage points came
+from participants shifting to fixed income (the rest from prices). Four points of a
+73% equity share is about 5.5% of the equities held. An 8% chance of selling half
+makes the expected share of stocks sold in a fall 4%, at the low end of that
+figure. Morningstar's Mind the Gap (2024) puts the cost of investors' timing at
+about 1.1 points a year across all US funds over the ten years to 2023, which
+covers much more than panic selling and is an order-of-magnitude check only. The
+re-entry rule is a judgement. Plan savers are among the most inert investors; a
+retail investor may well be more panic-prone, which is why the probability is the
+user's to set.
+
+Measured with the CLI (3,000 paired paths): at the defaults the effect is within
+sampling noise for `dual-income-family` (success 91.8% both ways, median terminal
+net worth +$10,000) and `early-career-saver` (84.2% -> 84.4%, -$11,000). With
+`probability: 1` (panics in every fall) `dual-income-family` loses 0.6 points of
+success and $35,000 at the 10th percentile of terminal net worth, and
+`early-career-saver` loses $204,000 of median terminal net worth with success
+unchanged within noise: selling after a fall misses most of the recovery, but on
+some paths it also escapes a deeper fall.
+
+Not modelled: only US and international stocks are sold (not REITs, crypto,
+employer stock or the custom asset); a household protecting the marketplace
+premium credit trades only inside its sheltered accounts, as its rebalances do; the
+chance does not depend on age, wealth, experience or the speed of the fall; a
+household never panics twice in one fall.
+
 ## 5. Taxes
 
 US federal law for 2026 as enacted, every state and DC, and the larger local
@@ -1954,6 +2028,48 @@ That is current law under the Trustees' assumptions; SSA's own "today's dollars"
 statements do not include it, so the engine will read higher than a statement. A
 trust-fund haircut (benefits at 79% from 2033) is available and off by default.
 
+### Adaptive claiming (opt-in)
+
+`social_security.claiming: adaptive { earliest (62), latest (70) }` (the default is
+the fixed `claim_age`) plans the claim at `latest`, which is also the claim age the
+funded test and the present value of the benefit start from. Each month from
+`earliest`, once the person has stopped working, the household compares its
+investable savings with what delaying still costs:
+
+```
+bridge  = months to latest x the benefit available by claiming now (today's $)
+reserve = 12 months of the household's budget
+claim now if savings < reserve + bridge (+ the higher earner's bridge, for the
+                                         lower earner of a living couple)
+```
+
+and claims at once, working or not, in a month after one in which essentials were
+cut. The bridge is what the portfolio has to pay in place of the benefit; the
+reserve of a year's budget is a judgement. **Survivor benefit:** the higher
+earner's benefit is what the survivor keeps, so while both are alive the lower
+earner's test also counts the higher earner's remaining bridge: when money is short
+the lower earner claims first and the higher earner keeps delaying. No random
+numbers are used. The claim shows in a trace as a life event naming the reason,
+followed by the usual "starts Social Security" event, and in the per-person
+claim-age column.
+
+Measured on a test household (single, 61, $2,000 a month at full retirement age,
+$300,000 in a 60/40 account, $36,000 budget, no tax, 400 paths): fixed at 70,
+paths spend 10.3 years on average with savings exhausted; adaptive, 7.4 years, with
+lifetime spending $1.029 million against $1.002 million for claiming at 62. With
+the CLI (3,000 paired paths, both partners adaptive in `dual-income-family`, the
+single person in the others): `dual-income-family` 8.2% -> 7.8% depleted (within
+noise), 10th-percentile terminal net worth +$85,000; `side-hustle-landlord` 7.8%
+-> 7.1% depleted, median retirement age +0.25 years (planning on a claim at 70
+raises the funded-test bridge); `early-career-saver` within noise (15.8% ->
+16.1%).
+
+Not modelled: the decision does not weigh life expectancy, health, tax or the
+marketplace premium credit; a claim is never withdrawn or suspended; a working
+person claims early only when essentials are being cut; the cache of benefit
+thresholds follows the claim age as decided (it uses the claimant's claim age, which
+only adaptive claiming moves).
+
 ## 10. Longevity
 
 Each adult's age at death is drawn from the SSA 2023 period life table, improved
@@ -2107,6 +2223,81 @@ number (section 14).
 A partner can stop work later (`partner_offset_years`). Coast-FI (the age at which
 today's savings, with no more saving, would meet the test at the planned
 retirement age) is reported too.
+
+### Not retiring into a crash (opt-in)
+
+Two settings on `when_funded` change the month a funded household retires; the FI
+age (the first month the test is met) does not move.
+
+* `confirmation: { months (6), max_equity_drawdown (0.2) }`: the test, with
+  `min_age`, must hold for `months` months in a row, and US stocks must not be more
+  than `max_equity_drawdown` below their peak. A household funded at the top of a
+  boom that loses it in the crash keeps working. A postponement for the market is a
+  trace event.
+* `one_more_year: { probability (0.25) }`: each time the household would retire it
+  decides, with this chance, to work another year first, then decides again (the
+  "one more year" habit). One draw a month from its own stream.
+
+`max_age` still forces retirement. Both defaults are judgements: there is no agreed
+estimate of how long households wait for confirmation or how often they add a
+year, so they are the user's to set.
+
+Measured with the CLI (`firesight run`, 3,000 paths each; retirement age p10 / p50
+/ p90, then paths depleted):
+
+| | early-career-saver | dual-income-family |
+|---|---|---|
+| plain rule | 36.1 / 39.3 / 45.1, 15.8% | 50.0 / 53.4 / 60.9, 8.2% |
+| confirmation | 36.7 / 40.2 / 47.8, 9.2% | 50.4 / 54.7 / 63.8, 6.1% |
+| one more year | 36.3 / 39.7 / 45.6, 13.4% | 50.0 / 53.9 / 61.6, 7.4% |
+| both | 37.0 / 40.6 / 48.6, 8.0% | 50.5 / 54.9 / 64.6, 5.5% |
+
+For `early-career-saver`, confirmation moves the median by 0.9 years and cuts
+depletion by 6.6 points; one more year moves the median by 0.4 years and cuts it
+by 2.4 points. Confirmation acts on the paths where retiring would have happened
+during a fall of more than 20%, and stretches the upper tail (the 90th percentile
+moves by 2.7 to 2.8 years) as those households wait the fall out; how much of its
+larger effect comes from that timing rather than the longer delay was not
+separated. One more year at 25% adds about a third of a year on
+average, as the geometric expectation 0.25 / 0.75 says it should.
+
+Not modelled: the decision does not weigh the margin over the target, age or how
+the job is going; a delay is always a whole year; a retired household does not
+reconsider (see going back to work below).
+
+### Going back to work (opt-in)
+
+`retirement.return_to_work` (off by default) lets a retired household look for
+paid work again when its savings fall behind. Each January the funded test above
+is run on the retired household as it now stands; its funded ratio is wealth over
+the requirement (never below zero). Below `funded_ratio_below` (default 0.8),
+every adult who has stopped working and is younger than `until_age` (70) starts a
+search. Its length is drawn from the engine's own unemployment-duration model
+(lognormal, median 2.2 months, 4 in a recession or the year after one, sigma 1,
+times 1.4 from 55; section 6), times a further 1.1 from 65: the ratio of mean
+unemployment durations at 65+ and 55 to 64 in the BLS Current Population Survey
+(2024 annual averages, table 31: 28.9 against 26.2 weeks). That multiplier is a
+judgement as much as a measurement, because the medians go the other way (10.9
+against 12.0 weeks). The search can also be fixed at a number of months. The job
+then pays `pay_fraction` (0.5: half time, or full time at half the pay) of the
+person's real pay when they retired, or of `former_annual_pay` for a household
+retired from the start. The wages are taxed, pay employee FICA, count toward the
+Social Security earnings record and the earnings test, and appear as wages in the
+year series and as a "back at work" event in a trace. Work stops in the first
+January the ratio is 1 or more again, or at `until_age`. Random numbers come from
+their own stream, one draw per person per month whatever happens.
+
+Measured with the CLI (`firesight compare`, 3,000 paired paths, default settings):
+`early-career-saver` (retires at a median 39 on a 3.5% rule) goes from 15.8% to
+0.9% of paths depleted, with median lifetime tax up $332,000 as the wages are
+taxed; `dual-income-family` from 8.2% to 6.3%; `side-hustle-landlord` from 7.8%
+to 6.2%. The young retiree gains most because it has thirty years in which it can
+go back.
+
+Not modelled: the job has no wage growth, shocks or layoffs, brings no employer
+health cover, workplace plan or HSA; the search does not depend on how long the
+person has been retired; the household's spending does not change while it
+works; there is no age discrimination beyond the longer search.
 
 ## 12. Spending in retirement
 

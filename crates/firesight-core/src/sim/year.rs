@@ -595,6 +595,9 @@ impl State {
         if !matches!(plan.profile.portfolio.glide, GlidePath::None) {
             let years = self.years_to_retirement(plan, t, price);
             self.target = accounts::glide_target(&plan.profile.portfolio, years);
+            if plan.beh.any {
+                self.panic_retarget(plan);
+            }
         }
         if new_year && plan.rebalance_annual {
             self.rebalance(plan);

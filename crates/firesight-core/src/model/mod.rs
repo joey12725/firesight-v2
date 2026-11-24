@@ -16,6 +16,7 @@
 
 mod accounts;
 mod assumptions;
+mod behavior;
 mod care;
 mod debt;
 mod events;
@@ -36,6 +37,7 @@ mod time;
 
 pub use accounts::*;
 pub use assumptions::*;
+pub use behavior::*;
 pub use care::*;
 pub use debt::*;
 pub use events::*;

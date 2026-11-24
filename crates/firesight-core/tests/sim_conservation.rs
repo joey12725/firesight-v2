@@ -5,6 +5,7 @@
 //! the loop; these tests drive it over the demo households and over a household
 //! built to exercise every event kind, income kind and policy at once.
 
+mod behavior_profiles;
 mod common;
 
 use std::collections::BTreeMap;
@@ -644,6 +645,17 @@ fn optional_market_refinements_conserve_money() {
             let plan = compile(&profile);
             let acc = run_checked(&plan, 13, 0..200);
             assert_eq!(acc.paths, 200, "{} {label}", base.name);
+        }
+    }
+}
+
+#[test]
+fn household_behaviour_features_conserve_money() {
+    for profile in behavior_profiles::behavior_profiles() {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let acc = run_checked(&plan, 13, 0..200);
+            assert_eq!(acc.paths, 200, "{} {kind:?}", profile.name);
         }
     }
 }

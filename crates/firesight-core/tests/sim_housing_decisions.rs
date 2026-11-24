@@ -24,6 +24,7 @@ fn house_rich_retiree() -> Profile {
         basis: SocialSecurityBasis::KnownBenefit {
             monthly_at_fra: 1_800.0,
         },
+        ..SocialSecurity::default()
     };
     let mut p = quiet(vec![who], 95.0);
     p.spending.items = vec![item("living", Category::Other, 50_000.0 / 12.0, true)];

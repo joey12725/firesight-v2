@@ -503,6 +503,8 @@ pub struct Plan {
     pub(crate) hd: super::housing_decisions::HdPlan,
     /// The opt-in health, longevity and care features (`sim/care.rs`).
     pub(crate) care: super::care::CarePlan,
+    /// Behaviour features (`sim/behavior`), all off by default.
+    pub(crate) beh: super::behavior::BehaviorPlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -781,7 +783,7 @@ impl Plan {
             };
             let ss_annuity = ss.annuity(
                 person.birth,
-                person.social_security.claim_age,
+                person.social_security.planned_claim_age(),
                 income_discount,
                 &survival[i],
             );
@@ -791,7 +793,7 @@ impl Plan {
                 age0,
                 joins: person.joins.map_or(i32::MIN, |j| j - start),
                 mortality: mortality[i].clone(),
-                claim_age: person.social_security.claim_age,
+                claim_age: person.social_security.planned_claim_age(),
                 basis,
                 record0,
                 ss_annuity,
@@ -799,6 +801,8 @@ impl Plan {
         }
         let income_rate0: f64 = earnings.iter().sum();
         let care = super::care::CarePlan::compile(profile, &people, data);
+        let ages0: Vec<i32> = people.iter().map(|p| p.age0).collect();
+        let beh = super::behavior::BehaviorPlan::compile(profile, data, &ages0);
 
         // Budget.
         let items: Vec<ItemPlan> = profile
@@ -1367,6 +1371,7 @@ impl Plan {
             income_rate0,
             hd,
             care,
+            beh,
         })
     }
 

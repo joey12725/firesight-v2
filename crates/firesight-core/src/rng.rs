@@ -118,6 +118,14 @@ pub enum Stream {
     LtcPremiumRates,
     /// The Student-t mixing variables of the fat-tailed market model.
     MarketTails,
+    /// How long a retired person's search for work lasts
+    /// (`retirement.return_to_work`), one per person.
+    ReturnToWork(usize),
+    /// Whether a panic-prone household sells in a fall (`portfolio.behavior`).
+    PanicSelling,
+    /// Whether a funded household works one more year
+    /// (`retirement.trigger.when_funded.one_more_year`).
+    OneMoreYear,
 }
 
 impl Stream {
@@ -133,6 +141,8 @@ impl Stream {
             Stream::PolicyRisk => 1500,
             Stream::HomeEquityCredit => 1600,
             Stream::MarketTails => 1800,
+            Stream::PanicSelling => 1900,
+            Stream::OneMoreYear => 1901,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -154,6 +164,7 @@ impl Stream {
             Stream::CoupleLongevity => 1700,
             Stream::LtcPremiumRates => 1701,
             Stream::HealthStates(i) => 0x1700_0000 + i as u64,
+            Stream::ReturnToWork(i) => 0x1900_0000 + i as u64,
         }
     }
 }
@@ -573,6 +584,10 @@ mod tests {
             Stream::CoupleLongevity,
             Stream::LtcPremiumRates,
             Stream::MarketTails,
+            Stream::ReturnToWork(0),
+            Stream::ReturnToWork(1),
+            Stream::PanicSelling,
+            Stream::OneMoreYear,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

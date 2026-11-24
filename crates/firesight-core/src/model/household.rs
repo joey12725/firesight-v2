@@ -3,6 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::behavior::Claiming;
 use super::{AdultSupport, Arrival, CollegeCost, ParentalLeave, YearMonth};
 
 /// The people the plan covers and where they live.
@@ -160,6 +161,21 @@ pub struct SocialSecurity {
     pub claim_age: f64,
     /// How the benefit amount is worked out.
     pub basis: SocialSecurityBasis,
+    /// Whether the claim age is fixed (`claim_age`, the default) or decided along the
+    /// way: claim early when savings run short, otherwise delay toward a latest age.
+    #[serde(skip_serializing_if = "Claiming::is_fixed")]
+    pub claiming: Claiming,
+}
+
+impl SocialSecurity {
+    /// The claim age the plan starts from: `claim_age`, or the latest age for
+    /// adaptive claiming.
+    pub fn planned_claim_age(&self) -> f64 {
+        match self.claiming {
+            Claiming::Fixed => self.claim_age,
+            Claiming::Adaptive { latest, .. } => latest,
+        }
+    }
 }
 
 impl Default for SocialSecurity {
@@ -167,6 +183,7 @@ impl Default for SocialSecurity {
         Self {
             claim_age: 67.0,
             basis: SocialSecurityBasis::default(),
+            claiming: Claiming::Fixed,
         }
     }
 }
