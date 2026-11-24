@@ -170,10 +170,10 @@ pub enum ExitTiming {
     /// year for the outcome is the first. The default.
     #[default]
     ConstantHazard,
-    /// The outcome is unlikely in the first year or two, most likely a little
-    /// before the typical wait, and less likely again for a company that has
-    /// already waited a long time. `liquidity_hazard` is not used. Recession
-    /// months still postpone the outcome.
+    /// The outcome is very unlikely in the first year or two and becomes likely
+    /// around a typical wait that you state: half of such companies have had
+    /// their outcome by then. `liquidity_hazard` is not used. Recession months
+    /// still postpone the outcome.
     Lognormal {
         /// Years until half of such companies have had their outcome, from 0.25
         /// to 40. About 7 for a company at seed or series A, 5 at series B or C
