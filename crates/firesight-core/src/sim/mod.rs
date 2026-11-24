@@ -149,6 +149,61 @@ pub fn run_path<R: Recorder>(
     state.finish(plan, economy, recorder);
 }
 
+/// Where the household-level base random streams stand after one month of a path:
+/// what [`audit_streams`] reports, for the tests of the random-number discipline.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamAudit {
+    /// The next word of each person's `Stream::Career` generator; 0 once they have
+    /// died (the stream is no longer drawn from).
+    pub career: [u64; crate::MAX_PEOPLE],
+    /// The same for `Stream::Health`.
+    pub health: [u64; crate::MAX_PEOPLE],
+}
+
+/// [`run_path`], also returning each person's drawn month of death (the
+/// `Stream::Longevity` draws as the path uses them) and, for every month simulated,
+/// the position of the career and health streams after it. Two profiles whose
+/// positions agree month by month have drawn the same variates from those streams.
+/// The market draws are the workspace's `economy` after the call. For tests.
+#[doc(hidden)]
+pub fn audit_streams<R: Recorder>(
+    plan: &Plan,
+    seed: u64,
+    path_index: u64,
+    workspace: &mut Workspace,
+    recorder: &mut R,
+) -> ([u32; crate::MAX_PEOPLE], Vec<StreamAudit>) {
+    let detail = recorder.wants_detail();
+    let Workspace {
+        economy,
+        state,
+        check,
+    } = workspace;
+    state.begin(plan, seed, path_index, economy, detail, *check);
+    recorder.begin_path(path_index);
+    let deaths = state.death_month;
+    let mut months = Vec::with_capacity(state.months);
+    let mut t = 0;
+    while t < state.months {
+        state.month(plan, economy, recorder, t);
+        let mut a = StreamAudit {
+            career: [0; crate::MAX_PEOPLE],
+            health: [0; crate::MAX_PEOPLE],
+        };
+        for p in 0..crate::MAX_PEOPLE {
+            if state.alive[p] {
+                a.career[p] = state.rng_career[p].clone().next_u64();
+                a.health[p] = state.rng_health[p].clone().next_u64();
+            }
+        }
+        months.push(a);
+        t += 1;
+    }
+    state.finish(plan, economy, recorder);
+    (deaths, months)
+}
+
 /// Simulates every path in `paths` into `acc`, creating a workspace internally.
 /// Equivalent to calling [`run_path`] for each index in order.
 pub fn run_range(plan: &Plan, seed: u64, paths: Range<u64>, acc: &mut Accumulator) {

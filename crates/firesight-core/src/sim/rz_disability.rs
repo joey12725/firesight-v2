@@ -207,10 +207,27 @@ impl State {
             let mut ssdi = 0.0;
             if st.ssdi_real > 0.0 && st.months >= SSDI_WAIT_MONTHS && age_months < fra_months as i32
             {
-                ssdi = st.ssdi_real * price * plan.ss.payable_fraction(now.year());
-                self.recv(YearSeries::IncomeSocialSecurity, ssdi);
-                self.ty.social_security[p] += ssdi;
-                self.wage_like += ssdi;
+                // The path's own benefit cut (`policy_risk`) applies to disability
+                // insurance as it does to every other Social Security benefit.
+                ssdi = st.ssdi_real
+                    * price
+                    * plan.ss.payable_fraction(now.year())
+                    * self.trz.policy.ss_scale(now.year());
+                // A survivor or spousal benefit already paid this month on another
+                // record counts against it: Social Security pays the larger of a
+                // person's own and auxiliary benefits, not their sum.
+                let already = if t >= self.ss_from && self.ss_cache_price > 0.0 {
+                    self.ss_cache.paid[p] * price / self.ss_cache_price
+                } else {
+                    0.0
+                };
+                let top_up = (ssdi - already).max(0.0);
+                ssdi = ssdi.max(already);
+                if top_up > 0.0 {
+                    self.recv(YearSeries::IncomeSocialSecurity, top_up);
+                    self.ty.social_security[p] += top_up;
+                    self.wage_like += top_up;
+                }
                 if !st.ssdi_started {
                     self.rz.dis[p].ssdi_started = true;
                     self.event(

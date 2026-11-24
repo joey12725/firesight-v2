@@ -212,6 +212,21 @@ impl State {
                 rt.last = 0.0;
             }
         }
+        // Their work is no longer the household's, as at a death: a job left running
+        // would still count as workplace-plan cover for the IRA rules, as months of
+        // unemployment in the path's totals, and as a job to take leave from, be
+        // laid off from or change (the opt-in career features).
+        for (rt, jp) in self.jobs.iter_mut().zip(&plan.jobs) {
+            if jp.owner == 1 && !rt.ended {
+                jp.model.end(&mut rt.st);
+                rt.ended = true;
+            }
+        }
+        for (rt, sp) in self.selfemp.iter_mut().zip(&plan.selfemp) {
+            if sp.owner == 1 {
+                rt.ended = true;
+            }
+        }
         let married = ti - plan.dynamics.married_month;
         if married < SOCIAL_SECURITY_MARRIAGE_MONTHS {
             self.claimants[1] = None;

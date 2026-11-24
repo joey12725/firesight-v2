@@ -386,9 +386,6 @@ impl State {
 
         // 4. Other income: pensions, annuities, other streams, Social Security.
         self.pay_streams(plan, t, price);
-        if plan.rz.any {
-            self.rz_disability_income(plan, t, price);
-        }
         if t >= self.ss_from {
             // Benefits in real terms change only in January (earnings test, payable
             // fraction), at an age threshold, or when someone dies or joins; in
@@ -426,6 +423,12 @@ impl State {
                     }
                 }
             }
+        }
+        // Disability benefits come after Social Security: a disabled person who
+        // already draws a survivor or spousal benefit gets the larger of the two,
+        // not both.
+        if plan.rz.any {
+            self.rz_disability_income(plan, t, price);
         }
 
         // 6. Spending: the budget, children, healthcare, shocks.

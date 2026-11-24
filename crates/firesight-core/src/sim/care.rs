@@ -336,7 +336,8 @@ impl State {
                 continue;
             };
             let st = self.care.policy[j];
-            if !st.in_force || st.care_months > 0 || !self.alive[j] {
+            // A partner who has left (a divorce) takes their policy with them.
+            if !st.in_force || st.care_months > 0 || !self.alive[j] || !self.present[j] {
                 continue;
             }
             let factor = if policy.increase_risk { rate } else { 1.0 };

@@ -21,6 +21,9 @@
 //!   year's return.
 //! * Work (or the search) **stops** in a January when the ratio is 1 or more again,
 //!   and in any month the person reaches `until_age` or leaves the household.
+//! * A person who is disabled (`disability_risk`), who was pushed out of work for
+//!   good after a late layoff (`late_career: realistic`) or who is in a long-term-care
+//!   episode neither looks for work nor keeps working.
 //!
 //! # Random numbers
 //!
@@ -216,7 +219,8 @@ impl State {
         let can = self.present[p]
             && self.person_retired[p]
             && (t as i32) < rp.until_month[p]
-            && self.beh.rtw[p].former_real > 0.0;
+            && self.beh.rtw[p].former_real > 0.0
+            && self.able_to_work(plan, p, t);
         match self.beh.rtw[p].status {
             WorkStatus::Idle if can && ratio < rp.ratio_below => {
                 let age = self.age(plan, p, t);
@@ -241,6 +245,22 @@ impl State {
         }
     }
 
+    /// False for a person the other opt-in features have taken out of work for good
+    /// or for now: disabled (`disability_risk`), pushed out of the labour market
+    /// after a late layoff (`late_career: realistic`, whose premise is that they do
+    /// not find work again), or in a long-term-care episode.
+    fn able_to_work(&self, plan: &Plan, p: usize, t: usize) -> bool {
+        if plan.rz.any
+            && (self.rz.never.get(p).copied().unwrap_or(false)
+                || self.rz.dis.get(p).is_some_and(|d| d.disabled))
+        {
+            return false;
+        }
+        let h = &self.health[p];
+        !(h.ltc_start_month != u32::MAX
+            && (h.ltc_start_month..h.ltc_end_month).contains(&(t as u32)))
+    }
+
     fn stop_working(&mut self, plan: &Plan, t: usize, p: usize, why: &'static str) {
         let was = self.beh.rtw[p].status;
         self.beh.rtw[p].status = WorkStatus::Idle;
@@ -258,8 +278,17 @@ impl State {
         if self.beh.rtw[p].status == WorkStatus::Idle {
             return;
         }
-        if !self.present[p] || t as i32 >= rp.until_month[p] {
+        if !self.present[p] {
+            // Died or left the household: nothing to report.
+            self.beh.rtw[p].status = WorkStatus::Idle;
+            return;
+        }
+        if t as i32 >= rp.until_month[p] {
             self.stop_working(plan, t, p, "age limit reached");
+            return;
+        }
+        if !self.able_to_work(plan, p, t) {
+            self.stop_working(plan, t, p, "no longer able to work");
             return;
         }
         let mut paid = 1.0;

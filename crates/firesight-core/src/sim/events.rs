@@ -397,9 +397,13 @@ impl State {
                         jp.model.start_break(&mut rt.st, *months, *fraction);
                     }
                 }
-                self.event(now, TraceEventKind::CareerBreak, None, || {
-                    format!("{} ({} months)", ev.name, months)
-                });
+                // Not logged for a partner who has left the household (a divorce):
+                // their work is no longer the household's.
+                if !self.dynamics.left.get(*person).is_some_and(|l| *l) {
+                    self.event(now, TraceEventKind::CareerBreak, None, || {
+                        format!("{} ({} months)", ev.name, months)
+                    });
+                }
             }
             EvKind::SpendingChange { target, change } => {
                 let selected = |i: usize| match *target {

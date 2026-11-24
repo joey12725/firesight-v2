@@ -25,6 +25,9 @@
 //! too: when money is short the lower earner claims first and the higher earner keeps
 //! delaying.
 //!
+//! A person receiving disability insurance (`disability_risk`) does not decide: the
+//! disability benefit converts to the retirement benefit at full retirement age.
+//!
 //! No random numbers.
 //!
 //! # Not modelled
@@ -96,6 +99,12 @@ impl State {
                 continue;
             };
             if !self.present[i] || !self.alive[i] || self.ss_claimed[i] {
+                continue;
+            }
+            // On disability insurance (`disability_risk`): the benefit is already the
+            // full insurance amount and converts to the retirement benefit at full
+            // retirement age. An early retirement claim on top of it would pay twice.
+            if plan.rz.any && self.rz_record_frozen(i) {
                 continue;
             }
             let Some(c) = &self.claimants[i] else {
