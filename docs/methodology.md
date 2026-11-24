@@ -340,6 +340,246 @@ Past earnings, needed for Social Security, are rebuilt backwards from today's pa
 along the same curve the job follows going forward, capped at each year's wage
 base.
 
+### 6.1 Voluntary job changes (opt-in: `risk.job_mobility`)
+
+Off by default. With `typical` or `high` (and the job's risk level not `none`, and
+`assumptions.career_risk` on), an employed person changes employer in a month with a
+probability that falls with age: 30% a year under 25, 20% at 25 to 34, 12% at 35 to
+44, 8% at 45 to 54, 5% at 55 to 64 (`high` is 1.6 times the yearly rate; moves are
+40% rarer in recession months). A move multiplies base pay by `exp(J)`, `J` normal
+with mean 8% under 35, 5% at 35 to 54, 2% from 55 (4 points less in a recession) and
+standard deviation 0.12, and forfeits unvested equity (a sign-on grant at the new
+employer is not modelled; the jump is meant to cover it). Employer match vesting is
+not modelled by the engine, so there is nothing to reset there.
+
+*No double counting.* The lifecycle curve is fitted to earnings panels in which people
+change jobs, so its average growth already includes the average gain from moves.
+Every month an employed person does not move, pay is therefore multiplied by
+`(1 - h E[e^J]) / (1 - h)` (`h` the month's move probability), which makes the expected
+growth of pay equal to the curve exactly: `h E[e^J] + (1 - h) d = 1`. Forfeited equity
+is not compensated, so total pay of a job with large grants is lower on average. Movers gain more than stayers, stayers fall behind the curve, and the mean
+career is the curve; what changes is the spread between careers. The persistent wage
+shock of the existing model is calibrated to the same data and carries some of the
+same dispersion, so the two overlap in variance (not in the mean).
+
+*Sources.* The yearly move probabilities are a judgement shaped by Fallick and
+Fleischman (Federal Reserve Board FEDS 2004-34: 2.6% of employed people change
+employers each month, falling with age and in recessions), FRBSF Economic Letter
+2016-30 (SIPP: 1.7 to 1.9% a month at 40 to 44) and the BLS NLSY79 job counts; the
+jump size is a judgement shaped by Topel and Ward (1992) and the Atlanta Fed Wage
+Growth Tracker (switchers out-earn stayers in expansions, not in recessions). The
+constants are listed in `params.json` under `unverified_from_memory.career_realism`.
+
+*Measured* (dual-income-family example, 4,000 paths, seed 1, both jobs on `typical`):
+success rate 91.5% either way; median terminal net worth $1.73m off, $1.76m on; 10th
+percentile $104k off, $117k on (the Monte Carlo noise on the 10th percentile is of
+that order); median retirement age 53.4 off, 53.5 on (90th percentile 61.2 off, 61.8
+on); share of paths with a retired year below 90% of planned spending 44.2% off, 42.6%
+on. The headline barely moves
+because the mean is preserved; the unit tests show the spread of pay at 45 to 50
+rising by more than 10%, and workers with five or more moves ending 15 points ahead
+of workers with two or fewer.
+
+*Not modelled:* a link between moves and layoffs, moves into self-employment,
+relocation, employer-specific benefits (plans, health cover) differing across
+employers, moves by people on a career break or in an unemployment spell.
+
+### 6.2 Recession pay freezes and hours cuts (opt-in: `risk.recession_pay`)
+
+Off by default; `typical` needs `assumptions.career_risk` on. The career model already
+makes layoffs likelier and longer in recessions; this adds what happens to people who
+keep their job, using the path's recession flag. In each recession month an employed
+worker may (independently) get a *pay freeze* (25% a year: the raise the job would have
+had, the lifecycle curve's real growth at that age plus the path's last-12-month
+inflation, is lost for good, at most one a year) or start a *temporary cut* (15% a
+year: pay down 5 to 20% for nine months, then restored). Bonuses are 30% smaller in a
+recession and for twelve months after it, and carry the freeze, being a share of pay.
+Commission follows the pay factor. The nine months of a cut and the year between
+freezes run on calendar time, so a cut does not resume in a new job after a layoff.
+The whole forgone raise is taken off pay in the month the freeze starts (in reality it
+opens up over the frozen year), which overstates the first year's loss by about half a
+raise.
+
+*Sources.* The direction is documented (the share of workers with an unchanged annual
+wage reached a record in and after the Great Recession: Daly, Hobijn and Lucking, FRBSF
+Economic Letter 2012-10; an FRBSF letter of July 2013; an administrative study of
+Washington State hourly stayers found 15 to 20% with no change in a year even in normal
+times). The sizes are judgements: no source was found for per-recession probabilities
+of a freeze or cut, or their depth, for salaried workers, and the percentages in those
+papers were not retrieved. All are named constants in `career_realism/recession_pay.rs`
+and listed in `params.json` under `unverified_from_memory.career_realism`.
+
+The lifecycle curve is an average over business cycles and so already contains some
+recession effect of unknown size; this feature is not mean-preserving and slightly
+overstates the loss for that reason. Freezes are permanent level losses (no catch-up,
+a judgement); cuts recover fully.
+
+*Measured* (dual-income-family, 4,000 paths, seed 1, both jobs on `typical`): success
+rate 91.5% off, 91.0% on; median retirement age 53.4 off, 53.8 on (90th percentile
+61.2 off, 62.1 on); median terminal net worth $1.73m off, $1.72m on; 10th percentile
+$104k off, $75k on. In the integration test (a 35-year-old on $90,000 with a bonus,
+300 paths) pay is identical to the baseline until the first recession month on every
+path, never higher afterwards, and lifetime pay is 2.7% lower over all paths (the test
+accepts 0.2% to 6%). The same kind of check for 6.1 (a 30-year-old to 50, 1,000 paths,
+`typical`) gives lifetime pay 0.6% below the baseline, within the noise of the jumps.
+
+*Not modelled:* a freeze's effect on the nominal-versus-real distinction beyond the
+inflation term, work sharing and furlough programmes, sector differences (a freeze is
+equally likely for every job), cuts and freezes for the self-employed (see 6.5).
+
+### 6.3 Long-term disability (opt-in: `people[].disability_risk`, `ltd_insurance`)
+
+Off by default. Each month a person who has not retired and is below full retirement
+age faces an onset hazard that rises steeply with age (yearly rates per 1,000 working
+people: 1.0 at 20, 1.6 at 30, 2.2 at 35, 3.6 at 40, 5.5 at 45, 8 at 50, 12 at 55, 14 at
+60). Onset ends all of the person's wage and self-employment income and forfeits
+unvested equity. The household then receives:
+
+* **SSDI** after SSA's five-month wait: the person's disability PIA, constant in real
+  terms (benefits rise with prices) until full retirement age. The PIA follows SSA's
+  disability rule: computation years are the years after the 21st birthday up to the
+  year before onset, less one dropout year per five elapsed years (at most five), never
+  fewer than two; AIME is the best of those years' indexed earnings over their months
+  (SSA POMS RS 00605.016). This is why a 30-year-old with eight years of earnings gets a
+  full-earner-sized benefit rather than one divided by 35 years. The claimant's record
+  is frozen at that PIA while disabled (later years without earnings do not lower it),
+  and at full retirement age the claim age is set to full retirement age so the existing
+  retirement code pays exactly that PIA (the SSDI-to-retirement conversion). Not
+  insured (basis `none`, under five years of earnings on record, already claiming
+  retirement) means no SSDI. Paid through the Social Security income series and taxed
+  with it.
+* **LTD insurance**, if set: after a three-month elimination period,
+  `replacement x base salary at onset`, fixed in nominal dollars (as most policies are),
+  less the SSDI received (the usual offset), until `to_age`. Taxable (employer-paid
+  premiums assumed; no premium is charged). Only job salary is insured: a
+self-employed person's profit earns no LTD. Paid through the other-income series.
+* **Recovery** with 3% a year, below full retirement age only (after it the benefit has
+  converted for good): jobs resume with a 10% pay scar and the record is released; a
+  planned claim age that passed during the disability becomes the next month. A disabled person's jobs sit in an open-ended idle state, so layoffs,
+  unemployment insurance and mobility draws cannot occur; the idle months are not
+  counted as unemployment in the summary.
+
+*Sources.* Verified: the Trustees' age-sex-adjusted ultimate disabled-worker incidence
+of 4.6 awards per 1,000 exposed a year (2025 Trustees Report, Alternative II; 4.8 in 2023
+and 4.5 in 2024); in the SSA Annual Statistical Report on the SSDI Program 2024, 16.2%
+of disabled-worker awards went to ages 50 to 54, 28.0% to 55 to 59 and 27.4% to 60 to
+full retirement age (read through search summaries); the five-month wait; the
+computation-year rule. The age-specific incidence tables (OACT) could not be retrieved
+(the SSA site refused automated access), so the age profile above is a judgement shaped
+to those facts (weighted by the age mix of employed people it averages about 5.2 onsets
+per 1,000 a year, some 13% above the Trustees' rate, and puts about 22% of onsets at 55
+to 59 and 29% from 60: too few at 55 to 59, too many after 62), as are the recovery
+rate, scar, LTD wait and the insured-history rule
+(5 recorded years standing in for 20 quarters in 40). All are named constants in
+`career_realism/disability.rs` and in `params.json` (`unverified_from_memory`). The
+hazard is an SSDI award hazard, so it covers the severe end of work limitation only.
+
+*Measured* (dual-income-family, 3,000 paths, seed 1, both people on `typical`): success
+rate 91.8% off, 91.4% on, 91.8% with 60% LTD for both; financially independent on 96.4%
+of paths off, 94.6% on; retirement age p90 60.9 off, 62.4 on; terminal net worth p10
+$125k off, $111k on, $131k with LTD. The median terminal net worth *rises* ($1.73m to
+$1.75m): the household usually reaches independence in its early fifties anyway, and a
+person disabled before that loses a few years of wages but draws a full-size SSDI
+benefit for up to two decades before the age at which the baseline would claim, which
+helps more than the lost wages hurt in the middle of the distribution. The tails move
+the intuitive way for the low end (p10, success rate).
+
+*Not modelled:* medical costs and care needs of the disabled, higher mortality of
+beneficiaries, Medicare entry after 24 months of SSDI, the denial of claims (the hazard
+is awards), partial or short-term disability, the SSDI family benefits for children,
+the SSDI earnings-record effect on a spouse's benefits beyond the existing spousal
+logic, the planner's knowledge of a disability (the annual plan sees SSDI and LTD
+only as they arrive), a cap on LTD, and disability after retirement.
+
+### 6.4 Older workers and involuntary retirement (opt-in: `risk.late_career`)
+
+Off by default; `realistic` needs `assumptions.career_risk` on and a layoff `level`
+other than none. The career model already lengthens spells (median 1.4 times from 55)
+and deepens re-employment pay losses (1.5 times from 50). For a layoff from 55 on this
+adds, on top: a spell 1.3 times longer at 55 to 59, 1.6 times at 60 to 64, 1.8 times from
+65 (capped at 48 months), a pay loss 1.3 times larger (only a loss is deepened; the
+random part of the career model's scar can be a gain, which is left as drawn), and a
+probability of never working again of 15% at 55, rising 4 points a year to at most 60%
+(35% at 60, 51% at 64). Such a worker is retired on the spot with an "Involuntary
+retirement" event and all their jobs end (their own self-employment, if any, carries on
+under its own settings); if nobody else in the household still has a job or
+self-employment (a disabled partner, 6.3, does not count) the household retires the next month on what it has, otherwise the
+partner keeps working under the plan. The spell multiplier applies to the whole spell
+the career model drew. How often layoffs happen is still set by `level`; this changes what follows one.
+It uses one extra uniform per job per month from the feature's own stream, whatever
+happens.
+
+*Sources.* All the numbers are judgements (named constants in
+`career_realism/late_career.rs`, listed in `params.json` under
+`unverified_from_memory.career_realism.late_career`). Direction and scale: Johnson and
+Gosselin (Urban Institute 2018) as reported by ProPublica ("Forced Out"): in the Health
+and Retirement Study 56% of workers over 50 in long-term full-time jobs were pushed out
+before they chose to retire and about one in ten of them ever again earned as much as
+before. Those figures include exits for poor health and use a six-month or 50%-drop
+threshold, so they do not give a per-layoff probability.
+
+*Measured* (dual-income-family with the two adults born in 1969 and 1970, 3,000 paths,
+seed 1, both jobs on `late_career: realistic`): success rate 80.9% off, 74.1% on; median
+terminal net worth $658k off, $520k on; 10th percentile $0 either way; share of retired
+paths with a year below 90% of planned spending 38.2% off, 45.5% on. (This couple is
+under-saved for its age; it works to 67 in both runs, so the effect is the lost pay and
+the unemployment spells, and a pushed-out person's contributions and wages stop.)
+
+*Not modelled:* unemployment insurance for a worker pushed into retirement (their job
+ends in the layoff month, so they collect at most that month's benefit; a real claimant
+would draw up to 26 weeks first), health as the cause of the exit (disability is 6.3), a rise in the layoff
+hazard itself with age beyond the career model's, partial retirement or bridge jobs
+after a layoff, employer retirement incentives and buyouts, and the age at which UI
+runs out differing by state.
+
+### 6.5 Self-employment cycles and business failure (opt-in: `business_risk`)
+
+Off by default; needs `assumptions.career_risk` on. The base self-employment model
+already redraws a unit-mean log-normal profit factor each January, half persistent and
+correlated with the last year's stock return, which gives some co-movement with the
+economy. `typical` and `high` add, on top of that, three things:
+
+* **A persistent regime**: a standardised state redrawn each January,
+  `z <- 0.7 z + sqrt(0.51) e`, which scales profit by `exp(sd z - sd^2 Var[z] / 2)`
+  (unit mean; sd 0.20 typical, 0.35 high), so good and bad years come in runs.
+* **Recession months** cut profit by 10% (typical) or 20% (high), using the path's
+  recession flag. This is not mean-preserving, on purpose: the base model has no
+  recession effect.
+* **Failure**: a monthly hazard from a yearly rate by business age: 20.4%, 15%, 12%,
+  10%, 9% in years 1 to 5 and 7% after. It is 1.3 times higher in a recession month,
+  multiplied by `exp(-0.25 z)` (bad regimes fail more) and, for `high`, by 1.5 (capped at
+  95% a year). A business started in the future has age 0 at its start; one already
+  running has `years_operating` plus the time since the plan began (so set it, or a
+  decades-old practice is treated as a start-up). A failed business pays nothing for
+  good and counts as ended for the retirement planner and trigger. With `fallback_wage`
+  the person, after `search_months`, earns that wage (today's dollars) as ordinary wages
+  with payroll tax until they retire or reach the end date of the self-employment
+income, whichever is first, and not while disabled (6.3); no retirement-plan
+contributions. A "Business
+  failed" event is logged.
+
+*Sources.* Verified: BLS Business Employment Dynamics: 79.6% of the March 1994 cohort of
+establishments open after one year (TED 2018), 20.4 points of the 2013 cohort closed in
+its first year and 34.7% was open after ten (TED 2024). Hazards for years 2 to 5 and 6
+onward are judgements fitted to that ten-year figure (the BLS two- and five-year rates
+could not be retrieved); regime, recession and hazard sensitivities are judgements.
+Constants are in `career_realism/business.rs` and `params.json`
+(`unverified_from_memory.career_realism.business`). BED counts establishments, most with
+employees: sole proprietors fail more, which is what `high` is for.
+
+*Measured* (side-hustle-landlord, the consulting income only, `typical`, fallback wage
+$50,000 after four months, 3,000 paths, seed 1): success rate 92.2% off, 91.9% on; median
+terminal net worth $988k off, $983k on; 10th percentile $158k off, $157k on. The effect is
+small because the consulting income starts in 2031 and the household retires at about 47
+in most paths, so the business runs only a few years. The test for a 20-year business
+shows 66% less lifetime profit than with the feature off (61% from the hazard table
+alone, worked out by hand), and a ten-year-old business loses over ten points less.
+
+*Not modelled:* firm size or sector, a partner or employees, selling the business or
+winding it down with proceeds, debt or a personal guarantee, restarting a business, a
+fallback that is itself self-employment, a retirement plan on the fallback job, and the
+retirement planner counting on the fallback wage before a failure.
+
 ## 7. Spending
 
 The budget is a list of lines, each essential or discretionary, with its own

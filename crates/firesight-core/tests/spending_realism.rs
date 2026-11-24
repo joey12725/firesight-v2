@@ -779,6 +779,7 @@ fn worker_base() -> Profile {
     if let IncomeKind::Job(job) = &mut j.kind {
         job.risk = CareerRisk {
             level: RiskLevel::High,
+            ..CareerRisk::default()
         };
     }
     p.incomes = vec![j];

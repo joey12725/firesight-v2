@@ -98,6 +98,7 @@ fn early_career_saver(start: YearMonth) -> Profile {
             },
             risk: CareerRisk {
                 level: RiskLevel::Typical,
+                ..CareerRisk::default()
             },
             bonus: Some(Bonus {
                 target_fraction: 0.06,
@@ -346,6 +347,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             },
             risk: CareerRisk {
                 level: RiskLevel::Low,
+                ..CareerRisk::default()
             },
             plan: Some(EmployerPlan {
                 employee_fraction: 0.08,
@@ -614,6 +616,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             real_growth: 0.01,
             ends_at_retirement: true,
             solo_401k_fraction: 0.0,
+            ..SelfEmployment::default()
         }),
         start: Some(When::date(move_month)),
         ..Income::default()

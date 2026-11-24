@@ -145,6 +145,7 @@ pub fn job(id: &str, owner: usize, salary: f64) -> Income {
             growth: WageGrowth::Flat { real_raise: 0.0 },
             risk: CareerRisk {
                 level: RiskLevel::None,
+                ..CareerRisk::default()
             },
             ..Job::default()
         }),
@@ -166,3 +167,27 @@ pub const MARKETS: [MarketKind; 4] = [
     MarketKind::Lognormal,
     MarketKind::Historical,
 ];
+
+/// Switches every opt-in career-realism feature on wherever it applies (jobs keep
+/// their own layoff level; `career_risk` is left as the profile has it).
+pub fn career_realism_on(mut p: Profile) -> Profile {
+    for income in &mut p.incomes {
+        match &mut income.kind {
+            IncomeKind::Job(j) => {
+                j.risk.job_mobility = JobMobility::High;
+                j.risk.recession_pay = RecessionPay::Typical;
+                j.risk.late_career = LateCareer::Realistic;
+            }
+            IncomeKind::SelfEmployment(se) => {
+                se.business_risk = BusinessRisk::High;
+                se.fallback_wage = Some(FallbackWage::default());
+            }
+            _ => {}
+        }
+    }
+    for person in &mut p.household.people {
+        person.disability_risk = DisabilityRisk::Typical;
+        person.ltd_insurance = Some(LtdInsurance::default());
+    }
+    p
+}

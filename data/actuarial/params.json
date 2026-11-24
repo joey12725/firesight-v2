@@ -2548,6 +2548,64 @@
       "home_price_beta": 1.0,
       "idiosyncratic_volatility": 0.14
     },
+    "career_realism": {
+      "note": "JUDGEMENT constants of the opt-in career-realism features (src/career_realism). Each is shaped by the evidence named beside it but is not an estimate from that data. A test keeps the code constants equal to this section.",
+      "job_mobility": {
+        "annual_move_probability_by_age_band": [0.30, 0.20, 0.12, 0.08, 0.05, 0.03],
+        "age_bands": ["<25", "25-34", "35-44", "45-54", "55-64", "65+"],
+        "high_level_multiplier": 1.6,
+        "max_annual_probability": 0.6,
+        "recession_rate_multiplier": 0.6,
+        "mean_log_jump_by_age_band": [0.08, 0.08, 0.05, 0.05, 0.02, 0.02],
+        "recession_jump_penalty": 0.04,
+        "jump_sd": 0.12,
+        "evidence": "Fallick and Fleischman (Federal Reserve Board FEDS 2004-34): 2.6% of employed people change employers each month, falling with age and in recessions. FRBSF Economic Letter 2016-30 (SIPP): 1.7-1.9% a month at ages 40-44. BLS NLSY79 job counts (from memory: about 12 jobs from 18 to 52). Topel and Ward (QJE 1992): job changes are about a third of early-career wage growth. Atlanta Fed Wage Growth Tracker: switchers out-earn stayers by one to three points in expansions (8.4% vs 5.6% in August 2022) and the premium turns negative in and after recessions."
+      },
+      "recession_pay": {
+        "annual_freeze_probability": 0.25,
+        "annual_cut_probability": 0.15,
+        "cut_min": 0.05,
+        "cut_max": 0.20,
+        "cut_months": 9,
+        "freeze_cooldown_months": 12,
+        "bonus_factor": 0.7,
+        "bonus_slack_months": 12,
+        "evidence": "No source gives these sizes: they are judgements. Direction only: Daly, Hobijn and Lucking (FRBSF Economic Letter 2012-10) and an FRBSF letter of July 2013 report that the share of workers with a frozen (unchanged) annual wage reached a record high after the Great Recession; an administrative study of Washington State hourly stayers (2020 AEA conference paper) found 15-20% with no change in a year even in normal times. Exact percentages were not retrieved."
+      },
+      "late_career": {
+        "from_age": 55,
+        "spell_multiplier_by_age_band": [1.3, 1.6, 1.8],
+        "scar_multiplier": 1.3,
+        "never_probability_at_55": 0.15,
+        "never_probability_per_year": 0.04,
+        "never_probability_max": 0.6,
+        "spell_cap_months": 48,
+        "evidence": "All sizes are judgements. Direction and rough scale: Johnson and Gosselin (Urban Institute, 2018), reported by ProPublica ('Forced Out'): in the Health and Retirement Study 56% of workers over 50 in long-term full-time jobs were pushed out before they chose to retire, and only about one in ten of them ever again earned as much as before (thresholds: six months of unemployment or a 50% earnings drop; includes exits for poor health). Not a per-layoff probability, so the rising never-again probability is shaped to be consistent with it rather than estimated from it. These multipliers apply on top of the career model's own age_multiplier_on_median 1.4 (55+) and age_50_plus_multiplier 1.5."
+      },
+      "disability": {
+        "band_from_age": [20, 30, 35, 40, 45, 50, 55, 60],
+        "incidence_per_1000_by_age_band": [1.0, 1.6, 2.2, 3.6, 5.5, 8.0, 12.0, 14.0],
+        "annual_recovery": 0.03,
+        "return_scar": 0.10,
+        "ssdi_wait_months": 5,
+        "ltd_wait_months": 3,
+        "min_insured_years": 5,
+        "min_onset_age": 20,
+        "evidence": "The age profile, recovery rate, scar, LTD wait and insured-history rule are judgements. Verified: SSA Trustees Report 2025 age-sex-adjusted ultimate disabled-worker incidence 4.6 awards per 1,000 exposed a year (Alternative II; 4.8 in 2023, 4.5 in 2024); SSA Annual Statistical Report on the SSDI Program 2024 (read through search summaries, the SSA site refuses automated access): disabled-worker awards by age 50-54 16.2%, 55-59 28.0%, 60-61 12.6%, 62-FRA 14.8%; the table here averages about 5.2 per 1,000 under the age mix of employed people (about 13% above the Trustees' rate); SSDI waiting period of five full months; computation years for disability AIME: elapsed years after age 21, one dropout year per five elapsed years up to five, minimum two (SSA POMS RS 00605.016). The OACT age-specific incidence tables could not be retrieved."
+      },
+      "business": {
+        "fail_hazard_by_year": [0.204, 0.15, 0.12, 0.10, 0.09],
+        "fail_hazard_later": 0.07,
+        "recession_hazard_multiplier": 1.3,
+        "regime_hazard_beta": 0.25,
+        "high_hazard_multiplier": 1.5,
+        "regime_persistence": 0.7,
+        "regime_sd": [0.20, 0.35],
+        "recession_profit_drop": [0.10, 0.20],
+        "max_annual_failure": 0.95,
+        "evidence": "Verified: BLS Business Employment Dynamics via The Economics Daily: 79.6% of establishments born in March 1994 were open a year later (TED 2018); the survival rate of the March 2013 cohort fell 20.4 points in its first year and 34.7% of it was open in March 2023 (TED 2024). The first-year hazard is that figure; the hazards for years 2 to 5 and later are judgements fitted so that ten-year survival is about 34%. The regime, recession and level multipliers are judgements. Establishment data: sole proprietors are not separately measured."
+      }
+    },
     "irs_single_life_table": {
       "note": "Life expectancy at ages 20, 25, ..., 70 from the IRS Single Life Table, 26 CFR 1.401(a)(9)-9(b) (effective 2022), used for the 72(t) amortisation payment (decumulation::SINGLE_LIFE_EXPECTANCY). Check against the regulation.",
       "first_age": 20,

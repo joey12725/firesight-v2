@@ -476,6 +476,9 @@ impl State {
                 let pia = plan
                     .ss
                     .pia_real(&self.records[i], plan.people[i].birth, now, price);
+                if plan.rz.any && self.rz_record_frozen(i) {
+                    continue;
+                }
                 if let Some(c) = &mut self.claimants[i] {
                     c.pia_real = Some(pia);
                 }

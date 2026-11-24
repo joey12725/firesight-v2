@@ -97,6 +97,7 @@ pub fn kitchen_sink() -> Profile {
             real_growth: 0.01,
             ends_at_retirement: false,
             solo_401k_fraction: 0.1,
+            ..SelfEmployment::default()
         }),
         end: Some(When::age(0, 72.0)),
         ..Income::default()

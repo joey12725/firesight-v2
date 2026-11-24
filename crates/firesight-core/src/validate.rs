@@ -373,6 +373,15 @@ impl Checker<'_> {
                     );
                 }
             }
+            crate::career_realism::validate::person(
+                &mut self.r,
+                &path,
+                person,
+                p.incomes.iter().any(|inc| {
+                    inc.owner == i
+                        && matches!(inc.kind, IncomeKind::Job(_) | IncomeKind::SelfEmployment(_))
+                }),
+            );
             if let Some(joins) = person.joins {
                 if i == 0 {
                     self.r.error("joins_first_person", &format!("{path}/joins"), "Only the second person can join later; the first person is in the household from the start.");
@@ -494,6 +503,12 @@ impl Checker<'_> {
             match &inc.kind {
                 IncomeKind::Job(job) => self.job(&k, job),
                 IncomeKind::SelfEmployment(se) => {
+                    crate::career_realism::validate::self_employment(
+                        &mut self.r,
+                        &k,
+                        se,
+                        p.assumptions.career_risk,
+                    );
                     self.r.money(
                         &format!("{k}/net_annual"),
                         "Net self-employment income",
@@ -554,6 +569,7 @@ impl Checker<'_> {
     }
 
     fn job(&mut self, k: &str, job: &Job) {
+        crate::career_realism::validate::job(&mut self.r, k, job, self.p.assumptions.career_risk);
         self.r.money(&format!("{k}/salary"), "Salary", job.salary);
         match job.growth {
             WageGrowth::Flat { real_raise } => {

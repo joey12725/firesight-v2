@@ -96,6 +96,10 @@ pub enum Stream {
     RentMarket,
     /// Time to close and discount of home sales (realistic housing liquidity).
     Liquidity,
+    /// Variates of the career-realism extensions (`career_realism`): `kind` picks the
+    /// subsystem (0 job, 1 person, 2 self-employment income) and `index` the job,
+    /// person or income within it. Ids 0x1400_0000 and up are reserved for these.
+    CareerExt(u8, usize),
 }
 
 impl Stream {
@@ -124,6 +128,7 @@ impl Stream {
             Stream::Liquidity => 1301,
             Stream::Maintenance(i) => 0x1300_0000 + i as u64,
             Stream::InsuranceDrift => 1302,
+            Stream::CareerExt(kind, i) => 0x1400_0000 + (kind as u64) * 0x1_0000 + i as u64,
         }
     }
 }
@@ -530,6 +535,10 @@ mod tests {
             Stream::InsuranceDrift,
             Stream::RentMarket,
             Stream::Liquidity,
+            Stream::CareerExt(0, 0),
+            Stream::CareerExt(0, 1),
+            Stream::CareerExt(1, 0),
+            Stream::CareerExt(2, 0),
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {
