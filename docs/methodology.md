@@ -1340,6 +1340,205 @@ fixed years: 92.2%, 0.7 years later. Not modelled: interest-only and
 negative-amortisation loans, a first-reset cap different from the periodic cap,
 the SOFR and CMT indices themselves (the bill yield stands in for them).
 
+### 8.2 Home equity and housing decisions (all opt-in)
+
+Each option below is off by default; with all of them off a path is bit for bit
+the same as without them. Their numbers are in `data/actuarial/params.json` under
+`housing_decisions`.
+
+**Home-equity line of credit** (opt-in, `retirement.home_equity_borrowing: {type:
+heloc}`; code in `home_equity.rs` and `sim/housing_decisions.rs`). At any age, working or
+retired, when liquid savings cannot pay the month and an essential would otherwise be
+cut or property sold, the household opens a line on its main home (once, the first
+time it is needed) and draws what is missing. The credit limit is
+`max_combined_ltv x value - mortgage` (default 0.80; CFPB's HELOC brochure and lender
+practice: 80 to 85%), cut further if the home later loses value. The rate is the
+simulated Treasury bill yield plus `spread` (default 3.5 points: prime is the federal
+funds target plus 3, and Bankrate's national average HELOC rate was 7.81% in early
+December 2025 against a 6.75% prime). Interest only for `draw_years` (10), then a
+level payment over `repay_years` (20). When a recession begins, or national home
+prices fall 10% below their running peak (a judgement), lenders freeze the unused
+part of the line and new lines with probability `freeze_probability` (0.3, a
+judgement: in the Fed's April 2008 Senior Loan Officer Survey about half of the banks
+had tightened terms on existing lines, nearly all citing falling collateral values;
+no borrower-level freeze rate is published); lines open again when the downturn
+ends. The freeze draw comes from its own stream (`HomeEquityCredit`), one uniform a
+month whatever the household does, so paths stay paired. Draws are booked as cash
+from property (`property_sale`, a transfer, not income), interest and repayments as
+housing spending, and the balance in the `mortgage` series; the FI test counts it as
+a debt to clear. Surpluses repay the line before they are invested, and a sale repays
+it out of the proceeds. Measured on the family example (4,000 paired paths, the profile's seed):
+with `home_equity: last_resort` the success rate is unchanged (91.5%, 33 paths rescued
+and 32 harmed: the line's interest can cost a path that would have sold the house
+early anyway) while the 10th percentile of terminal net worth rises from $104,000 to
+$144,000; FI falls 0.4 points because a working household that borrowed must clear the
+line first. With `home_equity: never` the line lifts success from 76.3% to 85.9%. Not
+modelled: closing and annual fees (commonly waived), the lender's income test,
+interest deductibility (only for home improvements since 2018), lines on second homes
+or rentals, and fixed-rate conversion options.
+
+**Reverse mortgage** (opt-in, `retirement.home_equity_borrowing: {type:
+reverse_mortgage}`; same files). An FHA Home Equity Conversion Mortgage line of credit
+on the main home, opened once the youngest adult present is 62 (24 CFR 206.33):
+either as a last resort, when savings cannot pay the month (`open_when: last_resort`,
+the default), or as a standby line as soon as liquid savings fall below `years` of
+planned spending (`open_when: {type: savings_below, years}`). The maximum claim amount
+is the lesser of the home's value and the FHA limit ($1,249,125 for 2026, HUD
+Mortgagee Letter 2025-22, indexed on the path with national home prices). The principal
+limit is the principal limit factor at the borrower's age and the expected rate (the
+simulated 10-year Treasury yield plus `lender_margin`, at least 3%) times that amount;
+the factors are HUD's published excerpt of the October 2017 table (ages 62, 72, 82, 92;
+rates 3% to 8%; ML 2017-12), interpolated linearly. At closing the 2% upfront mortgage
+insurance premium, the origination fee (the greater of $2,500 or 2% of the first
+$200,000 plus 1% above, at most $6,000; 24 CFR 206.31), `other_closing_costs`
+($3,000, a judgement) and any existing mortgage are financed out of the principal
+limit; if they do not fit, no loan is made. In the first 12 months at most 60% of the
+principal limit (or the mandatory obligations plus 10%) can be disbursed (ML 2013-27).
+Each month the balance and the unused line both grow at the bill yield plus the margin
+(default 2 points, a judgement) plus the 0.5% annual insurance premium. Nothing is
+repaid while the household lives in the home; property tax, insurance and upkeep go on
+as before. The loan is non-recourse: the liability booked in the `mortgage` series is
+never more than the home is worth, and a sale repays at most the proceeds. A draw is
+cash from property (`property_sale`), the financed costs and accrued interest raise the
+balance (and lower net worth) rather than spending. Measured on the family example
+(4,000 paired paths): with `home_equity: last_resort` success is unchanged (91.5% to
+91.3%, within noise; 35 paths rescued, 41 harmed) and the 10th percentile of terminal
+net worth rises from $104,000 to $132,000; a standby line opened below five years of
+spending gives 91.4% and $105,000. With `home_equity: never` the reverse mortgage lifts
+success from 76.3% to 87.6%. Not modelled: non-borrowing spouses (the borrower is
+the youngest adult present, and the loan continues for the survivor), the HECM-for-
+purchase, tenure or term payment plans, the eighth-of-a-point rounding and full
+whole-age table of the principal limit factors, the financial assessment and
+set-asides for property charges, the deduction of interest when it is finally paid,
+and default when property taxes go unpaid.
+
+**Planned downsizing** (opt-in, `retirement.downsize`; code in `sim/downsize.rs`).
+Once, when its condition is met, the household sells its main home and moves to one
+worth `to_value_fraction` of the old home's market value (default 0.6, a judgement).
+Conditions: `at_age` (a person reaches an age), `when_children_leave` (the youngest
+child turns 18, or 22 if a college is planned), `when_widowed` (a year after the first
+death in a couple, a judgement), and `when_funded_ratio_below` (in a January of
+retirement, investable savings less debts fall below `ratio` times the funded test's
+requirement, recomputed then). The sale is an ordinary sale: `selling_cost_fraction`
+(default 6%, the bottom of the 6 to 10% seller's range in `params.json`
+`housing.closing_costs`), the mortgage and any home-equity line repaid, the gain above
+the section 121 exclusion taxed. The new home sits in the same property slot, so its
+property tax, insurance and maintenance follow its lower value; `buying_cost_fraction`
+(3%, the buyer's default there) is one-off spending. The proceeds pay the closing costs
+and as much of the price as they can; the rest is a 30-year mortgage at the month's
+simulated rate, as long as the proceeds make a 20% down payment (a judgement at the
+conventional no-PMI line); otherwise, or with `rent_instead`, the household rents such
+a home at 4% of its price a year, like a household that sold as a last resort. The
+move draws nothing at random. Measured on the family example (4,000 paired paths,
+guardrails spending, `home_equity: last_resort`): downsizing to 0.6 when the children
+leave lowers success from 91.5% to 90.8% (37 paths rescued, 62 harmed), the median
+terminal net worth by $35,000 and its 10th percentile from $104,000 to $63,000, while
+FI rises from 96.4% to 98.3% (the freed equity is investable): 9% of the home's value goes in transaction costs, the
+guardrails spend part of the freed equity, and a household that later runs short has a
+smaller home to sell. Downsizing when savings fall below 80% of the requirement gives
+91.8% (within noise) and raises the 10th percentile of terminal net worth from $104,000
+to $137,000; with `home_equity: never` it lifts success from 76.3% to 84.0%. Not
+modelled: separate moving costs, rescaling of budget lines such as utilities, a new
+home with different tax or insurance rates, HOA or appreciation than the old one, the
+lender's income test, moving to another state, and the choice of when to move by
+anything but these rules.
+
+**Cash-out refinancing** (opt-in, `debt_policy.cash_out_refinance`; code in
+`sim/cash_out.rs`). When money would otherwise be withdrawn with the 10% early-withdrawal
+penalty (the year's withdrawal plan contains penalised withdrawals, or a mid-year
+shortfall would be covered from penalised sources; both found by running the
+withdrawal on a copy of the accounts), the household considers refinancing its main
+home: a new loan up to `max_ltv` of the value (default 0.80, the Fannie Mae April 2026
+eligibility limit for a one-unit main home), repaying the mortgage and any home-equity
+line, at the simulated 30-year rate plus `rate_premium` (0.25 points: Fannie Mae's
+loan-level price adjustments charge a cash-out loan 1.25 points of price more than a
+rate refinance at 75 to 80% LTV and a 740-759 score, which at the usual 4 to 6 points
+per point of rate is 0.2 to 0.3 points, a conversion that is a judgement) over
+`term_years` (30), with closing costs of 2% plus $2,000 (the judgement the rate
+refinance already uses), at most once in twelve months and only for at least $10,000
+(judgements). A retired household's annual plan raises the year's penalised
+withdrawals times the years until the youngest adult is 59 and a half (at least a
+year of spending), so that one refinance bridges the gap; a mid-year shortfall raises
+only itself. It goes ahead only if the penalty avoided (10% of the cash, less the
+rise in loan payments while withdrawals would be penalised) exceeds the closing
+costs, plus the higher rate on the old balance over that loan's remaining life, plus
+the carry of the new borrowing over the 10-year Treasury yield until 59 and a half
+(the safe-asset comparison the prepayment rule also uses). Without that test the
+first version refinanced a working household's whole mortgage to cover a month's
+shortfall and invested what was left over, which lowered success on the family
+example from 91.5% to 90.7% and its 10th percentile of terminal net worth from
+$104,000 to $42,000. The cash is booked as cash from property, the costs as one-off
+spending, the loan in `mortgage`. Measured (4,000 paired paths): on the early-career
+saver, who retires at about 39, success moves from 83.7% to 83.9% (within noise; 29
+rescued, 20 harmed) and the median terminal net worth rises by $60,000; on the family
+example success moves from 91.5% to 91.7% (9 rescued, 1 harmed) and the 10th
+percentile of terminal net worth from $104,000 to $119,000. The test is strict: with
+mortgage rates well above Treasury yields a refinance rarely pays for itself. Not
+modelled: the lender's income and credit tests, freezes of refinancing in downturns,
+the rule that interest on the cash-out part is deductible only if spent on the home
+(it is deducted like the rest), repaying the loan from penalty-free withdrawals after
+59 and a half (it runs to term), and the choice between a cash-out and a home-equity
+line by their costs.
+
+**Rate-aware mortgage prepayment** (opt-in, `debt_policy.mortgage_prepayment: {type:
+when_rate_above}`; same file). When surplus cash is about to be invested, the part the
+savings waterfall would put in the taxable account (found by running the waterfall on a
+copy) pays down the highest-rate mortgage on a home or second home instead, while its
+rate is above the 10-year Treasury yield after tax at the household's marginal rate
+(the expected inflation on both sides cancels), or, with `real_rate`, while its rate
+less last year's inflation is above that real rate. Contributions to tax-advantaged
+accounts come first, as before; the prepayment is booked as debt spending and the
+scheduled payment is unchanged, so the loan ends sooner. Measured (4,000 paired paths):
+on the early-career saver success rises from 83.7% to 90.3% (296 rescued, 29 harmed),
+the FI age moves 0.3 years later, median lifetime tax falls by $49,000 (less taxable
+income from the brokerage account) and median terminal net worth rises by $192,000: a
+household that retires at 39 without a mortgage needs smaller withdrawals, many of
+them otherwise from penalised or fully taxed accounts, and is less exposed to a bad
+sequence of returns; on the family example success is unchanged within
+noise (91.5% to 91.2%). Not modelled: the mortgage interest deduction in the
+comparison, rental mortgages, the liquidity lost by prepaying, and expectations of
+future rates.
+
+**Rentals that behave like rentals** (opt-in per rental, `use: {type: rental, ...,
+dynamics: {type: realistic, annual_turnover}}`; code in `rental_market.rs`, applied by
+`PropertyModel::step_realistic`). By default a rental is empty in short random spells
+at the entered vacancy and its rent follows its trend. With realistic dynamics a
+tenancy ends each month with probability `annual_turnover / 12` (default 0.25:
+Invitation Homes reported 22.6% annual turnover and stays of about 38 months in 2024,
+and 24.3% in 2023); the unit then stands empty for a geometric number
+of months whose mean, `v / (1 - v)` tenancies-worth divided by the move-out rate, keeps
+the long-run vacant share at the entered `vacancy` (when that mean is under a month it
+is re-let within the month and loses that fraction of the rent). Spells are 1.5 times
+longer in a recession and slightly shorter otherwise so that the average holds at 13%
+of months in recession (judgements). The market rent is the trend times
+`exp(x - S^2/2)`, with `x` an AR(1) of persistence 0.8 a year and long-run sd 5%
+(judgements informed by the Zillow Observed Rent Index, whose yearly growth peaked at
+17.2% in February 2022); new leases and yearly renewals reset the rent to the market.
+A share of move-outs (2% of tenancy-years, a judgement informed by the Eviction Lab's
+filing rate of about 8% of renter homes) are evictions costing three months of rent.
+Half of the maintenance rate comes as large repairs, one every five years on average,
+sized to keep the expected maintenance unchanged (judgements). The rental draws five
+values a month from its own stream (`RentalMarket(slot)`, base 0x1600_0000) whether
+owned or not; the property's own stream is drawn exactly as before. Costs go through
+the rental's operating costs, so they are deductible and reported as before; trace
+events mark move-outs, evictions and large repairs. Measured: a $2,000-a-month rental
+kept its average income less costs within 1% of the simple model's over 20 years, while
+a quarter of its years were $5,000 or more away from it; on the side-hustle landlord
+(4,000 paired paths) success moves from 92.1% to 91.8% (within noise) and the 10th
+percentile of terminal net worth from $143,000 to $126,000. Not modelled: rents that
+move with the local house price or the economy (the index is the rental's own),
+correlation between rentals, rent control and lagged renewals, security deposits,
+turnover make-ready costs beyond maintenance, and capitalisation (rather than
+expensing) of large repairs.
+
+**With the housing realism options of 8.1.** A rental with realistic dynamics on a
+property with lumpy maintenance keeps the lumpy repairs and draws no second set of
+large repairs (its tenant, rent and eviction draws are unchanged). A planned
+downsizing lapses if the home is already listed under slow sales; a home listed as a
+last resort counts toward the bridge to closing net of any home-equity line, which
+is repaid from the proceeds. A cash-out refinance or a downsizing mortgage is a
+fixed-rate loan, whatever the old loan was.
+
 ## 9. Social Security
 
 Each person's benefit comes from their own earnings record: the rebuilt past plus

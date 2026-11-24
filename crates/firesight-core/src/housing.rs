@@ -65,6 +65,9 @@ use serde_json::Value;
 use crate::data::Data;
 use crate::math;
 use crate::model::{BuyHome, Property, PropertyUse};
+use crate::rental_market::{
+    self, RentalDraws, RentalMarketParams, RentalMarketState, RentalOutcome,
+};
 use crate::rng::{normal_from_bits, Rng};
 
 pub mod arm;
@@ -823,6 +826,63 @@ impl PropertyModel {
         out
     }
 
+    /// [`PropertyModel::step`] for a rental with realistic dynamics
+    /// (`rental_market.rs`): the same three words from `rng` and the same costs,
+    /// mortgage and appreciation, but occupancy and the rent come from the rental's
+    /// market (`market`, advanced here with this month's `draws`), part of the
+    /// maintenance comes as large repairs, and evictions cost rent. For a slot that
+    /// is not a rental it is `step`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step_realistic(
+        &self,
+        state: &mut PropertyState,
+        home_national: f64,
+        price_level: f64,
+        rng: &mut Rng,
+        params: &RentalMarketParams,
+        market: &mut RentalMarketState,
+        draws: &RentalDraws,
+        recession: bool,
+    ) -> (HousingMonth, RentalOutcome) {
+        let rent_growth = state.rent_growth;
+        let value = state.value;
+        let owned = state.owned;
+        let mut out = self.step(state, home_national, price_level, rng);
+        let mut o = rental_market::month(params, market, draws, recession, owned);
+        let Some(r) = &self.rental else {
+            return (out, o);
+        };
+        if !owned {
+            return (out, o);
+        }
+        state.rental_year_to_date -= out.rental_taxable_income;
+        state.vacant = market.vacant;
+        let trend = r.rent_real * rent_growth * price_level;
+        out.gross_rent = trend * o.rent_factor;
+        out.vacancy_loss = out.gross_rent * o.vacant_share;
+        out.rent = out.gross_rent - out.vacancy_loss;
+        out.management = out.rent * r.management_fee;
+        if self.lumpy {
+            // Lumpy maintenance already draws the capital repairs from the home's
+            // components (`maintenance.rs`): keep them, and do not add a second
+            // draw of large repairs on top.
+            o.repair = false;
+            out.maintenance += o.eviction_months * trend;
+        } else {
+            let smooth = value * self.maintenance_rate / 12.0;
+            let repair = if o.repair {
+                smooth * rental_market::CAPEX_SHARE / rental_market::CAPEX_MONTHLY_PROBABILITY
+            } else {
+                0.0
+            };
+            out.maintenance =
+                smooth * (1.0 - rental_market::CAPEX_SHARE) + repair + o.eviction_months * trend;
+        }
+        out.rental_taxable_income = out.rental_taxable();
+        state.rental_year_to_date += out.rental_taxable_income;
+        (out, o)
+    }
+
     /// Sells the property in month `t` at its value times the transaction shock.
     /// `exclusion` is the household's home-sale exclusion in dollars (250,000 single,
     /// 500,000 married filing jointly, from the tax data); it applies to a primary
@@ -898,6 +958,65 @@ impl PropertyModel {
             ..PropertyState::default()
         };
         sale
+    }
+
+    /// Buys a home into this (empty) slot at `price` with `closing_costs`, borrowing
+    /// `loan` at `rate` over `term_months` (no loan if `loan` is zero): the slot keeps
+    /// its own cost rates and drift. Used when the household moves to another home
+    /// (planned downsizing), where the slot has no purchase terms of its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn buy_at(
+        &self,
+        state: &mut PropertyState,
+        t: usize,
+        price: f64,
+        closing_costs: f64,
+        loan: f64,
+        rate: f64,
+        term_months: u32,
+    ) -> Purchase {
+        let loan = loan.clamp(0.0, price.max(0.0));
+        let payment = amortized_payment(loan, rate, term_months);
+        let ltv = if price > 0.0 { loan / price } else { 0.0 };
+        let pmi_monthly = self.params.pmi_rate(ltv) * loan / 12.0;
+        *state = PropertyState {
+            owned: true,
+            usage: self.usage,
+            value: price,
+            basis: price + closing_costs,
+            depreciation_taken: 0.0,
+            mortgage: (loan > 0.0).then_some(MortgageState {
+                balance: loan,
+                rate,
+                payment,
+                original_value: price,
+                pmi_monthly,
+                // The caller fixes the rate: the new loan is fixed-rate.
+                arm: None,
+            }),
+            owned_since_month: t as i32,
+            assessed_value: price,
+            assessment_clock: 0,
+            rent_growth: state.rent_growth,
+            vacant: false,
+            sale_noise: state.sale_noise,
+            rental_year_to_date: state.rental_year_to_date,
+            passive_loss_carryforward: 0.0,
+            ext: PropExt {
+                assessed_base: price,
+                ..PropExt::default()
+            },
+        };
+        Purchase {
+            price,
+            cash_needed: price - loan + closing_costs,
+            loan,
+            rate,
+            down_payment: price - loan,
+            closing_costs,
+            payment,
+            pmi_monthly,
+        }
     }
 }
 

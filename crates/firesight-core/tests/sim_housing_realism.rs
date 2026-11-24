@@ -631,6 +631,28 @@ fn money_is_conserved_with_every_option_on() {
 }
 
 #[test]
+fn housing_realism_and_housing_decisions_together_conserve_money() {
+    // Slow sales, lumpy maintenance, an adjustable loan and market rents together with
+    // every housing decision (a home-equity line or a reverse mortgage, downsizing,
+    // cash-out refinancing and prepayment, realistic rental dynamics), with savings
+    // running out so that forced sales, bridges and borrowing all happen.
+    for poor in [false, true] {
+        for profile in [
+            with_housing_decisions(overspending(everything(poor), 1.8)),
+            with_housing_decisions_hecm(overspending(everything(poor), 1.8)),
+        ] {
+            let report = firesight_core::validate::validate(&profile);
+            assert!(report.is_ok(), "{:#?}", report.errors);
+            for market in MARKETS {
+                let plan = compile(&with_market(profile.clone(), market));
+                let acc = run_checked(&plan, 9, 0..60);
+                assert_eq!(acc.paths, 60);
+            }
+        }
+    }
+}
+
+#[test]
 fn every_number_is_finite_with_every_option_on() {
     struct Finite;
     impl Recorder for Finite {

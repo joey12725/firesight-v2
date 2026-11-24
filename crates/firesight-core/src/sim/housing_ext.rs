@@ -476,8 +476,13 @@ impl State {
         for (slot, p) in self.hx.pending.iter().enumerate() {
             if let Some(p) = p {
                 if p.forced {
-                    let net = self.props[slot].value * (1.0 - p.discount) * (1.0 - p.cost_fraction)
-                        - self.props[slot].mortgage_balance();
+                    let mut net =
+                        self.props[slot].value * (1.0 - p.discount) * (1.0 - p.cost_fraction)
+                            - self.props[slot].mortgage_balance();
+                    if plan.hd.lines {
+                        // A home-equity line is repaid out of the proceeds at closing.
+                        net -= self.hd.lien(slot);
+                    }
                     expected += net.max(0.0);
                 }
             }

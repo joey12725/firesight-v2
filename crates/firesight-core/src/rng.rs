@@ -103,6 +103,12 @@ pub enum Stream {
     /// Which policy changes (a Social Security cut, a tax increase) happen on a path,
     /// and from when: four uniforms per path, drawn only when `policy_risk` is set.
     PolicyRisk,
+    /// Lenders' response to a downturn: whether home-equity lines freeze (drawn only
+    /// when `retirement.home_equity_borrowing` is a home-equity line).
+    HomeEquityCredit,
+    /// Tenants, market rent and repairs of one rental with realistic dynamics (index
+    /// into the plan's property table).
+    RentalMarket(usize),
 }
 
 impl Stream {
@@ -116,6 +122,7 @@ impl Stream {
             Stream::Shocks => 4,
             Stream::Events => 5,
             Stream::PolicyRisk => 1500,
+            Stream::HomeEquityCredit => 1600,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -133,6 +140,7 @@ impl Stream {
             Stream::Maintenance(i) => 0x1300_0000 + i as u64,
             Stream::InsuranceDrift => 1302,
             Stream::CareerExt(kind, i) => 0x1400_0000 + (kind as u64) * 0x1_0000 + i as u64,
+            Stream::RentalMarket(i) => 0x1600_0000 + i as u64,
         }
     }
 }
@@ -544,6 +552,9 @@ mod tests {
             Stream::CareerExt(1, 0),
             Stream::CareerExt(2, 0),
             Stream::PolicyRisk,
+            Stream::HomeEquityCredit,
+            Stream::RentalMarket(0),
+            Stream::RentalMarket(1),
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

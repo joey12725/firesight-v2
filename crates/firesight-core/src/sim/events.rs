@@ -96,10 +96,14 @@ impl State {
             exclusion,
             price_factor,
         );
-        if sale.net_proceeds >= 0.0 {
-            self.recv(YearSeries::PropertySale, sale.net_proceeds);
+        let mut net = sale.net_proceeds;
+        if plan.hd.lines {
+            net = self.hd_repay_at_sale(slot, net);
+        }
+        if net >= 0.0 {
+            self.recv(YearSeries::PropertySale, net);
         } else {
-            self.spend(YearSeries::SpendOneOff, -sale.net_proceeds);
+            self.spend(YearSeries::SpendOneOff, -net);
         }
         if self.check {
             self.chk_prop_flow -= before.value;
@@ -118,7 +122,7 @@ impl State {
         }
         self.budget_dirty = true;
         self.req_dirty = true;
-        sale.net_proceeds
+        net
     }
 
     /// Savings are gone and this month cannot be paid: sells property, the least
@@ -138,7 +142,10 @@ impl State {
                 if !st.owned || order != pass {
                     continue;
                 }
-                let net = st.value * (1.0 - LAST_RESORT_SELLING_COST) - st.mortgage_balance();
+                let mut net = st.value * (1.0 - LAST_RESORT_SELLING_COST) - st.mortgage_balance();
+                if plan.hd.lines {
+                    net -= self.hd.lien(slot);
+                }
                 if net <= 0.0 {
                     continue;
                 }

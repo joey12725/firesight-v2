@@ -299,6 +299,8 @@ pub(crate) struct State {
     /// Per-path state of the tax and policy realism options.
     pub trz: super::tax_realism::TaxRealismState,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// Housing decisions in force (`housing_decisions.rs`).
+    pub hd: super::housing_decisions::HdState,
 }
 
 impl State {
@@ -487,6 +489,7 @@ impl State {
             trace_events: Vec::new(),
             trz: super::tax_realism::TaxRealismState::default(),
             tax_details: Vec::new(),
+            hd: super::housing_decisions::HdState::new(plan),
         }
     }
 
@@ -801,6 +804,7 @@ impl State {
         self.port_return = 0.0;
         self.trace_events.clear();
         self.tax_details.clear();
+        self.hd.begin(plan, seed, path);
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs
         // the funded test before the first annual plan, and would otherwise read
@@ -938,6 +942,9 @@ impl State {
                 value += p.value;
                 mortgage += p.mortgage_balance();
             }
+        }
+        if self.hd.any_line {
+            mortgage += self.hd.liability();
         }
         (value, mortgage)
     }

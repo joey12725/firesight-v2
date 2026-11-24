@@ -185,12 +185,15 @@ Property { id, name, use: Primary | Rental{..RentalTerms} | Vacation,
            insurance_real_growth: Fixed | Stochastic (Fixed) }       // Stochastic: persistent real drift + repricing jumps
 MortgageKind = Fixed | Arm{ fixed_months, adjust_every_months, margin, periodic_cap, lifetime_cap }
                // resets to the simulated bill yield + margin within caps, payment re-amortised over the months left
-RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_fraction }
+RentalTerms { monthly_rent, vacancy, management_fee, rent_real_growth, land_fraction,
+              dynamics: Simple (default) | Realistic{ annual_turnover (0.25) } }
 
 Debt { id, name, kind: Student|Auto|CreditCard|Personal|Other, balance, rate,
        payment: Option<f64>, remaining_months: Option<u32> }
 DebtPolicy { strategy: Minimum | Avalanche | Snowball, extra_monthly: f64,
-             refinance_mortgages: bool (true) }  // each January, if the market rate is 1+ point lower and 4 years of saving exceed the costs
+             refinance_mortgages: bool (true),  // each January, if the market rate is 1+ point lower and 4 years of saving exceed the costs
+             cash_out_refinance: Option<{ max_ltv (0.80), rate_premium (0.0025), term_years (30) }>,  // before penalised withdrawals
+             mortgage_prepayment: Never (default) | WhenRateAbove{ real_rate: Option<f64> (None = after-tax 10y yield) } }
 
 LifeEvent { id, name, when: When, probability: f64 (1.0), timing_uncertainty_years: f64 (0), kind }
 EventKind =
@@ -221,6 +224,15 @@ RetirementPlan {
   bequest_target: f64,
   qcd: bool (false),                              // pay Giving lines from the IRA as QCDs from 70.5
   home_equity: Never | LastResort (default),     // LastResort: sell property before cutting essentials; reported as home_sale_rate
+  home_equity_borrowing: None (default)         // borrow against the main home before selling it or cutting essentials
+    | Heloc{ max_combined_ltv (0.80), spread (0.035 over bills), draw_years (10), repay_years (20),
+             freeze_probability (0.3, per downturn) }
+    | ReverseMortgage{ open_when: LastResort (default) | SavingsBelow{ years },   // HECM from 62
+                       lender_margin (0.02), other_closing_costs (3000, today's $) },
+  downsize: Option<{ when: AtAge{ person, age } | WhenChildrenLeave (default) | WhenWidowed
+                          | WhenFundedRatioBelow{ ratio },
+                    to_value_fraction (0.6), rent_instead (false),
+                    selling_cost_fraction (0.06), buying_cost_fraction (0.03) }>,
 }
 Assumptions {
   market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal

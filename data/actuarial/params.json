@@ -2231,6 +2231,206 @@
       "rent control and eviction law"
     ]
   },
+  "housing_decisions": {
+    "summary": "Parameters of the opt-in housing decisions (crates/firesight-core/src/home_equity.rs, sim/housing_decisions.rs): home-equity lines, reverse mortgages, downsizing, cash-out refinancing and prepayment, realistic rental dynamics. Sourced values carry their source; judgements say so. tests/housing_decision_constants.rs keeps the code equal to this section.",
+    "heloc": {
+      "default_max_combined_ltv": {
+        "value": 0.8,
+        "source": "Lender practice: combined loan-to-value limits of 80 to 85% for home-equity lines (CFPB, What you should know about home equity lines of credit, 2012; lender disclosures).",
+        "confidence": "medium"
+      },
+      "default_spread_over_bills": {
+        "value": 0.035,
+        "source": "Prime rate = federal funds target + 3 points (bank convention). Bankrate national average HELOC rate 7.81% on 3 December 2025 against a 6.75% prime (margin about 1 point); 2025 readings 7.8 to 8.9%. Bills sit near the federal funds rate, so bills + 3.5 points is prime + 0.5.",
+        "confidence": "medium"
+      },
+      "draw_and_repay_years": {
+        "value": [10, 20],
+        "source": "CFPB HELOC brochure (2012): a draw period of, for example, 10 years, then repayment often over 10 or 20 years.",
+        "confidence": "medium"
+      },
+      "default_freeze_probability": {
+        "value": 0.3,
+        "source": "Judgement. Federal Reserve Senior Loan Officer Opinion Survey, April 2008: about 50% of domestic banks had tightened terms on existing HELOCs over the past six months, nearly all citing falling collateral values; about 70% had tightened standards for new lines. No borrower-level share of frozen or cut lines is published. 0.3 is the chance per downturn that the household's lender freezes its line.",
+        "confidence": "judgement"
+      },
+      "housing_slump_drawdown": {
+        "value": 0.1,
+        "source": "Judgement: lenders tightened existing lines when collateral values fell (SLOOS April 2008); a 10% fall of national prices from their peak marks a slump outside a recession.",
+        "confidence": "judgement"
+      }
+    },
+    "hecm": {
+      "upfront_mip": {
+        "value": 0.02,
+        "source": "HUD Mortgagee Letter 2017-12 (case numbers from 2 October 2017): upfront mortgage insurance premium 2.00% of the maximum claim amount for all loans.",
+        "confidence": "high"
+      },
+      "annual_mip": {
+        "value": 0.005,
+        "source": "HUD Mortgagee Letter 2017-12: annual mortgage insurance premium 0.50% of the loan balance.",
+        "confidence": "high"
+      },
+      "max_claim_2026": {
+        "value": 1249125.0,
+        "source": "HUD Mortgagee Letter 2025-22 (11 December 2025): 2026 nationwide HECM maximum claim amount $1,249,125 (2025: $1,209,750); indexed on a path with national home prices.",
+        "confidence": "high"
+      },
+      "min_age": {
+        "value": 62.0,
+        "source": "24 CFR 206.33: the youngest borrower must be at least 62.",
+        "confidence": "high"
+      },
+      "expected_rate_floor": {
+        "value": 0.03,
+        "source": "HUD principal limit factor tables from October 2017 start at an expected rate of 3.0% (NRMLA, Barnes, New HECM Math, 2017).",
+        "confidence": "medium"
+      },
+      "first_year_share": {
+        "value": 0.6,
+        "source": "HUD Mortgagee Letter 2013-27: at most 60% of the principal limit in the first 12 months, or mandatory obligations plus 10% of the principal limit if more.",
+        "confidence": "high"
+      },
+      "origination_fee": {
+        "value": [2500.0, 6000.0, 200000.0],
+        "source": "24 CFR 206.31: the greater of $2,500 or 2% of the first $200,000 of the maximum claim amount plus 1% above it, capped at $6,000.",
+        "confidence": "high"
+      },
+      "principal_limit_factors": {
+        "value": [[0.524, 0.47, 0.41, 0.357, 0.312, 0.272], [0.588, 0.524, 0.467, 0.416, 0.372, 0.332], [0.658, 0.605, 0.556, 0.511, 0.471, 0.434], [0.75, 0.715, 0.682, 0.65, 0.62, 0.592]],
+        "ages": [62, 72, 82, 92],
+        "expected_rates": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08],
+        "source": "HUD, HECM Program: Selected Principal Limit Factors, effective 10/2/2017 (slides published with ML 2017-12, August 2017). Interpolated linearly between the grid points; the full HUD table is by whole age and eighth of a point.",
+        "confidence": "medium"
+      },
+      "default_lender_margin": {
+        "value": 0.02,
+        "source": "Judgement, not verified against a survey: adjustable HECM lender margins taken as 1.5 to 3 points over the index; 2 points is mid-range.",
+        "confidence": "judgement"
+      },
+      "default_other_closing_costs": {
+        "value": 3000.0,
+        "source": "Judgement, not verified against a survey: appraisal, title, counselling and recording fees taken as a few thousand dollars.",
+        "confidence": "judgement"
+      }
+    },
+    "downsize": {
+      "default_to_value_fraction": {
+        "value": 0.6,
+        "source": "Judgement: a move to a home worth about 60% as much; the schema field lets each household set its own.",
+        "confidence": "judgement"
+      },
+      "default_selling_cost_fraction": {
+        "value": 0.06,
+        "source": "The bottom of the seller's cost range in housing.closing_costs.seller_pct_of_price (6 to 10%: commissions of about 5% after the 2024 NAR settlement, transfer taxes, title and concessions), and the default of a sell_property event.",
+        "confidence": "medium"
+      },
+      "default_buying_cost_fraction": {
+        "value": 0.03,
+        "source": "housing.closing_costs.buyer_pct_of_price default (2 to 5%: origination, appraisal, title insurance, recording); no mortgage-related costs when bought for cash.",
+        "confidence": "medium"
+      },
+      "min_down_payment": {
+        "value": 0.2,
+        "source": "Judgement: 20% down is the conventional line below which lenders require mortgage insurance (80% loan-to-value); a household moving down is taken to buy within it, and to rent if its proceeds cannot make it.",
+        "confidence": "judgement"
+      },
+      "loan_months": {
+        "value": 360,
+        "source": "The 30-year fixed-rate mortgage, the benchmark of Freddie Mac's Primary Mortgage Market Survey and the most common US home loan.",
+        "confidence": "medium"
+      },
+      "widowed_delay_months": {
+        "value": 12,
+        "source": "Judgement: the schema's when_widowed moves a year after the first death; planners commonly advise against major decisions in the first year of bereavement.",
+        "confidence": "judgement"
+      },
+      "children_leave_ages": {
+        "value": [18, 22],
+        "source": "Judgement (a convention of the schema): a child leaves home at 18, or at 22 when college is planned.",
+        "confidence": "judgement"
+      }
+    },
+    "cash_out_refinance": {
+      "default_max_ltv": {
+        "value": 0.8,
+        "source": "Fannie Mae Eligibility Matrix (April 2026): standard cash-out refinance of a one-unit principal residence, maximum LTV 80% (75% for second homes and investment properties).",
+        "confidence": "high"
+      },
+      "default_rate_premium": {
+        "value": 0.0025,
+        "source": "Fannie Mae loan-level price adjustment matrix (2026, as tabulated by The Mortgage Reports): at 75-80% LTV and a 740-759 score a cash-out refinance carries 2.375% of the loan against 1.125% for a rate-and-term refinance, 1.25 points more; at the usual conversion of 4 to 6 points of price per point of rate (a judgement) that is about 0.2 to 0.3 points of rate. Less at lower LTVs and better scores.",
+        "confidence": "low"
+      },
+      "closing_costs": {
+        "value": [0.02, 2000.0],
+        "source": "Judgement shared with the rate refinance (sim/year.rs REFINANCE_COST_FRACTION and REFINANCE_COST_FIXED): 2% of the loan plus $2,000 in today's dollars, the low end of the usual 2 to 5% because no points are paid.",
+        "confidence": "judgement"
+      },
+      "min_months_between": {
+        "value": 12,
+        "source": "Judgement: closing costs make refinancing more often than yearly uneconomic, and lenders commonly require months of seasoning between refinances.",
+        "confidence": "judgement"
+      },
+      "raise_months_of_spending": {
+        "value": 12.0,
+        "source": "Judgement: once retired, a refinance raises at least a year of planned spending (and in the annual plan the penalised withdrawals until 59 and a half), so that one carries the household for a while.",
+        "confidence": "judgement"
+      },
+      "min_cash": {
+        "value": 10000.0,
+        "source": "Judgement: a cash-out below $10,000 (today's dollars) is not worth its closing costs.",
+        "confidence": "judgement"
+      }
+    },
+    "rental_dynamics": {
+      "default_annual_turnover": {
+        "value": 0.25,
+        "source": "Invitation Homes, full-year 2024 results (February 2025): same-store annual turnover 22.6% (24.3% in 2023), average length of stay about 38 months, about 40 days empty between residents (Form 10-K FY2024); single-family rentals. Apartments turn over faster.",
+        "confidence": "medium"
+      },
+      "recession_spell_factor": {
+        "value": 1.5,
+        "source": "Judgement: vacancy spells taken as half again as long in a recession; the Census Housing Vacancy Survey's rental vacancy rate rose by about a tenth to a quarter around 2008-09. HVS duration tables (e.g. 1999-2001: 27-28% of vacant for-rent units empty under a month, 22-24% six months or more) are consistent with mean spells of a few months.",
+        "confidence": "judgement"
+      },
+      "recession_share": {
+        "value": 0.13,
+        "source": "Judgement: about the share of postwar US months in NBER recessions, used only to keep the long-run vacancy at the entered rate.",
+        "confidence": "judgement"
+      },
+      "rent_index_annual_persistence": {
+        "value": 0.8,
+        "source": "Judgement: market rents deviate from trend for years (the 2021-23 surge took about three years to fade).",
+        "confidence": "judgement"
+      },
+      "rent_index_sd": {
+        "value": 0.05,
+        "source": "Judgement informed by the Zillow Observed Rent Index, whose year-over-year growth peaked at 17.2% in February 2022 (Zillow Research) after near zero in 2020: market rents within about 10% of trend most of the time.",
+        "confidence": "judgement"
+      },
+      "eviction_annual": {
+        "value": 0.02,
+        "source": "Judgement informed by the Eviction Lab: 3.6 million eviction cases filed in 2018, a filing rate of 7.8% of renter homes, about 6 in 100 renter households threatened; fewer end with a judgement and a lost tenant.",
+        "confidence": "judgement"
+      },
+      "eviction_cost_months": {
+        "value": 3.0,
+        "source": "Judgement: rent lost while the case runs, legal fees and damage, in months of rent.",
+        "confidence": "judgement"
+      },
+      "capex_share": {
+        "value": 0.5,
+        "source": "Judgement: half of a rental's maintenance budget comes as large repairs (roof, heating, appliances), the rest as routine upkeep.",
+        "confidence": "judgement"
+      },
+      "capex_monthly_probability": {
+        "value": 0.016666666666666666,
+        "source": "Judgement: a large repair every five years on average.",
+        "confidence": "judgement"
+      }
+    }
+  },
   "equity_compensation": {
     "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
     "private_company": {

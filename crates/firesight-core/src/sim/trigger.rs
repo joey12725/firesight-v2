@@ -198,6 +198,10 @@ impl State {
                 }
             }
         }
+        if self.hd.any_line && rule.basis == WealthBasis::Investable {
+            // Borrowing against the home is a debt to clear, like a mortgage.
+            lumps += self.hd.liability() / price;
+        }
 
         // Healthcare once retired.
         let mut health = 0.0;

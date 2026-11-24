@@ -244,6 +244,7 @@ pub fn kitchen_sink() -> Profile {
                     rent_real_growth: 0.005,
                     land_fraction: 0.25,
                     years_in_service: 4.0,
+                    dynamics: RentalDynamics::Simple,
                 }),
                 value: 300_000.0,
                 basis: Some(240_000.0),
@@ -573,5 +574,35 @@ fn traces_conserve_money_and_show_the_events() {
             seen.contains(kind),
             "no {kind} event in 40 traced paths: {seen:?}"
         );
+    }
+}
+
+#[test]
+fn housing_decisions_conserve_money() {
+    // Spending high enough that savings run out: lines are opened and drawn, homes
+    // downsized and sold, loans refinanced, with every opt-in housing decision on.
+    let profiles = [
+        with_housing_decisions(overspending(kitchen_sink(), 2.5)),
+        with_housing_decisions(kitchen_sink()),
+        with_housing_decisions_hecm(overspending(kitchen_sink(), 2.5)),
+    ];
+    for profile in profiles {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let acc = run_checked(&plan, 9, 0..paths());
+            assert_eq!(acc.paths, paths());
+        }
+    }
+    for example in Profile::examples(START) {
+        let plan = compile(&with_housing_decisions(overspending(
+            example.profile.clone(),
+            1.6,
+        )));
+        run_checked(&plan, 9, 0..paths());
+        let plan = compile(&with_housing_decisions_hecm(overspending(
+            example.profile,
+            1.6,
+        )));
+        run_checked(&plan, 9, 0..paths());
     }
 }

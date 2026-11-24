@@ -191,3 +191,63 @@ pub fn career_realism_on(mut p: Profile) -> Profile {
     }
     p
 }
+
+/// Switches on every opt-in housing decision (home-equity borrowing, downsizing,
+/// cash-out refinancing and prepayment, realistic rentals), for the conservation
+/// and finite-value tests.
+pub fn with_housing_decisions(mut p: Profile) -> Profile {
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::Heloc(Heloc::default());
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenFundedRatioBelow { ratio: 0.9 },
+        ..Downsize::default()
+    });
+    p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+    p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
+    realistic_rentals(p)
+}
+
+/// Every rental (owned or bought later) with realistic dynamics.
+pub fn realistic_rentals(mut p: Profile) -> Profile {
+    let realistic = |u: &mut PropertyUse| {
+        if let PropertyUse::Rental(t) = u {
+            t.dynamics = RentalDynamics::Realistic {
+                annual_turnover: 0.25,
+            };
+        }
+    };
+    for prop in &mut p.properties {
+        realistic(&mut prop.usage);
+    }
+    for e in &mut p.events {
+        if let EventKind::BuyHome(b) = &mut e.kind {
+            realistic(&mut b.usage);
+        }
+    }
+    p
+}
+
+/// The same with a reverse mortgage (a standby line opened when savings fall below
+/// five years of spending) in place of the home-equity line, and a move to a rental
+/// after the first death in a couple.
+pub fn with_housing_decisions_hecm(p: Profile) -> Profile {
+    let mut p = with_housing_decisions(p);
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+        open_when: ReverseMortgageOpen::SavingsBelow { years: 5.0 },
+        ..ReverseMortgage::default()
+    });
+    // Widowed couples move to a rental; single people stay.
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenWidowed,
+        rent_instead: true,
+        ..Downsize::default()
+    });
+    p
+}
+
+/// Every budget line `factor` times larger, so that savings run out on many paths.
+pub fn overspending(mut p: Profile, factor: f64) -> Profile {
+    for item in &mut p.spending.items {
+        item.amount *= factor;
+    }
+    p
+}

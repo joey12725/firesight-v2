@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::*;
 
 mod family;
+mod housing;
 mod housing_realism;
 mod realism;
 mod spending_realism;
@@ -194,6 +195,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.events();
     c.housing_realism();
     c.retirement();
+    c.housing_decisions();
     c.assumptions();
     c.family();
     c.realism();

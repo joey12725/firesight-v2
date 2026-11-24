@@ -148,3 +148,40 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
         }
     }
 }
+
+#[test]
+fn housing_decisions_are_finite_under_every_market_model() {
+    for example in Profile::examples(START) {
+        for (factor, reverse_mortgage) in [(1.0, false), (1.6, false), (1.6, true)] {
+            let spent = overspending(example.profile.clone(), factor);
+            let profile = if reverse_mortgage {
+                with_housing_decisions_hecm(spent)
+            } else {
+                with_housing_decisions(spent)
+            };
+            for kind in MARKETS {
+                let plan = compile(&with_market(profile.clone(), kind));
+                let mut ws = Workspace::new(&plan);
+                let mut rec = Checked {
+                    inner: plan.new_accumulator(),
+                    path: 0,
+                    months: 0,
+                };
+                for i in 0..400 {
+                    sim::run_path(&plan, 23, i, &mut ws, &mut rec);
+                }
+                let summary = plan.summarize(&rec.inner);
+                let json = serde_json::to_string(&summary).unwrap();
+                assert!(!json.contains("NaN") && !json.contains("Infinity"));
+                let mut detail = Checked {
+                    inner: plan.new_accumulator(),
+                    path: 0,
+                    months: 1,
+                };
+                for i in 0..10 {
+                    sim::run_path(&plan, 23, i, &mut ws, &mut detail);
+                }
+            }
+        }
+    }
+}
