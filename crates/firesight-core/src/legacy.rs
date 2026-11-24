@@ -307,6 +307,7 @@ impl Migration<'_> {
                 childcare_monthly: None,
                 college: College::None,
                 college_share: 1.0,
+                ..Child::default()
             });
         }
         if dependents > 0 {

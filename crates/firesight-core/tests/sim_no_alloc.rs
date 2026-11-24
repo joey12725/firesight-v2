@@ -73,6 +73,7 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .collect();
     profiles.push(kitchen_sink_lite());
     profiles.push(spending_realism());
+    profiles.push(family_features());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));
@@ -116,6 +117,42 @@ fn spending_realism() -> Profile {
     p.spending.category_inflation = CategoryInflation::Stochastic;
     p.spending.shocks = ShockLevel::Detailed;
     p.spending.unemployment_cut = 0.15;
+    p
+}
+
+/// The two-earner family with every opt-in family feature on: children on the health
+/// plan, an uncertain second birth, stochastic college, adult support and leave.
+fn family_features() -> Profile {
+    use firesight_core::model::*;
+    let mut p = Profile::examples(common::START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .expect("the dual-income example")
+        .profile;
+    p.name = "family features".into();
+    p.spending.healthcare.cover_children = true;
+    for (i, c) in p.household.children.iter_mut().enumerate() {
+        c.college_cost = CollegeCost::Stochastic {
+            attend_probability: 0.95,
+            real_tuition_growth: 0.01,
+            tuition_volatility: 0.012,
+            aid_scale: 1.0,
+        };
+        c.adult_support = Some(AdultSupport::default());
+        if i == 1 {
+            c.arrival = Arrival::Uncertain {
+                probability: 0.85,
+                delay_mean_months: 4.0,
+                twins_probability: 0.2,
+            };
+            c.parental_leave = Some(ParentalLeave::default());
+            c.second_parental_leave = Some(ParentalLeave {
+                person: 1,
+                months: 2,
+                pay_fraction: 0.5,
+            });
+        }
+    }
     p
 }
 

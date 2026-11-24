@@ -297,6 +297,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             childcare_monthly: Some(1_400.0),
             college,
             college_share: 0.75,
+            ..Child::default()
         },
         Child {
             id: "second_child".into(),
@@ -306,6 +307,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
             childcare_monthly: Some(1_600.0),
             college,
             college_share: 0.75,
+            ..Child::default()
         },
     ];
     let pm_job = Income {
@@ -693,6 +695,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
                 early_retirement: EarlyRetirementCoverage::Custom { annual: 3_100.0 },
                 long_term_care: true,
                 quality: PlanTier::Silver,
+                ..Healthcare::default()
             },
             lifestyle_creep: 0.2,
             ..Spending::default()

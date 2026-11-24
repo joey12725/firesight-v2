@@ -30,8 +30,12 @@
 //! Dollar amounts in `data/` carry their own year (2026 for employer and Medicare,
 //! the latest published plan year for the ACA benchmark, 2025 for care costs). They
 //! are used as today's dollars without rolling them to the profile's start month.
-//! Children's health costs are not modelled here: the USDA-style child cost in the
-//! spending module already includes them.
+//! Children's health costs are not modelled here by default: the USDA-style child cost
+//! in the spending module already includes them. The opt-in
+//! `spending.healthcare.cover_children` charges them by coverage phase instead (see
+//! [`children`]).
+
+pub mod children;
 
 use serde_json::Value;
 
@@ -633,6 +637,8 @@ pub struct HealthModel {
     ltc_monthly_cost: [f64; 3],
     /// Mix-weighted cost per month.
     ltc_blended_monthly: f64,
+    /// Monthly increments for putting children on the household's plan.
+    child: children::ChildCoverage,
 }
 
 fn sex_index(sex: Sex) -> usize {
@@ -901,6 +907,7 @@ impl HealthModel {
             ],
             ltc_monthly_cost,
             ltc_blended_monthly,
+            child: children::ChildCoverage::new(employer),
         }
     }
 

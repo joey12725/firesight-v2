@@ -35,6 +35,7 @@ use crate::stats::TraceEventKind;
 use crate::tax::{self, FilingStatus, Indexation, TaxInputs};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, TriggerPlan};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_PENALTY, TAX_STATE};
 
@@ -144,13 +145,20 @@ impl State {
             }
         }
         let (mut young, mut other) = (0, 0);
-        for c in &plan.children {
-            let born = (plan.start + c.birth).year();
+        for (k, c) in plan.children.iter().enumerate() {
+            let birth = self.child_birth(plan, k);
+            if birth >= super::family::NEVER {
+                continue;
+            }
+            let born = (plan.start + birth).year();
             let age = year - born;
+            let n = self.child_count(k);
             if (0..17).contains(&age) {
-                young += 1;
-            } else if (17..19).contains(&age) || ((19..23).contains(&age) && c.college > 0.0) {
-                other += 1;
+                young += n;
+            } else if (17..19).contains(&age)
+                || ((19..19 + self.college_years(k) as i32).contains(&age) && c.college > 0.0)
+            {
+                other += n;
             }
         }
         // A surviving spouse files jointly for the year of the death.
@@ -303,6 +311,10 @@ impl State {
                 }
             }
         }
+        let mut adults_on = AdultPhases {
+            employer,
+            ..AdultPhases::default()
+        };
         for i in 0..self.n {
             if !self.present[i] {
                 continue;
@@ -316,6 +328,7 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             });
+            adults_on.note(phase);
             let (premium, pocket) = plan.health.expected_annual_parts_at(age, phase, t as u32);
             let (premium, pocket) = (premium / 12.0 * price, pocket / 12.0 * price);
             r.health += premium + pocket + self.irmaa_m[i];
@@ -339,6 +352,12 @@ impl State {
                     * plan.health.excess_growth(t as u32)
                     * price;
             }
+        }
+        if plan.family.cover_children {
+            let kids = self.child_health(plan, t, price, adults_on);
+            r.health += kids.total;
+            r.aca_premium += kids.aca_premium;
+            r.aca_benchmark += kids.aca_benchmark;
         }
         if (t as i32) < self.kids_until {
             r.children = self.children_cost(plan, t) * price;
@@ -407,6 +426,9 @@ impl State {
         self.rental_carry = r.rental_loss_suspended * back;
         self.magi_hist = [self.magi_hist[1], r.magi_irmaa];
         self.magi_known = (self.magi_known + 1).min(2);
+        if plan.family.any_college {
+            self.note_aid_income(r.magi_irmaa);
+        }
         self.prev_interest = self.ty.interest * annualise;
         self.prev_ordinary_div = self.ty.ordinary_dividends * annualise;
         self.prev_qualified_div = self.ty.qualified_dividends * annualise;

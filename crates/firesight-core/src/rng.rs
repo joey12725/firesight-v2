@@ -75,6 +75,18 @@ pub enum Stream {
     CategoryPrices,
     /// Detailed irregular expenses (`spending.shocks = "detailed"`).
     DetailedShocks,
+    /// Whether, when and how many: the arrival of one planned child (index into
+    /// `household.children`). Three draws per uncertain child per path.
+    ChildArrival(usize),
+    /// The path of college prices relative to CPI, shared by all children (60 draws
+    /// when any child has stochastic college costs).
+    CollegePrices,
+    /// Whether a child attends, for how many years and how much aid: three draws per
+    /// child with stochastic college costs (index into `household.children`).
+    ChildCollege(usize),
+    /// Whether, when and for how long an adult child needs support: three draws per
+    /// child with `adult_support` (index into `household.children`).
+    ChildSupport(usize),
 }
 
 impl Stream {
@@ -94,6 +106,11 @@ impl Stream {
             Stream::Vehicle(i) => 0x1100_0000 + i as u64,
             Stream::CategoryPrices => 1100,
             Stream::DetailedShocks => 1101,
+            Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
+            Stream::CollegePrices => 1200,
+            // The two share one per-index base: even ids for college, odd for support.
+            Stream::ChildCollege(i) => 0x1280_0000 + 2 * i as u64,
+            Stream::ChildSupport(i) => 0x1280_0000 + 2 * i as u64 + 1,
         }
     }
 }

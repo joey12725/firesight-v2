@@ -30,7 +30,9 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks}`. Changing a decision in a scenario must not
+  Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks,
+  ChildArrival(child), CollegePrices, ChildCollege(child), ChildSupport(child)}`.
+  Changing a decision in a scenario must not
   shift the random numbers of any unrelated subsystem. This is what makes scenario
   comparison a paired experiment (common random numbers), and it is the v1 idea we keep
   and make exact.
@@ -86,7 +88,14 @@ Child     { id, name, birth: YearMonth (may be in the future = planned),
             costs: Modeled | InBudget,              // Modeled: USDA-style cost by age and income tier
             childcare_monthly: Option<f64>,         // ages 0-4 override
             college: None | PublicInState | PublicOutOfState | Private | Custom{annual},
-            college_share: f64 (fraction parents pay, default 1.0) }
+            college_share: f64 (fraction parents pay, default 1.0),
+            arrival: Certain | Uncertain{ probability (0.85), delay_mean_months (4), twins_probability (0.03) },
+            college_cost: Fixed | Stochastic{ attend_probability (0.95), real_tuition_growth (0.01),
+                                              tuition_volatility (0.012), aid_scale (1) },
+            adult_support: Option<{ probability (0.3), annual (12000), mean_years (2) }>,
+            parental_leave: Option<{ person (0), months (3), pay_fraction (0.6) }>,
+            second_parental_leave: Option<{ person, months, pay_fraction }> }   // the other parent
+                                                    // Uncertain: planned children only; random births per path
 Location  { country (default "US"), state: Option<String> (2-letter), city: Option<String>,
             foreign_tax_rate: Option<f64> }         // flat effective income tax when not in the US
 
@@ -118,7 +127,9 @@ Spending { items: Vec<BudgetItem>,
            shocks: Off|Typical|High|Detailed,      // irregular expenses, compound Poisson
                                                    // (Detailed: four typed shocks, heavy tails, clustering)
            healthcare: Healthcare { mode: Modeled|InBudget, early_retirement: Aca|Cobra|Custom{annual},
-                                    long_term_care: bool, quality: Bronze|Silver|Gold },
+                                    long_term_care: bool, quality: Bronze|Silver|Gold,
+                                    cover_children: bool (false),            // children on the household plan
+                                    children_coverage_end_age: f64 (26) },
            survivor_factor: f64 (0.7),
            // Spending realism, all opt-in (defaults leave results bit-identical):
            vehicles: Vec<Vehicle>,                 // lumpy replacement purchases, empty by default

@@ -2502,6 +2502,21 @@
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
+    },
+    "family": {
+      "note": "Judgement defaults of the opt-in family features (model/family.rs DEFAULT_* and sim/family.rs constants; a unit test in sim/family.rs keeps them equal to this list). None is fetched from a source: arrival_probability and arrival_delay_mean_months sit near time-to-pregnancy reviews (most couples conceive within a year) but are not a published statistic; college_attend_probability is the chance a child with a college plan attends; tuition_volatility, tuition_ar1 and aid_sd shape the spread of college prices and aid; aid_max caps the discount; adult_support_* are the chance, yearly amount, mean length and start window of support for an adult child (only anchored loosely to Pew's 18% of 25-34 year olds living with a parent in 2023); leave_pay_fraction is the share of pay during parental leave. Sourced family parameters (twin rate, college duration, aid schedule, leave months) are documented beside their constants.",
+      "arrival_probability": 0.85,
+      "arrival_delay_mean_months": 4.0,
+      "college_attend_probability": 0.95,
+      "tuition_volatility": 0.012,
+      "tuition_ar1": 0.8,
+      "aid_sd": 0.1,
+      "aid_max": 0.9,
+      "adult_support_probability": 0.3,
+      "adult_support_annual": 12000.0,
+      "adult_support_mean_years": 2.0,
+      "adult_support_start_window_months": 72.0,
+      "leave_pay_fraction": 0.6
     }
   },
   "long_run_assumptions": {

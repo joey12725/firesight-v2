@@ -18,6 +18,7 @@ use crate::model::{
 use crate::stats::{Recorder, TraceEventKind, YearSeries};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, CHILD_SERVICE_REAL_GROWTH};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_SERIES, TAX_STATE};
 
@@ -111,6 +112,9 @@ impl State {
         // The turn of the year comes before January's events, so that what they add
         // to the tax year (a sale's gain, a taxable windfall) is on this year's
         // return and not on the one being closed.
+        if plan.family.dynamic {
+            self.family_calendar(plan, t, now);
+        }
         let new_year = month == 1 && t > 0;
         if new_year {
             self.close_year(plan, econ, t);
@@ -132,6 +136,7 @@ impl State {
             replan = true;
         }
         let price = econ.price_level[t];
+        self.fam.price = price;
         if replan {
             self.annual_plan(plan, econ, t, new_year);
         }
@@ -411,7 +416,10 @@ impl State {
         self.planned += discretionary;
         if ti < self.kids_until {
             // A child's cost changes on a birthday and each January.
-            if t % 12 == 0 || plan.birthday_months & (1 << (t % 12)) != 0 || self.kids_real < 0.0 {
+            if t % 12 == 0
+                || (plan.birthday_months | self.fam.birthday_extra) & (1 << (t % 12)) != 0
+                || self.kids_real < 0.0
+            {
                 self.kids_real = self.children_cost(plan, t);
             }
             let kids = self.kids_real * price;
@@ -475,6 +483,30 @@ impl State {
                 });
             }
             self.last_phase[i] = hm.phase;
+        }
+        if plan.family.cover_children {
+            let mut ap = AdultPhases::default();
+            for i in 0..self.n {
+                if self.alive[i] && self.present[i] {
+                    ap.note(self.last_phase[i]);
+                }
+            }
+            ap.employer = employer_coverage;
+            let kids = self.child_health(plan, t, price, ap);
+            health_cost += kids.total;
+            aca_premiums += kids.aca_premium;
+            self.ty.aca_benchmark_premium += kids.aca_benchmark;
+            if self.detail && (kids.total > 0.0) != self.fam.kids_on_plan {
+                self.fam.kids_on_plan = kids.total > 0.0;
+                let on = self.fam.kids_on_plan;
+                self.event(now, TraceEventKind::Child, Some(kids.total / price), || {
+                    if on {
+                        "Children are on the health plan".to_string()
+                    } else {
+                        "Children are off the health plan".to_string()
+                    }
+                });
+            }
         }
         if aca_people > 0 {
             self.ty.aca_months += 1;
@@ -1007,10 +1039,10 @@ impl State {
     pub(crate) fn children_cost(&self, plan: &Plan, t: usize) -> f64 {
         let ti = t as i32;
         let mut minors = 0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for k in 0..plan.children.len() {
+            let age = ti - self.child_birth(plan, k);
             if (0..18 * 12).contains(&age) {
-                minors += 1;
+                minors += self.child_count(k);
             }
         }
         // USDA family-size adjustment (`children.usda_2015.family_size_adjustment`).
@@ -1020,17 +1052,21 @@ impl State {
             _ => 0.76,
         };
         let mut total = 0.0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for (k, c) in plan.children.iter().enumerate() {
+            let age = ti - self.child_birth(plan, k);
             if age < 0 {
                 continue;
             }
             let years = (age / 12) as usize;
+            let n = f64::from(self.child_count(k));
             if years < 18 {
-                total += c.core[years] * family + c.care[years] * self.service_growth;
-            } else if years < 22 {
-                total += c.college * self.service_growth;
+                total += (c.core[years] * family + c.care[years] * self.service_growth) * n;
+            } else if years < 18 + self.college_years(k) {
+                total += c.college * self.college_factor(plan, k, t) * n;
             }
+        }
+        if plan.family.any_support {
+            total += self.adult_support_rate(plan, t);
         }
         total / 12.0
     }
