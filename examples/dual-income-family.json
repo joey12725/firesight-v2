@@ -81,7 +81,10 @@
           "extra": 0.0
         },
         "risk": {
-          "level": "typical"
+          "level": "typical",
+          "wage_shocks": "normal",
+          "layoff_pay_cut": "normal",
+          "job_search": "drawn_at_layoff"
         },
         "bonus": {
           "target_fraction": 0.07,
@@ -118,7 +121,10 @@
           "extra": 0.0
         },
         "risk": {
-          "level": "low"
+          "level": "low",
+          "wage_shocks": "normal",
+          "layoff_pay_cut": "normal",
+          "job_search": "drawn_at_layoff"
         },
         "bonus": null,
         "commission": null,

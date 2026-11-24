@@ -80,6 +80,9 @@ use crate::model::{
 };
 use crate::rng::{normal_from_bits, Rng};
 
+mod shape;
+pub use shape::ShapeParams;
+
 /// Maximum equity grants tracked per job. Refresh grants are pooled inside the slot
 /// of the grant that spawns them, so this is the number of `job.equity` entries used;
 /// entries beyond it are ignored (see [`JobModel::grants_dropped`]).
@@ -188,6 +191,8 @@ pub struct CareerParams {
     pub equity_log_mean_12m: f64,
     /// Standard deviation of the 12-month log return (monthly sd times sqrt 12).
     pub equity_log_sd_12m: f64,
+    /// Parameters of the opt-in shapes (`career_shapes` in params.json).
+    pub shapes: ShapeParams,
 }
 
 fn num(root: &Value, path: &[&str]) -> f64 {
@@ -333,6 +338,7 @@ impl CareerParams {
             private_multiple_ranges: [range("modest"), range("good"), range("large")],
             equity_log_mean_12m: 12.0 * mean,
             equity_log_sd_12m: (12.0 * var).sqrt(),
+            shapes: ShapeParams::from_data(data),
         }
     }
 
@@ -382,6 +388,13 @@ pub fn wage_curve_level(growth: &WageGrowth, age: f64, params: &CareerParams) ->
                 + math::ln_1p(extra.max(-0.99)) * age,
         ),
     }
+}
+
+/// Addition to the mean log wage loss for a spell of `spell` months.
+#[inline]
+fn long_spell_addon(spell: f64) -> f64 {
+    (SCAR_LONG_SPELL_PER_MONTH * (spell - SCAR_LONG_SPELL_FROM_MONTHS).max(0.0))
+        .min(SCAR_LONG_SPELL_CAP)
 }
 
 fn hazard_age_band(age: f64) -> usize {
@@ -552,6 +565,9 @@ pub struct JobModel {
     n_grants: usize,
     grants_dropped: usize,
     company: Company,
+    /// Opt-in shapes of the wage shock, the pay cut and the job search; all off
+    /// by default.
+    shapes: shape::Shapes,
 }
 
 /// Compiled parameters of one self-employment income.
@@ -680,6 +696,16 @@ pub struct JobState {
     pub illiquid_strike_cost: [f64; MAX_GRANTS],
     /// Months spent unemployed so far on this path, fractional (a path scalar).
     pub months_unemployed_total: f64,
+    /// Yearly persistent shocks applied since the shock was last reset (sets the
+    /// mean correction when `wage_shocks` is `fat_tailed`).
+    pub persistent_shocks: u32,
+    /// Regime and age class of the current spell's layoff: 2 in the recession
+    /// regime plus 1 from age 50.
+    pub scar_class: u8,
+    /// Mean log wage loss of the current spell before the long-spell add-on (used
+    /// when `job_search` is `monthly`, where the spell length is not known at the
+    /// layoff).
+    pub scar_base_mean: f64,
 }
 
 /// What one job paid in one month, nominal dollars.
@@ -775,6 +801,17 @@ impl JobModel {
         let (sigma_eta, sigma_eps) = level.map_or((0.0, 0.0), |i| {
             (params.shock_sigma[i][0], params.shock_sigma[i][1])
         });
+        let shapes = if level.is_some() {
+            shape::Shapes::new(
+                job.risk.wage_shocks,
+                job.risk.layoff_pay_cut,
+                job.risk.job_search,
+                sigma_eta,
+                &params,
+            )
+        } else {
+            shape::Shapes::default()
+        };
         let mut hazard = [[0.0; 6]; 2];
         if let Some(i) = level {
             for (rec, row) in hazard.iter_mut().enumerate() {
@@ -884,6 +921,7 @@ impl JobModel {
             n_grants,
             grants_dropped: job.equity.len() - n_grants,
             company,
+            shapes,
         }
     }
 
@@ -943,6 +981,7 @@ impl JobModel {
             // Wage shocks drawn while the job did not exist are not its history.
             state.persistent_shock = 0.0;
             state.persistent_variance = 0.0;
+            state.persistent_shocks = 0;
             state.transitory_shock = 0.0;
             state.shock_factor = 1.0;
             state.steps = 0;
@@ -962,8 +1001,21 @@ impl JobModel {
 
     #[inline]
     fn refresh_shock_factor(&self, s: &mut JobState) {
-        s.shock_factor =
-            math::exp(s.persistent_shock - 0.5 * s.persistent_variance + s.transitory_shock);
+        // `ln E[exp(z)]` of the persistent shock: half its variance when Gaussian.
+        let log_mean = match &self.shapes.wage {
+            None => 0.5 * s.persistent_variance,
+            Some(mix) => mix.log_mean(s.persistent_shocks),
+        };
+        s.shock_factor = math::exp(s.persistent_shock - log_mean + s.transitory_shock);
+    }
+
+    /// The log wage loss on re-employment with mean `mean`, from the scar word.
+    #[inline]
+    fn pay_cut(&self, class: u8, mean: f64, bits: u64) -> f64 {
+        match &self.shapes.pay_cut {
+            None => mean + self.params.scar_sd * normal_from_bits(bits),
+            Some(cut) => cut.draw(usize::from(class), mean, bits),
+        }
     }
 
     fn forfeit_unvested(&self, s: &mut JobState) {
@@ -1013,9 +1065,13 @@ impl JobModel {
 
         // Annual wage shocks. The first step keeps the entered salary.
         if january && s.steps > 0 && self.wage_risk {
-            let z_eta = normal_from_bits(r_eta);
+            let eta = match &self.shapes.wage {
+                None => self.sigma_eta * normal_from_bits(r_eta),
+                Some(mix) => mix.draw(r_eta),
+            };
             let z_eps = normal_from_bits(r_eps);
-            s.persistent_shock = self.rho * s.persistent_shock + self.sigma_eta * z_eta;
+            s.persistent_shock = self.rho * s.persistent_shock + eta;
+            s.persistent_shocks = s.persistent_shocks.saturating_add(1);
             s.persistent_variance =
                 self.rho * self.rho * s.persistent_variance + self.sigma_eta * self.sigma_eta;
             s.transitory_shock = self.sigma_eps * z_eps - 0.5 * self.sigma_eps * self.sigma_eps;
@@ -1037,20 +1093,27 @@ impl JobModel {
             && u_layoff < self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)]
         {
             let p = &self.params;
-            let z_spell = normal_from_bits(r_spell);
-            let z_scar = normal_from_bits(r_scar);
-            let median = p.spell_median[slack] * p.spell_age_multiplier[spell_age_band(c.age)];
-            let spell = (median * math::exp(p.spell_sigma[slack] * z_spell))
-                .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
+            let older = c.age >= SCAR_OLDER_AGE;
             let mut scar_mean = p.scar_mean[slack];
-            if c.age >= SCAR_OLDER_AGE {
+            if older {
                 scar_mean *= p.scar_older_multiplier;
             }
-            scar_mean += (SCAR_LONG_SPELL_PER_MONTH
-                * (spell - SCAR_LONG_SPELL_FROM_MONTHS).max(0.0))
-            .min(SCAR_LONG_SPELL_CAP);
-            s.spell_months_left = spell;
-            s.pending_scar = scar_mean + p.scar_sd * z_scar;
+            s.scar_class = (2 * slack + usize::from(older)) as u8;
+            if self.shapes.search.is_some() {
+                // The search is decided month by month in the unemployment branch
+                // below, starting this month; the scar is drawn when it ends.
+                s.spell_months_left = shape::SEARCHING;
+                s.scar_base_mean = scar_mean;
+                s.pending_scar = 0.0;
+            } else {
+                let z_spell = normal_from_bits(r_spell);
+                let median = p.spell_median[slack] * p.spell_age_multiplier[spell_age_band(c.age)];
+                let spell = (median * math::exp(p.spell_sigma[slack] * z_spell))
+                    .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
+                scar_mean += long_spell_addon(spell);
+                s.spell_months_left = spell;
+                s.pending_scar = self.pay_cut(s.scar_class, scar_mean, r_scar);
+            }
             s.ui_weekly_real =
                 (p.ui_replacement_rate * s.real_salary / WEEKS_PER_YEAR).min(p.ui_weekly_cap);
             s.ui_weeks_left = p.ui_max_weeks
@@ -1080,6 +1143,17 @@ impl JobModel {
                 };
             }
             Employment::Unemployed { months } => {
+                if let Some(search) = &self.shapes.search {
+                    match search.step(slack, spell_age_band(c.age), months, r_spell) {
+                        Some(part) => {
+                            let spell = f64::from(months) + part;
+                            let mean = s.scar_base_mean + long_spell_addon(spell);
+                            s.pending_scar = self.pay_cut(s.scar_class, mean, r_scar);
+                            s.spell_months_left = part;
+                        }
+                        None => s.spell_months_left = shape::SEARCHING,
+                    }
+                }
                 let idle = s.spell_months_left.min(1.0);
                 s.spell_months_left -= idle;
                 s.months_unemployed_total += idle;
@@ -1320,6 +1394,7 @@ impl JobModel {
         state.anchor = real_salary / curve;
         state.persistent_shock = 0.0;
         state.persistent_variance = 0.0;
+        state.persistent_shocks = 0;
         state.transitory_shock = 0.0;
         state.shock_factor = 1.0;
         state.real_salary = real_salary;

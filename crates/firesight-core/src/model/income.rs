@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{JobSearchModel, PayCutShape, WageShockShape, When};
 
 /// One source of income belonging to one person.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -153,6 +153,18 @@ pub struct CareerRisk {
     /// How volatile pay is and how likely a layoff is. "typical" matches economy-wide
     /// averages (a few percent chance of job loss per year, higher in recessions).
     pub level: RiskLevel,
+    /// The shape of the lasting yearly pay surprise: `normal` (the default) or
+    /// `fat_tailed` (quiet most years, a large move in about one year in seven).
+    /// Expected pay is the same either way. Ignored when `level` is `none`.
+    pub wage_shocks: WageShockShape,
+    /// The shape of the lasting pay change after a layoff: `normal` (the default)
+    /// or `two_part` (many return at about the old pay, the rest take a loss with
+    /// a long tail). The average change is the same either way.
+    pub layoff_pay_cut: PayCutShape,
+    /// How long unemployment lasts: `drawn_at_layoff` (the default) or `monthly`
+    /// (a chance of finding work each month that falls as the search drags on and
+    /// follows recessions month by month).
+    pub job_search: JobSearchModel,
 }
 
 /// A coarse risk dial.

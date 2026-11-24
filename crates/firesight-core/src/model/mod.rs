@@ -17,6 +17,7 @@
 mod accounts;
 mod asset_shapes;
 mod assumptions;
+mod career_shape;
 mod debt;
 mod events;
 mod examples;
@@ -34,6 +35,7 @@ mod uncertain;
 pub use accounts::*;
 pub use asset_shapes::*;
 pub use assumptions::*;
+pub use career_shape::*;
 pub use debt::*;
 pub use events::*;
 pub use examples::{Example, EXAMPLE_START};

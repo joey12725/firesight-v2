@@ -2515,5 +2515,35 @@
       "reasoning": "A placeholder for 'rare and large': once in fifty years, most likely a 30% write-down. The right values depend entirely on what the custom asset is, so the user should set them; they are not taken from default or recovery studies.",
       "confidence": "low; a judgement"
     }
+  },
+  "career_shapes": {
+    "summary": "Opt-in shapes of a job's random parts (incomes[].kind.risk: wage_shocks, layoff_pay_cut, job_search). All are off by default. Each keeps an average the default model already has (expected pay, the mean log pay change after a layoff, the mean spell length in a steady economy) and changes only the shape around it. The shapes are supported by the evidence quoted under earnings and unemployment; none of the numbers in this section is estimated from a data set.",
+    "wage_mixture": {
+      "summary": "wage_shocks: fat_tailed. The persistent innovation eta is sigma_eta times a two-part normal mixture with mean 0 and variance 1: a small move most years, a large one otherwise.",
+      "large_move_probability": 0.15,
+      "large_to_small_sd_ratio": 4.0,
+      "large_move_mean_shift_in_sd": -0.25,
+      "implied": "small moves have 0.55 and large moves 2.2 times the sd of the normal shock; skewness about -0.5 and kurtosis about 11 against 0 and 3",
+      "reasoning": "earnings.guvenen_lifecycle_facts.shock_shape above records the facts: most years almost no change, occasionally a very large one, negative skew, kurtosis far above 3. A two-part normal mixture is the simplest shape with those features. The weight and the ratio are round numbers; the downward shift is kept small because job loss and its pay cut already supply most of the left tail in this model, and a larger one would count it twice.",
+      "confidence": "low; a judgement. The direction of each feature is well established, the three numbers are not estimates."
+    },
+    "pay_cut_two_part": {
+      "summary": "layoff_pay_cut: two_part. With probability q the log pay change is N(0, no_loss_sd); otherwise it is a loss L = top * B, where B is Beta(1, b), m = mean / (1 - q) is the mean loss of those who lose (mean is the default model's mean log loss for the same layoff), top = max(-ln(1 - loss_max_pay_cut), loss_max_as_multiple_of_mean_loss_at_least * m) and b = top / m - 1. The overall mean is therefore the default's.",
+      "no_loss_probability_expansion": 0.45,
+      "no_loss_probability_recession": 0.35,
+      "no_loss_age_50_plus_multiplier": 0.8,
+      "no_loss_sd": 0.05,
+      "loss_max_pay_cut": 0.5,
+      "loss_max_as_multiple_of_mean_loss_at_least": 3.0,
+      "reasoning": "unemployment.reemployment_wage_loss.evidence above: Farber finds roughly half of re-employed job losers earn as much or more while the average loss is 5-10%, and the displacement studies find large lasting losses for a minority. That is a mass near no change plus a skewed loss, not one bell curve. 0.45 is 'roughly half' rounded down; the recession and age adjustments follow the direction of the default model's larger mean losses there and are not separately estimated. The loss is a Beta(1, b): the simplest bounded shape whose density falls steadily from small losses to large ones, with a closed-form quantile. Its upper limit is a halving of pay, a round number; where the mean loss of those who lose is above a third of that (layoffs in a recession regime) the limit is three times that mean instead, so the shape stays right-skewed. Worst cases: a lasting cut of 50% after an ordinary layoff, 50% in a recession below age 50, 61% in a recession from age 50 and 74% in a recession from age 50 after a search of 16 months or more.",
+      "confidence": "low; a judgement. The two-part shape is well supported; the probabilities and the shape of the loss are not estimates."
+    },
+    "job_search_hazard": {
+      "summary": "job_search: monthly. Each month out of work the search ends with probability f0 * (floor + (1 - floor) * exp(-d / fade_months)), d = whole months out of work so far, at most 36 months in all. f0 depends on the current regime (recession or the 12 months after, as for durations above) and the age band, and is solved when the plan is compiled so that the mean spell in an unchanging regime equals the mean of the default clipped lognormal (3.6 months in expansion and 6.6 in the recession regime at 35-54).",
+      "floor": 0.35,
+      "fade_months": 6.0,
+      "reasoning": "That the chance of finding work falls with time out of work is a standard finding (for example the callback experiment of Kroft, Lange and Notowidigdo 2013), though how much of it is true duration dependence and how much is sorting is disputed. The floor and the fade time are round numbers chosen so that the share of spells longer than six months stays close to the default model's; they are not fitted to duration data. The citation is from memory.",
+      "confidence": "low; a judgement"
+    }
   }
 }

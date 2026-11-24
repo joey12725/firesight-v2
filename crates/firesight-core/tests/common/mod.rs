@@ -144,6 +144,7 @@ pub fn job(id: &str, owner: usize, salary: f64) -> Income {
             growth: WageGrowth::Flat { real_raise: 0.0 },
             risk: CareerRisk {
                 level: RiskLevel::None,
+                ..CareerRisk::default()
             },
             ..Job::default()
         }),
