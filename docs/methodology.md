@@ -1242,6 +1242,9 @@ end on the other side. With the retirement age fixed at 54 the same comparison g
 rescued and 7 harmed; in a test household with a fixed budget and retirement age no path
 ends poorer.
 
+A disability (6.3) is not an unemployment spell: it can last until retirement, and
+the cut does not apply to it.
+
 Not modelled: a cut that deepens when benefits run out, durable goods deferred during
 a spell, and a cut for a partner's spell that differs from the earner's own.
 
@@ -3074,7 +3077,8 @@ thing. They are checked by `tests/sim_richness.rs`.
   from the lumpy model only.
 * *Rent is indexed once.* A rent line that follows the market index is exempt from
   the shelter category's price wedge.
-* *Disability.* A person on disability insurance is not offered an early
+* *Disability.* A disability is not an unemployment spell: belt-tightening when
+  unemployed does not apply to it. A person on disability insurance is not offered an early
   retirement claim by adaptive claiming (the disability benefit converts at full
   retirement age), does not go back to work under `return_to_work`, and, if they
   also qualify for a survivor or spousal benefit, receives the larger of the two.

@@ -1577,3 +1577,47 @@ fn every_pair_of_features_conserves_money() {
         }
     }
 }
+
+/// Belt-tightening when unemployed is for job loss. A disabled person's job is
+/// parked in the unemployed state, but with no layoff risk in the profile the cut
+/// never starts, however many people become disabled.
+#[test]
+fn a_disability_is_not_an_unemployment_spell() {
+    struct Count {
+        disabled: u64,
+        cuts: u64,
+    }
+    impl Recorder for Count {
+        fn begin_path(&mut self, _: u64) {}
+        fn record_year(&mut self, _: usize, _: &YearRecord) {}
+        fn end_path(&mut self, _: &PathEnd) {}
+        fn wants_detail(&self) -> bool {
+            true
+        }
+        fn record_event(&mut self, e: TraceEvent) {
+            self.disabled += u64::from(e.label.contains("becomes disabled"));
+            self.cuts += u64::from(e.label.starts_with("Unemployed:"));
+        }
+    }
+    let mut p = furnished("dual-income-family");
+    p.spending.unemployment_cut = 0.15;
+    for income in &mut p.incomes {
+        if let IncomeKind::Job(j) = &mut income.kind {
+            j.risk.level = RiskLevel::None;
+        }
+    }
+    for person in &mut p.household.people {
+        person.disability_risk = DisabilityRisk::Typical;
+    }
+    let plan = compile(&p);
+    let mut ws = Workspace::new(&plan);
+    let mut count = Count {
+        disabled: 0,
+        cuts: 0,
+    };
+    for i in 0..PATHS {
+        sim::run_path(&plan, SEED, i, &mut ws, &mut count);
+    }
+    assert!(count.disabled > 20, "{}", count.disabled);
+    assert_eq!(count.cuts, 0);
+}

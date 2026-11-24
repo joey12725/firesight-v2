@@ -534,8 +534,14 @@ impl State {
         if sx.unemployment_cut > 0.0 {
             let mut unemployed = false;
             for (j, jp) in plan.jobs.iter().enumerate() {
+                // A disabled person's job is parked in the unemployed state
+                // (`rz_disability.rs`), but a disability is not an unemployment
+                // spell: it can last to retirement, and its benefits are not
+                // unemployment insurance. The cut is for job loss only.
+                let disabled = plan.rz.any && self.rz.dis.get(jp.owner).is_some_and(|d| d.disabled);
                 if jp.owner < MAX_PEOPLE
                     && self.present[jp.owner]
+                    && !disabled
                     && matches!(self.jobs[j].st.employment, Employment::Unemployed { .. })
                 {
                     unemployed = true;
