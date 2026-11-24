@@ -163,16 +163,41 @@ fn capped_assessment_rises_two_percent_a_year_from_the_basis() {
     let model = PropertyModel::from_property(&p, 0.012, data());
     let mut st = model.initial_state();
     assert_eq!(st.assessed_value, 400_000.0);
-    // First assessment: min(1,000,000, 400,000 * 1.02) = 408,000; tax 408,000 * 1.2% / 12.
-    let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
-    close(hm.property_tax, 408.0, 1e-9);
-    for _ in 0..11 {
+    // The first year is taxed on the assessed value of today: 400,000 * 1.2% / 12.
+    for _ in 0..12 {
+        let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
+        close(hm.property_tax, 400.0, 1e-9);
+    }
+    // The next assessment: 400,000 * 1.02 = 408,000; the one after, 416,160.
+    for _ in 0..12 {
         let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
         close(hm.property_tax, 408.0, 1e-9);
     }
-    // Next January: 408,000 * 1.02 = 416,160.
     let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
     close(hm.property_tax, 416.16, 1e-9);
+}
+
+#[test]
+fn capped_assessment_returns_to_the_capped_base_when_prices_recover() {
+    let mut p = bare(1_000_000.0);
+    p.assessment = Assessment::Capped {
+        annual_cap: 0.02,
+        assessed_value: Some(900_000.0),
+    };
+    let model = PropertyModel::from_property(&p, 0.012, data());
+    let mut st = model.initial_state();
+    // Year 1: the market is below the base of 900,000, so tax is on the market value.
+    st.value = 700_000.0;
+    let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
+    close(hm.property_tax, 700.0, 1e-9);
+    for _ in 0..11 {
+        model.step(&mut st, 0.0, 1.0, &mut rng());
+    }
+    // Year 2: prices are back. The assessment is the base grown by the cap,
+    // 900,000 * 1.02 = 918,000, not 2% above last year's lowered 700,000.
+    st.value = 1_000_000.0;
+    let hm = model.step(&mut st, 0.0, 1.0, &mut rng());
+    close(hm.property_tax, 918.0, 1e-9);
 }
 
 #[test]

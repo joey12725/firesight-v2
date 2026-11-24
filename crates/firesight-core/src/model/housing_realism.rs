@@ -30,8 +30,9 @@ pub enum Assessment {
     #[default]
     Market,
     /// The assessed value may rise by at most `annual_cap` a year (California's
-    /// Proposition 13 is 2%) and never exceeds market value. It is reset to the
-    /// purchase price when the household buys a home.
+    /// Proposition 13 is 2%) and never exceeds market value: if prices fall below
+    /// it, tax is charged on the market value until they recover. It is reset to
+    /// the purchase price when the household buys a home.
     Capped {
         /// Largest yearly rise in assessed value, as a decimal (0.02 = 2%).
         annual_cap: f64,

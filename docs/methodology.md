@@ -485,16 +485,17 @@ of the house, catastrophes, repairs that hold their price when home values fall,
 and the tax rule that a rental's roof is depreciated, not expensed.
 
 **Assessment cap and insurance drift** (`assessment: {type: capped, annual_cap}`,
-`insurance_real_growth: stochastic`). The assessed value rises by the cap each
-year, never above market value, starts from the basis (or a stated
-`assessed_value`) and resets to the price on a purchase; tax is charged on it.
-Measured at 2%: success 91.7% (unchanged), financial independence 1.2 years
-earlier at the median (the duplex is assessed at its $310,000 basis, not its
-$385,000 value, and the gap widens), which the household spends by retiring
-sooner. Not modelled: caps tied to inflation (California's is the lesser of 2% and
-CPI; here the full cap applies every year), the return to the pre-decline
-assessment after a fall in prices (the cap applies from the lowered value),
-Proposition 19 transfers, supplemental assessments, other states' homestead rules.
+`insurance_real_growth: stochastic`). A capped base starts from the basis (or a
+stated `assessed_value`), resets to the price on a purchase and rises by the cap
+each year. Tax is charged on the base, or on the market value in a year when
+that is lower; when prices recover the assessment returns to the base, which
+kept rising meanwhile (California's Proposition 8 reductions work this way).
+Measured at 2%: success 91.5% (-0.2 points, within noise), financial independence
+1.2 years earlier at the median (the duplex is assessed at its $310,000 basis,
+not its $385,000 value, and the gap widens), which the household spends by
+retiring sooner. Not modelled: caps tied to inflation (California's is the lesser
+of 2% and CPI; here the full cap applies every year), Proposition 19 transfers,
+supplemental assessments, other states' homestead rules.
 
 The insurance premium of a property that opts in is multiplied by one index per
 path, shared by all of its properties: a persistent real growth rate (mean 0.5% a

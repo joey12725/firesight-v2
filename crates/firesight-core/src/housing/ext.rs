@@ -25,6 +25,10 @@ pub struct PropExt {
     /// The simulated short-term index rate this month, set by the simulation before
     /// `step` for adjustable-rate mortgages.
     pub index: f64,
+    /// Capped assessment: the capped base (the "factored base year value") that
+    /// the next yearly assessment may not exceed. It starts at the stated assessed
+    /// value, the basis or the purchase price and rises by the cap every year.
+    pub assessed_base: f64,
 }
 
 impl PropertyModel {

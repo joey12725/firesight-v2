@@ -524,6 +524,10 @@ impl PropertyModel {
                 value
             },
             rent_growth: 1.0,
+            ext: PropExt {
+                assessed_base: model.assessed0.unwrap_or(basis).max(0.0),
+                ..PropExt::default()
+            },
             ..PropertyState::default()
         });
         model
@@ -662,7 +666,10 @@ impl PropertyModel {
             sale_noise: state.sale_noise,
             rental_year_to_date: 0.0,
             passive_loss_carryforward: 0.0,
-            ext: PropExt::default(),
+            ext: PropExt {
+                assessed_base: price,
+                ..PropExt::default()
+            },
         };
         Purchase {
             price,
@@ -707,7 +714,14 @@ impl PropertyModel {
         if state.assessment_clock == 0 {
             state.assessed_value = match self.capped {
                 None => value,
-                Some(cap) => value.min(state.assessed_value * (1.0 + cap)),
+                Some(cap) => {
+                    // This year's capped base, or the market value if that is lower;
+                    // the base goes on rising by the cap whatever the market does, so
+                    // a fall in prices lowers the assessment only until they recover.
+                    let base = state.ext.assessed_base;
+                    state.ext.assessed_base = base * (1.0 + cap);
+                    value.min(base)
+                }
             };
         }
         state.assessment_clock = (state.assessment_clock + 1) % 12;

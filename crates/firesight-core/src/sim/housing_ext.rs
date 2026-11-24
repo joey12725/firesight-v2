@@ -310,7 +310,14 @@ impl State {
                 *x = self.hx.rng_ins.next_u64();
             }
             let jump = insurance::advance(&mut self.hx.ins, &w);
-            if jump > 0.0 {
+            // Logged only while the household owns a property the index applies to.
+            if jump > 0.0
+                && self
+                    .props
+                    .iter()
+                    .zip(&plan.props)
+                    .any(|(st, pp)| st.owned && pp.model.has_insurance_drift())
+            {
                 let now = plan.start + t as i32;
                 self.event(now, TraceEventKind::LifeEvent, None, || {
                     format!(
