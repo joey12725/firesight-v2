@@ -15,6 +15,7 @@
 //! * Patchable list elements carry a stable string `id`.
 
 mod accounts;
+mod asset_shapes;
 mod assumptions;
 mod debt;
 mod events;
@@ -31,6 +32,7 @@ mod time;
 mod uncertain;
 
 pub use accounts::*;
+pub use asset_shapes::*;
 pub use assumptions::*;
 pub use debt::*;
 pub use events::*;

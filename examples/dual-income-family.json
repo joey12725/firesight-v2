@@ -432,7 +432,16 @@
     "custom_asset": null,
     "single_stock": {
       "volatility": 0.35,
-      "beta": 1.1
+      "beta": 1.1,
+      "tails": "normal",
+      "ruin_hazard": null
+    },
+    "crypto": {
+      "outlook": "neutral",
+      "token": "bitcoin_or_ether",
+      "dynamics": {
+        "type": "steady"
+      }
     }
   },
   "properties": [],

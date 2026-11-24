@@ -888,6 +888,62 @@ impl Checker<'_> {
             -1.0,
             4.0,
         );
+        // Opt-in shapes of the single stock, crypto and the custom asset.
+        if let Some(hazard) = pf.single_stock.ruin_hazard {
+            self.r.range(
+                "/portfolio/single_stock/ruin_hazard",
+                "Chance of total loss per year",
+                hazard,
+                0.0,
+                0.5,
+            );
+        }
+        if let CryptoDynamics::Cycles {
+            calm_months,
+            wild_months,
+            volatility_ratio,
+        } = pf.crypto.dynamics
+        {
+            let (lo, hi) = crate::economy::CYCLE_MONTHS_RANGE;
+            self.r.range(
+                "/portfolio/crypto/dynamics/calm_months",
+                "Length of a calm spell in months",
+                calm_months,
+                lo,
+                hi,
+            );
+            self.r.range(
+                "/portfolio/crypto/dynamics/wild_months",
+                "Length of a wild spell in months",
+                wild_months,
+                lo,
+                hi,
+            );
+            let (lo, hi) = crate::economy::CYCLE_RATIO_RANGE;
+            self.r.range(
+                "/portfolio/crypto/dynamics/volatility_ratio",
+                "Wild-to-calm volatility ratio",
+                volatility_ratio,
+                lo,
+                hi,
+            );
+        }
+        if let Some(event) = pf.custom_asset.as_ref().and_then(|c| c.loss_event.as_ref()) {
+            self.r.range(
+                "/portfolio/custom_asset/loss_event/annual_probability",
+                "Chance of a loss per year",
+                event.annual_probability,
+                0.0,
+                0.5,
+            );
+            check_uncertain(
+                &mut self.r,
+                "/portfolio/custom_asset/loss_event/loss",
+                "Share lost",
+                &event.loss,
+                Bounds::FRACTION,
+            );
+        }
         self.r.range(
             "/portfolio/expense_ratio",
             "Expense ratio",

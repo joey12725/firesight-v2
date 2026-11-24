@@ -1514,7 +1514,11 @@ fn single_stock_is_mean_preserving_with_a_ruin_hazard() {
     let base = EconomyModel::new(&market(bootstrap(60)), data);
     let with_stock = |volatility: f64, beta: f64| {
         base.clone().with_assets(&PortfolioPolicy {
-            single_stock: SingleStock { volatility, beta },
+            single_stock: SingleStock {
+                volatility,
+                beta,
+                ..SingleStock::default()
+            },
             ..PortfolioPolicy::default()
         })
     };
@@ -1645,6 +1649,7 @@ fn custom_asset_follows_the_user_parameters() {
                     volatility,
                     equity_corr,
                     income_yield: 0.0,
+                    ..CustomAsset::default()
                 }),
                 ..PortfolioPolicy::default()
             });
@@ -1677,6 +1682,7 @@ fn custom_asset_follows_the_user_parameters() {
             volatility: f64::NAN,
             equity_corr: 9.0,
             income_yield: 0.0,
+            ..CustomAsset::default()
         }),
         ..PortfolioPolicy::default()
     });
@@ -1998,6 +2004,7 @@ fn portfolio_parameters_do_not_move_the_market() {
         single_stock: SingleStock {
             volatility: 0.9,
             beta: 2.0,
+            ..SingleStock::default()
         },
         custom_asset: Some(CustomAsset {
             name: "x".into(),
@@ -2005,6 +2012,7 @@ fn portfolio_parameters_do_not_move_the_market() {
             volatility: 0.5,
             equity_corr: -0.9,
             income_yield: 0.0,
+            ..CustomAsset::default()
         }),
         ..PortfolioPolicy::default()
     };

@@ -96,6 +96,9 @@ mod regime;
 #[cfg(test)]
 mod rich_tests;
 pub(crate) mod sampler;
+#[cfg(test)]
+mod shape_tests;
+mod sleeves;
 mod stress;
 #[cfg(test)]
 mod tests;
@@ -107,8 +110,8 @@ use serde_json::Value;
 use crate::data::{Data, History};
 use crate::math;
 use crate::model::{
-    AssetClass, BootstrapJoins, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock,
-    YearMonth, N_ASSETS,
+    AssetClass, BootstrapJoins, CryptoAssumptions, CustomAsset, MarketKind, MarketModel,
+    PortfolioPolicy, SingleStock, TailShape, YearMonth, N_ASSETS,
 };
 use crate::rng::Rng;
 
@@ -120,6 +123,10 @@ pub use overlay::{
     Episode, CASH_PASS_THROUGH, DISASTER_MONTHS_RANGE, DISASTER_RECESSION_MONTHS,
     DISASTER_WORDS_PER_EPISODE, MAX_BURST_INFLATION, MAX_BURST_PRICE_FACTOR, MAX_DISASTER_DEPTH,
     MAX_EPISODES,
+};
+pub use sleeves::{
+    CYCLE_MONTHS_RANGE, CYCLE_RATIO_RANGE, MAX_ANNUAL_HAZARD, STOCK_SHOCK_CAP_SD,
+    STOCK_SHOCK_MAX_FACTOR, WORDS_PER_MONTH as ASSET_EXT_WORDS_PER_MONTH,
 };
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
@@ -478,6 +485,8 @@ struct HistBase {
     /// Monthly real gross returns of equities, bonds and bills in 1973-81.
     stagflation_real: [f64; 3],
     crypto: CryptoSpec,
+    /// The outlooks and the token hazard the default does not use.
+    crypto_presets: sleeves::CryptoPresets,
     stock_presets: [(f64, f64); 3],
     /// Long yield and mortgage rate in the last row of the history (today's levels)
     /// and their means over the rows used.
@@ -530,6 +539,10 @@ pub struct EconomyModel {
     stress_beta: [f64; N_ASSETS],
     /// Long-run uncertainty and rare disasters; `None` when both are off.
     overlay: Option<Arc<overlay::Overlay>>,
+    /// The custom asset's residual has fat tails (`custom_asset.tails: fat`).
+    custom_fat: bool,
+    /// Crypto cycles and custom loss events (see [`sleeves`]); empty when off.
+    ext: sleeves::AssetExt,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -539,6 +552,8 @@ struct Emit<'a> {
     t6: &'a ShockTable,
     stock: &'a ShockTable,
     crypto: &'a ShockTable,
+    /// The custom asset's residual: `normal` unless its tails are fat.
+    custom: &'a ShockTable,
 }
 
 /// Mutable views of the output buffers, exactly `months` long.
@@ -560,6 +575,8 @@ struct Sink<'a> {
     home: &'a mut [f64],
     recession: &'a mut [u8],
     level: f64,
+    /// Crypto cycles and custom loss events, when on and their stream is supplied.
+    ext: Option<sleeves::ExtRt<'a>>,
 }
 
 impl<'a> Sink<'a> {
@@ -584,6 +601,7 @@ impl<'a> Sink<'a> {
             home: &mut out.home_national[..n],
             recession: &mut out.recession[..n],
             level: 1.0,
+            ext: None,
         }
     }
 }
@@ -595,10 +613,14 @@ impl Emit<'_> {
     fn put(&self, sink: &mut Sink<'_>, t: usize, m: &Month, intl: f64, gold: f64, rng: &mut Rng) {
         let a = self.assets;
         let re = (m.re + a.re_sigma * self.t6.sample(rng.next_u64())).max(MIN_RETURN);
-        let mut crypto = m.crypto * self.crypto.sample(rng.next_u64()) - 1.0;
+        let crypto_word = rng.next_u64();
+        let mut crypto = m.crypto * self.crypto.sample(crypto_word) - 1.0;
         let mut stock = m.stock * self.stock.sample(rng.next_u64()) - 1.0;
-        let custom =
-            (m.custom + a.custom_sigma * self.normal.sample(rng.next_u64())).max(MIN_RETURN);
+        let mut custom =
+            (m.custom + a.custom_sigma * self.custom.sample(rng.next_u64())).max(MIN_RETURN);
+        if let Some(ext) = sink.ext.as_mut() {
+            ext.step(t, m.crypto, crypto_word, &mut crypto, &mut custom);
+        }
         let hazard = rng.next_u64();
         if (hazard >> 32) < a.crypto_ruin {
             crypto = -1.0;
@@ -926,6 +948,7 @@ impl HistBase {
             gold_beta,
             stagflation_real,
             crypto: CryptoSpec::from_json(actuarial),
+            crypto_presets: sleeves::CryptoPresets::from_json(actuarial),
             stock_presets: stock_presets_from_json(actuarial),
             rate_now,
             rate_mean,
@@ -1060,41 +1083,8 @@ impl EconomyModel {
         };
         let adjust = Adjust::new(market);
 
-        // Crypto: equity link sized for the two correlations, idiosyncratic volatility
-        // for the rest of the total, median real growth as assumed.
-        let spec = base.crypto;
-        let sigma_c = spec.sigma_annual;
-        let eq_vol = (base.eq_sd * SQRT_12).max(1e-6);
-        let crypto_beta = spec.equity_corr * sigma_c / eq_vol;
-        let crypto_beta_extra = (spec.drawdown_corr - spec.equity_corr).max(0.0) * sigma_c / eq_vol;
-        let (link_mean, link_sd, _) = fit::mean_sd(
-            base.rows
-                .iter()
-                .map(|r| math::ln(base.crypto_link(crypto_beta, crypto_beta_extra, r.eq))),
-        );
-        let total_var = sigma_c * sigma_c / 12.0;
-        let idio_var = (total_var - link_sd * link_sd).max(CRYPTO_MIN_IDIO_SHARE * total_var);
-        let idio_sd = idio_var.sqrt();
-        let crypto_shock = Arc::new(sampler::student_t(spec.dof).transformed(|x| {
-            math::exp(idio_sd * x.clamp(-CRYPTO_SHOCK_CAP_SD, CRYPTO_SHOCK_CAP_SD))
-        }));
-        // The preset fixes the expected return, not the median: the mean of the
-        // equity link, the mean of the fat-tailed shock and the chance of a collapse
-        // are all divided out, so that the average real return of the sleeve is the
-        // stated one. With 70% volatility the typical path then loses most of its
-        // value; a few gain enormously; on average the holding keeps what the
-        // preset says.
-        let link_arithmetic = fit::mean_sd(
-            base.rows
-                .iter()
-                .map(|r| base.crypto_link(crypto_beta, crypto_beta_extra, r.eq)),
-        )
-        .0;
-        let crypto_ruin = probability_bits(monthly_hazard(spec.ruin_annual));
-        let survive = 1.0 - crypto_ruin as f64 / TWO_POW_32;
-        let _ = link_mean;
-        let crypto_norm = math::pow(1.0 + spec.expected_real_return, 1.0 / 12.0)
-            / (link_arithmetic * crypto_shock.mean() * survive).max(1e-9);
+        // Crypto at the library defaults: see `sleeves::crypto_setup`.
+        let crypto = sleeves::crypto_setup(&base, &base.crypto, CryptoAssumptions::default().dynamics);
 
         let assets = AssetParams {
             eq_mean: (1.0 + base.eq_mean) * adjust.equity * adjust.inflation - 1.0,
@@ -1105,11 +1095,11 @@ impl EconomyModel {
             stock_beta: 1.0,
             stock_survivor_boost: 1.0,
             stock_ruin: 0,
-            crypto_beta,
-            crypto_beta_extra,
+            crypto_beta: crypto.beta,
+            crypto_beta_extra: crypto.beta_extra,
             crypto_threshold: CRYPTO_DRAWDOWN_SIGMAS * base.eq_sd,
-            crypto_norm,
-            crypto_ruin,
+            crypto_norm: crypto.norm,
+            crypto_ruin: crypto.ruin,
             custom_mean: 0.0,
             custom_beta: 0.0,
             custom_sigma: 0.0,
@@ -1121,9 +1111,11 @@ impl EconomyModel {
             assets,
             rows: Arc::from(Vec::new()),
             stock_shock: Arc::new(ShockTable::constant(1.0)),
-            crypto_shock,
+            crypto_shock: Arc::new(crypto.shock),
             stress_beta: [0.0; N_ASSETS],
             overlay: overlay::Overlay::new(market).map(Arc::new),
+            custom_fat: false,
+            ext: sleeves::AssetExt::default(),
         };
         model.with_asset_params(&SingleStock::default(), &CustomAsset::default())
     }
@@ -1132,9 +1124,29 @@ impl EconomyModel {
     /// [`EconomyModel::new`]; without it the defaults of those types are used. Only
     /// the scaling of those two asset classes changes: the random draws, and every
     /// other series, are identical.
-    pub fn with_assets(self, portfolio: &PortfolioPolicy) -> EconomyModel {
+    pub fn with_assets(mut self, portfolio: &PortfolioPolicy) -> EconomyModel {
         let custom = portfolio.custom_asset.clone().unwrap_or_default();
+        // Crypto: rebuilt only when the profile departs from the defaults that
+        // `new` has already applied.
+        if portfolio.crypto != CryptoAssumptions::default() {
+            let spec =
+                sleeves::crypto_spec(self.base.crypto, &self.base.crypto_presets, &portfolio.crypto);
+            let crypto = sleeves::crypto_setup(&self.base, &spec, portfolio.crypto.dynamics);
+            self.assets.crypto_beta = crypto.beta;
+            self.assets.crypto_beta_extra = crypto.beta_extra;
+            self.assets.crypto_norm = crypto.norm;
+            self.assets.crypto_ruin = crypto.ruin;
+            self.crypto_shock = Arc::new(crypto.shock);
+            self.ext.cycles = crypto.cycles.map(Arc::new);
+        }
         self.with_asset_params(&portfolio.single_stock, &custom)
+    }
+
+    /// True when crypto cycles or custom loss events are on, so the generator
+    /// needs the `AssetExt` stream ([`EconomyModel::generate_with`]).
+    #[inline]
+    pub fn has_asset_ext(&self) -> bool {
+        self.ext.is_on()
     }
 
     fn with_asset_params(mut self, stock: &SingleStock, custom: &CustomAsset) -> EconomyModel {
@@ -1147,13 +1159,19 @@ impl EconomyModel {
         let idio_vol = (total_vol * total_vol - beta * beta * eq_vol * eq_vol)
             .max(0.0)
             .sqrt();
-        let ruin = monthly_hazard(stock_ruin_hazard(&self.base.stock_presets, idio_vol));
+        let ruin = monthly_hazard(sleeves::stock_hazard(
+            stock.ruin_hazard,
+            stock_ruin_hazard(&self.base.stock_presets, idio_vol),
+        ));
         let sigma = idio_vol / SQRT_12;
         self.stock_shock = Arc::new(if sigma > 0.0 {
             let mut table = sampler::normal().transformed(|x| math::exp(sigma * x));
             let k = 1.0 / table.mean();
             table.scale(k);
-            table
+            match stock.tails {
+                TailShape::Normal => table,
+                TailShape::Fat => sleeves::fat_stock_shock(sigma, &table),
+            }
         } else {
             ShockTable::constant(1.0)
         });
@@ -1172,6 +1190,12 @@ impl EconomyModel {
             - 1.0;
         self.assets.custom_beta = corr * vol / eq_vol;
         self.assets.custom_sigma = vol * (1.0 - corr * corr).sqrt() / SQRT_12;
+        self.custom_fat = custom.tails == TailShape::Fat;
+        self.ext.loss = custom
+            .loss_event
+            .as_ref()
+            .and_then(sleeves::Loss::new)
+            .map(Arc::new);
 
         self.stress_beta = [0.0; N_ASSETS];
         self.stress_beta[AssetClass::UsStocks.index()] = 1.0;
@@ -1225,9 +1249,29 @@ impl EconomyModel {
     /// Draws per month from the `Market` stream: bootstrap 8, historical 7, regime
     /// 17, lognormal 12 (plus one at the start of a lognormal path). From the `Inflation` stream: 1 in the regime and lognormal
     /// models, none otherwise. Matched bootstrap joins draw the same 8.
+    ///
+    /// Crypto cycles and custom loss events need a stream of their own and are
+    /// left out here (the sleeves then behave as with those two options off, the
+    /// loss compensation included); use [`EconomyModel::generate_with`].
     pub fn generate(
         &self,
         streams: &mut EconomyStreams<'_>,
+        path_index: u64,
+        months: usize,
+        out: &mut EconomyPath,
+    ) {
+        self.generate_with(streams, None, path_index, months, out);
+    }
+
+    /// [`EconomyModel::generate`] with the `AssetExt` stream
+    /// (`Rng::stream(seed, path, Stream::AssetExt)`), which crypto cycles and
+    /// custom loss events draw 3 words a month from when either is on
+    /// ([`EconomyModel::has_asset_ext`]). When both are off, or `asset_ext` is
+    /// `None`, nothing is drawn from it and the result is that of `generate`.
+    pub fn generate_with(
+        &self,
+        streams: &mut EconomyStreams<'_>,
+        asset_ext: Option<&mut Rng>,
         path_index: u64,
         months: usize,
         out: &mut EconomyPath,
@@ -1239,8 +1283,16 @@ impl EconomyModel {
             t6: &sampler::student_t6().table,
             stock: &self.stock_shock,
             crypto: &self.crypto_shock,
+            custom: if self.custom_fat {
+                &sampler::student_t6().table
+            } else {
+                &sampler::normal().table
+            },
         };
         let mut sink = Sink::new(out);
+        if let (true, Some(ext_rng)) = (self.ext.is_on(), asset_ext) {
+            sink.ext = Some(sleeves::ExtRt::new(&self.ext, ext_rng));
+        }
         let rng = &mut *streams.market;
         match &self.kind {
             Kind::Bootstrap { restart, joins } => {

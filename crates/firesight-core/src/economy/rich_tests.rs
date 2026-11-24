@@ -430,6 +430,7 @@ fn long_run_shift_matches_a_direct_change_of_the_adjustments() {
         single_stock: SingleStock {
             volatility: 0.5,
             beta: 1.3,
+            ..SingleStock::default()
         },
         ..PortfolioPolicy::default()
     };

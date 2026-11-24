@@ -526,11 +526,16 @@ impl State {
 
         let mut market = Rng::stream(seed, path, Stream::Market);
         let mut inflation = Rng::stream(seed, path, Stream::Inflation);
-        plan.econ.generate(
+        let mut asset_ext = plan
+            .econ
+            .has_asset_ext()
+            .then(|| Rng::stream(seed, path, Stream::AssetExt));
+        plan.econ.generate_with(
             &mut EconomyStreams {
                 market: &mut market,
                 inflation: &mut inflation,
             },
+            asset_ext.as_mut(),
             path,
             months,
             econ,
