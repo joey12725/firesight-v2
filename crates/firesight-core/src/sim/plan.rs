@@ -203,6 +203,8 @@ pub(crate) struct JobPlan {
 #[derive(Clone, Debug)]
 pub(crate) struct SePlan {
     pub owner: usize,
+    /// Position in `profile.incomes`: the index of its `Stream::Business`.
+    pub stream: usize,
     pub model: SelfEmploymentModel,
     pub solo_fraction: f64,
     pub start: Sched,
@@ -672,7 +674,17 @@ impl Plan {
                     income_refs.push((income.id.clone(), IncomeRef::Se(selfemp.len())));
                     selfemp.push(SePlan {
                         owner,
-                        model: SelfEmploymentModel::new(se, profile.assumptions.career_risk, data),
+                        stream: profile
+                            .incomes
+                            .iter()
+                            .position(|x| std::ptr::eq(x, income))
+                            .unwrap_or(selfemp.len()),
+                        model: SelfEmploymentModel::with_start(
+                            se,
+                            profile.assumptions.career_risk,
+                            active_now,
+                            data,
+                        ),
                         solo_fraction: se.solo_401k_fraction.clamp(0.0, 1.0),
                         start: begin,
                         end: finish,

@@ -525,6 +525,7 @@ impl Checker<'_> {
                         0.0,
                         1.0,
                     );
+                    self.business(&k, se);
                 }
                 IncomeKind::Pension(pn) => {
                     self.r.money(&format!("{k}/annual"), "Pension", pn.annual);
@@ -555,6 +556,86 @@ impl Checker<'_> {
                     );
                 }
             }
+        }
+    }
+
+    /// The opt-in risks of a self-employment income.
+    fn business(&mut self, k: &str, se: &SelfEmployment) {
+        self.r.range(
+            &format!("{k}/monthly_lumpiness"),
+            "Monthly lumpiness",
+            se.monthly_lumpiness,
+            0.0,
+            2.0,
+        );
+        let BusinessFailure::Hazard {
+            young_annual_probability,
+            mature_annual_probability,
+            young_years,
+            years_in_business,
+            recession_multiplier,
+            then,
+        } = se.failure
+        else {
+            return;
+        };
+        let f = format!("{k}/failure");
+        self.r.range(
+            &format!("{f}/young_annual_probability"),
+            "Chance of a young business closing",
+            young_annual_probability,
+            0.0,
+            0.5,
+        );
+        self.r.range(
+            &format!("{f}/mature_annual_probability"),
+            "Chance of an established business closing",
+            mature_annual_probability,
+            0.0,
+            0.5,
+        );
+        self.r.range(
+            &format!("{f}/young_years"),
+            "Years a business counts as young",
+            young_years,
+            0.0,
+            30.0,
+        );
+        if let Some(years) = years_in_business {
+            self.r.range(
+                &format!("{f}/years_in_business"),
+                "Years in business",
+                years,
+                0.0,
+                100.0,
+            );
+        }
+        self.r.range(
+            &format!("{f}/recession_multiplier"),
+            "Recession multiplier",
+            recession_multiplier,
+            1.0,
+            10.0,
+        );
+        if let AfterFailure::Restart {
+            gap_months,
+            income_fraction,
+        } = then
+        {
+            self.r.range(
+                &format!("{f}/then/gap_months"),
+                "Months without income",
+                f64::from(gap_months),
+                0.0,
+                120.0,
+            );
+            self.r.range(
+                &format!("{f}/then/income_fraction"),
+                "Profit after a restart",
+                income_fraction,
+                0.0,
+                2.0,
+            );
         }
     }
 
@@ -699,7 +780,22 @@ impl Checker<'_> {
                 );
             }
             match g.company {
-                EquityCompany::Public { volatility, beta } => {
+                EquityCompany::Public {
+                    volatility,
+                    beta,
+                    tails: _,
+                    ruin,
+                    layoff_link: _,
+                } => {
+                    if let StockRuin::Stated { annual_probability } = ruin {
+                        self.r.range(
+                            &format!("{gp}/company/ruin/annual_probability"),
+                            "Chance of the shares becoming worthless",
+                            annual_probability,
+                            0.0,
+                            0.5,
+                        );
+                    }
                     self.r.range(
                         &format!("{gp}/company/volatility"),
                         "Volatility",
@@ -714,7 +810,29 @@ impl Checker<'_> {
                     liquidity_hazard,
                     fail_prob,
                     exit_volatility,
+                    exit_timing,
+                    exit_size: _,
                 } => {
+                    if let ExitTiming::Lognormal {
+                        median_years,
+                        sigma,
+                    } = exit_timing
+                    {
+                        self.r.range(
+                            &format!("{gp}/company/exit_timing/median_years"),
+                            "Typical wait for the outcome",
+                            median_years,
+                            0.25,
+                            40.0,
+                        );
+                        self.r.range(
+                            &format!("{gp}/company/exit_timing/sigma"),
+                            "Spread of the wait",
+                            sigma,
+                            0.05,
+                            2.0,
+                        );
+                    }
                     self.r.range(
                         &format!("{gp}/company/liquidity_hazard"),
                         "Liquidity hazard",

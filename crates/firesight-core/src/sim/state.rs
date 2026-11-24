@@ -103,6 +103,9 @@ pub(crate) struct State {
     pub rng_health: [Rng; MAX_PEOPLE],
     pub rng_shocks: Rng,
     pub rng_housing: Vec<Rng>,
+    /// One per self-employment income (`Stream::Business`); read only when the
+    /// income has a closure risk or monthly lumpiness.
+    pub rng_business: Vec<Rng>,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -304,6 +307,7 @@ impl State {
             rng_health: [rng.clone(), rng.clone()],
             rng_shocks: rng.clone(),
             rng_housing: vec![rng.clone(); plan.props.len()],
+            rng_business: vec![rng.clone(); plan.selfemp.len()],
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -547,6 +551,9 @@ impl State {
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
+        }
+        for (rng, sp) in self.rng_business.iter_mut().zip(&plan.selfemp) {
+            *rng = Rng::stream(seed, path, Stream::Business(sp.stream));
         }
 
         // Retirement date when the trigger fixes it.

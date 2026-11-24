@@ -76,7 +76,11 @@
         "volatility": 0.3,
         "real_growth": 0.0,
         "ends_at_retirement": true,
-        "solo_401k_fraction": 0.0
+        "solo_401k_fraction": 0.0,
+        "failure": {
+          "type": "never"
+        },
+        "monthly_lumpiness": 0.0
       },
       "start": null,
       "end": {
@@ -94,7 +98,11 @@
         "volatility": 0.35,
         "real_growth": 0.01,
         "ends_at_retirement": true,
-        "solo_401k_fraction": 0.0
+        "solo_401k_fraction": 0.0,
+        "failure": {
+          "type": "never"
+        },
+        "monthly_lumpiness": 0.0
       },
       "start": {
         "type": "date",

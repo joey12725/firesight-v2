@@ -138,6 +138,8 @@ pub use sleeves::{
     CYCLE_MONTHS_RANGE, CYCLE_RATIO_RANGE, MAX_ANNUAL_HAZARD, STOCK_SHOCK_CAP_SD,
     STOCK_SHOCK_MAX_FACTOR, WORDS_PER_MONTH as ASSET_EXT_WORDS_PER_MONTH,
 };
+// The employer-stock model (career) uses the same fat factor as the sleeve.
+pub(crate) use sleeves::fat_stock_shock;
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
@@ -769,7 +771,7 @@ impl CryptoSpec {
     }
 }
 
-fn stock_presets_from_json(actuarial: &Value) -> [(f64, f64); 3] {
+pub(crate) fn stock_presets_from_json(actuarial: &Value) -> [(f64, f64); 3] {
     let mut out = STOCK_PRESETS;
     for (slot, name) in
         out.iter_mut()
@@ -785,7 +787,7 @@ fn stock_presets_from_json(actuarial: &Value) -> [(f64, f64); 3] {
 
 /// Annual hazard of a total loss for a stock with the given idiosyncratic volatility:
 /// piecewise linear through the origin and the presets, flat beyond the last.
-fn stock_ruin_hazard(presets: &[(f64, f64); 3], idio_vol: f64) -> f64 {
+pub(crate) fn stock_ruin_hazard(presets: &[(f64, f64); 3], idio_vol: f64) -> f64 {
     let mut prev = (0.0, 0.0);
     for &(vol, hazard) in presets {
         if idio_vol <= vol {

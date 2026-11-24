@@ -310,6 +310,32 @@ impl State {
                 && ti >= sp.start.month(rm)
                 && ti < sp.end.month(rm)
                 && !(sp.ends_at_retirement && self.person_retired[p]);
+            let profit = if sp.model.has_business() {
+                // Opt-in closure risk and monthly lumpiness, from their own stream.
+                let b = sp.model.business_step(
+                    &mut rt.st,
+                    active,
+                    recession != 0,
+                    &mut self.rng_business[k],
+                );
+                let profit = profit * rt.st.business.level * b.lump;
+                if b.closed || b.reopened {
+                    self.req_dirty = true;
+                }
+                if b.closed {
+                    self.event(now, TraceEventKind::LaidOff, None, || {
+                        "Business closed".to_string()
+                    });
+                }
+                if b.reopened {
+                    self.event(now, TraceEventKind::Rehired, None, || {
+                        "Self-employment restarted".to_string()
+                    });
+                }
+                profit
+            } else {
+                profit
+            };
             if active && profit > 0.0 {
                 self.recv(YearSeries::IncomeSelfEmployment, profit);
                 self.ty.self_employment[p] += profit;

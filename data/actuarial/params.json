@@ -2545,5 +2545,55 @@
       "reasoning": "That the chance of finding work falls with time out of work is a standard finding (for example the callback experiment of Kroft, Lange and Notowidigdo 2013), though how much of it is true duration dependence and how much is sorting is disputed. The floor and the fade time are round numbers chosen so that the share of spells longer than six months stays close to the default model's; they are not fitted to duration data. The citation is from memory.",
       "confidence": "low; a judgement"
     }
+  },
+  "business_and_equity": {
+    "summary": "Opt-in risks of self-employment income (incomes[].kind.failure, monthly_lumpiness) and opt-in shapes of employer stock (incomes[].kind.equity[].company: tails, ruin, layoff_link, exit_timing, exit_size). All are off by default. Nothing in this section is estimated from a data set; every number is a judgement or is taken from the equity_compensation section above, and tests/rich_business.rs keeps the code's defaults equal to it.",
+    "business_failure": {
+      "summary": "Defaults of failure: hazard. A monthly chance of closing, 1 - (1 - p)^(1/12) with p the yearly figure (young while the venture is under young_years old, mature after), multiplied by recession_multiplier in a recession month. Then either no income for good, or no income for gap_months and a restart at income_fraction of the old profit as a young venture.",
+      "young_annual_probability": 0.1,
+      "mature_annual_probability": 0.04,
+      "young_years": 5.0,
+      "recession_multiplier": 2.0,
+      "restart_gap_months": 12,
+      "restart_income_fraction": 0.7,
+      "reasoning": "Business survival statistics (the Bureau of Labor Statistics publishes survival rates of new establishments by year of birth) show a closure rate that is highest in the first years and falls with age, with roughly half of new establishments gone within five years; that figure is quoted from memory and not re-verified. The defaults are deliberately lower than it: 10% a year for five years closes 41% of young ventures, because those statistics count every closure, including sales and owners who move on by choice, and because the user is describing an income they already earn or firmly plan. 4% a year for an established business, the doubling in recessions (the layoff model's own multiplier is 2.5), the year without income and the lasting 30% cut after a restart are round numbers, not estimates.",
+      "confidence": "low; a judgement. That young businesses close more often than established ones and that closures rise in recessions is well established; none of the six numbers is an estimate."
+    },
+    "monthly_lumpiness": {
+      "summary": "monthly_lumpiness is the coefficient of variation of an independent monthly factor with mean exactly 1: a lognormal limited to max_month_as_multiple_of_average times its mean and rescaled to mean 1.",
+      "max_month_as_multiple_of_average": 12.0,
+      "reasoning": "The lognormal is the shape the engine already uses for commission and bonus noise. The limit of twelve average months in one month (a year's expected profit in one invoice) keeps a large entered figure bounded; it binds in fewer than one month in 3,000 at a lumpiness of 1.0.",
+      "confidence": "low; a judgement on shape. The user enters the size."
+    },
+    "employer_stock_layoff_link": {
+      "summary": "layoff_link: the job's monthly layoff chance is multiplied by hazard_multiplier while the employer stock's company-specific return over the last window_months months is below crash_return_12m, and a ruin of the stock ends the job.",
+      "hazard_multiplier": 3.0,
+      "crash_return_12m": -0.4,
+      "window_months": 12,
+      "reasoning": "The rule and both numbers are equity_compensation.single_public_stock.employer_correlation above, which labels them a judgement. That a firm whose own shares have collapsed sheds staff is well documented in cases; the size of the effect is not estimated here.",
+      "confidence": "low; a judgement"
+    },
+    "employer_stock_ruin": {
+      "summary": "ruin: by_volatility reads the yearly chance of a total loss from equity_compensation.single_public_stock.defaults by the stock's company-specific volatility (piecewise linear through zero and the three presets, flat beyond the last), exactly as the portfolio's single-stock sleeve does. ruin: stated defaults to the typical growth company's figure.",
+      "stated_default_annual_probability": 0.01,
+      "confidence": "as equity_compensation.single_public_stock (medium; the presets are judgement)"
+    },
+    "employer_stock_fat_tails": {
+      "summary": "tails: fat uses the single-stock sleeve's factor (asset_shapes.single_stock_fat_tails): Student-t(4), limited to eight standard deviations and a factor of five, mean 1 and the lognormal factor's standard deviation.",
+      "confidence": "as asset_shapes.single_stock_fat_tails (low; a judgement)"
+    },
+    "private_exit_timing": {
+      "summary": "Defaults of exit_timing: lognormal. The wait in years is LogNormal(ln(median_years), sigma), the equation of equity_compensation.private_company.model; the engine default median is the series B to C stage of its stage table.",
+      "default_median_years": 5.0,
+      "default_sigma": 0.5,
+      "confidence": "as equity_compensation.private_company (low-medium)"
+    },
+    "private_exit_pareto": {
+      "summary": "exit_size: pareto_tail replaces the log-uniform multiple of the large class (multiple_ranges_on_paper_value.large above) by a Pareto from the same lower limit, truncated at cap_multiple_of_paper_value, whose tail index is solved so that the mean multiple of the class is unchanged.",
+      "cap_multiple_of_paper_value": 200.0,
+      "implied_tail_index": 1.55,
+      "reasoning": "The Correlation Ventures distribution above (4% of financings above 10x, 1.5% above 20x, 0.4% above 50x) falls off like a power law with an index of about 1.4, and cannot be represented with a ceiling of 20x. The cap of 200x is a round number that keeps sample means stable; with it, the index that leaves the class mean at the log-uniform value of 9.94x is about 1.55, close to the index those figures imply. The index is derived, not chosen: it moves if the cap or the class range does.",
+      "confidence": "low-medium; the cap is a judgement, the shape is supported by the distribution quoted above (whose band split is itself partly from memory)"
+    }
   }
 }

@@ -521,11 +521,16 @@ impl Migration<'_> {
                                 liquidity_hazard: 0.12,
                                 fail_prob: 0.5,
                                 exit_volatility: 1.0,
+                                exit_timing: ExitTiming::ConstantHazard,
+                                exit_size: ExitSize::Classes,
                             }
                         } else {
                             EquityCompany::Public {
                                 volatility: 0.45,
                                 beta: 1.3,
+                                tails: TailShape::Normal,
+                                ruin: StockRuin::Never,
+                                layoff_link: false,
                             }
                         },
                         unvested_value: (count * price).max(0.0),

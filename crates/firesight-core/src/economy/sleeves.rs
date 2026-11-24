@@ -420,7 +420,7 @@ impl Cycles {
 /// The fat-tailed single-stock factor for a monthly idiosyncratic volatility
 /// `sigma > 0`: mean exactly 1 and the standard deviation of the lognormal factor
 /// `lognormal` (already normalised) that it replaces.
-pub(super) fn fat_stock_shock(sigma: f64, lognormal: &ShockTable) -> ShockTable {
+pub(crate) fn fat_stock_shock(sigma: f64, lognormal: &ShockTable) -> ShockTable {
     let unit = sampler::student_t4();
     let max_log = math::ln(STOCK_SHOCK_MAX_FACTOR);
     let build = |s: f64| {

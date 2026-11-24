@@ -82,6 +82,8 @@ pub fn kitchen_sink() -> Profile {
                 liquidity_hazard: 0.2,
                 fail_prob: 0.4,
                 exit_volatility: 1.0,
+                exit_timing: ExitTiming::ConstantHazard,
+                exit_size: ExitSize::Classes,
             },
             unvested_value: 40_000.0,
             ..EquityGrant::default()
@@ -97,6 +99,8 @@ pub fn kitchen_sink() -> Profile {
             real_growth: 0.01,
             ends_at_retirement: false,
             solo_401k_fraction: 0.1,
+            failure: BusinessFailure::Never,
+            monthly_lumpiness: 0.0,
         }),
         end: Some(When::age(0, 72.0)),
         ..Income::default()

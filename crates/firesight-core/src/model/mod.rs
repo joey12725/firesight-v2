@@ -17,6 +17,7 @@
 mod accounts;
 mod asset_shapes;
 mod assumptions;
+mod business_equity;
 mod career_shape;
 mod debt;
 mod events;
@@ -35,6 +36,7 @@ mod uncertain;
 pub use accounts::*;
 pub use asset_shapes::*;
 pub use assumptions::*;
+pub use business_equity::*;
 pub use career_shape::*;
 pub use debt::*;
 pub use events::*;
