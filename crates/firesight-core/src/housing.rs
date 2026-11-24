@@ -255,6 +255,11 @@ pub struct PropertyModel {
     tax_rate: f64,
     insurance_rate: f64,
     maintenance_rate: f64,
+    /// The maintenance rate the household plans with (the funded test, the annual
+    /// budget). Equal to `maintenance_rate` unless part of the upkeep is drawn as
+    /// separate repair shocks (see [`PropertyModel::carve_out_maintenance`]): those
+    /// are still an expected cost of owning the home.
+    planned_maintenance_rate: f64,
     hoa_real: f64,
     /// `(1 + appreciation_vs_national)^(1/12)`.
     drift_monthly: f64,
@@ -428,6 +433,7 @@ impl PropertyModel {
             tax_rate: tax_rate.max(0.0),
             insurance_rate: insurance_rate.max(0.0),
             maintenance_rate: maintenance_rate.max(0.0),
+            planned_maintenance_rate: maintenance_rate.max(0.0),
             hoa_real: hoa_monthly.max(0.0),
             drift_monthly: 1.0 + math::annual_to_monthly(appreciation_vs_national.max(-0.99)),
             sigma_local_monthly: params.sigma_local_annual * scale / 12f64.sqrt(),
@@ -489,6 +495,17 @@ impl PropertyModel {
         model
     }
 
+    /// Lowers the maintenance rate paid on an owner-occupied home by `rate` of its
+    /// value a year, not below zero. Used when repairs are drawn as separate irregular
+    /// expenses (`spending.shocks = "detailed"`), so that they are not paid twice.
+    /// The rate the household plans with is left alone: the repairs still cost the
+    /// same on average, so the funded test must keep counting them.
+    pub(crate) fn carve_out_maintenance(&mut self, rate: f64) {
+        if matches!(self.usage, PropertyUse::Primary) {
+            self.maintenance_rate = (self.maintenance_rate - rate).max(0.0);
+        }
+    }
+
     /// Compiles the slot a `buy_home` event will fill.
     pub fn from_purchase(event: &BuyHome, default_tax_rate: f64, data: &Data) -> PropertyModel {
         let mut model = PropertyModel::build(
@@ -521,7 +538,7 @@ impl PropertyModel {
             return (0.0, 0.0, 0.0);
         }
         let operating = (state.assessed_value.max(state.value) * self.tax_rate
-            + state.value * (self.insurance_rate + self.maintenance_rate))
+            + state.value * (self.insurance_rate + self.planned_maintenance_rate))
             / 12.0
             + self.hoa_real * price_level;
         let mortgage = state.mortgage.map_or(0.0, |m| {

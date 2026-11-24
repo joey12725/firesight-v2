@@ -400,12 +400,13 @@ impl State {
         } else {
             1.0
         };
-        let essential = self.ess_real * price * living;
-        let discretionary = self.disc_real * price * living;
+        let (ess_f, disc_f, disc_keep) = self.sx_factors(plan, t, month);
+        let essential = self.ess_real * price * living * ess_f;
+        let discretionary = self.disc_real * price * living * disc_f;
         self.spend(YearSeries::SpendEssential, essential);
         self.pay(
             YearSeries::SpendDiscretionary,
-            discretionary * self.disc_mult,
+            discretionary * self.disc_mult * disc_keep,
         );
         self.planned += discretionary;
         if ti < self.kids_until {
@@ -507,6 +508,8 @@ impl State {
                 }
             }
         }
+        self.sx_vehicles(plan, t, price);
+        self.sx_shocks(plan, t, price);
 
         // 7. Housing.
         let home_national = econ.home_national[t];
@@ -1043,6 +1046,18 @@ impl State {
         retired: bool,
         retire_month: i32,
     ) -> (f64, f64, i32) {
+        self.budget_tallied(plan, t, retired, retire_month, None)
+    }
+
+    /// [`State::budget_as`], also adding each line to a per-category [`Tally`].
+    pub(crate) fn budget_tallied(
+        &self,
+        plan: &Plan,
+        t: usize,
+        retired: bool,
+        retire_month: i32,
+        mut tally: Option<&mut super::spendx::Tally>,
+    ) -> (f64, f64, i32) {
         let ti = t as i32;
         let years = (t / 12) as i32;
         let mut ess = 0.0;
@@ -1093,12 +1108,18 @@ impl State {
             }
             if item.essential {
                 ess += amount;
+                if let Some(tl) = tally.as_deref_mut() {
+                    tl.e[item.category.index()] += amount;
+                }
             } else {
                 disc += amount * self.creep;
+                if let Some(tl) = tally.as_deref_mut() {
+                    tl.d[item.category.index()] += amount * self.creep;
+                }
             }
         }
         if self.extra_rent > 0.0 {
-            ess += self.extra_rent
+            let extra = self.extra_rent
                 * plan
                     .rent_growth
                     .get(years as usize)
@@ -1107,6 +1128,10 @@ impl State {
                         math::powi(1.0 + Category::Rent.default_real_growth(), years)
                     })
                 * survivor_factor;
+            ess += extra;
+            if let Some(tl) = tally.as_mut() {
+                tl.e[Category::Rent.index()] += extra;
+            }
         }
         // Shocks add variance, not level: their expected cost comes out of the
         // baseline budget, discretionary lines first.
@@ -1122,7 +1147,14 @@ impl State {
 
     /// Recomputes the monthly budget.
     pub(crate) fn rebudget(&mut self, plan: &Plan, t: usize) {
-        let (ess, disc, next) = self.budget_as(plan, t, self.retired, self.retire_month);
+        let (ess, disc, next) = if plan.sx.tally {
+            let mut tally = super::spendx::Tally::default();
+            let r = self.budget_tallied(plan, t, self.retired, self.retire_month, Some(&mut tally));
+            self.sx.tally = tally;
+            r
+        } else {
+            self.budget_as(plan, t, self.retired, self.retire_month)
+        };
         self.ess_real = ess;
         self.disc_real = disc;
         // Real growth steps once a year, so look again at the next anniversary.

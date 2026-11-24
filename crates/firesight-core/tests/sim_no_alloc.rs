@@ -72,6 +72,7 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    profiles.push(spending_realism());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));
@@ -94,6 +95,28 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
             assert!(sink.years > 300 && sink.total.is_finite());
         }
     }
+}
+
+/// The example household with every opt-in spending realism feature on.
+fn spending_realism() -> Profile {
+    use firesight_core::model::*;
+    let mut p = Profile::example();
+    p.name = "spending realism".into();
+    p.assumptions.career_risk = true;
+    p.spending.vehicles = vec![Vehicle {
+        id: "car".into(),
+        name: "Car".into(),
+        price: 35_000.0,
+        replace_every_years: 8.0,
+        age_years: 5.0,
+        financing: Some(VehicleFinancing::default()),
+        ..Vehicle::default()
+    }];
+    p.spending.seasonality = Seasonality::Typical;
+    p.spending.category_inflation = CategoryInflation::Stochastic;
+    p.spending.shocks = ShockLevel::Detailed;
+    p.spending.unemployment_cut = 0.15;
+    p
 }
 
 /// A household with events, stresses, a rental and a partner who joins: the paths

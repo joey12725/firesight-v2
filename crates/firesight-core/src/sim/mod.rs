@@ -60,6 +60,7 @@ mod month;
 mod plan;
 mod preview;
 mod record;
+mod spendx;
 mod state;
 mod trigger;
 mod year;

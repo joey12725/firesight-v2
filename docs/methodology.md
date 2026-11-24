@@ -362,6 +362,183 @@ actually incurred (housing, health net of the premium credit, care, children, de
 service, one-off costs). It has exactly the scope of actual spending, so delivered
 and planned can be compared year by year.
 
+### Vehicle replacement cycles
+
+Opt-in through `spending.vehicles`. Without it, car costs are whatever the user put in
+a budget line: smooth. Each listed vehicle instead has a price in today's dollars, a
+replacement cycle, an age, a trade-in share and optional financing. The first
+replacement falls `replace_every_years - age_years` from now (at once if the vehicle is
+already older), later ones one cycle after the last, each shifted by a random jitter
+(normal, standard deviation six months, clipped at two standard deviations: a
+judgement, `REPLACEMENT_JITTER_SD_MONTHS`) so that paths do not all replace in the same
+month. The jitter does not accumulate: the schedule is fixed, each date is shifted
+alone. A replacement costs `price x (1 - trade_in)` in today's dollars, raised with
+the price level; vehicle prices are assumed to track CPI. Paid in cash it is one-off
+spending in that month. Financed, the down payment is one-off spending and the rest
+becomes a debt slot (the same mechanism as a financed `expense` event, an auto loan
+repaid by the ordinary debt payments, with interest; a later loan on the same vehicle
+takes back the payment the earlier one released to the extra debt payment). The jitter
+draws come from one stream per vehicle, one word per scheduled date whether or not the
+vehicle is still being replaced (after its `end` date or its owner's death the schedule
+runs on and nothing is bought), so a scenario that changes anything else sees the same
+replacement dates.
+
+The funded test counts the vehicles: each one still being replaced adds its net price
+spread over its cycle to the annual need (two cars at $38,000 every ten years and
+$32,000 every nine with a 25% trade-in: $5,517 a year, $138,000 of savings at a 4%
+rule), as a home's running costs do. Without that a household that retires when funded
+would stop work with the next cars unpaid for. Loan interest is not counted there.
+
+What the user must do: take the purchase and depreciation of these vehicles out of the
+Transport budget lines (keep fuel, insurance, maintenance). The validator warns when
+the average annual cost of the listed vehicles is more than half of the Transport lines.
+
+Measured (shipped `dual-income-family`, 3,000 paired paths, two cars: $38,000 every ten
+years, 4 years old; $32,000 every nine years, 6 years old, financed 90% at 7% over 60
+months; 25% trade-in; the existing transport line left as it is, so this is extra
+cost): the household retires when funded, so it pays for the cars by working longer,
+not by failing more often. Median retirement age 53.4 to 55.2 (+1.75 years), success
+91.8% to 91.9% (+0.1 points, 95% interval -0.5 to +0.7, within noise; 43 paths rescued,
+39 harmed), median terminal net worth $1.73 million to $1.79 million, median lifetime
+spending +$324,000 (today's dollars: the cars, and nearly two more working years at the
+working budget). With the retirement age fixed at 54 instead, the same cars cost 9.7
+points of success (77.1% to 67.4%, 95% interval -10.8 to -8.6; no path rescued, 291
+harmed) and $524,000 of median terminal net worth.
+
+Not modelled: depreciation and resale value beyond the trade-in share, vehicle prices
+moving differently from CPI, repair costs rising with vehicle age (the detailed
+shocks scale car repairs with the vehicles' cost but not their age), buying a car out
+of a loan balance still owed on the old one (a second loan simply adds to the first
+and the payment is recomputed), leasing.
+
+### Seasonal spending
+
+Opt-in through `spending.seasonality = "typical"`. Each category has twelve monthly
+weights, rescaled in code to average exactly 1, so a line's annual amount is unchanged
+and only its timing moves (utilities peak in winter and summer, dining and travel in
+summer, gifts and giving in December, flat categories such as rent stay even). Four
+categories are fitted to monthly, not seasonally adjusted national series, each month
+averaged over its calendar year's mean for 2010 to 2019 by
+`tools/calibrate_seasonality.py`: utilities to the Federal Reserve's G.17 output index
+of electric and gas utilities (January 1.16, April 0.87, July 1.10), groceries, dining
+and transport to US Census Bureau Monthly Retail Trade sales of grocery stores
+(December 1.06, February 0.91), food services and drinking places (January 0.91, May
+1.05) and gasoline stations (February 0.86, May 1.08), all retrieved from FRED. Each is
+a proxy for a household's line (energy delivered to all customers, fuel as a part of
+transport). Travel, education, entertainment, personal and giving are judgements, not
+fitted to data: the BLS Consumer Expenditure Survey publishes no monthly table (see
+`spending_realism.seasonality` in `params.json`). Seasonality acts on the monthly
+budget, so it matters for the month a cash shortfall or a withdrawal appears, not for
+the year's spending.
+
+Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.8%
+(6 paths rescued, 5 harmed), median retirement age unchanged, median terminal net worth
++$2,200 (0.1%), median lifetime spending -$4,700 (0.06%). As expected, it is a timing
+feature: the differences are the noise of which month a withdrawal falls in.
+
+Not modelled: seasonal income, regional or household-specific patterns, weights that
+vary with age or children.
+
+### Personal inflation by category
+
+Opt-in through `spending.category_inflation = "stochastic"`. Lines in the food, energy
+(utilities and transport), shelter (rent), medical and education groups carry a
+persistent price wedge against CPI: the log of the category's relative price level is an
+AR(1), `x_k = phi x_(k-1) + sigma z_k`, stepped each January from zero today, and the
+multiplier is `exp(x_k - Var(x_k)/2)`, so its expectation is exactly 1 in every year
+(it adds risk, not drift). `phi` and `sigma` are fitted to annual averages 1980 to 2024
+of the BLS CPI-U sub-indexes relative to all items (retrieved from FRED) by
+`tools/calibrate_category_inflation.py`; `phi` is capped at 0.95, a judgement, because
+the medical and education ratios are unit roots in this sample. Each group uses its own
+standard normal draws from a new stream (`CategoryPrices`) with a fixed number of draws
+per year, so paired comparisons stay paired. The category's long-run real growth stays
+separate. The draws are not truncated (the limit of 8.5 sd in the code is beyond what the
+generator can produce and only guards its last value). The wedge acts on the budget
+lines; the modelled healthcare costs, children's costs and owned-home costs keep their
+own price paths.
+
+Measured (shipped `dual-income-family`, 3,000 paired paths): success 91.8% to 91.5%
+(-0.3 points, 95% interval -0.6 to +0.1, within noise; 11 paths rescued, 19 harmed),
+median terminal net worth -$2,600, 10th percentile -$10,400, median lifetime spending
+-$2,400. The medians barely move because the wedge is mean-preserving; what it adds is
+risk in the paths where the household's own prices run ahead of CPI for years.
+
+Not modelled: correlation of the wedges with each other or with CPI and market returns,
+and a wedge that differs by region.
+
+### Richer irregular expenses
+
+Opt-in through `spending.shocks = "detailed"`. Four independent compound-Poisson shock
+types fire monthly: home repair (scaled with the value of owned primary homes: 0.4 a
+year, median 0.5% of value), car repair (scaled with Transport spending plus the
+vehicles' annual cost: 0.4 a year, median 8%), medical-adjacent (0.16 a year, median 2%
+of annual spending) and family emergency (0.12 a year, median 3%). Sizes are lognormal
+(sigma 0.9 to 1.2, capped at 3.5 sd), so the tail is heavy. A shared excitement term
+rises with every shock and halves every 12 months, so a bad year raises the hazard of
+another (Hawkes-style clustering), scaled so the long-run frequency is unchanged.
+Medical frequency and size are anchored on the JP Morgan Chase Institute (2017) figures
+used for the other levels (16% of families a year, median $1,143); the car repair size on
+the same source ($953 median); home repair, family emergency and the clustering are
+judgements (see `spending_realism.detailed_shocks`).
+
+Like the other levels, the detailed level adds variance, not cost. The expected annual
+cost of the car, medical and family types at the start is netted out of the budget.
+Home repairs cannot be netted there, because owned-home costs are computed from the
+property: their expected cost (0.4 x 0.5% x exp(1.1^2 / 2) = 0.366% of the home's value
+a year) is taken out of the `maintenance_rate` paid on an owner-occupied home, not
+below zero (the validator warns when the rate is too low to absorb it). The household
+still plans with the full maintenance rate: the funded test and the annual budget count
+the repairs as an expected cost of the home, as they did before the repairs became
+random. Whether a type fires, and the excitement it adds, depend on the random draws
+alone: a household with no home still has its "home repair" months, they cost nothing,
+so every other shock keeps its date and its frequency whatever the household owns.
+The excitement starts at its long-run mean, so the frequency is the calibrated one
+from the first month.
+
+Measured (shipped `dual-income-family`, which buys a home, 3,000 paired paths, against
+the `typical` level it ships with): success 91.8% to 91.4% (-0.3 points, 95% interval
+-0.7 to +0.1, within noise; 14 paths rescued, 24 harmed), median retirement age
+unchanged, median terminal net worth +$29,000, 10th percentile +$12,000, median
+lifetime spending -$8,100. Against shocks off, in a test with the retirement age fixed
+(1,500 paths), mean lifetime spending on the budget and housing falls by $194,000 and
+the shocks drawn cost $178,000: mean-neutral to within 8%, the shocks costing slightly
+less than what is netted (the 3.5 sd cap, the medical and family types being sized from
+the budget after netting, and the netted share being fixed at the start). The typical level nets 2.1% of the
+budget lines; the detailed one nets about as much for this household ($52,000 over the
+plan in both cases) plus the home repairs out of maintenance, so the two differ mostly
+in shape: a heavier tail, repairs that scale with the home, and bad years that come
+together. The medical-adjacent type sits beside the healthcare module's own
+out-of-pocket costs; being netted from the budget it adds variance there, not level.
+
+Not modelled: shocks that depend on the age of the home or car, insurance
+reimbursement, and shocks to rental property (landlord repairs use the property's own
+maintenance rate).
+
+### Belt-tightening when unemployed
+
+Opt-in through `spending.unemployment_cut` (0 by default). While an earner is in an
+unemployment spell, discretionary spending is multiplied by `1 - cut`, phasing in
+linearly over three months and unwinding over three months after re-employment (the
+phase length is a judgement, `UNEMPLOYMENT_CUT_PHASE_MONTHS`). Essential spending is
+untouched. Suggested value 0.15: Ganong and Noel (2019, AER) find nondurable spending
+falls about 6% at the onset of unemployment and further when benefits end; with
+discretionary lines about half the budget, 6% to 12% of total spending is 0.1 to 0.25 of
+them. The trace logs when the cut starts and when it lifts.
+
+Measured (shipped `dual-income-family`, cut 0.15, 3,000 paired paths): success 91.8% to
+91.5% (-0.2 points, 95% interval -0.4 to 0.0; 2 paths rescued, 9 harmed), median
+terminal net worth +$5,800, 10th percentile +$9,000, median lifetime spending -$7,700.
+Spells are short with the typical career risk, so the effect is small; it grows with a
+high layoff risk and a thin cushion. The cut does not raise success here: this
+household retires when funded and spends by guardrails, so the money saved in a spell
+changes later decisions (a retirement date, a guardrail raise) and a few marginal paths
+end on the other side. With the retirement age fixed at 54 the same comparison gives 7
+rescued and 7 harmed; in a test household with a fixed budget and retirement age no path
+ends poorer.
+
+Not modelled: a cut that deepens when benefits run out, durable goods deferred during
+a spell, and a cut for a partner's spell that differs from the earner's own.
+
 ### Children
 
 USDA expenditure estimates by age band and income tier (2015 dollars brought to

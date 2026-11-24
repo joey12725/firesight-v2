@@ -756,3 +756,36 @@ fn equity_is_value_less_debt() {
     p.owned = false;
     assert_eq!(p.equity(), 0.0);
 }
+
+#[test]
+fn carved_out_repairs_leave_the_planned_upkeep_alone() {
+    // A 600,000 home: tax 1.2%, insurance 0.5%, maintenance 1%. Carving 0.4% of value
+    // out of maintenance (repairs drawn as separate shocks) lowers what is paid each
+    // month to 0.6% of value, 300 a month, but the household still plans with the
+    // full 1%: tax 600 + insurance 250 + maintenance 500 = 1,350 a month.
+    let mut m = PropertyModel::from_property(&home(600_000.0, None), 0.01, data());
+    let s0 = m.initial_state();
+    let before = m.expected_month(&s0, 1.0);
+    close(before.0, 1_350.0, 1e-9);
+    m.carve_out_maintenance(0.004);
+    assert_eq!(m.expected_month(&s0, 1.0), before);
+    let mut s = m.initial_state();
+    let f = m.step(&mut s, 0.0, 1.0, &mut rng(3));
+    close(f.maintenance, 300.0, 1e-9);
+    // Never below zero, and rentals are untouched.
+    m.carve_out_maintenance(0.05);
+    let mut s = m.initial_state();
+    close(
+        m.step(&mut s, 0.0, 1.0, &mut rng(3)).maintenance,
+        0.0,
+        1e-12,
+    );
+    let mut r = PropertyModel::from_property(&rental(terms()), 0.01, data());
+    r.carve_out_maintenance(0.004);
+    let mut s = r.initial_state();
+    close(
+        r.step(&mut s, 0.0, 1.0, &mut rng(3)).maintenance,
+        250.0,
+        1e-9,
+    );
+}
