@@ -307,6 +307,8 @@ pub(crate) struct State {
     pub market_notes: super::market_notes::MarketNotes,
     /// Behaviour features (`sim/behavior`).
     pub beh: super::behavior::BehaviorState,
+    // Household dynamics (`sim/dynamics`).
+    pub dynamics: super::dynamics::DynamicsState,
 }
 
 impl State {
@@ -499,6 +501,7 @@ impl State {
             care: super::care::CareState::default(),
             market_notes: Default::default(),
             beh: super::behavior::BehaviorState::default(),
+            dynamics: super::dynamics::DynamicsState::default(),
         }
     }
 
@@ -834,6 +837,7 @@ impl State {
         // the funded test before the first annual plan, and would otherwise read
         // whatever the previous path in this workspace left behind.
         self.init_first_year(plan);
+        self.begin_dynamics(plan, seed, path);
     }
 
     /// Applies one stress overlay if its date is known. `at_retirement` is true when

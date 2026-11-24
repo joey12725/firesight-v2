@@ -1663,6 +1663,60 @@ life/LTC policies, partnership policies' Medicaid asset protection, shared pools
 for couples, benefits that depend on the care setting, a restoration of benefits,
 and the tax deduction of premiums.
 
+### Spousal caregiving
+
+Opt-in with `spending.healthcare.spousal_care: true` (a couple with long-term care
+on). While one partner is in paid care at home and the other is in the household,
+not in a facility and not in care themselves, the other partner provides half of
+the hours and the bill is halved (`SPOUSAL_CARE_SHARE`, a judgement: spouses are
+the main unpaid caregivers of married people and married people at home use fewer
+paid hours, but no source gives the share replaced). Assisted living and nursing
+homes are unaffected. When the episode begins, a partner who still has a job cuts
+to half time for its length with probability 15% or stops working with
+probability 11% (6% quit and 5% retire early: AARP and the National Alliance for
+Caregiving, Caregiving in the U.S. 2020, as reported by Next Avenue and not
+checked against the report's tables; those figures are for all working family
+caregivers, not spouses only). The choice is one draw per person on a stream of
+its own, made on every path.
+
+Measured on the dual-income example (4,000 paired paths): mean lifetime care cost
+falls from $464k to $436k (6%), success rises from 91.5% to 92.0%, the median
+terminal net worth by $36k and the tenth percentile from $104k to $152k. This
+couple retires in its fifties, so the work-reduction branch never fires there.
+
+Not modelled: the caregiver's own health (caregiving strain), care by children,
+the partner's time when they are themselves old and frail beyond being in care,
+and any limit on how many hours one person can provide.
+
+### Caring for a parent
+
+Opt-in per parent with `care_support` (section 10 describes the parents). The
+care spell is the parent's paid long-term care at the end of life, drawn as for
+the household's own people. With `probability` (drawn once per path on the
+parent's own stream) the household takes part: it pays `annual_cost` a year
+toward the care (in today's dollars, rising with excess medical inflation, never
+more than the care costs; the estate pays the rest, so the inheritance is that
+much larger), and the caregiver (the parent's child unless stated) works
+`hours` less for the length of the spell: their pay, their workplace
+contributions and their Social Security record fall by that share, and they
+return to the job at the end. The household takes part only while the parent's
+child is in it (not before a partner joins, after a divorce or after the child's
+death). A reference figure: family caregivers spend $7,242
+a year out of pocket on average (AARP, Caregiving Out-of-Pocket Costs Study,
+2021).
+
+Measured on the dual-income example (4,000 paired paths) with Daniel's father, 80,
+leaving nothing: paying $7,242 a year and Daniel working half time while his
+father is in care lowers the median terminal net worth by $10,000 and the tenth
+percentile by $17,000; success is unchanged within noise (91.5% to 91.3%). Paid
+care happens on about half of paths and lasts a median of under two years, so
+the cost is modest on average and concentrated on a few paths.
+
+Not modelled: unpaid care before or without paid care (most family care is of
+this kind), a caregiver's self-employment, the chance that a caregiver does not
+return to work or comes back at lower pay, and caregiving for anyone other than
+a listed parent.
+
 ## 8. Housing and debt
 
 A property has a value that follows the national index times a local random walk
@@ -2167,6 +2221,136 @@ the paper's differences by place and over time (life expectancy at the top rose
 faster in 2001-2014), the gradient's narrowing at old ages beyond what a
 proportional shift gives, and any link between income and the health states'
 prevalence.
+
+### Divorce
+
+Opt-in, two ways: a `divorce` life event (a date, a probability, timing
+uncertainty, like any event) or `household.divorce_risk: typical`, which draws a
+divorce date on each path from its own random stream. The hazard reproduces the
+NCHS figures for first marriages, 20% ended by separation or divorce within 5
+years, 33% within 10 and 43% within 15 (Bramlett and Mosher 2001), with a
+constant hazard inside each band; after 15 years it is 1% a year while the first
+person is under 65 (Brown and Lin 2012 report 10 divorces per 1,000 married people
+over 50 in 2010; applying it to younger long marriages is a judgement) and 0.6%
+from 65 (NCFMR, Carlson 2021: about 6 per 1,000 married people aged 65 and over in
+2019). The marriage
+date `household.married` sets where on that curve the couple starts.
+
+At the divorce the second person leaves with `asset_split` (default half) of the
+net worth, taken out of cash and invested accounts in proportion, with basis
+carried over (a transfer incident to divorce is not taxed); if the first person
+keeps the home (`keeps_home`, the default) the partner's share of its equity
+comes out of savings, otherwise the home is sold and the household rents. The
+partner's jobs, pensions, own budget lines and health costs stop being the
+household's; shared lines are multiplied by `spending_factor` (default 0.7, between
+the OECD square-root and modified equivalence scales, so two households cost 1.4
+times one); legal costs ($11,300 by default, the average attorney fees with a
+full-scope lawyer in the 2019 Martindale-Nolo survey) are paid; support is paid
+(essential spending) or received (untaxed) for its term. The year of separation
+is filed jointly and the following years single or head of household. After a
+marriage of ten years or more the first person keeps the spousal benefit on the
+former partner's frozen record and the survivor benefit when the former partner
+dies; after a shorter one both are lost. The path ends when the first person
+dies.
+
+Measured on the dual-income example (married in June 2019, 4,000 paired paths):
+success falls from 91.5% to 84.0%, the FI rate from 96.4% to 81.5%, the median
+terminal net worth from $1.73 million to $1.25 million. Setting only the marriage
+date changes nothing.
+
+Not modelled: remarriage, the departing partner's later life (they are no longer
+followed), custody arrangements (children stay with the first person), alimony
+indexation, the exact divorced-spouse rules (benefits on the former partner's
+record need them to have claimed; their record is frozen at the divorce, which
+understates it), the partner's income after the separation on that year's joint
+return, and the fact that divorce risk differs with age at marriage, education and
+previous marriages.
+
+### Parents and inheritance
+
+Opt-in through `household.parents` (up to four). Each parent's month of death is
+drawn from the same SSA life table as the household's own people (for their age,
+sex and health, with mortality improvement), on a random stream of their own, so
+the household's paths are paired with and without them. Their late-life paid care
+is drawn with the household's own care model (probability by sex and age at
+death, length, type; section 7) and, by default, paid out of the estate before
+anything is left: the household receives `share` of what remains of `estate`,
+which is held constant in real terms until then (a judgement: the parent's own
+spending and returns are not modelled). Nothing comes from the parents of a
+partner who has left in a divorce or has not yet joined; after the child's death
+it goes to the partner who stays. An inherited IRA keeps its dollar value when
+accounts are merged (a divorce's rollover, a death).
+
+The `inherited_ira_fraction` of the inheritance is an inherited IRA. It is put in
+the heir's traditional account and paid out each December of the ten years after
+the death, each time the balance divided by the years left, as ordinary income
+with no penalty at any age (SECURE Act of 2019, IRC 401(a)(9)(H): a beneficiary
+who is not a spouse empties the account by the end of the tenth year; spreading it
+evenly is the usual way to keep the brackets low and is a judgement about the
+household's behaviour). The rest arrives as cash, untaxed (IRC 102) and with its
+basis stepped up to its value (IRC 1014), so it carries no gain.
+
+Measured on the dual-income example (4,000 paired paths) with two parents of 68
+and 71 leaving $500k and $400k, half to the household, 40% in IRAs: success rises
+from 91.5% to 93.2%, the median terminal net worth by $306k and the tenth
+percentile from $104k to $301k. With care not charged to the estates: 94.1% and
+$430k, so the parents' care takes about 30% of the expected inheritance.
+
+Not modelled: estate and inheritance taxes (the federal exemption is far above
+typical estates; a few states tax heirs), the parent's own spending, returns and
+gifts during life, Medicaid spend-down rules, the annual required distributions
+of an IRA whose owner had already begun them (the ten-year schedule here pays at
+least as fast after the first year), the separate-property treatment of an
+inheritance in a divorce (it is split with everything else), and the household
+anticipating the inheritance: the funded test and the spending rules do not
+count it until it arrives.
+
+### Life insurance
+
+Opt-in per person: `life_insurance` lists policies on that person's life, each a
+term policy with `years_remaining` or a permanent one, with a death benefit and an
+annual premium, both level in nominal dollars as written policies are (they are not
+indexed, so inflation erodes them). Nothing is drawn: a policy follows the deaths
+already on the path, so it adds no random stream and a profile with and without it
+is compared on the same lives. While a policy is in force its premium is essential
+spending, paid monthly and expected by the year's plan. It ends at the first of:
+the end of the term; the insured's death within the term, when the benefit is paid
+into the household's cash, untaxed (IRC 101(a)) and recorded as other income; the
+insured leaving the household in a divorce (the policy goes with them); or the
+first month the household has run out of savings, when the premium cannot be paid
+and the policy lapses for good. When the insured is the last to die, the benefit is
+paid in the path's final month and so is part of the estate counted against the
+bequest target and of the terminal net worth. A person who joins the household
+later pays nothing on a policy before joining and a death before joining pays the
+household nothing. Market prices for checking inputs: about $264 a year for a
+$500,000 20-year term policy for a healthy 30-year-old (Policygenius 2024); the
+validator warns when a premium exceeds 10% of the benefit a year (a judgement: a
+likely typing error) and when a term exceeds 40 years.
+
+The funded test (section 11) counts the premiums: those of
+a permanent policy as a cost for life, those left on a term policy as a lump, at
+today's prices without discounting. Support still owed after a divorce is counted
+the same way.
+
+Measured on the dual-income example (4,000 paired paths, seed 1) with a $1 million
+20-year term policy on each partner at $800 a year: success 91.5% to 91.5%, the FI
+rate from 96.4% to 97.8% (an early death no longer stops the survivor reaching
+independence), the median terminal net worth from $1.73 million to $1.81 million
+and the tenth percentile from $104k to $124k. With a $250,000 permanent policy on
+each at $3,000 a year instead: the funded test asks for more, so the median
+retirement age rises from 53.4 to 54.5 and the FI rate falls from 96.4% to 95.2%;
+success rises to 92.8%, the median terminal net worth to $1.96 million and the
+tenth percentile to $247k (working longer, and the last death pays $250,000 into
+the estate).
+
+Not modelled: cash value of permanent policies (loans, surrender, dividends),
+premiums that rise at renewal or with age (term premiums here are level for the
+whole term; annually renewable term is not represented), underwriting and the
+contestability and suicide clauses, employer group life that ends with the job,
+conversion of term to permanent cover, the policy owner being someone other than
+the insured, and estate tax on large benefits. A lapse is only for running out of
+savings: a household that drops a policy because it no longer needs it should end
+the term there.
 
 ## 11. When retirement happens
 

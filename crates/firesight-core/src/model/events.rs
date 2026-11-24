@@ -6,8 +6,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Assessment, Category, InsuranceGrowth, MaintenanceModel, MortgageKind, Property, PropertyUse,
-    When,
+    Assessment, Category, DivorceTerms, InsuranceGrowth, MaintenanceModel, MortgageKind, Property,
+    PropertyUse, When,
 };
 
 /// Something that happens once at a point in the plan: a purchase, a move, a windfall,
@@ -103,6 +103,9 @@ pub enum EventKind {
         /// New share of salary contributed (0.15 = 15%).
         employee_fraction: f64,
     },
+    /// The couple divorces: the second person leaves the household with their share
+    /// of the assets and their own income, and the plan continues for the first.
+    Divorce(DivorceTerms),
 }
 
 impl Default for EventKind {

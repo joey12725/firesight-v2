@@ -342,7 +342,10 @@ impl State {
             // does not know when it ends.
             let h = &self.health[i];
             if (t as u32) >= h.ltc_start_month && (t as u32) < h.ltc_end_month {
-                let care = h.ltc_monthly_cost * plan.health.excess_growth(t as u32) * price;
+                let mut care = h.ltc_monthly_cost * plan.health.excess_growth(t as u32) * price;
+                if plan.dynamics.spousal_care {
+                    care *= self.spousal_care_factor(i, t);
+                }
                 r.health += care;
                 r.medical += care;
                 r.care = true;
@@ -363,6 +366,9 @@ impl State {
         }
         if (t as i32) < self.kids_until {
             r.children = self.children_cost(plan, t) * price;
+        }
+        if plan.dynamics.active {
+            r.debt += self.dynamics_run_rate(plan, t, price);
         }
         for d in &self.debts {
             if d.balance > 0.0 {
@@ -461,7 +467,8 @@ impl State {
         let price = econ.price_level[t];
         // Social Security records and benefits for the year just ended.
         for i in 0..self.n {
-            if !self.alive[i] {
+            // A former partner's record is frozen when they leave.
+            if !self.alive[i] || self.dynamics.left[i] {
                 continue;
             }
             if matches!(

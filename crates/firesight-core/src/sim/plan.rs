@@ -342,6 +342,7 @@ pub(crate) enum EvKind {
         job: Option<usize>,
         fraction: f64,
     },
+    Divorce(crate::model::DivorceTerms),
 }
 
 /// A compiled life event.
@@ -505,6 +506,8 @@ pub struct Plan {
     pub(crate) care: super::care::CarePlan,
     /// Behaviour features (`sim/behavior`), all off by default.
     pub(crate) beh: super::behavior::BehaviorPlan,
+    /// Household dynamics: divorce, parents, caregiving, life insurance.
+    pub(crate) dynamics: super::dynamics::DynamicsPlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -1095,6 +1098,7 @@ impl Plan {
                     }),
                     fraction: employee_fraction.clamp(0.0, 1.0),
                 },
+                EventKind::Divorce(terms) => EvKind::Divorce(*terms),
             };
             events.push(EventPlan {
                 name: if event.name.is_empty() {
@@ -1372,6 +1376,7 @@ impl Plan {
             hd,
             care,
             beh,
+            dynamics: super::dynamics::DynamicsPlan::compile(profile, data, start, n),
         })
     }
 

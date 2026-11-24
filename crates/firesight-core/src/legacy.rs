@@ -339,6 +339,7 @@ impl Migration<'_> {
             people,
             children,
             location,
+            ..Household::default()
         };
     }
 

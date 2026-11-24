@@ -155,6 +155,7 @@ fn early_career_saver(start: YearMonth) -> Profile {
                 city: Some("Denver".into()),
                 ..Location::default()
             },
+            ..Household::default()
         },
         incomes: vec![job],
         spending: Spending {
@@ -387,6 +388,7 @@ fn dual_income_family(start: YearMonth) -> Profile {
                 city: Some("Austin".into()),
                 ..Location::default()
             },
+            ..Household::default()
         },
         incomes: vec![pm_job, nurse_job],
         spending: Spending {
@@ -670,6 +672,7 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
                 city: Some("Tampa".into()),
                 ..Location::default()
             },
+            ..Household::default()
         },
         incomes: vec![job, delivery, consulting],
         spending: Spending {

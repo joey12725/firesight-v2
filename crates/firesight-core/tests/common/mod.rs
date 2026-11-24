@@ -253,3 +253,85 @@ pub fn overspending(mut p: Profile, factor: f64) -> Profile {
     }
     p
 }
+
+/// The dual-income demo with every household-dynamics feature switched on
+/// (divorce risk and a divorce event, parents with estates and care, spousal
+/// caregiving, life insurance), for the conservation and finite-value tests.
+pub fn household_dynamics() -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    p.household.married = Some(START - 48);
+    p.household.divorce_risk = DivorceRisk::Typical(DivorceTerms {
+        keeps_home: false,
+        support: Support {
+            annual: 9_000.0,
+            years: 4.0,
+            direction: SupportDirection::Receives,
+        },
+        ..DivorceTerms::default()
+    });
+    p.events.push(LifeEvent {
+        id: "divorce".into(),
+        name: "Divorce".into(),
+        when: When::date(START + 200),
+        probability: 0.3,
+        kind: EventKind::Divorce(DivorceTerms {
+            support: Support {
+                annual: 15_000.0,
+                years: 6.0,
+                direction: SupportDirection::Pays,
+            },
+            ..DivorceTerms::default()
+        }),
+        ..LifeEvent::default()
+    });
+    p.spending.healthcare.spousal_care = true;
+    p.household.parents = vec![
+        Parent {
+            id: "mom".into(),
+            child: 0,
+            birth: START - 74 * 12,
+            sex: Sex::Female,
+            estate: 450_000.0,
+            share: 0.5,
+            inherited_ira_fraction: 0.5,
+            ..Parent::default()
+        },
+        Parent {
+            id: "dad_in_law".into(),
+            child: 1,
+            birth: START - 79 * 12,
+            sex: Sex::Male,
+            estate: 300_000.0,
+            share: 1.0,
+            inherited_ira_fraction: 0.3,
+            care_support: Some(CareSupport {
+                probability: 0.6,
+                annual_cost: 7_242.0,
+                hours: 0.5,
+                caregiver: None,
+            }),
+            ..Parent::default()
+        },
+    ];
+    p.household.people[0].life_insurance = vec![LifePolicy {
+        id: "term".into(),
+        name: "Term life".into(),
+        kind: PolicyKind::Term {
+            years_remaining: 15.0,
+        },
+        death_benefit: 1_000_000.0,
+        annual_premium: 1_100.0,
+    }];
+    p.household.people[1].life_insurance = vec![LifePolicy {
+        id: "whole".into(),
+        name: "Whole life".into(),
+        kind: PolicyKind::Permanent,
+        death_benefit: 250_000.0,
+        annual_premium: 3_000.0,
+    }];
+    p
+}

@@ -120,6 +120,7 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .collect();
     profiles.extend(with_care);
     profiles.extend(behavior_profiles::behavior_profiles());
+    profiles.push(common::household_dynamics());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

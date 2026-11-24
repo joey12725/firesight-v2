@@ -32,7 +32,8 @@ the optional LLM proxy.
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
   Shocks, Housing(property), Events, Vehicle(k), CategoryPrices, DetailedShocks,
   ChildArrival(child), CollegePrices, ChildCollege(child), ChildSupport(child),
-  Maintenance(property), InsuranceDrift, RentMarket, Liquidity, MarketTails}` (the
+  Maintenance(property), InsuranceDrift, RentMarket, Liquidity, MarketTails, Divorce,
+  Parent(i), SpousalCare, ..}` (the
   housing realism streams Maintenance through Liquidity are drawn only when their
   option is on, and MarketTails only under the fat-tailed market model).
   Changing a decision in a scenario must not
@@ -78,14 +79,28 @@ Profile {
   simulation: SimulationSettings,
 }
 
-Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Location }
+Household { people: Vec<Person> (1..=2), children: Vec<Child>, location: Location,
+            married: Option<YearMonth>,              // marriage date: divorce hazard, ten-year Social Security rule
+            divorce_risk: Off | Typical(DivorceTerms),  // NCHS rates by length of marriage, own stream
+            parents: Vec<Parent> (0..=4) }
+Parent    { id, name, child: usize, birth, sex, health,    // lifetime from the life table, Stream::Parent(i)
+            estate (today's $), share (1.0), inherited_ira_fraction,  // IRA part paid out over 10 years
+            care_erodes_estate: bool (true),
+            care_support: Option<CareSupport> }
+CareSupport { probability (1.0), annual_cost, hours (0..1), caregiver: Option<usize> }  // during the parent's care spell
+DivorceTerms { asset_split (0.5), support: { annual, years, direction: Pays|Receives },
+               keeps_home (true), then_rent_monthly: Option<f64>, legal_costs (11_300),
+               spending_factor (0.7) }
 Person    { id, name, birth: YearMonth, sex: Female|Male|Unspecified,
             health: Excellent|Good|Average|Poor,     // scales mortality; default Good (0.85x)
             joins: Option<YearMonth>,               // future partner: not in household before this
             social_security: SocialSecurity,
             disability_risk: Off|Typical,           // opt-in long-term disability: ends work, pays SSDI (methodology 6.3)
             ltd_insurance: Option<LtdInsurance{ replacement (0..=1, default 0.6), to_age (default 65) }>,
-            ltc_insurance: Option<LtcInsurance> }      // None (default): no policy
+            ltc_insurance: Option<LtcInsurance>,       // None (default): no policy
+            life_insurance: Vec<LifePolicy> (0..=8 in all) }
+LifePolicy { id, name, kind: Term { years_remaining } | Permanent,
+             death_benefit, annual_premium }        // nominal, level; benefit tax-free to survivor or estate
 LtcInsurance { annual_premium, daily_benefit, benefit_years, elimination_days,   // start-of-plan dollars, level premium
                inflation_rider: None | Compound{rate},
                premium_increase_risk: bool (true) }    // class-wide increases from Stream::LtcPremiumRates; lapse when unaffordable
@@ -146,7 +161,8 @@ Spending { items: Vec<BudgetItem>,
                                     long_term_care: bool, quality: Bronze|Silver|Gold,
                                     cover_children: bool (false),            // children on the household plan
                                     children_coverage_end_age: f64 (26),
-                                    medicaid: bool (false) },  // spend-down, spousal allowances, estate recovery; medicaid_rate
+                                    medicaid: bool (false),  // spend-down, spousal allowances, estate recovery; medicaid_rate
+                                    spousal_care: bool (false) },   // partner provides half of home care
            survivor_factor: f64 (0.7),
            // Spending realism, all opt-in (defaults leave results bit-identical):
            vehicles: Vec<Vehicle>,                 // lumpy replacement purchases, empty by default
@@ -220,6 +236,7 @@ EventKind =
   CareerBreak { person, months, income_fraction }
   SpendingChange { target: Item{id} | Category{c} | All, change: Scale{x} | Set{x} }
   ContributionChange { income: id, employee_fraction }
+  Divorce(DivorceTerms)                            // the second person leaves the household
 
 RetirementPlan {
   trigger: AtAge{person, age} | AtDate{at}

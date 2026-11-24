@@ -59,6 +59,7 @@ mod behavior;
 mod care;
 mod cash_out;
 mod downsize;
+mod dynamics;
 mod events;
 mod family;
 mod housing_decisions;
@@ -138,8 +139,12 @@ pub fn run_path<R: Recorder>(
     } = workspace;
     state.begin(plan, seed, path_index, economy, detail, *check);
     recorder.begin_path(path_index);
-    for t in 0..state.months {
+    // A divorce can shorten the path (it ends when the person who stays dies),
+    // so the bound is read every month.
+    let mut t = 0;
+    while t < state.months {
         state.month(plan, economy, recorder, t);
+        t += 1;
     }
     state.finish(plan, economy, recorder);
 }

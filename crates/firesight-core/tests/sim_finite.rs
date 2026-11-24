@@ -265,3 +265,28 @@ fn household_behaviour_features_keep_every_number_finite() {
         }
     }
 }
+
+#[test]
+fn household_dynamics_are_finite() {
+    let plan = compile(&household_dynamics());
+    let mut rec = Checked {
+        inner: plan.new_accumulator(),
+        path: 0,
+        months: 0,
+    };
+    let mut ws = Workspace::new(&plan);
+    for i in 0..2000 {
+        sim::run_path(&plan, 17, i, &mut ws, &mut rec);
+    }
+    let summary = plan.summarize(&rec.inner);
+    let json = serde_json::to_string(&summary).unwrap();
+    assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
+    for i in 0..20 {
+        let trace = sim::trace_path(&plan, 17, i);
+        let json = serde_json::to_string(&trace).unwrap();
+        assert!(
+            !json.contains("NaN") && !json.contains("Infinity"),
+            "path {i}"
+        );
+    }
+}

@@ -73,6 +73,34 @@ fn constants_quoted_from_memory_match_the_data_file() {
     ] {
         assert_eq!(constant, num(&care[key]), "{key}");
     }
+    assert_eq!(
+        firesight_core::model::LATE_DIVORCE_RATE_UNDER_65,
+        num(&section["divorce_late_rate_under_65"]["value"])
+    );
+    assert_eq!(
+        firesight_core::model::DIVORCE_SPENDING_FACTOR,
+        num(&section["divorce_spending_factor"]["value"])
+    );
+    for (value, key) in [
+        (
+            firesight_core::model::SPOUSAL_CARE_SHARE,
+            "spousal_care_share",
+        ),
+        (
+            firesight_core::model::SPOUSAL_CARE_REDUCE_PROBABILITY,
+            "spousal_care_reduce_probability",
+        ),
+        (
+            firesight_core::model::SPOUSAL_CARE_STOP_PROBABILITY,
+            "spousal_care_stop_probability",
+        ),
+        (
+            firesight_core::model::SPOUSAL_CARE_HOURS_CUT,
+            "spousal_care_hours_cut",
+        ),
+    ] {
+        assert_eq!(value, num(&section[key]["value"]), "{key}");
+    }
 }
 
 /// The optional market refinements keep their sourced values and judgements in

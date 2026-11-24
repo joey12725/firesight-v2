@@ -134,6 +134,13 @@ pub struct Healthcare {
     /// recovers what it paid from the estate. National default rules; states vary.
     #[serde(skip_serializing_if = "is_false")]
     pub medicaid: bool,
+    /// True: when one partner needs paid care at home (a long-term care episode of
+    /// home care), the other partner, if at home and not in care themselves,
+    /// provides half of the hours, halving the bill, and a partner still working
+    /// may cut their hours or stop working (15% and 11% of working caregivers do,
+    /// AARP and NAC 2020). False (the default): all care is paid.
+    #[serde(skip_serializing_if = "is_false")]
+    pub spousal_care: bool,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -154,6 +161,7 @@ impl Default for Healthcare {
             cover_children: false,
             children_coverage_end_age: 26.0,
             medicaid: false,
+            spousal_care: false,
         }
     }
 }

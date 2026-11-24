@@ -78,9 +78,17 @@ impl State {
                 replan = true;
             }
         }
-        if self.n == 2 && self.alive[1] && !self.present[1] && ti >= plan.people[1].joins {
+        if self.n == 2
+            && self.alive[1]
+            && !self.present[1]
+            && ti >= plan.people[1].joins
+            && !self.dynamics.left[1]
+        {
             self.join(plan, econ.price_level[t], t);
             replan = true;
+        }
+        if plan.dynamics.active {
+            replan |= self.dynamics_month(plan, econ.price_level[t], t);
         }
         if !self.retired && ti >= self.retire_month {
             self.begin_retirement(plan, econ, t);
@@ -486,6 +494,11 @@ impl State {
             if !self.present[i] {
                 continue;
             }
+            // A partner caring at home lowers the bill itself, before any insurance
+            // benefit or Medicaid pays part of it.
+            if plan.dynamics.spousal_care && hm.long_term_care > 0.0 {
+                hm.long_term_care *= self.spousal_care_factor(i, t);
+            }
             if plan.care.active {
                 self.care_month(plan, i, t, price, &mut hm);
             }
@@ -502,9 +515,10 @@ impl State {
                 }
                 _ => {}
             }
-            if hm.long_term_care > 0.0 {
-                self.spend(YearSeries::SpendLongTermCare, hm.long_term_care);
-                self.ltc_real += hm.long_term_care / price;
+            let care = hm.long_term_care;
+            if care > 0.0 {
+                self.spend(YearSeries::SpendLongTermCare, care);
+                self.ltc_real += care / price;
             }
             self.in_facility[i] = hm.ltc_in_facility;
             if hm.ltc_started {
@@ -1166,11 +1180,11 @@ impl State {
         let mut ess = 0.0;
         let mut disc = 0.0;
         let mut next = i32::MAX;
-        let survivor_factor = if self.survivor {
+        let survivor_factor = (if self.survivor {
             plan.profile.spending.survivor_factor
         } else {
             1.0
-        };
+        }) * self.dynamics.shared_factor;
         for (i, item) in plan.items.iter().enumerate() {
             let start = item.start.month(retire_month);
             let end = item.end.month(retire_month);

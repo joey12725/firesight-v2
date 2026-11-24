@@ -178,6 +178,11 @@ impl State {
             need += self.sx_vehicle_need(plan, ti, retire_month);
         }
         let mut lumps = 0.0;
+        if plan.dynamics.active {
+            let (annual, lump) = self.dynamics_requirement(plan, t, price);
+            need += annual;
+            lumps += lump;
+        }
 
         // Homes cost money to run for ever; their mortgages are a debt to clear.
         // A rental is income (possibly negative) that continues.

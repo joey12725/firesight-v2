@@ -4,7 +4,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::behavior::Claiming;
-use super::{AdultSupport, Arrival, CollegeCost, ParentalLeave, YearMonth};
+use super::{
+    AdultSupport, Arrival, CollegeCost, DivorceRisk, LifePolicy, Parent, ParentalLeave, YearMonth,
+};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -19,6 +21,24 @@ pub struct Household {
     /// Where the household lives at the start. Drives state tax, property tax defaults
     /// and health insurance prices.
     pub location: Location,
+    /// Month the couple married, as "YYYY-MM". Used by `divorce_risk` (the risk
+    /// depends on how long the marriage has lasted) and by the Social Security rule
+    /// that a marriage of ten years or more gives a divorced spouse benefits on the
+    /// former partner's record. Leave empty when not married or not relevant; a
+    /// divorce then counts the marriage from the plan's start (or the partner's
+    /// joining).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub married: Option<YearMonth>,
+    /// Risk that the couple divorces, drawn on each path from US divorce rates by
+    /// length of marriage. "off" (the default) models no divorce; a `divorce` event
+    /// can still schedule one.
+    #[serde(skip_serializing_if = "DivorceRisk::is_off")]
+    pub divorce_risk: DivorceRisk,
+    /// Parents (or other relatives) whose deaths leave the household an
+    /// inheritance. Empty (the default): inheritances are not modelled, except as
+    /// a `windfall` event.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parents: Vec<Parent>,
 }
 
 /// One adult in the household.
@@ -64,6 +84,9 @@ pub struct Person {
     /// none (the default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ltc_insurance: Option<super::LtcInsurance>,
+    /// Life insurance policies on this person's life. Empty (the default): none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub life_insurance: Vec<LifePolicy>,
 }
 
 /// Whether a long-term work-limiting disability is simulated.
@@ -115,6 +138,7 @@ impl Default for Person {
             disability_risk: DisabilityRisk::default(),
             ltd_insurance: None,
             ltc_insurance: None,
+            life_insurance: Vec::new(),
         }
     }
 }

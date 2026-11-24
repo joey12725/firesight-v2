@@ -126,6 +126,12 @@ pub enum Stream {
     /// Whether a funded household works one more year
     /// (`retirement.trigger.when_funded.one_more_year`).
     OneMoreYear,
+    /// When a couple with `divorce_risk` on divorces.
+    Divorce,
+    /// A parent's lifetime and late-life care (by parent index).
+    Parent(usize),
+    /// Whether a working partner cuts back to care for the other at home.
+    SpousalCare,
 }
 
 impl Stream {
@@ -143,6 +149,9 @@ impl Stream {
             Stream::MarketTails => 1800,
             Stream::PanicSelling => 1900,
             Stream::OneMoreYear => 1901,
+            Stream::Divorce => 2000,
+            Stream::SpousalCare => 2001,
+            Stream::Parent(i) => 0x1a00_0000 + i as u64,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
@@ -588,6 +597,10 @@ mod tests {
             Stream::ReturnToWork(1),
             Stream::PanicSelling,
             Stream::OneMoreYear,
+            Stream::Divorce,
+            Stream::Parent(0),
+            Stream::Parent(1),
+            Stream::SpousalCare,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

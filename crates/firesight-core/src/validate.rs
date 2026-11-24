@@ -21,6 +21,7 @@ use crate::model::*;
 
 mod behavior;
 mod care;
+mod dynamics;
 mod family;
 mod housing;
 mod housing_realism;
@@ -197,6 +198,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.properties_and_debts();
     c.events();
     c.housing_realism();
+    c.household_dynamics();
     c.retirement();
     c.housing_decisions();
     c.assumptions();
@@ -1444,6 +1446,7 @@ impl Checker<'_> {
                         1.0,
                     );
                 }
+                EventKind::Divorce(terms) => self.divorce_event(&k, terms),
             }
         }
     }
