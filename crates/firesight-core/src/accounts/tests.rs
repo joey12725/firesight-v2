@@ -1279,3 +1279,148 @@ fn identical_operations_give_identical_bits() {
     assert_eq!(x.investable().to_bits(), y.investable().to_bits());
     assert_eq!(x, y);
 }
+
+/// Every bit of every balance, for comparing two accounts exactly (`==` on
+/// `f64` does not tell +0.0 from -0.0).
+fn balance_bits(a: &Accounts) -> Vec<u64> {
+    let mut out = vec![a.cash.to_bits()];
+    out.extend(a.taxable.value.iter().chain(&a.taxable.basis).map(|v| v.to_bits()));
+    for p in &a.person {
+        let r = &p.roth;
+        let flat = p.traditional.iter().chain(&r.value).chain(&p.hsa);
+        out.extend(flat.chain(&r.unseasoned).map(|v| v.to_bits()));
+        out.extend([r.contribution_basis.to_bits(), r.seasoned_conversions.to_bits()]);
+    }
+    let y = &a.ytd;
+    let ytd = y.k401_employee.iter().chain(&y.k401_additions).chain(&y.ira);
+    out.extend(ytd.chain(&y.roth_ira).chain(&y.hsa).map(|v| v.to_bits()));
+    out
+}
+
+/// The shortcuts taken for idle asset classes and empty buckets change no bit:
+/// the same random operations on accounts whose masks are cleared before each
+/// one (so that every sum and loop runs in full) give the
+/// same balances and flows to the bit.
+#[test]
+fn idle_and_empty_shortcuts_change_no_bit() {
+    let limits = limits_2026();
+    for seed in 0..60 {
+        let mut rng = Rng::from_seed(5_000 + seed);
+        let mut fast = Accounts {
+            plain_mix: seed % 2 == 0,
+            ..Accounts::default()
+        };
+        // Every bucket is empty, and known to be.
+        fast.holdings_changed();
+        let mut slow = fast;
+        // Two targets per sequence, so that some asset classes stay idle.
+        let targets = [random_weights(&mut rng), random_weights(&mut rng)];
+        for step in 0..400 {
+            let target = targets[rng.below(2)];
+            slow.idle = 0;
+            slow.empty = 0;
+            let op = rng.below(12);
+            let (f, s) = match op {
+                0..=2 => {
+                    let bucket = random_bucket(&mut rng);
+                    let amount = rng.uniform_range(0.0, 20_000.0);
+                    fast.contribute(bucket, amount, &target);
+                    slow.contribute(bucket, amount, &target);
+                    (String::new(), String::new())
+                }
+                3 | 4 => {
+                    let bucket = random_bucket(&mut rng);
+                    let amount = fast.total(bucket) * rng.uniform_range(0.0, 1.3) + 1.0;
+                    let c = WithdrawContext {
+                        owner_age: rng.uniform_range(30.0, 90.0),
+                        qualified_medical: rng.uniform_range(0.0, 5_000.0),
+                        penalty_exempt: rng.bernoulli(0.2),
+                        prefer_overweight: rng.bernoulli(0.5).then_some(target),
+                    };
+                    let f = fast.withdraw(bucket, amount, &c);
+                    let s = slow.withdraw(bucket, amount, &c);
+                    (format!("{f:?}"), format!("{s:?}"))
+                }
+                5..=7 => {
+                    let mut r = [0.0; N_ASSETS];
+                    let mut y = [0.0; N_ASSETS];
+                    for i in 0..N_ASSETS {
+                        r[i] = rng.uniform_range(-0.2, 0.25);
+                        y[i] = rng.uniform_range(0.0, 0.05);
+                    }
+                    if rng.bernoulli(0.05) {
+                        r[rng.below(N_ASSETS)] = -1.2;
+                    }
+                    let cash = rng.uniform_range(0.0, 0.004);
+                    let (f, investable) = fast.apply_returns_investable(&r, cash, 0.0002, &y);
+                    assert_eq!(investable.to_bits(), fast.investable().to_bits());
+                    let s = slow.apply_returns(&r, cash, 0.0002, &y);
+                    (format!("{f:?}"), format!("{s:?}"))
+                }
+                8 => {
+                    if rng.bernoulli(0.3) {
+                        let f = fast.rebalance_sheltered(&target);
+                        let s = slow.rebalance_sheltered(&target);
+                        (format!("{f:?}"), format!("{s:?}"))
+                    } else {
+                        let location = if rng.bernoulli(0.5) {
+                            AssetLocation::Mirror
+                        } else {
+                            AssetLocation::TaxEfficient
+                        };
+                        let f = fast.rebalance_to(&target, location);
+                        let s = slow.rebalance_to(&target, location);
+                        (format!("{f:?}"), format!("{s:?}"))
+                    }
+                }
+                9 => {
+                    let surplus = rng.uniform_range(0.0, 30_000.0);
+                    let c = savings_ctx([saver(45.0), saver(56.0)]);
+                    let f = fast.save_surplus(surplus, &c, &target);
+                    let s = slow.save_surplus(surplus, &c, &target);
+                    (format!("{f:?}"), format!("{s:?}"))
+                }
+                10 => {
+                    let plan = EmployerPlan {
+                        roth_fraction: rng.uniform(),
+                        ..EmployerPlan::default()
+                    };
+                    let pay = PayPeriod {
+                        gross_pay: rng.uniform_range(0.0, 20_000.0),
+                        month: 1 + rng.below(12) as u32,
+                        age: 45.0,
+                    };
+                    let p = rng.below(2);
+                    let f = fast.payroll_deferral(p, &plan, &pay, &limits, &target);
+                    let s = slow.payroll_deferral(p, &plan, &pay, &limits, &target);
+                    (format!("{f:?}"), format!("{s:?}"))
+                }
+                _ => {
+                    if rng.bernoulli(0.3) {
+                        let d = rng.below(2);
+                        let survivor = rng.bernoulli(0.8).then_some(1 - d);
+                        fast.inherit(d, survivor);
+                        slow.inherit(d, survivor);
+                        (String::new(), String::new())
+                    } else {
+                        let p = rng.below(2);
+                        let amount = rng.uniform_range(0.0, 30_000.0);
+                        let f = fast.convert_to_roth(p, amount);
+                        let s = slow.convert_to_roth(p, amount);
+                        (format!("{f:?}"), format!("{s:?}"))
+                    }
+                }
+            };
+            assert_eq!(f, s, "seed {seed} step {step} op {op}: results differ");
+            assert_eq!(
+                balance_bits(&fast),
+                balance_bits(&slow),
+                "seed {seed} step {step} op {op}: balances differ"
+            );
+            if step % 50 == 49 {
+                fast.roll_year();
+                slow.roll_year();
+            }
+        }
+    }
+}

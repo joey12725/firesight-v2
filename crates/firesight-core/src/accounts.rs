@@ -252,6 +252,22 @@ pub struct Accounts {
     /// method that can put money into a class clears them. Code that writes
     /// holdings directly must call [`Accounts::holdings_changed`].
     pub(crate) idle: u16,
+    /// Tax-advantaged buckets known to be empty: bit `3 * p + k` set means every
+    /// holding of person `p`'s bucket `k` (0 traditional, 1 Roth, 2 HSA) is
+    /// exactly +0.0. A single person's household, or a partner without an HSA,
+    /// keeps whole buckets empty for the whole path, and the monthly return step
+    /// skips them. Conservative like `idle`, and kept where buckets fill and
+    /// empty rather than found by looking: set by [`Accounts::from_profile`] and
+    /// when a bucket is emptied in full, cleared by every method that can put
+    /// money into a bucket (and by [`Accounts::holdings_changed`]).
+    pub(crate) empty: u8,
+}
+
+/// The bit of person `p`'s bucket `k` (0 traditional, 1 Roth, 2 HSA) in
+/// [`Accounts::empty`].
+#[inline(always)]
+const fn empty_bit(p: usize, k: usize) -> u8 {
+    1 << (3 * p + k)
 }
 
 /// Blended interest terms of the pooled cash bucket, fixed at compile time from the
@@ -651,18 +667,22 @@ fn retarget(h: &mut Holdings, new: &Holdings) -> f64 {
 /// The per-holding part of [`Accounts::apply_returns`] for the first `N` asset
 /// classes (the rest are idle): applies growth and fees, distributes the taxable
 /// bucket's income, adds fees and the change in value to `inc`, and records which
-/// classes are still held.
+/// classes are still held. The person buckets in `skip` are empty and passed
+/// over. Returns the value of the taxable, traditional, Roth and HSA buckets
+/// afterwards, summed exactly as [`Accounts::by_kind`] sums them.
 #[inline(always)]
 fn grow<const N: usize>(
     acc: &mut Accounts,
     keep: &[f64; N_ASSETS],
     fee: &[f64; N_ASSETS],
     yields: &[f64; N_ASSETS],
+    skip: u8,
     inc: &mut InvestmentIncome,
-) {
+) -> [f64; 4] {
     let mut fees = [0.0; N_ASSETS];
     let mut change = [0.0; N_ASSETS];
     let mut held = [false; N_ASSETS];
+    let mut taxable = 0.0;
     for i in 0..N {
         let v = acc.taxable.value[i];
         let new = v * keep[i];
@@ -677,9 +697,19 @@ fn grow<const N: usize>(
         fees[i] = v * fee[i];
         change[i] = new - v;
         held[i] = new != 0.0 || acc.taxable.basis[i] != 0.0;
+        taxable += new;
     }
-    for p in &mut acc.person {
-        for h in [&mut p.traditional, &mut p.roth.value, &mut p.hsa] {
+    let mut kinds = [0.0; 3];
+    for (p, pa) in acc.person.iter_mut().enumerate() {
+        for (k, h) in [&mut pa.traditional, &mut pa.roth.value, &mut pa.hsa]
+            .into_iter()
+            .enumerate()
+        {
+            if skip & empty_bit(p, k) != 0 {
+                debug_assert!(h.iter().all(|v| v.to_bits() == 0), "an empty bucket is held");
+                continue;
+            }
+            let mut total = 0.0;
             for i in 0..N {
                 let v = h[i];
                 let new = v * keep[i];
@@ -687,7 +717,9 @@ fn grow<const N: usize>(
                 fees[i] += v * fee[i];
                 change[i] += new - v;
                 held[i] |= new != 0.0;
+                total += new;
             }
+            kinds[k] += total;
         }
     }
     let mut idle = ALL_ASSETS;
@@ -703,6 +735,7 @@ fn grow<const N: usize>(
         inc.fees += fees[i];
         inc.net_change += change[i];
     }
+    [taxable, kinds[0], kinds[1], kinds[2]]
 }
 
 impl TaxableBucket {
@@ -754,10 +787,11 @@ impl TaxableBucket {
 }
 
 impl RothBucket {
-    /// Contributions plus seasoned conversions, capped at the bucket's value.
-    fn accessible(&self) -> f64 {
+    /// Contributions plus seasoned conversions, capped at the bucket's value
+    /// (summed over the classes not in `idle`, see [`sum_live`]).
+    fn accessible(&self, idle: u16) -> f64 {
         (self.contribution_basis.max(0.0) + self.seasoned_conversions.max(0.0))
-            .min(sum(&self.value))
+            .min(sum_live(&self.value, idle))
     }
 
     /// Applies the ordering rules to a distribution of `amount`; returns
@@ -848,7 +882,22 @@ impl Accounts {
         if !explicit && profile.portfolio.location == AssetLocation::TaxEfficient {
             acc.locate(&target, true);
         }
+        acc.empty = acc.find_empty();
         acc
+    }
+
+    /// The person buckets that hold +0.0 in every asset class, as an
+    /// [`Accounts::empty`] mask.
+    fn find_empty(&self) -> u8 {
+        let mut empty = 0;
+        for (p, pa) in self.person.iter().enumerate() {
+            for (k, h) in [&pa.traditional, &pa.roth.value, &pa.hsa].into_iter().enumerate() {
+                if h.iter().all(|v| v.to_bits() == 0) {
+                    empty |= empty_bit(p, k);
+                }
+            }
+        }
+        empty
     }
 
     fn holdings(&self, bucket: Bucket) -> Option<&Holdings> {
@@ -925,15 +974,17 @@ impl Accounts {
     }
 
     /// Tells the accounts that holdings were written directly (not through one of
-    /// the methods here), so nothing is known about which asset classes are held.
+    /// the methods here), so nothing is known about which asset classes are held
+    /// (and the empty buckets are looked for again).
     pub fn holdings_changed(&mut self) {
         self.idle = 0;
+        self.empty = self.find_empty();
     }
 
     /// Roth money the owner can withdraw today without tax or penalty at any age:
     /// contributions plus seasoned conversions (capped at the bucket's value).
     pub fn roth_accessible(&self, person: usize) -> f64 {
-        self.person.get(person).map_or(0.0, |p| p.roth.accessible())
+        self.person.get(person).map_or(0.0, |p| p.roth.accessible(self.idle))
     }
 
     /// Applies one month of returns to every invested bucket, interest to cash, and
@@ -952,6 +1003,19 @@ impl Accounts {
         fee_monthly: f64,
         yields: &[f64; N_ASSETS],
     ) -> InvestmentIncome {
+        self.apply_returns_investable(returns, cash_rate_monthly, fee_monthly, yields)
+            .0
+    }
+
+    /// [`Accounts::apply_returns`], also returning [`Accounts::investable`]
+    /// afterwards (the same bits), summed while the holdings are at hand.
+    pub fn apply_returns_investable(
+        &mut self,
+        returns: &[f64; N_ASSETS],
+        cash_rate_monthly: f64,
+        fee_monthly: f64,
+        yields: &[f64; N_ASSETS],
+    ) -> (InvestmentIncome, f64) {
         let mut inc = InvestmentIncome::default();
         let interest = self.cash.max(0.0) * cash_rate_monthly;
         self.cash += interest;
@@ -960,11 +1024,18 @@ impl Accounts {
 
         let mut keep = [0.0; N_ASSETS];
         let mut fee = [0.0; N_ASSETS];
+        // An empty bucket is passed over when that is exact: with finite fees and
+        // a finite, non-negative growth factor its +0.0s would stay +0.0, and it
+        // would add only zeros to sums that start at +0 (fees, value) or are
+        // never -0 (the change in value, `new - v`).
+        let mut exact = true;
         for i in 0..N_ASSETS {
             let growth = (1.0 + returns[i]).max(0.0);
             fee[i] = growth * fee_monthly;
             keep[i] = growth - fee[i];
+            exact &= (0.0..f64::INFINITY).contains(&keep[i]) & fee[i].is_finite();
         }
+        let skip = if exact { self.empty } else { 0 };
 
         // Asset classes held nowhere are skipped: their holdings stay zero and add
         // nothing to any total. (Not when the return or yield of a class that would
@@ -977,8 +1048,11 @@ impl Accounts {
         if !finite {
             prefix = N_ASSETS;
         }
-        with_prefix!(prefix, grow(self, &keep, &fee, yields, &mut inc));
-        inc
+        let k = with_prefix!(prefix, grow(self, &keep, &fee, yields, skip, &mut inc));
+        // In the order of `investable`.
+        let investable = self.cash + k[0] + k[1] + k[2] + k[3];
+        debug_assert_eq!(investable.to_bits(), self.investable().to_bits());
+        (inc, investable)
     }
 
     /// Adds `amount` to a bucket, bought in the proportions `mix` (ignored for cash;
@@ -1016,6 +1090,7 @@ impl Accounts {
                     for (i, w) in mix.iter().enumerate() {
                         x.traditional[i] += amount * w;
                     }
+                    self.empty &= !empty_bit(p, 0);
                 }
             }
             Bucket::Roth(p) => {
@@ -1025,6 +1100,7 @@ impl Accounts {
                     }
                     x.roth.contribution_basis += amount;
                     x.roth.opened = true;
+                    self.empty &= !empty_bit(p, 1);
                 }
             }
             Bucket::Hsa(p) => {
@@ -1032,6 +1108,7 @@ impl Accounts {
                     for (i, w) in mix.iter().enumerate() {
                         x.hsa[i] += amount * w;
                     }
+                    self.empty &= !empty_bit(p, 2);
                 }
             }
         }
@@ -1117,6 +1194,7 @@ impl Accounts {
             }
             Bucket::Traditional(p) => {
                 sell_from(&mut self.person[p].traditional, &sells, everything);
+                self.empty |= if everything { empty_bit(p, 0) } else { 0 };
                 w.ordinary = a;
                 if ctx.owner_age < EARLY_WITHDRAWAL_AGE && !ctx.penalty_exempt {
                     w.penalty_base = a;
@@ -1125,6 +1203,7 @@ impl Accounts {
             Bucket::Roth(p) => {
                 let roth = &mut self.person[p].roth;
                 sell_from(&mut roth.value, &sells, everything);
+                self.empty |= if everything { empty_bit(p, 1) } else { 0 };
                 let (ordinary, penalty) = roth.classify(a, ctx);
                 w.ordinary = ordinary;
                 w.penalty_base = penalty;
@@ -1136,6 +1215,7 @@ impl Accounts {
             }
             Bucket::Hsa(p) => {
                 sell_from(&mut self.person[p].hsa, &sells, everything);
+                self.empty |= if everything { empty_bit(p, 2) } else { 0 };
                 let medical = if ctx.qualified_medical.is_nan() {
                     0.0
                 } else {
@@ -1172,6 +1252,8 @@ impl Accounts {
         }
         p.roth.unseasoned[CONVERSION_SEASONING_YEARS - 1] += a;
         p.roth.opened = true;
+        self.empty &= !empty_bit(person, 1);
+        self.empty |= if everything { empty_bit(person, 0) } else { 0 };
         a
     }
 
@@ -1499,6 +1581,7 @@ impl Accounts {
         }
         p.roth.opened |= d.roth.opened;
         p.roth.years_open = p.roth.years_open.max(d.roth.years_open);
+        self.empty = self.find_empty();
     }
 
     /// HSA contribution room left this year for `person`: the self-only or family

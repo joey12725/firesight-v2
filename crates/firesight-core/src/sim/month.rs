@@ -45,6 +45,14 @@ const DUST: f64 = 0.005;
 /// cliff (the January plan aims 8% below the cliff).
 const OCTOBER_REPLAN_SHARE: f64 = 0.95;
 
+/// [`State::se_years`] for an income that starts in month `start`.
+fn se_years_since(start: i32, t: usize) -> f64 {
+    if start == i32::MAX {
+        return 0.0;
+    }
+    f64::from((t as i32 - start.max(0)).max(0)) / 12.0
+}
+
 impl State {
     /// Simulates month `t`.
     pub(crate) fn month<R: Recorder>(
@@ -87,26 +95,8 @@ impl State {
                 replan = true;
             }
         }
-        for j in 0..self.jobs.len() {
-            let jp = &plan.jobs[j];
-            let age = self.age(plan, jp.owner, t);
-            let rt = &mut self.jobs[j];
-            if !rt.begun && !rt.ended && ti >= jp.start.month(self.retire_month) {
-                if self.present[jp.owner]
-                    && !(jp.ends_at_retirement && self.person_retired[jp.owner])
-                {
-                    jp.model.begin(&mut rt.st, age);
-                    rt.begun = true;
-                    self.req_dirty = true;
-                } else if !self.alive[jp.owner] {
-                    rt.ended = true;
-                }
-            }
-            if !rt.ended && ti >= jp.end.month(self.retire_month) {
-                jp.model.end(&mut rt.st);
-                rt.ended = true;
-                self.req_dirty = true;
-            }
+        if ti >= self.next_job_change {
+            self.job_calendar(plan, t);
         }
         // The turn of the year comes before January's events, so that what they add
         // to the tax year (a sale's gain, a taxable windfall) is on this year's
@@ -143,6 +133,12 @@ impl State {
         let eq_return = econ.returns[AssetClass::UsStocks.index()][t];
         self.track_equity(eq_return, t, plan.eq12_months & (1 << month) != 0);
         let recession = econ.recession[t];
+        // Everyone's age this month, once: the job, business and health steps all
+        // read it.
+        let mut ages = [0.0; MAX_PEOPLE];
+        for (i, age) in ages.iter_mut().enumerate().take(self.n) {
+            *age = self.age(plan, i, t);
+        }
         let mut employer_coverage = false;
         for j in 0..self.jobs.len() {
             let jp = &plan.jobs[j];
@@ -150,19 +146,19 @@ impl State {
             if !self.alive[p] {
                 continue;
             }
-            let climate = CareerClimate {
-                now,
-                age: self.age(plan, p, t),
-                price_level: price,
-                recession,
-                equity_return: eq_return,
-                equity_return_12m: self.eq12,
-            };
             if jp.model.is_inert(&self.jobs[j].st) {
                 jp.model
                     .skip(month == 1, &mut self.rng_career[p], &mut self.rng_equity);
                 continue;
             }
+            let climate = CareerClimate {
+                now,
+                age: ages[p],
+                price_level: price,
+                recession,
+                equity_return: eq_return,
+                equity_return_12m: self.eq12,
+            };
             let jm = jp.model.step(
                 &mut self.jobs[j].st,
                 &climate,
@@ -292,22 +288,23 @@ impl State {
             }
             let climate = CareerClimate {
                 now,
-                age: self.age(plan, p, t),
+                age: ages[p],
                 price_level: price,
                 recession,
                 equity_return: eq_return,
                 equity_return_12m: self.eq12,
             };
-            let years = self.se_years(plan, k, t);
+            let rm = self.retire_month;
+            let start = sp.start.month(rm);
+            let years = se_years_since(start, t);
             let rt = &mut self.selfemp[k];
             let profit = sp
                 .model
                 .step(&mut rt.st, years, &climate, &mut self.rng_career[p])
                 * rt.scale;
-            let rm = self.retire_month;
             let active = self.present[p]
                 && !rt.ended
-                && ti >= sp.start.month(rm)
+                && ti >= start
                 && ti < sp.end.month(rm)
                 && !(sp.ends_at_retirement && self.person_retired[p]);
             if active && profit > 0.0 {
@@ -431,7 +428,7 @@ impl State {
                 continue;
             }
             let ctx = HealthContext {
-                age: self.age(plan, i, t),
+                age: ages[i],
                 employer_coverage,
                 months_since_coverage_ended: self.coverage_gap,
                 in_us: self.in_us,
@@ -588,7 +585,7 @@ impl State {
         let mut yields = econ.income_yields_at(t);
         yields[AssetClass::Custom.index()] = plan.custom_yield;
         let cash_before = self.acc.cash;
-        let inc = self.acc.apply_returns(
+        let (inc, investable) = self.acc.apply_returns_investable(
             &returns,
             plan.cash_terms
                 .monthly_rate_from_bill_return(returns[AssetClass::Cash.index()]),
@@ -604,7 +601,6 @@ impl State {
         if self.check {
             self.chk_ret_other = inc.net_change - (self.acc.cash - cash_before);
         }
-        let investable = self.acc.investable();
         let before = investable - inc.net_change;
         self.port_return = if before > 0.0 {
             inc.net_change / before
@@ -625,6 +621,44 @@ impl State {
 
         // 12. Record.
         self.record(plan, econ, rec, t);
+    }
+
+    /// Jobs that start or end in month `t`, and the next month in which one can.
+    /// A job whose start has come but which cannot begin yet (its owner has not
+    /// joined) is looked at again every month; anything else that can change the
+    /// dates (the retirement date, a partner joining) resets the wait.
+    fn job_calendar(&mut self, plan: &Plan, t: usize) {
+        let ti = t as i32;
+        let mut next = i32::MAX;
+        for j in 0..self.jobs.len() {
+            let jp = &plan.jobs[j];
+            let p = jp.owner;
+            let start = jp.start.month(self.retire_month);
+            if !self.jobs[j].begun && !self.jobs[j].ended && ti >= start {
+                if self.present[p] && !(jp.ends_at_retirement && self.person_retired[p]) {
+                    let age = self.age(plan, p, t);
+                    jp.model.begin(&mut self.jobs[j].st, age);
+                    self.jobs[j].begun = true;
+                    self.req_dirty = true;
+                } else if !self.alive[p] {
+                    self.jobs[j].ended = true;
+                }
+            }
+            let end = jp.end.month(self.retire_month);
+            let rt = &mut self.jobs[j];
+            if !rt.ended && ti >= end {
+                jp.model.end(&mut rt.st);
+                rt.ended = true;
+                self.req_dirty = true;
+            }
+            if !rt.ended {
+                if !rt.begun {
+                    next = next.min(start.max(ti + 1));
+                }
+                next = next.min(end);
+            }
+        }
+        self.next_job_change = next;
     }
 
     /// The next month after `t` at which someone's Social Security status can
@@ -691,11 +725,7 @@ impl State {
     /// one already running): the clock its real growth runs on, so that an income
     /// that starts later starts at the amount entered.
     pub(crate) fn se_years(&self, plan: &Plan, k: usize, t: usize) -> f64 {
-        let start = plan.selfemp[k].start.month(self.retire_month);
-        if start == i32::MAX {
-            return 0.0;
-        }
-        f64::from((t as i32 - start.max(0)).max(0)) / 12.0
+        se_years_since(plan.selfemp[k].start.month(self.retire_month), t)
     }
 
     /// Month in which person `p` stops working.
@@ -745,6 +775,8 @@ impl State {
         }
         self.retired = true;
         self.retire_month = t as i32;
+        // Job dates relative to retirement are known now.
+        self.next_job_change = 0;
         self.inv_at_ret = self.acc.investable() / price;
         self.ret_index = 1.0;
         self.ret_months = 0;
@@ -808,9 +840,9 @@ impl State {
     fn join(&mut self, plan: &Plan, price: f64, t: usize) {
         let now = plan.start + t as i32;
         self.present[1] = true;
+        self.next_job_change = 0;
         let theirs = &plan.joiner_accounts;
         let kinds = theirs.by_kind();
-        self.acc.holdings_changed();
         self.acc.cash += theirs.cash * price;
         for a in 0..N_ASSETS {
             self.acc.taxable.value[a] += theirs.taxable.value[a] * price;
@@ -828,6 +860,8 @@ impl State {
             to.opened |= from.opened;
             to.years_open = to.years_open.max(from.years_open);
         }
+        // After the writes: the empty buckets are found from what is there now.
+        self.acc.holdings_changed();
         let total: f64 = kinds.iter().sum::<f64>() * price;
         self.led[YearSeries::IncomeOther.index()] += total;
         self.led[YearSeries::SaveTaxable.index()] += kinds[1] * price;

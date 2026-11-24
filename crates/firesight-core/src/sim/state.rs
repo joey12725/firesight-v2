@@ -130,6 +130,9 @@ pub(crate) struct State {
     // Balance sheet.
     pub acc: Accounts,
     pub jobs: Vec<JobRt>,
+    /// First month in which a job can start or end (`State::job_calendar`); 0
+    /// means look now.
+    pub next_job_change: i32,
     pub selfemp: Vec<SeRt>,
     pub streams: Vec<StreamRt>,
     pub props: Vec<PropertyState>,
@@ -324,6 +327,7 @@ impl State {
             death_year: i32::MIN,
             acc: Accounts::default(),
             jobs: vec![JobRt::default(); plan.jobs.len()],
+            next_job_change: 0,
             selfemp: vec![
                 SeRt {
                     st: SelfEmploymentState::default(),
@@ -609,6 +613,7 @@ impl State {
                 ended: false,
             };
         }
+        self.next_job_change = 0;
         for (rt, sp) in self.selfemp.iter_mut().zip(&plan.selfemp) {
             *rt = SeRt {
                 st: sp.model.initial_state(),
