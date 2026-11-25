@@ -14,14 +14,22 @@ crates/
 data/                embedded parameter sets (tax law, market history, life tables)
 tools/               python3 stdlib scripts that rebuild data/ from public sources
 web/                 Vite + React + TypeScript UI; engine runs in a Web Worker pool
-api/                 one Vercel function: optional streaming proxy to the Claude API
+api/                 Vercel functions, all optional: the Claude proxy (chat.ts), and the
+                     accounts side (auth.ts, plans.ts, wellknown.ts, mcp.ts, _lib/)
+db/                  SQL migrations and the embedded Postgres used by tests and local dev
+scripts/             the local API server, the migration runner, end-to-end scripts
 docs/                methodology, v1 review, research notes
 examples/            demo households (v2 schema) and the three v1 profiles for migration tests
 ```
 
-The browser does all simulation. There is no backend state: profiles live in the
-browser (IndexedDB) and travel as JSON files or share links. The only server code is
-the optional LLM proxy.
+The browser does all of the website's simulation. By default there is no backend
+state: profiles live in the browser (IndexedDB) and travel as JSON files or share
+links, and the only server code that runs is the optional LLM proxy.
+
+A deployment may add accounts (section 9). Then a plan its owner chooses to sync, or
+that an AI tool they authorised writes, is also stored in Postgres, and the hosted MCP
+server simulates such plans with the same wasm engine under Node. Signed out, or on a
+deployment without a database, nothing in this paragraph applies.
 
 ### Determinism rules (core)
 
@@ -440,3 +448,71 @@ instructions per simulated life.
   `data/history/calibration.json`.
 
 See `docs/methodology.md` for how each relationship is modelled and what was measured.
+
+## 9. Agent access and accounts
+
+Three ways for an AI to work with a plan, each an adapter over the same engine and the
+same patch format. None of them is needed to use the app.
+
+```
+                      in the browser                                on the server (optional)
+ ┌─────────────────────────────────────────────────┐      ┌──────────────────────────────────────┐
+ │ assistant/      Claude in the app's own panel   │      │ api/chat.ts    proxy to Claude       │
+ │ webmcp/         tools for an agent in the       │      │                                      │
+ │                 browser (document.modelContext) │      │ api/auth.ts    Better Auth: sessions,│
+ │   both call assistant/tools → worker pool → wasm│      │                API keys, OAuth 2.1   │
+ │                                                 │      │ api/plans.ts   synced plans (cookie) │
+ │ auth/, state/cloud*.ts   sign-in, sync, /p/<id> │─────►│ api/mcp.ts     MCP server (bearer)   │
+ └─────────────────────────────────────────────────┘      │ api/wellknown.ts  /api/config, RFC   │
+                                                          │                9728 / 8414 documents │
+   an AI client outside the browser ─── MCP over HTTP ───►│ api/_lib/      plan store, crypto,   │
+   (Claude, Claude Code, ChatGPT, Cursor)                 │                rate limits, engine   │
+                                                          └───────────────┬──────────────────────┘
+                                                                          ▼
+                                                                Postgres (Better Auth's tables,
+                                                                plan, user_key, firesight_rate)
+```
+
+* **In-app assistant** (`web/src/assistant`, [assistant.md](assistant.md)): twelve tools
+  over an injected context. Their definitions are fingerprinted and checked by
+  `api/chat.ts`; do not change them casually.
+* **In-page WebMCP** (`web/src/webmcp`, [webmcp.md](webmcp.md)): 24 tools registered with
+  the browser where it offers `document.modelContext`. Twelve reuse the assistant's
+  executors. `register.ts` is the only file that touches the browser API, and the rest
+  is a separate chunk fetched only when the API exists. Consent, change cards and the
+  activity log are the page's own.
+* **Hosted MCP** (`api/mcp.ts`, `api/_lib/mcp`, [mcp.md](mcp.md)): nine tools on the
+  plans in an account. Stateless: one `McpServer` per request, built for the verified
+  caller. The engine is the web app's wasm package, copied to `api/_engine/` at build
+  time and loaded once per instance.
+* **Accounts** ([accounts.md](accounts.md)): every function is a pure
+  `handle(request, env, deps)` with a default export of `{ fetch }`, as `api/chat.ts` is,
+  and is tested in-process. `runtimeFor(env)` returns `off` when the database, the auth
+  secret or the plan key is missing, and every endpoint then answers 503 except
+  `/api/config`, which says `{ accounts: false }`.
+
+Rules that hold across all of it:
+
+* **One source of numbers.** Every figure an agent can obtain comes from the engine. The
+  server's copies of the web app's pure helpers (the compact plan view, schema lookups,
+  the comparison digest) are held equal to the originals by
+  `api/_tests/mcp-parity.test.ts`. The guide text is shared, not copied:
+  `web/src/webmcp/guide.ts` imports nothing so that the function can import it by
+  relative path. Keep it that way.
+* **Three credentials, three surfaces.** The session cookie works on `/api/plans` and
+  `/api/auth` only; an API key or an OAuth access token works on `/api/mcp` only. The MCP
+  endpoint removes the `cookie` header before anything reads the request.
+* **The plan store is the guard.** `api/_lib/plans.ts` is the only module that touches
+  the `plan` and `user_key` tables, and every statement names the owner, taken from the
+  verified credential.
+* **Optimistic concurrency.** A synced plan has an integer `rev`. Every writer (the
+  website with `If-Match`, an agent with `expected_rev`) states the rev it read, and a
+  stale write is refused, never merged.
+* **No logging on the server.** Lint forbids `console.*` under `api/` and `db/`.
+* **Nothing new on first load unless it is used.** The WebMCP tools, the auth client and
+  the sync code are separate chunks: the first is fetched only where the browser has
+  WebMCP, the second when an account page is opened, the third on sign-in.
+
+Local development needs no cloud resource: `npm run dev:api` serves the functions on
+port 8787 with an embedded Postgres (PGlite) under `.local/`, routed by the rewrites in
+`vercel.json`, and Vite's dev server forwards `/api` and `/.well-known` to it.

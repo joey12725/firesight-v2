@@ -43,3 +43,50 @@ jobs:
         run: npm run build --prefix web
       - run: npm run lint --prefix web
       - run: npm run test --prefix web
+
+  server:
+    name: Server (accounts API, hosted MCP)
+    runs-on: ubuntu-latest
+    services:
+      # The embedded database is one connection, so nothing can race on it. The same
+      # tests run a second time here, through the `pg` driver, where the locking tests
+      # really interleave and several migrations really start at once.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: firesight_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --no-audit --no-fund
+      - name: Build the engine the MCP server runs (wasm, copied to api/_engine)
+        run: |
+          npm install --prefix web --no-audit --no-fund
+          npm run wasm --prefix web
+          npm run engine
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Unit tests (in-process handlers on an embedded Postgres)
+        run: npm test
+      - name: Unit tests again on a real Postgres (the production driver, real concurrency)
+        run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/firesight_test
+      - name: End to end over HTTP (dev API server, embedded Postgres)
+        run: npm run e2e:api
+      - name: MCP end to end over HTTP (an MCP client against the dev API server)
+        run: npm run mcp:smoke

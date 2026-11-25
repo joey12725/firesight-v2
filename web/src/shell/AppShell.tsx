@@ -1,15 +1,24 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { AssistantPanel } from '@/assistant';
+import { PlanLink } from '@/auth/PlanLink';
+import { useAccount } from '@/auth/account';
 import { PlanEditor } from '@/editor/PlanEditor';
 import { GuidedSetup } from '@/onboarding/GuidedSetup';
 import { Landing } from '@/onboarding/Landing';
 import { useProfileStore } from '@/state/profile-store';
+import { activePage, usePage } from '@/state/route';
 import { useSettings } from '@/state/settings-store';
 import { useUi } from '@/state/ui-store';
 import { Sheet, Toaster, useMediaQuery } from '@/ui';
+import { AgentHost } from '@/webmcp/host';
 import { ImportDialog, MigrationNotesDialog, SettingsDialog, ShareDialog } from './dialogs';
 import { ResultsWorkspace } from './ResultsWorkspace';
 import { TopBar } from './TopBar';
+
+// Sign-in, consent and the account page: loaded, with the auth client, only when one is opened.
+const AccountPages = lazy(() => import('@/auth/pages'));
+// The dialogs a synced plan can raise: loaded, with the sync code, once someone is signed in.
+const CloudDialogs = lazy(() => import('./cloud-ui').then((m) => ({ default: m.CloudDialogs })));
 
 function useGlobalShortcuts() {
   useEffect(() => {
@@ -20,6 +29,8 @@ function useGlobalShortcuts() {
       if (t instanceof HTMLTextAreaElement) return;
       const store = useProfileStore.getState();
       if (!store.profile) return;
+      // An account page has its own fields, and the plan is not on screen to watch an undo land.
+      if (activePage().kind !== 'app') return;
       e.preventDefault();
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (e.shiftKey) store.redo();
@@ -36,6 +47,8 @@ function useGlobalShortcuts() {
  */
 export function AppShell() {
   const hasPlan = useProfileStore((s) => s.profile !== null);
+  const page = usePage();
+  const signedIn = useAccount((s) => s.status === 'signed-in');
   const { editorOpen, assistantOpen, set } = useSettings();
   const sheet = useUi((s) => s.sheet);
   const openSheet = useUi((s) => s.openSheet);
@@ -54,7 +67,17 @@ export function AppShell() {
         Skip to results
       </a>
       <TopBar compact={!twoColumn} />
-      {hasPlan ? (
+      {page.kind !== 'app' ? (
+        <div id="main" className="min-h-0 flex-1">
+          {page.kind === 'plan' ? (
+            <PlanLink id={page.id} view={page.view} />
+          ) : (
+            <Suspense fallback={null}>
+              <AccountPages page={page} />
+            </Suspense>
+          )}
+        </div>
+      ) : hasPlan ? (
         <div className="flex min-h-0 flex-1">
           {twoColumn && editorOpen && (
             <div className="w-[var(--editor-width)] shrink-0 border-r border-line">
@@ -86,6 +109,13 @@ export function AppShell() {
       <ImportDialog />
       <GuidedSetup />
       <MigrationNotesDialog />
+      {signedIn && (
+        <Suspense fallback={null}>
+          <CloudDialogs />
+        </Suspense>
+      )}
+      {/* WebMCP: a browser agent's consent prompt and change cards. Renders nothing otherwise. */}
+      <AgentHost />
       <Toaster />
     </div>
   );

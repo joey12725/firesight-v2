@@ -24,8 +24,8 @@ Code: `web/src/assistant/` (browser) and `api/chat.ts` (the optional hosted prox
    runs meet the same simulated futures life by life. Results say so (`paired`, paths,
    seed, standard errors) and flag differences that cannot be told from zero
    (`within_noise`).
-4. **The plan stays in the browser, apart from what the model needs to see.** See
-   Privacy.
+4. **The assistant sends the plan nowhere but to the model, and only what the model
+   needs to see.** See Privacy.
 
 ## Architecture
 
@@ -168,8 +168,21 @@ small JSON-serialisable object; the model receives it as data next to the questi
 
 ## Privacy: what leaves the browser
 
-Simulation always runs on the device. Nothing is sent anywhere until the user sends a
-message. Then one request goes to Claude containing:
+This section is about the assistant. It is one of four ways a plan can leave the
+browser, and each happens only when the user does something:
+
+| What the user does | What leaves, and where to |
+|---|---|
+| Sends the assistant a message | This section |
+| Exports a file or copies a share link | The plan, to wherever they put it. A share link carries the plan in its fragment, which no server receives. |
+| Lets an AI agent in their browser use the page's tools | What those tools return, to that agent: [webmcp.md](webmcp.md) |
+| Signs in and syncs a plan, or connects an AI tool to their account | The plan, to this site's server: [accounts.md](accounts.md) |
+
+The assistant is the same with or without an account. It never reads from or writes to
+the account, and its conversations are never synced.
+
+The assistant's own simulations always run on the device. It sends nothing anywhere
+until the user sends a message. Then one request goes to Claude containing:
 
 - the user's messages and any files they attached (images and PDFs, read in the browser
   and sent as content blocks);

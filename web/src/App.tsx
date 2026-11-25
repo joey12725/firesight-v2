@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { startAccount } from '@/auth/account';
 import { startEngine } from '@/engine';
 import { openHousehold, refreshHouseholds, startAutosave } from '@/state/households';
 import { normaliseLocation } from '@/state/route';
@@ -21,12 +22,21 @@ function boot(): Promise<void> {
     startAutosave();
     startRunController();
     await refreshHouseholds();
+    // Whether this site has accounts, and who is signed in. Not waited for: the app is usable without the answer.
+    void startAccount();
     if (await openSharedPlan()) return;
     const last = useSettings.getState().lastHouseholdId;
     if (last) await openHousehold(last);
   })();
   return booting;
 }
+
+/**
+ * Resolves once the engine has loaded and the shared or last-opened plan is restored;
+ * rejects if the engine could not load. For code outside React that must not act on a
+ * half-started app (the WebMCP tools).
+ */
+export const appReady = (): Promise<void> => boot();
 
 export function App() {
   const [status, setStatus] = useState<Boot>({ state: 'loading' });

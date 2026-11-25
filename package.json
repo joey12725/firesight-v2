@@ -1,0 +1,48 @@
+{
+  "name": "firesight-server",
+  "private": true,
+  "version": "2.0.0-alpha.1",
+  "type": "module",
+  "description": "FIRESight's optional server side: accounts, API keys, synced plans and the hosted MCP endpoint (Vercel Functions under api/).",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "engine": "tsx scripts/copy-engine.ts",
+    "vercel-engine": "bash scripts/vercel-engine.sh",
+    "predev:api": "tsx scripts/copy-engine.ts --optional",
+    "dev:api": "tsx scripts/dev-api.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "rewrap": "tsx scripts/rewrap.ts",
+    "pretypecheck": "tsx scripts/copy-engine.ts --if-present",
+    "typecheck": "tsc -p api/tsconfig.json",
+    "lint": "eslint api scripts db",
+    "pretest": "tsx scripts/copy-engine.ts --if-present",
+    "test": "vitest run",
+    "pree2e:api": "tsx scripts/copy-engine.ts --if-present",
+    "e2e:api": "tsx scripts/e2e-api.ts",
+    "mcp:smoke": "tsx scripts/mcp-smoke.ts"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "1.7.26",
+    "@better-auth/cimd": "1.7.26",
+    "@better-auth/mcp": "1.7.26",
+    "@modelcontextprotocol/server": "2.4.0",
+    "better-auth": "1.7.26",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@eslint/js": "10.0.1",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "eslint": "10.15.0",
+    "globals": "17.14.0",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.73.0",
+    "vitest": "4.1.12"
+  }
+}

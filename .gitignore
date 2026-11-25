@@ -2,8 +2,13 @@ target/
 node_modules/
 dist/
 web/src/engine/pkg/
+# The engine as the functions load it: a copy of the directory above (npm run engine).
+api/_engine/
 .vercel
 .env*
+!.env.example
+# Local dev database and generated dev secrets (npm run dev:api).
+.local/
 .DS_Store
 
 # Raw downloads are rebuilt by tools/; only the README is tracked.
