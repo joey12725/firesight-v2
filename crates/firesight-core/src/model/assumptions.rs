@@ -3,7 +3,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{BondPricing, Episode, HousingLiquidity, Valuation, When};
+use super::{
+    BondPricing, BootstrapJoins, Disasters, Episode, HousingLiquidity, Uncertain, Valuation, When,
+};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -117,6 +119,27 @@ pub struct MarketModel {
     /// off (constant dividend yields).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub dynamic_yields: bool,
+    /// How unsure you are about the long-run average return of stocks. Leave empty
+    /// to treat it as known (the default). When set, each simulated future draws its
+    /// own lasting shift to the annual stock return from this range, in decimal
+    /// points a year. Only the spread and shape of the range are used: its average
+    /// is subtracted, so `equity_premium_adjustment` stays the average across
+    /// futures. A typical setting is a `normal` with `mean` 0 and `sd` 0.01 (the
+    /// true average could easily be a point a year above or below the plan).
+    /// `equity_premium_adjustment` plus the furthest shift either way must stay
+    /// between -0.1 and 0.1.
+    pub equity_premium_uncertainty: Option<Uncertain>,
+    /// How unsure you are about the long-run average rate of inflation. Leave empty
+    /// to treat it as known (the default). When set, each simulated future draws its
+    /// own lasting shift to annual inflation from this range, in decimal points a
+    /// year, and interest rates and investment returns move with it, so returns
+    /// after inflation are unchanged. Only the spread and shape are used: the
+    /// average is subtracted, so `inflation_adjustment` stays the average. A typical
+    /// setting is a `normal` with `mean` 0 and `sd` 0.005. `inflation_adjustment`
+    /// plus the furthest shift either way must stay between -0.05 and 0.15.
+    pub inflation_uncertainty: Option<Uncertain>,
+    /// Rare market disasters beyond anything in the US record. Off by default.
+    pub disasters: Disasters,
 }
 
 /// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
@@ -134,6 +157,9 @@ impl Default for MarketModel {
             bond_pricing: BondPricing::default(),
             valuation: None,
             dynamic_yields: false,
+            equity_premium_uncertainty: None,
+            inflation_uncertainty: None,
+            disasters: Disasters::default(),
         }
     }
 }
@@ -153,6 +179,10 @@ pub enum MarketKind {
         /// available history.
         #[serde(default)]
         from_year: Option<i32>,
+        /// How the month a new block starts from is chosen: `uniform` (any month,
+        /// the default) or `matched` (a month that followed similar conditions).
+        #[serde(default)]
+        joins: BootstrapJoins,
     },
     /// A statistical model that switches between calm and crisis regimes.
     Regime,
@@ -181,6 +211,7 @@ impl Default for MarketKind {
         MarketKind::Bootstrap {
             mean_block_months: d_block(),
             from_year: None,
+            joins: BootstrapJoins::Uniform,
         }
     }
 }

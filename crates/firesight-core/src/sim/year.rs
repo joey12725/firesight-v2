@@ -653,6 +653,7 @@ impl State {
                 business[p] += sp.model.expected_real_annual(self.se_years(plan, k, t))
                     * rt.st.factor
                     * rt.scale
+                    * rt.st.business.level
                     * price
                     * m_left
                     / 12.0;
@@ -1159,7 +1160,8 @@ impl State {
             {
                 rate += sp.model.expected_real_annual(self.se_years(plan, k, t))
                     * rt.st.factor
-                    * rt.scale;
+                    * rt.scale
+                    * rt.st.business.level;
             }
         }
         rate

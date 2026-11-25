@@ -1,5 +1,7 @@
 use super::*;
-use crate::model::{Bonus, CareerRisk, Commission, EquityGrant};
+use crate::model::{
+    Bonus, CareerRisk, Commission, EquityGrant, ExitSize, ExitTiming, StockRuin, TailShape,
+};
 use crate::rng::Stream;
 
 const START: YearMonth = YearMonth::ym(2026, 1);
@@ -803,6 +805,9 @@ fn still() -> EquityCompany {
     EquityCompany::Public {
         volatility: 0.0,
         beta: 0.0,
+        tails: TailShape::Normal,
+        ruin: StockRuin::Never,
+        layoff_link: false,
     }
 }
 
@@ -862,6 +867,9 @@ fn vest_value_follows_the_share_price() {
     let company = EquityCompany::Public {
         volatility: 0.0,
         beta: 1.5,
+        tails: TailShape::Normal,
+        ruin: StockRuin::Never,
+        layoff_link: false,
     };
     let m = JobModel::new(
         &equity_job(vec![grant(24_000.0, 24, 0, company)]),
@@ -893,6 +901,9 @@ fn public_stock_noise_is_mean_preserving() {
     let company = EquityCompany::Public {
         volatility: 0.40,
         beta: 1.2,
+        tails: TailShape::Normal,
+        ruin: StockRuin::Never,
+        layoff_link: false,
     };
     let m = JobModel::new(
         &equity_job(vec![grant(1.0, 48, 0, company)]),
@@ -1005,6 +1016,9 @@ fn options_pay_the_spread() {
         EquityCompany::Public {
             volatility: 0.0,
             beta: 1.0,
+            tails: TailShape::Normal,
+            ruin: StockRuin::Never,
+            layoff_link: false,
         },
     );
     g.kind = EquityKind::Option {
@@ -1041,6 +1055,8 @@ fn private(liquidity_hazard: f64, fail_prob: f64) -> EquityCompany {
         liquidity_hazard,
         fail_prob,
         exit_volatility: 1.0,
+        exit_timing: ExitTiming::ConstantHazard,
+        exit_size: ExitSize::Classes,
     }
 }
 

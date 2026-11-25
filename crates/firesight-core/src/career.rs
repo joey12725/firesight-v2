@@ -11,7 +11,8 @@
 //! * One [`JobModel`] per job income is compiled once; one [`JobState`] per job lives
 //!   in the path state. Stepping never allocates.
 //! * Each person's jobs draw only from `Stream::Career(person)`; equity price paths
-//!   and outcomes draw only from `Stream::EquityComp`. The number of draws per month
+//!   and outcomes draw only from `Stream::EquityComp`; the opt-in closure risk and
+//!   lumpiness of a self-employment income draw only from its `Stream::Business`. The number of draws per month
 //!   depends only on the calendar (two extra normals every January), never on the
 //!   state of the job: draw, then decide. A scenario change such as retiring earlier
 //!   therefore does not shift later draws.
@@ -46,6 +47,62 @@
 //! job loss is explicit. Planning code that uses [`JobModel::expected_real_salary`]
 //! is therefore slightly optimistic for jobs with layoff risk.
 //!
+//! # Opt-in shapes (`risk.wage_shocks`, `risk.layoff_pay_cut`, `risk.job_search`)
+//!
+//! Three settings on a job change the shape of a random part and keep its average.
+//! All are off by default, and with them off the arithmetic above is untouched. The
+//! mechanisms and their maths are in [`shape`]; their numbers are judgements
+//! (`career_shapes` in params.json).
+//!
+//! * `wage_shocks: fat_tailed`: `eta` is a two-part normal mixture with mean zero
+//!   and variance `sigma_eta^2` (a small move most years, a large one in about one
+//!   year in seven, a little more often down). `Var[z]/2` is replaced by the exact
+//!   `ln E[exp(z)]` of the mixture, so expected pay is still the curve and
+//!   [`JobModel::expected_real_salary`] needs no change.
+//! * `layoff_pay_cut: two_part`: `L` is about zero with a stated probability (lower
+//!   in the recession regime and from age 50) and otherwise a right-skewed loss;
+//!   `E[L]` is the default's mean for the same layoff.
+//! * `job_search: monthly`: the spell is not drawn at the layoff. Each month out of
+//!   work ends the search with a probability that falls with the months searched
+//!   and depends on that month's regime; `L` is drawn in the month the search ends.
+//!   Unemployment insurance is fixed at the layoff as in the default.
+//!
+//! None of them draws a random number of its own: each reads a word that
+//! [`JobModel::step`] draws anyway (the January persistent-shock word, the scar word
+//! and the spell word, which the default reads only in the month of a layoff). They
+//! do nothing when `assumptions.career_risk` is false or `risk.level` is `none`.
+//!
+//! # Opt-in business and employer-stock risks
+//!
+//! Off by default, and with them off the arithmetic is untouched. The mechanisms
+//! and their maths are in [`business`] and [`equity`]; their numbers are judgements
+//! or come from the `equity_compensation` section (`business_and_equity` in
+//! params.json).
+//!
+//! * `failure: hazard` on a self-employment income: a monthly chance that the
+//!   business closes (higher while it is young and in recession months), after
+//!   which the income stops, or restarts after a gap at a share of the old
+//!   profit. Deliberately not mean-preserving: it lowers expected profit.
+//! * `monthly_lumpiness`: a unit-mean monthly factor on profit, so the expected
+//!   total of a year is unchanged.
+//!   These two draw two words a month from the income's own `Stream::Business`,
+//!   whatever the state of the business, and only when one of them is on.
+//! * `tails: fat` on a listed employer: the company-specific factor is `exp` of a
+//!   Student-t(4), with the lognormal factor's mean and standard deviation.
+//! * `ruin`: a monthly chance that a listed employer's shares become worthless for
+//!   good, with the return of the other months raised so that the expected price
+//!   is unchanged. Grants from that employer stop.
+//! * `layoff_link`: the job's layoff chance is tripled while the employer's stock
+//!   has lost more than 40% over twelve months for reasons of its own, and a ruin
+//!   ends the job. Not mean-preserving: it adds layoffs.
+//! * `exit_timing: lognormal` on a private employer: the monthly chance of the
+//!   outcome follows a lognormal wait in place of a constant.
+//! * `exit_size: pareto_tail`: the large outcome class pays a truncated Pareto
+//!   multiple with the mean of the log-uniform one it replaces.
+//!   The five equity options read words [`JobModel::step`] draws anyway (the
+//!   stock word, and for a listed company the liquidity word, which the default
+//!   discards) and draw nothing more.
+//!
 //! # Simplifications
 //!
 //! * The schema has no education field. `Typical` is the average of the CGM
@@ -66,9 +123,18 @@
 //! * A private company's paper value is constant in real terms until its liquidity
 //!   event. After a successful exit the stock follows the default public-company
 //!   dynamics. `exit_volatility` is not used: the payout multiple comes from the
-//!   research's outcome classes (modest, good, large), log-uniform inside the class.
+//!   research's outcome classes (modest, good, large), log-uniform inside the class
+//!   (the large class has a Pareto tail with `exit_size: pareto_tail`). The wait
+//!   for the event is memoryless unless `exit_timing` is `lognormal`.
 //! * Vested private shares are kept after leaving the employer.
-//! * The employer-stock-crash-raises-layoff-hazard link in the research is left out.
+//! * The employer-stock-crash-raises-layoff-hazard link in the research is off
+//!   unless `layoff_link` is set. With it on, the link reads only the listed
+//!   employer's own price: the shares already vested and kept follow the
+//!   portfolio's single-stock sleeve, which is a separate process and does not
+//!   know about a ruin here.
+//! * Self-employment income has no closure risk and is the same every month of a
+//!   year unless `failure` or `monthly_lumpiness` is set. A closed business pays
+//!   no unemployment insurance, and a closure does not turn into a job.
 
 use serde_json::Value;
 
@@ -79,6 +145,15 @@ use crate::model::{
     YearMonth,
 };
 use crate::rng::{normal_from_bits, uniform_from_bits, Rng};
+
+mod shape;
+pub use shape::ShapeParams;
+mod business;
+pub use business::{
+    BusinessMonth, BusinessParams, BusinessState, WORDS_PER_MONTH as BUSINESS_WORDS_PER_MONTH,
+};
+mod equity;
+pub use equity::{EquityParams, LINK_MONTHS as EMPLOYER_LINK_MONTHS};
 
 /// Maximum equity grants tracked per job. Refresh grants are pooled inside the slot
 /// of the grant that spawns them, so this is the number of `job.equity` entries used;
@@ -188,6 +263,14 @@ pub struct CareerParams {
     pub equity_log_mean_12m: f64,
     /// Standard deviation of the 12-month log return (monthly sd times sqrt 12).
     pub equity_log_sd_12m: f64,
+    /// Parameters of the opt-in shapes (`career_shapes` in params.json).
+    pub shapes: ShapeParams,
+    /// Parameters of the opt-in self-employment risks (`business_and_equity` in
+    /// params.json).
+    pub business: BusinessParams,
+    /// Parameters of the opt-in employer-stock shapes (`business_and_equity` in
+    /// params.json).
+    pub equity: EquityParams,
 }
 
 fn num(root: &Value, path: &[&str]) -> f64 {
@@ -333,6 +416,9 @@ impl CareerParams {
             private_multiple_ranges: [range("modest"), range("good"), range("large")],
             equity_log_mean_12m: 12.0 * mean,
             equity_log_sd_12m: (12.0 * var).sqrt(),
+            shapes: ShapeParams::from_data(data),
+            business: BusinessParams::from_data(data),
+            equity: EquityParams::from_data(data),
         }
     }
 
@@ -382,6 +468,13 @@ pub fn wage_curve_level(growth: &WageGrowth, age: f64, params: &CareerParams) ->
                 + math::ln_1p(extra.max(-0.99)) * age,
         ),
     }
+}
+
+/// Addition to the mean log wage loss for a spell of `spell` months.
+#[inline]
+fn long_spell_addon(spell: f64) -> f64 {
+    (SCAR_LONG_SPELL_PER_MONTH * (spell - SCAR_LONG_SPELL_FROM_MONTHS).max(0.0))
+        .min(SCAR_LONG_SPELL_CAP)
 }
 
 fn hazard_age_band(age: f64) -> usize {
@@ -552,6 +645,12 @@ pub struct JobModel {
     n_grants: usize,
     grants_dropped: usize,
     company: Company,
+    /// Opt-in shapes of the wage shock, the pay cut and the job search; all off
+    /// by default.
+    shapes: shape::Shapes,
+    /// Opt-in shapes of the employer's stock and of a private exit; all off by
+    /// default.
+    equity: equity::EquityShapes,
 }
 
 /// Months of real growth of a self-employment income tabulated at compile time.
@@ -568,6 +667,8 @@ pub struct SelfEmploymentModel {
     log_sd: f64,
     risk: bool,
     params: CareerParams,
+    /// Opt-in closure risk and monthly lumpiness; `None` by default.
+    business: Option<business::Business>,
 }
 
 /// Per-path state of one self-employment income.
@@ -581,6 +682,9 @@ pub struct SelfEmploymentState {
     pub factor: f64,
     /// Steps taken.
     pub steps: u32,
+    /// Whether the business is open and at what share of its unbroken profit
+    /// (`failure`); always open at the full level by default.
+    pub business: BusinessState,
 }
 
 impl Default for SelfEmploymentState {
@@ -590,6 +694,7 @@ impl Default for SelfEmploymentState {
             shock_variance: 0.0,
             factor: 1.0,
             steps: 0,
+            business: BusinessState::default(),
         }
     }
 }
@@ -686,6 +791,27 @@ pub struct JobState {
     pub illiquid_strike_cost: [f64; MAX_GRANTS],
     /// Months spent unemployed so far on this path, fractional (a path scalar).
     pub months_unemployed_total: f64,
+    /// Yearly persistent shocks applied since the shock was last reset (sets the
+    /// mean correction when `wage_shocks` is `fat_tailed`).
+    pub persistent_shocks: u32,
+    /// Regime and age class of the current spell's layoff: 2 in the recession
+    /// regime plus 1 from age 50.
+    pub scar_class: u8,
+    /// Mean log wage loss of the current spell before the long-spell add-on (used
+    /// when `job_search` is `monthly`, where the spell length is not known at the
+    /// layoff).
+    pub scar_base_mean: f64,
+    /// The listed employer's shares have become worthless (`ruin`).
+    pub stock_ruined: bool,
+    /// The employer stock's company-specific log return in each of the last twelve
+    /// months (`layoff_link`), indexed by `steps` modulo 12.
+    pub idio_log: [f64; equity::LINK_MONTHS],
+    /// Sum of `idio_log`: the company-specific log return over the last twelve
+    /// months.
+    pub idio_12m: f64,
+    /// Months a private employer has waited for its outcome, recession months not
+    /// counted (`exit_timing: lognormal`).
+    pub exit_clock: u32,
 }
 
 /// What one job paid in one month, nominal dollars.
@@ -781,6 +907,17 @@ impl JobModel {
         let (sigma_eta, sigma_eps) = level.map_or((0.0, 0.0), |i| {
             (params.shock_sigma[i][0], params.shock_sigma[i][1])
         });
+        let shapes = if level.is_some() {
+            shape::Shapes::new(
+                job.risk.wage_shocks,
+                job.risk.layoff_pay_cut,
+                job.risk.job_search,
+                sigma_eta,
+                &params,
+            )
+        } else {
+            shape::Shapes::default()
+        };
         let mut hazard = [[0.0; 6]; 2];
         if let Some(i) = level {
             for (rec, row) in hazard.iter_mut().enumerate() {
@@ -841,21 +978,45 @@ impl JobModel {
                 sell_on_vest: g.sell_on_vest,
             };
         }
+        let mut equity = equity::EquityShapes::default();
         let company = match job.equity.first().map(|g| g.company) {
             None => Company::None,
-            Some(EquityCompany::Public { volatility, beta }) => {
-                Company::Public(StockModel::new(volatility, beta, &params))
+            Some(EquityCompany::Public {
+                volatility,
+                beta,
+                tails,
+                ruin,
+                layoff_link,
+            }) => {
+                let stock = StockModel::new(volatility, beta, &params);
+                equity = equity::EquityShapes::public(
+                    &stock,
+                    tails,
+                    ruin,
+                    layoff_link,
+                    level.is_some(),
+                    &params.equity,
+                );
+                Company::Public(stock)
             }
             Some(EquityCompany::Private {
                 liquidity_hazard,
                 fail_prob,
                 exit_volatility: _,
+                exit_timing,
+                exit_size,
             }) => {
                 let (class_cumulative, class_log_range) = private_classes(&params, fail_prob);
+                equity = equity::EquityShapes::private(
+                    exit_timing,
+                    exit_size,
+                    params.private_multiple_ranges[2],
+                    &params.equity,
+                );
                 let after_exit = match EquityCompany::default() {
-                    EquityCompany::Public { volatility, beta } => {
-                        StockModel::new(volatility, beta, &params)
-                    }
+                    EquityCompany::Public {
+                        volatility, beta, ..
+                    } => StockModel::new(volatility, beta, &params),
                     EquityCompany::Private { .. } => StockModel {
                         beta: 1.0,
                         idio_log_sd: 0.0,
@@ -890,6 +1051,8 @@ impl JobModel {
             n_grants,
             grants_dropped: job.equity.len() - n_grants,
             company,
+            shapes,
+            equity,
         }
     }
 
@@ -949,6 +1112,7 @@ impl JobModel {
             // Wage shocks drawn while the job did not exist are not its history.
             state.persistent_shock = 0.0;
             state.persistent_variance = 0.0;
+            state.persistent_shocks = 0;
             state.transitory_shock = 0.0;
             state.shock_factor = 1.0;
             state.steps = 0;
@@ -968,8 +1132,21 @@ impl JobModel {
 
     #[inline]
     fn refresh_shock_factor(&self, s: &mut JobState) {
-        s.shock_factor =
-            math::exp(s.persistent_shock - 0.5 * s.persistent_variance + s.transitory_shock);
+        // `ln E[exp(z)]` of the persistent shock: half its variance when Gaussian.
+        let log_mean = match &self.shapes.wage {
+            None => 0.5 * s.persistent_variance,
+            Some(mix) => mix.log_mean(s.persistent_shocks),
+        };
+        s.shock_factor = math::exp(s.persistent_shock - log_mean + s.transitory_shock);
+    }
+
+    /// The log wage loss on re-employment with mean `mean`, from the scar word.
+    #[inline]
+    fn pay_cut(&self, class: u8, mean: f64, bits: u64) -> f64 {
+        match &self.shapes.pay_cut {
+            None => mean + self.params.scar_sd * normal_from_bits(bits),
+            Some(cut) => cut.draw(usize::from(class), mean, bits),
+        }
     }
 
     pub(crate) fn forfeit_unvested(&self, s: &mut JobState) {
@@ -988,6 +1165,12 @@ impl JobModel {
     /// Draws, in order, one 64-bit word each. From `career`: layoff, spell length,
     /// scar, commission, bonus, and in January two more (persistent and transitory
     /// wage shock). From `equity`: stock, liquidity event, outcome class, multiple.
+    /// The opt-in shapes read the same words and draw nothing more: with
+    /// `job_search: monthly` the spell word decides each month out of work and the
+    /// scar word is read in the month the search ends. The opt-in equity shapes
+    /// read the stock word (`tails: fat`), the liquidity word of a listed company
+    /// (`ruin`, and `layoff_link` in the layoff test) and the multiple word
+    /// (`exit_size: pareto_tail`), and draw nothing more either.
     pub fn step(
         &self,
         state: &mut JobState,
@@ -1017,9 +1200,13 @@ impl JobModel {
 
         // Annual wage shocks. The first step keeps the entered salary.
         if january && s.steps > 0 && self.wage_risk {
-            let z_eta = normal_from_bits(r_eta);
+            let eta = match &self.shapes.wage {
+                None => self.sigma_eta * normal_from_bits(r_eta),
+                Some(mix) => mix.draw(r_eta),
+            };
             let z_eps = normal_from_bits(r_eps);
-            s.persistent_shock = self.rho * s.persistent_shock + self.sigma_eta * z_eta;
+            s.persistent_shock = self.rho * s.persistent_shock + eta;
+            s.persistent_shocks = s.persistent_shocks.saturating_add(1);
             s.persistent_variance =
                 self.rho * self.rho * s.persistent_variance + self.sigma_eta * self.sigma_eta;
             s.transitory_shock = self.sigma_eps * z_eps - 0.5 * self.sigma_eps * self.sigma_eps;
@@ -1037,25 +1224,36 @@ impl JobModel {
         let slack = usize::from(s.months_since_recession <= SLACK_MONTHS_AFTER_RECESSION);
 
         // Layoff.
-        if s.employment == Employment::Employed
-            && uniform_from_bits(b_layoff)
-                < self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)]
-        {
+        if s.employment == Employment::Employed && {
+            let hazard = self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)];
+            let u_layoff = uniform_from_bits(b_layoff);
+            match &self.equity.link {
+                None => u_layoff < hazard,
+                Some(link) => link.laid_off(s, hazard, u_layoff, uniform_from_bits(b_equity[0])),
+            }
+        } {
             let p = &self.params;
-            let z_spell = normal_from_bits(r_spell);
-            let z_scar = normal_from_bits(r_scar);
-            let median = p.spell_median[slack] * p.spell_age_multiplier[spell_age_band(c.age)];
-            let spell = (median * math::exp(p.spell_sigma[slack] * z_spell))
-                .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
+            let older = c.age >= SCAR_OLDER_AGE;
             let mut scar_mean = p.scar_mean[slack];
-            if c.age >= SCAR_OLDER_AGE {
+            if older {
                 scar_mean *= p.scar_older_multiplier;
             }
-            scar_mean += (SCAR_LONG_SPELL_PER_MONTH
-                * (spell - SCAR_LONG_SPELL_FROM_MONTHS).max(0.0))
-            .min(SCAR_LONG_SPELL_CAP);
-            s.spell_months_left = spell;
-            s.pending_scar = scar_mean + p.scar_sd * z_scar;
+            s.scar_class = (2 * slack + usize::from(older)) as u8;
+            if self.shapes.search.is_some() {
+                // The search is decided month by month in the unemployment branch
+                // below, starting this month; the scar is drawn when it ends.
+                s.spell_months_left = shape::SEARCHING;
+                s.scar_base_mean = scar_mean;
+                s.pending_scar = 0.0;
+            } else {
+                let z_spell = normal_from_bits(r_spell);
+                let median = p.spell_median[slack] * p.spell_age_multiplier[spell_age_band(c.age)];
+                let spell = (median * math::exp(p.spell_sigma[slack] * z_spell))
+                    .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
+                scar_mean += long_spell_addon(spell);
+                s.spell_months_left = spell;
+                s.pending_scar = self.pay_cut(s.scar_class, scar_mean, r_scar);
+            }
             s.ui_weekly_real =
                 (p.ui_replacement_rate * s.real_salary / WEEKS_PER_YEAR).min(p.ui_weekly_cap);
             s.ui_weeks_left = p.ui_max_weeks
@@ -1085,6 +1283,17 @@ impl JobModel {
                 };
             }
             Employment::Unemployed { months } => {
+                if let Some(search) = &self.shapes.search {
+                    match search.step(slack, spell_age_band(c.age), months, r_spell) {
+                        Some(part) => {
+                            let spell = f64::from(months) + part;
+                            let mean = s.scar_base_mean + long_spell_addon(spell);
+                            s.pending_scar = self.pay_cut(s.scar_class, mean, r_scar);
+                            s.spell_months_left = part;
+                        }
+                        None => s.spell_months_left = shape::SEARCHING,
+                    }
+                }
                 let idle = s.spell_months_left.min(1.0);
                 s.spell_months_left -= idle;
                 s.months_unemployed_total += idle;
@@ -1152,9 +1361,19 @@ impl JobModel {
     ) {
         match &self.company {
             Company::None => {}
-            Company::Public(stock) => {
-                s.stock_price *= stock.gross_return(c.equity_return, normal_from_bits(r_stock));
-            }
+            Company::Public(stock) => match &self.equity.public {
+                None => {
+                    s.stock_price *= stock.gross_return(c.equity_return, normal_from_bits(r_stock));
+                }
+                Some(shape) => shape.step(
+                    stock,
+                    s,
+                    c,
+                    out.rehired,
+                    r_stock,
+                    uniform_from_bits(b_equity[0]),
+                ),
+            },
             Company::Private {
                 monthly_hazard,
                 fail_prob,
@@ -1167,7 +1386,18 @@ impl JobModel {
                     s.stock_price = c.price_level;
                     // The words become uniforms only here, where they are used.
                     let [u_liquidity, u_class, u_multiple] = b_equity.map(uniform_from_bits);
-                    if c.recession == 0 && u_liquidity < *monthly_hazard {
+                    let hazard = match &self.equity.exit_hazard {
+                        None => *monthly_hazard,
+                        Some(table) => {
+                            // The clock stops in recession months.
+                            let waited = s.exit_clock as usize;
+                            if c.recession == 0 {
+                                s.exit_clock = s.exit_clock.saturating_add(1);
+                            }
+                            table[waited.min(table.len() - 1)]
+                        }
+                    };
+                    if c.recession == 0 && u_liquidity < hazard {
                         if u_class < *fail_prob {
                             s.liquidity = Liquidity::Failed;
                             s.stock_price = 0.0;
@@ -1185,8 +1415,11 @@ impl JobModel {
                             };
                             let [log_low, log_width] = class_log_range[class];
                             s.liquidity = Liquidity::Exited;
-                            s.stock_price =
-                                c.price_level * math::exp(log_low + log_width * u_multiple);
+                            s.stock_price = c.price_level
+                                * match &self.equity.pareto {
+                                    Some(pareto) if class == 2 => pareto.quantile(u_multiple),
+                                    _ => math::exp(log_low + log_width * u_multiple),
+                                };
                             for g in 0..self.n_grants {
                                 let grant = &self.grants[g];
                                 let gross = s.illiquid_vested[g] * s.stock_price;
@@ -1337,6 +1570,7 @@ impl JobModel {
         state.anchor = real_salary / curve;
         state.persistent_shock = 0.0;
         state.persistent_variance = 0.0;
+        state.persistent_shocks = 0;
         state.transitory_shock = 0.0;
         state.shock_factor = 1.0;
         state.real_salary = real_salary;
@@ -1440,6 +1674,20 @@ impl SelfEmploymentModel {
     /// return of the last 12 months (so profit falls in bad years for the economy) and
     /// `e` an independent normal.
     pub fn new(se: &SelfEmployment, risk_enabled: bool, data: &Data) -> SelfEmploymentModel {
+        SelfEmploymentModel::with_start(se, risk_enabled, true, data)
+    }
+
+    /// As [`SelfEmploymentModel::new`], saying whether the income is already being
+    /// received at `profile.start`. It matters only for `failure` with
+    /// `years_in_business` left empty: a running business is then taken to be
+    /// established and a future one new.
+    pub fn with_start(
+        se: &SelfEmployment,
+        risk_enabled: bool,
+        already_running: bool,
+        data: &Data,
+    ) -> SelfEmploymentModel {
+        let params = CareerParams::from_data(data);
         let log_growth = math::ln_1p(se.real_growth.max(-0.99));
         SelfEmploymentModel {
             monthly_real: se.net_annual / 12.0,
@@ -1449,13 +1697,67 @@ impl SelfEmploymentModel {
                 .collect(),
             log_sd: log_sd_from_cv(se.volatility),
             risk: risk_enabled && se.volatility > 0.0,
-            params: CareerParams::from_data(data),
+            business: if risk_enabled {
+                business::Business::new(se, already_running, &params.business)
+            } else {
+                None
+            },
+            params,
         }
     }
 
     /// State at `profile.start`.
     pub fn initial_state(&self) -> SelfEmploymentState {
-        SelfEmploymentState::default()
+        SelfEmploymentState {
+            business: self
+                .business
+                .as_ref()
+                .map_or_else(BusinessState::default, business::Business::initial_state),
+            ..SelfEmploymentState::default()
+        }
+    }
+
+    /// True when `failure` or `monthly_lumpiness` is on: call
+    /// [`SelfEmploymentModel::business_step`] every month.
+    #[inline]
+    pub fn has_business(&self) -> bool {
+        self.business.is_some()
+    }
+
+    /// One month of the opt-in closure risk and lumpiness (see [`business`]).
+    /// `active` says whether the income would be paid this month if the business
+    /// were open. Draws exactly [`business::WORDS_PER_MONTH`] words from `rng`
+    /// (`Stream::Business`) when [`SelfEmploymentModel::has_business`] and none
+    /// otherwise. The month's profit is the result of
+    /// [`SelfEmploymentModel::step`] times `state.business.level` times the
+    /// returned `lump`.
+    #[inline]
+    pub fn business_step(
+        &self,
+        state: &mut SelfEmploymentState,
+        active: bool,
+        recession: bool,
+        rng: &mut Rng,
+    ) -> BusinessMonth {
+        match &self.business {
+            Some(b) => b.step(&mut state.business, active, recession, rng),
+            None => BusinessMonth {
+                lump: 1.0,
+                closed: false,
+                reopened: false,
+            },
+        }
+    }
+
+    /// The expected share of unbroken profit paid in each of the first `months`
+    /// months of an income that is active throughout, with no recession month:
+    /// all ones without `failure`. Exact, not simulated; allocates, so not for
+    /// the monthly loop.
+    pub fn expected_business_level(&self, months: usize) -> Vec<f64> {
+        match self.business.as_ref().and_then(|b| b.failure) {
+            Some(f) => f.expected_level(months),
+            None => vec![1.0; months],
+        }
     }
 
     /// Net profit for the month, nominal. `years_since_start` (years since

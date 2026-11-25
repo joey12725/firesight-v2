@@ -23,6 +23,7 @@ fn bootstrap() -> MarketKind {
     MarketKind::Bootstrap {
         mean_block_months: 60,
         from_year: None,
+        joins: BootstrapJoins::Uniform,
     }
 }
 

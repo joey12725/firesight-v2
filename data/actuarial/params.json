@@ -3101,5 +3101,154 @@
       "source": "Partial-adjustment form after Lintner (1956, 'Distribution of Incomes of Corporations Among Dividends, Retained Earnings, and Taxes', American Economic Review 46(2)). recession_cut_annual calibrated so that replaying 2007-11 to 2013-01 cuts the US dividend run rate by about 20% from peak to trough, against the 21% fall of S&P 500 dividends per share from $28.39 (2008) to $22.41 (2009) in Shiller's data as tabulated by DQYDJ.",
       "confidence": "adjustment_annual a judgement (published speeds of adjustment vary widely); recession_cut_annual calibrated to one episode; yield_range a judgement that only bounds collapsed indices"
     }
+  },
+  "market_risk": {
+    "summary": "Opt-in market options (assumptions.market): uncertainty about long-run averages, state-matched bootstrap joins and rare disasters. All are off by default. Nothing here is estimated from a data set; every number is a judgement, kept equal to the code by tests/rich_markets.rs.",
+    "long_run_uncertainty": {
+      "summary": "Suggested settings for equity_premium_uncertainty and inflation_uncertainty (the engine default is none). The editor may offer these as presets.",
+      "suggested_equity_return_sd": 0.01,
+      "suggested_inflation_sd": 0.005,
+      "reasoning": "The average of about 100 annual returns with a standard deviation near 18 points (computed from data/history/monthly.csv) has a standard error of 18 / sqrt(100) = 1.8 points a year, and that is before asking whether the next 50 years resemble the last 100. One point is a cautious round number below that. Half a point for inflation is a round number of the same kind, not an estimate.",
+      "confidence": "low; a judgement"
+    },
+    "bootstrap_joins": {
+      "summary": "Constants of the matched-join state grid (economy/joins.rs).",
+      "trailing_months": 12,
+      "min_cell_rows": 12,
+      "confidence": "judgement; the grid is deliberately coarse"
+    },
+    "rare_disasters": {
+      "summary": "Defaults of assumptions.market.disasters and the fixed constants of the disaster overlay (economy/overlay.rs). annual_probability defaults to 0 (off); suggested_annual_probability is what the documentation proposes when it is switched on. cash_inflation_pass_through is a share in logs: a burst of p a year adds (1 + p)^share - 1 a year to bill returns, the long yield and the mortgage rate.",
+      "suggested_annual_probability": 0.01,
+      "depth_pert": {"low": 0.2, "mode": 0.4, "high": 0.75},
+      "years_pert": {"low": 3.0, "mode": 8.0, "high": 20.0},
+      "inflation_probability": 0.3,
+      "inflation_pert": {"low": 0.02, "mode": 0.05, "high": 0.12},
+      "cash_inflation_pass_through": 0.5,
+      "bond_inflation_pass_through": 0.0,
+      "recession_months_max": 36,
+      "max_episodes_per_path": 3,
+      "max_depth": 0.95,
+      "max_burst_inflation": 0.25,
+      "max_burst_price_factor": 10.0,
+      "reasoning": "The US record the generators resample contains one episode of this kind (1929-33). Other developed markets had several in the twentieth century: wars, hyperinflations, and long stagnations such as Japan after 1989. Published cross-country estimates of the frequency of macroeconomic disasters are of the order of 2% a year (Barro 2006; Barro and Ursua 2008; figures recalled from memory, not re-verified, and they measure output or consumption, not share prices). One percent a year is a round number for events beyond those the US record already holds. The depth is a permanent loss against the undisturbed path, not a peak-to-trough fall that is later recovered, so it is set below the peak-to-trough falls usually quoted. The pass-through figures sit between the 1940s, when US bill rates were pegged and kept up with none of the inflation, and the 1970s, when they kept up with most of it.",
+      "confidence": "low; a judgement throughout. Treat the option as a stress dial, not a forecast."
+    }
+  },
+  "asset_shapes": {
+    "summary": "Opt-in shapes of the single stock, crypto and the custom asset (portfolio.single_stock, portfolio.crypto, portfolio.custom_asset). All are off by default. The crypto outlooks and token hazards they make reachable are the existing ones under crypto.model. Nothing in this section is estimated from a data set; every number is a judgement, kept equal to the code by tests/rich_assets.rs.",
+    "asset_ext_words_per_month": 3,
+    "single_stock_fat_tails": {
+      "summary": "tails: fat replaces the lognormal factor with exp of a scaled unit-variance Student-t(4), rescaled to mean 1 and solved to the lognormal factor's standard deviation.",
+      "student_t_df": 4,
+      "cap_sd": 8.0,
+      "max_monthly_factor": 5.0,
+      "reasoning": "Four degrees of freedom is the shape the single-stock specification above (equity_compensation.single_public_stock.model) already names and the crypto sleeve already uses; it is not fitted to stock returns here. The cap of eight standard deviations is the crypto sleeve's. The factor-of-five limit on one month's company-specific move binds only above about 60% idiosyncratic volatility and is there to keep very volatile settings bounded.",
+      "confidence": "low; a judgement. That monthly returns of individual stocks have fatter tails than a normal is well established; the degrees of freedom are not estimated."
+    },
+    "crypto_cycles": {
+      "summary": "Defaults and limits of portfolio.crypto.dynamics: cycles, a two-state (calm, wild) Markov chain on the volatility of the crypto shock with the long-run variance of the steady model.",
+      "calm_months": 30.0,
+      "wild_months": 12.0,
+      "volatility_ratio": 2.5,
+      "months_min": 1.0,
+      "months_max": 600.0,
+      "volatility_ratio_max": 5.0,
+      "reasoning": "crypto.reasoning.volatility above records drawdowns of 75-85% in 2014, 2018 and 2022 with quieter stretches between: roughly one wild year in three or four. Thirty calm months and twelve wild ones put 29% of months in the wild state; a ratio of 2.5 gives about 50% a year when calm and 105% when wild at the default 70% overall (40% and 99% for the sleeve's own shock, before its link to the stock market). The spell lengths and the ratio are round numbers chosen to look like that record, not estimates from it.",
+      "confidence": "low; a judgement"
+    },
+    "custom_fat_tails": {
+      "summary": "tails: fat replaces the normal residual with a unit-variance Student-t(6), the shape listed real estate already uses.",
+      "student_t_df": 6,
+      "confidence": "low; a judgement"
+    },
+    "custom_loss_event": {
+      "summary": "Defaults of portfolio.custom_asset.loss_event when it is switched on (the engine default is none).",
+      "annual_probability": 0.02,
+      "loss_pert": {"low": 0.1, "mode": 0.3, "high": 0.6},
+      "mean_includes_losses": true,
+      "reasoning": "A placeholder for 'rare and large': once in fifty years, most likely a 30% write-down. The right values depend entirely on what the custom asset is, so the user should set them; they are not taken from default or recovery studies.",
+      "confidence": "low; a judgement"
+    }
+  },
+  "career_shapes": {
+    "summary": "Opt-in shapes of a job's random parts (incomes[].kind.risk: wage_shocks, layoff_pay_cut, job_search). All are off by default. Each keeps an average the default model already has (expected pay, the mean log pay change after a layoff, the mean spell length in a steady economy) and changes only the shape around it. The shapes are supported by the evidence quoted under earnings and unemployment; none of the numbers in this section is estimated from a data set.",
+    "wage_mixture": {
+      "summary": "wage_shocks: fat_tailed. The persistent innovation eta is sigma_eta times a two-part normal mixture with mean 0 and variance 1: a small move most years, a large one otherwise.",
+      "large_move_probability": 0.15,
+      "large_to_small_sd_ratio": 4.0,
+      "large_move_mean_shift_in_sd": -0.25,
+      "implied": "small moves have 0.55 and large moves 2.2 times the sd of the normal shock; skewness about -0.5 and kurtosis about 11 against 0 and 3",
+      "reasoning": "earnings.guvenen_lifecycle_facts.shock_shape above records the facts: most years almost no change, occasionally a very large one, negative skew, kurtosis far above 3. A two-part normal mixture is the simplest shape with those features. The weight and the ratio are round numbers; the downward shift is kept small because job loss and its pay cut already supply most of the left tail in this model, and a larger one would count it twice.",
+      "confidence": "low; a judgement. The direction of each feature is well established, the three numbers are not estimates."
+    },
+    "pay_cut_two_part": {
+      "summary": "layoff_pay_cut: two_part. With probability q the log pay change is N(0, no_loss_sd); otherwise it is a loss L = top * B, where B is Beta(1, b), m = mean / (1 - q) is the mean loss of those who lose (mean is the default model's mean log loss for the same layoff), top = max(-ln(1 - loss_max_pay_cut), loss_max_as_multiple_of_mean_loss_at_least * m) and b = top / m - 1. The overall mean is therefore the default's.",
+      "no_loss_probability_expansion": 0.45,
+      "no_loss_probability_recession": 0.35,
+      "no_loss_age_50_plus_multiplier": 0.8,
+      "no_loss_sd": 0.05,
+      "loss_max_pay_cut": 0.5,
+      "loss_max_as_multiple_of_mean_loss_at_least": 3.0,
+      "reasoning": "unemployment.reemployment_wage_loss.evidence above: Farber finds roughly half of re-employed job losers earn as much or more while the average loss is 5-10%, and the displacement studies find large lasting losses for a minority. That is a mass near no change plus a skewed loss, not one bell curve. 0.45 is 'roughly half' rounded down; the recession and age adjustments follow the direction of the default model's larger mean losses there and are not separately estimated. The loss is a Beta(1, b): the simplest bounded shape whose density falls steadily from small losses to large ones, with a closed-form quantile. Its upper limit is a halving of pay, a round number; where the mean loss of those who lose is above a third of that (layoffs in a recession regime) the limit is three times that mean instead, so the shape stays right-skewed. Worst cases: a lasting cut of 50% after a search of up to six months unless the layoff is in a recession regime from age 50 (61%); after a search of 16 months or more, 63% in ordinary times (64% from age 50), 68% in a recession regime and 74% in one from age 50.",
+      "confidence": "low; a judgement. The two-part shape is well supported; the probabilities and the shape of the loss are not estimates."
+    },
+    "job_search_hazard": {
+      "summary": "job_search: monthly. Each month out of work the search ends with probability f0 * (floor + (1 - floor) * exp(-d / fade_months)), d = whole months out of work so far, at most 36 months in all. f0 depends on the current regime (recession or the 12 months after, as for durations above) and the age band, and is solved when the plan is compiled so that the mean spell in an unchanging regime equals the mean of the default clipped lognormal (3.6 months in expansion and 6.6 in the recession regime at 35-54).",
+      "floor": 0.35,
+      "fade_months": 6.0,
+      "reasoning": "That the chance of finding work falls with time out of work is a standard finding (for example the callback experiment of Kroft, Lange and Notowidigdo 2013), though how much of it is true duration dependence and how much is sorting is disputed. The floor and the fade time are round numbers chosen so that the share of spells longer than six months stays close to the default model's; they are not fitted to duration data. The citation is from memory.",
+      "confidence": "low; a judgement"
+    }
+  },
+  "business_and_equity": {
+    "summary": "Opt-in risks of self-employment income (incomes[].kind.failure, monthly_lumpiness) and opt-in shapes of employer stock (incomes[].kind.equity[].company: tails, ruin, layoff_link, exit_timing, exit_size). All are off by default. Nothing in this section is estimated from a data set; every number is a judgement or is taken from the equity_compensation section above, and tests/rich_business.rs keeps the code's defaults equal to it.",
+    "business_failure": {
+      "summary": "Defaults of failure: hazard. A monthly chance of closing, 1 - (1 - p)^(1/12) with p the yearly figure (young while the venture is under young_years old, mature after), multiplied by recession_multiplier in a recession month. Then either no income for good, or no income for gap_months and a restart at income_fraction of the old profit as a young venture.",
+      "young_annual_probability": 0.1,
+      "mature_annual_probability": 0.04,
+      "young_years": 5.0,
+      "recession_multiplier": 2.0,
+      "restart_gap_months": 12,
+      "restart_income_fraction": 0.7,
+      "reasoning": "Business survival statistics (the Bureau of Labor Statistics publishes survival rates of new establishments by year of birth) show a closure rate that is highest in the first years and falls with age, with roughly half of new establishments gone within five years; that figure is quoted from memory and not re-verified. The defaults are deliberately lower than it: 10% a year for five years closes 41% of young ventures, because those statistics count every closure, including sales and owners who move on by choice, and because the user is describing an income they already earn or firmly plan. 4% a year for an established business, the doubling in recessions (the layoff model's own multiplier is 2.5), the year without income and the lasting 30% cut after a restart are round numbers, not estimates.",
+      "confidence": "low; a judgement. That young businesses close more often than established ones and that closures rise in recessions is well established; none of the six numbers is an estimate."
+    },
+    "monthly_lumpiness": {
+      "summary": "monthly_lumpiness is the coefficient of variation of an independent monthly factor with mean exactly 1: a lognormal limited to max_month_as_multiple_of_average times its mean and rescaled to mean 1.",
+      "max_month_as_multiple_of_average": 12.0,
+      "reasoning": "The lognormal is the shape the engine already uses for commission and bonus noise. The limit of twelve average months in one month (a year's expected profit in one invoice) keeps a large entered figure bounded; it binds in about one month in 3,000 at a lumpiness of 1.0.",
+      "confidence": "low; a judgement on shape. The user enters the size."
+    },
+    "employer_stock_layoff_link": {
+      "summary": "layoff_link: the job's monthly layoff chance is multiplied by hazard_multiplier while the employer stock's company-specific return over the last window_months months is below crash_return_12m, and a ruin of the stock ends the job.",
+      "hazard_multiplier": 3.0,
+      "crash_return_12m": -0.4,
+      "window_months": 12,
+      "reasoning": "The rule and both numbers are equity_compensation.single_public_stock.employer_correlation above, which labels them a judgement. That a firm whose own shares have collapsed sheds staff is well documented in cases; the size of the effect is not estimated here.",
+      "confidence": "low; a judgement"
+    },
+    "employer_stock_ruin": {
+      "summary": "ruin: by_volatility reads the yearly chance of a total loss from equity_compensation.single_public_stock.defaults by the stock's company-specific volatility (piecewise linear through zero and the three presets, flat beyond the last), exactly as the portfolio's single-stock sleeve does. ruin: stated defaults to the typical growth company's figure.",
+      "stated_default_annual_probability": 0.01,
+      "confidence": "as equity_compensation.single_public_stock (medium; the presets are judgement)"
+    },
+    "employer_stock_fat_tails": {
+      "summary": "tails: fat uses the single-stock sleeve's factor (asset_shapes.single_stock_fat_tails): Student-t(4), limited to eight standard deviations and a factor of five, mean 1 and the lognormal factor's standard deviation.",
+      "confidence": "as asset_shapes.single_stock_fat_tails (low; a judgement)"
+    },
+    "private_exit_timing": {
+      "summary": "Defaults of exit_timing: lognormal. The wait in years is LogNormal(ln(median_years), sigma), the equation of equity_compensation.private_company.model; the engine default median is the series B to C stage of its stage table.",
+      "default_median_years": 5.0,
+      "default_sigma": 0.5,
+      "confidence": "as equity_compensation.private_company (low-medium)"
+    },
+    "private_exit_pareto": {
+      "summary": "exit_size: pareto_tail replaces the log-uniform multiple of the large class (multiple_ranges_on_paper_value.large above) by a Pareto from the same lower limit, truncated at cap_multiple_of_paper_value, whose tail index is solved so that the mean multiple of the class is unchanged.",
+      "cap_multiple_of_paper_value": 200.0,
+      "implied_tail_index": 1.55,
+      "reasoning": "The Correlation Ventures distribution above (4% of financings above 10x, 1.5% above 20x, 0.4% above 50x) falls off like a power law with an index of about 1.4, and cannot be represented with a ceiling of 20x. The cap of 200x is a round number that keeps sample means stable; with it, the index that leaves the class mean at the log-uniform value of 9.94x is about 1.55, close to the index those figures imply. The index is derived, not chosen: it moves if the cap or the class range does.",
+      "confidence": "low-medium; the cap is a judgement, the shape is supported by the distribution quoted above (whose band split is itself partly from memory)"
+    }
   }
 }

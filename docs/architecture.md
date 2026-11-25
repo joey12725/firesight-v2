@@ -68,6 +68,18 @@ the optional LLM proxy.
   | `Divorce` | 2000 | when a couple with `divorce_risk` divorces |
   | `SpousalCare` | 2001 | whether a working partner cuts back to give care |
   | `Parent(i)` | 0x1a00_0000 + i | a parent's lifetime and late-life care |
+  | `MarketParams` | 40 | per-path shifts of the long-run averages (`equity_premium_uncertainty`, `inflation_uncertainty`) |
+  | `Disaster` | 41 | rare disasters: whether, how deep, how long |
+  | `AssetExt` | 42 | crypto volatility cycles and custom-asset loss events |
+  | `HealthPath` | 60 | household-wide health processes |
+  | `EventShape` | 70 | amounts and timing shapes of user events |
+  | `Benefactor` | 71 | lifespans of people who leave an inheritance |
+  | `SpendingPath` | 72 | per-path spending processes |
+  | `Policy` | 80 | Social Security reform and pension sponsor outcomes |
+  | `CareerShape(person)` | 0x2B00_0000 + i | mixture wage shocks, two-part pay cuts, monthly job search |
+  | `Business(income)` | 0x2B10_0000 + i | business closure and monthly lumpiness |
+  | `Frailty(person)` | 0x2C00_0000 + i | frailty and care-cost draws |
+  | `LocalMarket(property)` | 0x2E00_0000 + i | local house-price cycles |
 
   The first nine are the base model's. Every other stream belongs to one opt-in
   feature and is drawn only when that feature is on, a fixed number of times a
@@ -75,7 +87,7 @@ the optional LLM proxy.
   scenario, or switching a feature on, must not shift the random numbers of any
   other subsystem. This is what makes scenario comparison a paired experiment
   (common random numbers), and it is the v1 idea we keep and make exact.
-  `tests/sim_richness.rs` checks that the ids are unique and that no feature moves
+  `core::rng` and `tests/sim_richness.rs` check that the ids are unique and that no feature moves
   the market, career, health or longevity draws.
 * Path `i` can be re-simulated alone at any time with a full ledger (`trace_path`).
   The aggregate run therefore never stores per-path time series.
@@ -168,7 +180,10 @@ IncomeKind =
         risk: CareerRisk { level: None|Low|Typical|High,   // wage shocks + layoff hazard
                            job_mobility: Off|Typical|High,    // opt-in voluntary job changes with pay jumps (methodology 6.1)
                            recession_pay: Off|Typical,        // opt-in freezes, cuts, smaller bonuses in recessions (6.2)
-                           late_career: Off|Realistic },      // opt-in older-worker layoffs: longer spells, bigger scars, may never work again (6.4)
+                           late_career: Off|Realistic,        // opt-in older-worker layoffs: longer spells, bigger scars, may never work again (6.4)
+                           wage_shocks: Normal | FatTailed,          // default Normal (6.6)
+                           layoff_pay_cut: Normal | TwoPart,         // default Normal (6.6)
+                           job_search: DrawnAtLayoff | Monthly },    // default DrawnAtLayoff (6.6)
         bonus: Option<Bonus{ target_fraction, volatility }>,
         commission: Option<Commission{ expected_annual, volatility }>,
         equity: Vec<EquityGrant>,
@@ -177,14 +192,25 @@ IncomeKind =
   SelfEmployment { net_annual, volatility, real_growth, ends_at_retirement, solo_401k_fraction,
                    business_risk: Off|Typical|High,         // opt-in cycles and failure (methodology 6.5)
                    years_operating,                         // age of the business at the start (failure curve)
-                   fallback_wage: Option<FallbackWage{ annual, search_months }> }
+                   fallback_wage: Option<FallbackWage{ annual, search_months }>,
+                   failure: Never                                   // default Never (6.7; do not combine with business_risk)
+                          | Hazard{ young_annual_probability, mature_annual_probability, young_years,
+                                    years_in_business: Option<f64>, recession_multiplier,
+                                    then: Stops | Restart{ gap_months, income_fraction } },
+                   monthly_lumpiness: f64 }                         // default 0: equal months
   Pension  { annual, cola: Full|None|Partial{rate}, survivor_fraction }
   Annuity  { annual, real: bool }
   Other    { annual, taxable: bool, real_growth, ends_at_retirement }
 EmployerPlan { employee_fraction (of salary, or) employee_max: bool, roth_fraction,
                match_rate, match_up_to (fraction of salary), after_tax_mega: bool(false) }
 EquityGrant { id, kind: Rsu | Option{ strike_fraction },     // strike as fraction of current price
-              company: Public{ volatility, beta } | Private{ liquidity_hazard, fail_prob, .. },
+              company: Public{ volatility, beta,
+                               tails: Normal | Fat,                             // default Normal
+                               ruin: Never | ByVolatility | Stated{ annual_probability },  // default Never
+                               layoff_link: bool }                              // default false
+                     | Private{ liquidity_hazard, fail_prob, ..,
+                                exit_timing: ConstantHazard | Lognormal{ median_years, sigma },  // default ConstantHazard
+                                exit_size: Classes | ParetoTail },              // default Classes
               unvested_value, vest_months_remaining, cliff_months,
               refresh_annual_value,                // new grants each year while employed
               sell_on_vest: bool }
@@ -229,8 +255,16 @@ PortfolioPolicy { target: Allocation, glide: None | TargetDate{..} | BondTent{..
                   expense_ratio: f64, advisory_fee: f64,
                   emergency_months: f64 (6),          // of current spending, recomputed every year
                   retirement_cash_years: f64 (0..5),  // bucket: refill only when equities are not in drawdown
-                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield }>,
-                  single_stock: SingleStock{ volatility, beta },
+                  custom_asset: Option<CustomAsset{ name, mean, volatility, equity_corr, income_yield,
+                                                    tails: Normal | Fat,                       // default Normal
+                                                    loss_event: Option<LossEvent{ annual_probability, loss: Uncertain,
+                                                                                  mean_includes_losses (true) }> }>,
+                  single_stock: SingleStock{ volatility, beta, tails: Normal | Fat,            // default Normal
+                                             ruin_hazard: Option<f64> },                       // None = from volatility
+                  crypto: CryptoAssumptions{ outlook: Skeptic | Neutral | Believer,            // default Neutral
+                                             token: BitcoinOrEther | OtherTokens,
+                                             dynamics: Steady | Cycles{ calm_months (30), wild_months (12),
+                                                                        volatility_ratio (2.5) } },
                   tax_loss_harvesting: bool (false),    // realise losses, stay invested, reset basis
                   behavior: Disciplined (default)             // sim/behavior/panic.rs
                           | PanicProne{ drawdown_trigger (0.25), probability (0.08), share (0.5),
@@ -306,7 +340,8 @@ RetirementPlan {
                            search: Typical | Fixed{months} }>,  // off by default; sim/behavior/work.rs
 }
 Assumptions {
-  market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option } | Regime | Lognormal
+  market: MarketModel { kind: Bootstrap{ mean_block_months (60), from_year: Option,
+                                         joins: Uniform (default) | Matched } | Regime | Lognormal
                               | FatTailed        // lognormal means and vols; Student-t shocks, GARCH(1,1) volatility, calm/turbulent correlations
                               | Historical,       // every start month in history, in order: path i = cohort i
                         equity_premium_adjustment: f64 (annual, default -0.015: US 1926+ history less 1.5 points),
@@ -314,7 +349,11 @@ Assumptions {
                         stress: Vec<Stress>,
                         bond_pricing: Sampled (default) | FromYield,     // bootstrap: bond returns priced from the path's yield
                         valuation: Option<{ starting_cape (40), fair_cape (17.3), half_life_years (15) }>,  // None (default): no valuation tilt
-                        dynamic_yields: bool (false) },  // dividend yields move with prices, recessions and valuation; total returns unchanged
+                        dynamic_yields: bool (false),  // dividend yields move with prices, recessions and valuation; total returns unchanged
+                        equity_premium_uncertainty: Option<Uncertain>,  // per-path shift of the long-run stock return, mean zero; None = known
+                        inflation_uncertainty: Option<Uncertain>,       // per-path shift of long-run inflation, mean zero; None = known
+                        disasters: Disasters { annual_probability (0 = off), depth: Uncertain, years: Uncertain,
+                                               inflation_probability, inflation: Uncertain } },
   Stress = CrashAtRetirement{ drawdown, recovery_years }  // back to the pre-crash nominal level after recovery_years, not to the unstressed path
          | LostDecade{ start: When }
          | Stagflation{ start: When, years, inflation },
@@ -438,11 +477,12 @@ start of t   career-realism variates drawn; disability onset and recovery
 |---|---|
 | `model` | The schema above, defaults, schemars derives |
 | `rng` | SplitMix64 seeding, xoshiro256++, normal / student-t / lognormal / exponential / poisson, named streams |
+| `dist` | `Uncertain` (a number given as a range in the profile) compiled to `CompiledDist`, a one-uniform quantile sampler with an exact mean; the shared validation check; `sampler` re-exports the economy's one-draw shock tables |
 | `data` | Embedded datasets parsed once: `data/history/monthly.csv`, `data/tax/*.json`, `data/actuarial/*` |
-| `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise |
+| `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise; opt-in sleeve shapes (fat tails, crypto cycles, custom loss events; 3 words a month from `AssetExt` when cycles or loss events are on) |
 | `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
 | `benefits` | Social Security: indexed earnings record -> AIME -> PIA -> claim adjustment, spousal and survivor, trust-fund haircut |
-| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation |
+| `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation; opt-in shapes in `career/shape.rs` (fat-tailed wage shocks, two-part pay cut, monthly job search), which reuse words the job already draws; opt-in business closure and monthly lumpiness in `career/business.rs` (two words a month from `Stream::Business(income)`); opt-in employer-stock shapes in `career/equity.rs` (fat tails, ruin, the link to the job's layoff hazard, lognormal exit timing, Pareto exit size), which also reuse words the job already draws |
 | `health` | Premiums by phase (employer, ACA, Medicare), out-of-pocket, long-term care, mortality draws |
 | `housing` | Properties, mortgages, PMI, purchase and sale, rentals, depreciation |
 | `accounts` | Buckets (cash, taxable with basis, traditional, Roth with basis and conversion tranches, HSA) x asset classes; contributions waterfall; withdrawals; rebalancing; glide path |

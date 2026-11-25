@@ -203,6 +203,51 @@ fn family_features() -> Profile {
     p
 }
 
+/// The opt-in market options (long-run uncertainty, rare disasters, matched bootstrap
+/// joins) switched on: their per-path overlays rewrite the economy in place.
+#[test]
+fn rich_market_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich markets".into();
+    let m = &mut profile.assumptions.market;
+    m.equity_premium_uncertainty = Some(Uncertain::Normal {
+        mean: 0.0,
+        sd: 0.015,
+    });
+    m.inflation_uncertainty = Some(Uncertain::Pert {
+        low: -0.005,
+        mode: 0.0,
+        high: 0.015,
+    });
+    m.disasters = Disasters {
+        annual_probability: 0.05,
+        inflation_probability: 0.5,
+        ..Disasters::default()
+    };
+    let mut kinds = common::MARKETS.to_vec();
+    kinds.push(MarketKind::Bootstrap {
+        mean_block_months: 24,
+        from_year: None,
+        joins: BootstrapJoins::Matched,
+    });
+    for kind in kinds {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
+
 /// A household with events, stresses, a rental and a partner who joins: the paths
 /// through the loop the demo households do not take.
 fn kitchen_sink_lite() -> Profile {
@@ -273,5 +318,183 @@ fn the_market_refinements_simulate_paths_without_allocating() {
                 example.slug
             );
         }
+    }
+}
+
+/// The opt-in sleeve shapes (fat tails, crypto cycles, loss events on the custom
+/// asset) switched on, with a portfolio that holds all three sleeves: the cycle and
+/// loss draws happen inside the economy generator.
+#[test]
+fn rich_asset_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich assets".into();
+    let pf = &mut profile.portfolio;
+    pf.target = Allocation::from_pairs(&[
+        (AssetClass::UsStocks, 40.0),
+        (AssetClass::Bonds, 15.0),
+        (AssetClass::Crypto, 15.0),
+        (AssetClass::SingleStock, 15.0),
+        (AssetClass::Custom, 15.0),
+    ]);
+    pf.single_stock.tails = TailShape::Fat;
+    pf.single_stock.ruin_hazard = Some(0.05);
+    pf.crypto = CryptoAssumptions {
+        outlook: CryptoOutlook::Believer,
+        token: CryptoToken::OtherTokens,
+        dynamics: CryptoDynamics::cycles(),
+    };
+    pf.custom_asset = Some(CustomAsset {
+        tails: TailShape::Fat,
+        loss_event: Some(LossEvent {
+            annual_probability: 0.1,
+            ..LossEvent::default()
+        }),
+        ..CustomAsset::default()
+    });
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
+
+/// The opt-in career shapes (fat-tailed wage shocks, the two-part pay cut and the
+/// monthly job search) switched on for every job at the riskiest level: their
+/// tables are built when the plan is compiled and only read on the path.
+#[test]
+fn rich_career_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich careers".into();
+    let mut jobs = 0;
+    for income in &mut profile.incomes {
+        if let IncomeKind::Job(job) = &mut income.kind {
+            job.risk = CareerRisk {
+                level: RiskLevel::High,
+                wage_shocks: WageShockShape::FatTailed,
+                layoff_pay_cut: PayCutShape::TwoPart,
+                job_search: JobSearchModel::Monthly,
+                ..CareerRisk::default()
+            };
+            jobs += 1;
+        }
+    }
+    assert!(jobs > 0);
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
+    }
+}
+
+/// The opt-in business and employer-stock options switched on: a business that
+/// can close and pays in lumps (its own stream, two words a month), a listed
+/// employer with fat tails, a ruin hazard and the layoff link, and a private one
+/// with a lognormal wait and a Pareto tail. Their tables are built when the plan
+/// is compiled and only read on the path.
+#[test]
+fn rich_business_options_do_not_allocate() {
+    use firesight_core::model::*;
+    let mut profile = kitchen_sink_lite();
+    profile.name = "rich business".into();
+    let job = |id: &str, company: EquityCompany| Income {
+        id: id.into(),
+        owner: 0,
+        kind: IncomeKind::Job(Job {
+            salary: 60_000.0,
+            risk: CareerRisk {
+                level: RiskLevel::High,
+                ..CareerRisk::default()
+            },
+            equity: vec![EquityGrant {
+                id: "grant".into(),
+                company,
+                unvested_value: 40_000.0,
+                refresh_annual_value: 10_000.0,
+                sell_on_vest: false,
+                ..EquityGrant::default()
+            }],
+            ..Job::default()
+        }),
+        ..Income::default()
+    };
+    profile.incomes.push(Income {
+        id: "shop".into(),
+        owner: 0,
+        kind: IncomeKind::SelfEmployment(SelfEmployment {
+            net_annual: 30_000.0,
+            failure: BusinessFailure::Hazard {
+                young_annual_probability: 0.3,
+                mature_annual_probability: 0.1,
+                young_years: 5.0,
+                years_in_business: Some(0.0),
+                recession_multiplier: 3.0,
+                then: AfterFailure::Restart {
+                    gap_months: 6,
+                    income_fraction: 0.8,
+                },
+            },
+            monthly_lumpiness: 1.0,
+            ..SelfEmployment::default()
+        }),
+        ..Income::default()
+    });
+    profile.incomes.push(job(
+        "listed",
+        EquityCompany::Public {
+            volatility: 0.7,
+            beta: 1.3,
+            tails: TailShape::Fat,
+            ruin: StockRuin::Stated {
+                annual_probability: 0.1,
+            },
+            layoff_link: true,
+        },
+    ));
+    profile.incomes.push(job(
+        "startup",
+        EquityCompany::Private {
+            liquidity_hazard: 0.12,
+            fail_prob: 0.4,
+            exit_volatility: 1.0,
+            exit_timing: ExitTiming::lognormal(),
+            exit_size: ExitSize::ParetoTail,
+        },
+    ));
+    for kind in common::MARKETS {
+        let plan = common::compile(&common::with_market(profile.clone(), kind));
+        let mut ws = Workspace::new(&plan);
+        let mut sink = Sink::default();
+        for i in 0..20 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let before = allocations();
+        for i in 20..320 {
+            sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+        }
+        let made = allocations() - before;
+        assert_eq!(made, 0, "{kind:?}: {made} allocations over 300 paths");
+        assert!(sink.years > 300 && sink.total.is_finite());
     }
 }

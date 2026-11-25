@@ -43,7 +43,10 @@
           "extra": 0.0
         },
         "risk": {
-          "level": "typical"
+          "level": "typical",
+          "wage_shocks": "normal",
+          "layoff_pay_cut": "normal",
+          "job_search": "drawn_at_layoff"
         },
         "bonus": null,
         "commission": null,
@@ -73,7 +76,11 @@
         "volatility": 0.3,
         "real_growth": 0.0,
         "ends_at_retirement": true,
-        "solo_401k_fraction": 0.0
+        "solo_401k_fraction": 0.0,
+        "failure": {
+          "type": "never"
+        },
+        "monthly_lumpiness": 0.0
       },
       "start": null,
       "end": {
@@ -91,7 +98,11 @@
         "volatility": 0.35,
         "real_growth": 0.01,
         "ends_at_retirement": true,
-        "solo_401k_fraction": 0.0
+        "solo_401k_fraction": 0.0,
+        "failure": {
+          "type": "never"
+        },
+        "monthly_lumpiness": 0.0
       },
       "start": {
         "type": "date",
@@ -364,7 +375,16 @@
     "custom_asset": null,
     "single_stock": {
       "volatility": 0.35,
-      "beta": 1.1
+      "beta": 1.1,
+      "tails": "normal",
+      "ruin_hazard": null
+    },
+    "crypto": {
+      "outlook": "neutral",
+      "token": "bitcoin_or_ether",
+      "dynamics": {
+        "type": "steady"
+      }
     }
   },
   "properties": [
@@ -484,11 +504,36 @@
       "kind": {
         "type": "bootstrap",
         "mean_block_months": 60,
-        "from_year": null
+        "from_year": null,
+        "joins": "uniform"
       },
       "equity_premium_adjustment": -0.015,
       "inflation_adjustment": 0.0,
-      "stress": []
+      "stress": [],
+      "equity_premium_uncertainty": null,
+      "inflation_uncertainty": null,
+      "disasters": {
+        "annual_probability": 0.0,
+        "depth": {
+          "type": "pert",
+          "low": 0.2,
+          "mode": 0.4,
+          "high": 0.75
+        },
+        "years": {
+          "type": "pert",
+          "low": 3.0,
+          "mode": 8.0,
+          "high": 20.0
+        },
+        "inflation_probability": 0.3,
+        "inflation": {
+          "type": "pert",
+          "low": 0.02,
+          "mode": 0.05,
+          "high": 0.12
+        }
+      }
     },
     "taxes": {
       "kind": {

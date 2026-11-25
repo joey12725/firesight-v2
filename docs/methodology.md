@@ -73,6 +73,40 @@ Two things are deliberately not copied from the sampled row:
   consistent with each other.
 * **The long-run level of international stocks and gold** (2.5).
 
+**Matched joins (opt-in, `kind.joins: "matched"`; the default is `"uniform"`, as
+described above).** A uniform restart can follow a deep-recession month with a boom
+month from another era, and cuts every inflation episode short at the seam. With
+matched joins every month of the record is classified, once, by its recession flag,
+by the tercile of inflation over the twelve months ending with it, and by the
+tercile of the real US stock return over the same twelve months: up to 18 cells,
+where a cell with fewer than 12 months is merged with its neighbours (15 cells of 12
+to 182 months on the full record). When `from_year` leaves fewer than 12 recession
+months altogether (from 2010 there are two), those months join the other months of
+their inflation and stock-return terciles: the recession flag is then not matched,
+the other two features still are (9 cells of 15 to 27 months from 2010; 3 cells,
+the inflation terciles, from 2014 or later). No accepted `from_year` leaves fewer
+than 3 cells, so matched joins never quietly become uniform ones. At a restart the path picks a month uniformly
+from the cell of the month it has just left and continues from the month after it:
+it goes on as history went on after some month that looked like this one. The pick
+uses the same random word as the uniform restart, so no other draw moves.
+
+Because the cells divide the record without overlap, a uniformly distributed month
+is followed by a uniformly distributed month under either rule: every month of
+history is used equally often and the average of every series is unchanged. What
+changes is what happens across a seam. Measured with 12-month blocks, where seams
+are frequent (1,500 paths of 40 years each): the recession flag changes in 2.7% of
+months against 4.8% with uniform joins, and the correlation between one year's
+inflation and the next rises from 0.32 to 0.52; mean monthly stock returns are 0.836%
+against 0.831% and mean monthly inflation 0.248% against 0.246%, the same within
+sampling error. At the default 60-month blocks (20,000 paths, default equity
+adjustment) the 30-year inflation rate is 0.7% / 2.9% / 5.4% a year at the 5th /
+50th / 95th percentile against 0.9% / 3.0% / 5.1%, and the 30-year real stock
+return 0.6% / 5.7% / 10.5% against 0.4% / 5.7% / 10.6%. Success moves by under a
+point on the three examples in either direction (early-career 84.2% against 83.7%,
+dual-income 91.5% against 91.8%, landlord 92.5% against 92.7%; 10,000 paths each).
+The state is three coarse features: the valuation level is not matched, and a thin
+cell means a restart often replays the same episode.
+
 #### Bond returns from the yield path (`market.bond_pricing: from_yield`, opt-in)
 
 With the default `sampled`, a month's bond return is the resampled row's, while the
@@ -201,9 +235,10 @@ otherwise).
   replay keeps the record as it was.
 * **Listed real estate**: equity beta 0.70, volatility 19%, no alpha (4.4% real
   geometric); conservative against the REIT record.
-* **A single stock**: the market return times its beta plus idiosyncratic noise
-  with fat tails, mean-preserving, with a ruin hazard (15% of companies gone in 30
-  years at the default settings). Volatility 36% by default.
+* **A single stock**: the market return times its beta, times a company-specific
+  factor with mean one (lognormal by default; fat-tailed on request, see 2.11),
+  with a ruin hazard (15% of companies gone in 30 years at the default settings)
+  that can also be stated directly. Volatility 36% by default.
 * **Crypto**: 70% volatility, Student-t(4) shocks capped at 8 standard deviations,
   correlation with equities 0.35 rising to 0.6 in sell-offs, and a 1% a year chance
   of total loss. The preset fixes the **expected** (arithmetic) real return,
@@ -212,7 +247,12 @@ otherwise).
   value a year while a few gain enormously. Before the audit the *median* was fixed
   at zero, which made the expected return +26% a year and let a crypto sleeve improve
   the median plan. After: moving 10 points from US stocks to crypto on the
-  early-career example lowers success by 9.6 points.
+  early-career example lowers success by 9.6 points. The outlook, the kind of token
+  (8% a year chance of total loss for tokens other than bitcoin and ether) and
+  calm and wild spells of volatility are options (2.11).
+* **A custom asset**: the stated mean, plus a share of the stock market's
+  surprise set by the stated correlation, plus a normal residual sized to the
+  stated volatility. Fat tails and occasional sudden losses are options (2.11).
 
 ### 2.6 What the models produce
 
@@ -400,6 +440,233 @@ after July 1982 is an ordinary draw, and here bonds are 10-year Treasuries
 Not modelled: the episodes' unemployment and wage paths (layoff risk still follows
 the recession flag only), the Japanese land-price collapse in a lost generation,
 and episodes outside the US record.
+### 2.9 Uncertain long-run averages (opt-in)
+
+By default the long-run average return of stocks is one number on every path
+(history plus `equity_premium_adjustment`), and so is the average rate of
+inflation. The simulation then behaves as if those averages were known, and the
+only long-horizon risk is the luck of the draw around them. They are not known: the
+average of a hundred annual stock returns with a standard deviation near 18 points
+has a standard error of 1.8 points a year, before asking whether the next fifty
+years resemble the last hundred.
+
+`equity_premium_uncertainty` and `inflation_uncertainty` (both empty by default)
+each take a range written in the shared uncertain-number form, for example
+`{"type": "normal", "mean": 0, "sd": 0.01}`. When one is set, every path draws its
+own lasting shift, in points a year, at the start of the path from a stream of its
+own (two words, one per shift, always both). The average of the range is
+subtracted, so the shifts average zero across paths and the two adjustments remain
+the central case: only the spread and shape of the range are used. The generated
+path is then rewritten to what the generator would have produced with the
+adjustments moved by the shifts, in every market model:
+
+* the stock shift scales the monthly gross return of US and international stocks;
+  listed real estate moves by 0.70 of it and a single stock by its beta. Bonds,
+  bills, inflation, gold, crypto and the custom asset are untouched;
+* the inflation shift scales prices, home prices and every asset's gross return,
+  and is added to the 10-year yield and the mortgage rate, so every return after
+  inflation and every real rate is unchanged. What it changes is everything fixed
+  in dollars: mortgage payments, pensions without a cost-of-living rise, tax
+  thresholds that are not indexed.
+
+Checked: for all four models the rewritten path equals a path generated directly
+with the shifted adjustments to rounding error for stocks, bonds, bills, gold, the
+single stock, inflation and rates, and to within 0.2% of a month's gross return for
+real estate, crypto and the custom asset.
+
+Measured for a `normal` stock range with `sd` 0.01, the suggested setting (a
+judgement, `market_risk` in `data/actuarial/params.json`), bootstrap, 20,000 paths:
+the 30-year real stock return is 0.1% / 5.7% / 11.0% a year at the 5th / 50th / 95th
+percentile against 0.4% / 5.7% / 10.6% without it, the mean is unchanged (5.6%), and
+the chance of a real loss over 30 years rises from 3.8% to 4.6% (5.6% at `sd`
+0.015). Success on the examples moves little, because their outcomes turn mostly on
+other things (10,000 paths; `sd` 0.015): early-career 83.1% against 83.7%,
+dual-income 91.5% against 91.8%, landlord 92.5% against 92.7%; a 30-year retiree
+drawing 4% from 60/40 falls from 88.5% to 87.5%. The effect is on the spread: the
+average shift is zero, though compounding makes average wealth slightly higher and
+median wealth slightly lower.
+
+A shift lasts a whole simulated life, so the limits are those of the adjustments
+themselves: the adjustment plus the furthest shift either way (the range less its
+average) must stay between -10 and +10 points a year for stocks and between -5 and
++15 for inflation, and the range itself within 20 points of zero for stocks and 10
+for inflation. With the default stock adjustment of -1.5 points a `normal` range,
+which reaches 4 standard deviations, can have an `sd` of up to 0.021. Without the
+combined limit a profile at the highest adjustments with the widest ranges compounded
+30 points a year of extra return for 60 years and passed 10^13 dollars; at the
+limits now accepted the largest balance seen is the one the adjustments alone
+already allowed (about 2 x 10^11 over 300 paths of the early-career example). Using this together with a cautious `equity_premium_adjustment`
+does not count the caution twice: the adjustment sets the centre, this sets how far
+from it the truth may lie.
+
+### 2.10 Rare disasters (opt-in)
+
+The generators can only rearrange what one country's century contained. Other
+countries' stock markets lost most of their value for a generation in wars,
+hyperinflations and long stagnations. `disasters.annual_probability` (default 0:
+off) adds such episodes at random. It is extra risk laid over the market model, not
+a re-estimate of it: it lowers average stock returns, and it should not be stacked
+without thought on a large negative `equity_premium_adjustment`, which plans for
+the same worry in another way.
+
+An episode arrives with a constant chance per year: the wait to the first, and from
+the end of one to the start of the next, is exponential. Each has a depth and a
+length drawn from the `depth` and `years` ranges (defaults: most likely 40% between
+20% and 75%; most likely 8 years between 3 and 20, both PERT), and with
+probability `inflation_probability` (0.3) an inflation burst drawn from `inflation`
+(most likely 5 points a year between 2 and 12). Everything is drawn at the start of
+the path from a stream of its own: five words for each of at most three episodes,
+used or not. The generated path is then rewritten, so the generator's own draws do
+not move:
+
+* **Stocks.** US and international stocks finish the episode at `1 - depth` times
+  where they would otherwise have stood, after inflation. The loss is front-loaded:
+  each month's gross return is multiplied by a factor whose strength falls in a
+  straight line to zero at the end, so about three quarters of the fall (in logs)
+  is over at half time. Nothing is given back afterwards: returns resume from the
+  lower level. Because a gross return is multiplied, no month returns less than
+  -100%.
+* **Other risky assets** get the same factor raised to their equity beta (the
+  betas the stress overlays use, limited to between 0 and 3): listed real estate
+  0.70, a single stock its beta, crypto its drawdown beta, gold close to nothing.
+* **Bonds, bills and home prices** keep the real returns the generator gave them,
+  unless there is an inflation burst.
+* **Inflation burst.** Prices rise by the drawn extra amount each year for the
+  whole episode and do not come back down (the extra rise is limited to tenfold
+  per episode). Stocks, real estate, gold and home prices rise with it, so the
+  burst itself costs them nothing after inflation. Bonds get none of it: their
+  real return falls by the full burst. Bills keep up with half of it, counted the
+  way returns compound: for a burst of `p` a year, bill returns, the 10-year yield
+  and the mortgage rate all rise by `(1 + p)^0.5 - 1` a year while it lasts (2.5
+  points for a burst of 5, 11.8 for a burst of 25).
+* **Recession.** The first third of the episode, at most 36 months, is flagged as
+  a recession, which raises layoff risk.
+
+Every number here is a judgement (`market_risk.rare_disasters` in
+`data/actuarial/params.json`, confidence low). Published cross-country estimates of
+how often economies suffer a disaster are of the order of 2% a year (recalled from
+memory, not re-verified, and measured on output, not on share prices); the US
+record already holds one, 1929 to 1933, which the generators resample. One percent
+a year is suggested for what the record lacks.
+
+Measured at 1% a year with the default shapes (bootstrap, default equity
+adjustment, 20,000 paths): 25.6% of 30-year horizons contain the start of an
+episode (1 - 0.99^30 = 26.0% expected); the mean 30-year real stock return falls
+from 5.6% to 5.1% a year, the 5th percentile from 0.4% to -0.4%, and the chance of a
+real loss over 30 years rises from 3.8% to 6.2% (5.0% at half a percent a year, 8.4%
+at 2%). The regime model goes from 9.0% to 11.1% and the lognormal from 5.0% to
+7.6%. Success (10,000 paths): early-career 80.4% against 83.7%, dual-income 90.5%
+against 91.8%, landlord 91.6% against 92.7%; a 30-year retiree drawing 4% from 60/40
+85.3% against 88.5% (82.2% at 2% a year).
+
+Not modelled: a recovery; default on government bonds; a fall in home prices;
+more than three episodes in one life (which matters only at hazards far above the
+suggested one); any link between a disaster and the household's own job beyond the
+recession flag.
+
+### 2.11 Shapes of the single stock, crypto and the custom asset (opt-in)
+
+Three sleeves are built from a formula instead of from history. Each has options
+under `portfolio` that change the shape of its returns. All are off by default, and
+a profile that does not set them gives the same results as before, bit for bit.
+Every number below that is not a measurement is a judgement (`asset_shapes` in
+`data/actuarial/params.json`).
+
+**Single stock: fat tails** (`single_stock.tails: fat`). By default the company's
+own monthly factor is lognormal. With `fat` it is the exponential of a scaled
+Student-t(4) draw, limited to eight standard deviations and to a factor of five
+either way in one month, rescaled so its mean is exactly 1 and solved so its
+standard deviation equals the lognormal factor's. The average return and the
+volatility are therefore unchanged; what changes is how the risk arrives. The same
+random word is read through a different table, so nothing else moves. Measured
+(bootstrap, 35% volatility, beta 1.1, 2,000 paths of 30 years): monthly volatility
+10.4% either way; months worse than -30% go from 0.20% to 0.38% of months, months
+better than +40% from 0.16% to 0.42%, and months within five points of flat from
+39% to 45%. Over ten years the two shapes are close to indistinguishable (real
+growth of 1 at the 25th / 50th / 75th percentile: 0.52 / 1.16 / 2.47 lognormal,
+0.53 / 1.18 / 2.47 fat; 20,000 paths), and a 30-year retiree drawing 4% with a
+fifth of the portfolio in the stock and the rest 60/40 succeeds 84.6% of the time
+against 84.7% (10,000 paths). The option matters for what a bad month looks like, not for the
+long-run verdict.
+
+**Single stock: chance of total loss** (`single_stock.ruin_hazard`). Left empty,
+the yearly chance that the company fails is interpolated from its volatility (0.3%
+for a large company, 1% for a growth company, 3% for a small one). A stated value
+between 0 and 0.5 replaces it. Survivors' returns are raised to compensate, as
+before, so the expected return does not change: a higher hazard moves money from
+the typical path to the lucky ones. Measured at 3% a year against the default
+(about 0.5% at these settings): the share of ten-year holdings that lose more than
+nine tenths rises from 6.5% to 26.6% (1 - 0.97^10 = 26.3% from the hazard alone)
+while average real growth over the ten years is 2.09 either way; the retiree above
+succeeds 83.4% of the time against 84.7%.
+
+**Crypto: outlook and token type** (`crypto.outlook`, `crypto.token`). The presets
+that `params.json` has always listed can now be chosen: an expected real return,
+collapses included, of -5% (`skeptic`), 0% (`neutral`, the default) or +6%
+(`believer`) a year, and a yearly chance of permanent total loss of 1%
+(`bitcoin_or_ether`, the default) or 8% (`other_tokens`). They feed the same
+formula; no random number moves. The token type changes the hazard only: the
+expected return is still the outlook's, so with `other_tokens` survivors earn more
+and far fewer paths survive. Measured (bootstrap, 20,000 paths of 10 years), median
+real value of 1 after ten years and share of paths that lost more than nine tenths:
+neutral 0.08 and 53%; skeptic 0.05 and 61%; believer 0.15 and 44%; other tokens
+0.00 and 72%. A 30-year retiree drawing 4% with a tenth of the portfolio in crypto
+(10,000 paths) succeeds 75.9% of the time at neutral, 71.3% skeptic, 80.8%
+believer, 74.8% with other tokens; without any crypto, 88.5%.
+
+**Crypto: cycles** (`crypto.dynamics: cycles`). By default every month has the
+same volatility. With cycles the sleeve alternates between a calm and a wild state:
+a calm month is followed by a wild one with probability 1 / `calm_months` (default
+30), a wild one by a calm one with probability 1 / `wild_months` (default 12), so
+29% of months are wild; volatility in the wild state is `volatility_ratio` (default
+2.5) times the calm one. The calm level is solved so that the long-run variance of
+the monthly log shock equals the steady model's, and each state's shock is scaled
+to mean exactly 1, so the expected return in every month, the long-run volatility
+and the collapse hazard are those of the steady model. The state says nothing about
+direction. At the defaults the sleeve's own volatility is 40% a year when calm and
+99% when wild (62% steady; with the stock-market link, about 50%, 105% and 70%).
+The state uses one word a month from the `AssetExt` stream; the shock itself is the
+same `Market` word read at the state's scale. Measured (bootstrap, 2,000 paths of
+30 years): volatility within a calendar year is 39% / 58% / 91% at the 10th / 50th
+/ 90th percentile when steady and 31% / 52% / 100% with cycles; the lag-one
+correlation of the size of monthly moves is 0.15 against zero (1.2 million months
+of the chain alone). Ten-year outcomes barely differ (median real value 0.09
+against 0.08, 52% against 53% losing more than nine tenths), and the retiree above
+succeeds 75.9% of the time either way. Like fat tails, this changes how the ride feels more than where it
+ends.
+
+**Custom asset: fat tails** (`custom_asset.tails: fat`). The normal residual
+becomes a unit-variance Student-t(6), the shape listed real estate uses, read from
+the same word: same mean, same volatility. Measured for a fund with an 8% mean, 6%
+volatility and 0.3 correlation: months worse than -6% go from 0.01% to 0.16% of
+months; ten-year outcomes are unchanged to two decimals.
+
+**Custom asset: loss events** (`custom_asset.loss_event`). Each month there is a
+chance, `1 - (1 - annual_probability)^(1/12)`, of a sudden permanent loss of a
+share of the holding drawn from the stated range (0 to 1). `mean_includes_losses`
+says what the asset's stated mean describes. True (the default): the long-run
+average with losses counted; every month's gross return is raised by
+`1 / (1 - q E[L])` (monthly chance times average loss), so the expected return is
+exactly the stated one and ordinary months earn slightly more. False: the return of
+ordinary months; the losses come on top and the long-run average is lower by about
+the yearly chance times the average loss. Either way the stated volatility
+describes months without a loss, and the events add risk beyond it. Two words a
+month from the `AssetExt` stream decide whether a loss happens and how large it
+is. Measured for the fund above with the default event (2% a year, most likely a
+30% loss, between 10% and 60%; 20,000 paths of 10 years): with the mean including
+losses the average return stays 8.0% a year, measured volatility rises from 6.0% to
+7.6%, the worst fall within ten years goes from 11% to 33% at the 90th percentile
+and from 16% to 50% at the 99th, and real growth of 1 over ten years goes from
+1.02 / 1.59 to 0.88 / 1.61 at the 5th / 50th percentile. With the losses on top the
+average return is 7.3% and the median 1.51. A 30-year retiree drawing 4% with 30%
+of the portfolio in the fund (10,000 paths) succeeds 93.9% of the time without the
+event, 93.7% with it inside the mean and 92.3% with it on top.
+
+Not modelled: any link between a cycle state or a loss event and the stock market
+or a recession; recovery after a loss event; different tail shapes in the calm and
+wild states; a failure hazard that rises as a stock falls. Employer stock held as
+equity compensation keeps its own shape, set on the grant (section 6): normal
+unless its own `tails` and `ruin` are set.
 
 ## 3. Inflation and what follows it
 
@@ -1053,6 +1320,255 @@ alone, worked out by hand), and a ten-year-old business loses over ten points le
 winding it down with proceeds, debt or a personal guarantee, restarting a business, a
 fallback that is itself self-employment, a retirement plan on the fallback job, and the
 retirement planner counting on the fallback wage before a failure.
+
+### 6.6 Shapes of wage shocks, pay cuts and job searches (opt-in)
+
+Three settings under a job's `risk` change the shape of one random part each and
+keep its average. All are off by default, and a profile that does not set them
+gives the same results as before, bit for bit. They do nothing when career risk is
+off or the job's risk level is `none`. None of them draws a random number of its
+own: each reads a number the job draws every month anyway, so switching one on
+moves nothing outside that job's pay (markets, lifespans, health and the month of
+the household's first layoff are the same bits). The shapes follow well-documented
+facts; every number that sets them is a judgement, not an estimate
+(`career_shapes` in `data/actuarial/params.json`).
+
+**Fat-tailed wage shocks** (`wage_shocks: fat_tailed`). By default the lasting
+yearly surprise in pay is a bell curve. Earnings records do not look like that:
+most years pay barely moves, occasionally it moves a lot, and the large moves are
+more often down. With `fat_tailed` the surprise is a mixture of two bell curves: a
+small one (0.55 times the default's standard deviation) in 85% of years and a
+large one (2.2 times, centred a quarter of a standard deviation below zero) in the
+other 15%. The mixture has mean zero and exactly the default's variance, and the
+mean correction uses the mixture's own expected value in place of half the
+variance, so expected pay is still the wage curve and planning figures are
+unchanged. The surprise has skewness -0.5 and kurtosis 11 against 0 and 3; 57% of
+years fall within half a standard deviation against 38%, and 3.2% are more than
+two standard deviations down against 2.3%. The yearly change in pay a person sees
+also holds the passing shock, which stays normal, so the difference in observed
+pay is milder. Measured for a typical job over 30 years from age 30 (20,000
+paths): yearly pay changes have kurtosis 3.9 against 3.0 and skewness -0.10
+against 0; lifetime pay averages 90% of the no-risk curve either way (5th
+percentile 56% either way, 95th 133% against 134%). Because layoffs and pay cuts
+already supply most of the left tail in this model, the lean downwards is kept
+small.
+
+**Two-part pay cut after a layoff** (`layoff_pay_cut: two_part`). By default the
+lasting change in pay on finding a new job is one bell curve around the average
+loss (8% in logs in normal times, 15% in the recession regime, half as much again
+from age 50, more after a search longer than six months), with a standard
+deviation of 15 points: a raise of 7% is as likely as a loss of 23%. Surveys of
+displaced workers show something else: about half are back at their old pay or
+better, and a minority take large lasting losses. With `two_part`, a share of
+people (45% in normal times, 35% in the recession regime, a fifth fewer from age
+50) return at the old pay give or take 5%; the rest take a loss whose likelihood
+falls steadily from nothing to a largest loss. The largest loss is half of pay, or
+three times the average loss of those who lose where that is more (61% of pay in a
+recession from age 50; up to 74% after a search of 16 months or more). The
+average change in log pay is exactly the default's for the same layoff, so the
+documented averages hold. Measured across layoffs for the same worker (20,000
+paths): pay within 5% of the old level after 39% of layoffs against 19%; a raise
+of more than 10% after 1.3% against 8.2%; a cut of more than 30% after 10.1%
+against 6.6%, and of more than 40% after 3.1% against 0.7%. Lifetime pay
+averages 90% of the curve either way; layoffs, spells and months out of work are
+identical path by path.
+
+**Monthly job search** (`job_search: monthly`). By default the length of a spell
+out of work is drawn on the day of the layoff from the state of the economy that
+day, so a recession that begins a month later cannot lengthen it. With `monthly`
+there is a chance of finding work each month:
+
+```text
+chance(d) = first-month chance x (0.35 + 0.65 x exp(-d / 6)),  d = months searched
+```
+
+The chance falls as the search drags on (to 59% of its first-month level after six
+months and 44% after twelve), which is the standard finding that the long-term
+unemployed find work more slowly. The first-month chance depends on that month's
+regime (in or within twelve months after a recession, or not) and on age, and is
+solved when the plan is compiled so that, with the regime held fixed, the mean
+spell equals the default's exactly (3.6 months in normal times and 6.4 in the
+recession regime at 35 to 54). No search lasts more than 36 months, the default's
+limit. The pay cut is drawn in the month the search ends, with the default's
+add-on for long searches; unemployment insurance is fixed at the layoff as before.
+A search that begins the month before a lasting recession is more than a month
+longer on average than one in a steady economy (unit-tested). Measured for the
+same worker (20,000 paths, bootstrap markets): months out of work over a career
+average 8.9 against 9.1 (95th percentile 31.5 against 29.6); spells that span
+more than twelve calendar months are 8.2% of spells against 6.8%, and more than
+24 months 2.2% against 1.7%.
+
+**Effect on plans.** Small, as it should be for changes that keep the mean and
+the variance. With all three on, the three demo households succeed 84.0%, 91.7%
+and 92.5% of the time against 83.7%, 91.8% and 92.7% (10,000 paths each, same
+seed; the standard error of each difference is a few tenths of a point). The
+options matter for what one career can look like (a long quiet stretch, one
+career-altering layoff, a search that runs into a recession), not for the headline
+rate.
+
+### 6.7 Business closures, lumpy profit and employer stock (opt-in)
+
+By default a self-employment income never stops before its planned end and pays
+the same amount every month of a year, and stock from an employer is the market
+times a bell-curve factor with no chance of collapse and no connection to the job.
+Seven settings change that. All are off by default, and a profile that does not
+set them gives the same results as before, bit for bit. Two of them add a risk and
+lower an average on purpose (a business that can close; a job tied to the
+employer's share price); the others change a shape and keep the average, with the
+exceptions stated below. Their numbers are judgements or come from the equity
+section of the research note (`business_and_equity` in
+`data/actuarial/params.json`).
+
+**A business that can close** (`failure: hazard` on a self-employment income).
+Each month the income is being received, the business closes with a probability
+set by a yearly chance: 10% while the venture is under five years old and 4% after
+(both can be changed), doubled in recession months. The yearly figure is the
+chance in a year with no recession month. What happens next is a choice: the
+income stops for good (`then: stops`), or, the default, there is no income for 12
+months and then work starts again at 70% of what profit would have been, as a
+young venture that can close in its turn; the cut is lasting and compounds. A
+business whose age is not given is treated as established if the income is already
+being received and as new if it starts later. No unemployment insurance is paid,
+and a closure does not turn into a job. The yearly ups and downs of profit are
+drawn exactly as before, on the same stream.
+
+This is not mean-preserving: it is a risk the default leaves out, and it lowers
+expected profit. The exact expected share of the entered profit with no
+recessions, for an established business that restarts: 85% in year 10, 73% in
+year 20 and 63% in year 30 (91%, 85% and 79% averaged over the first 10, 20 and
+30 years); for a new one 90% in year 1, 77% in year 10 and 57% in year 30; for an
+established one that stops for good 67%, 44% and 29% in years 10, 20 and 30.
+Measured for one person earning $96,000 a year for 30 years (20,000 paths,
+bootstrap markets, so recessions included): lifetime profit averages 76% of the
+amount entered (5th percentile 40%, median 77%, 95th 100%), 76% of businesses
+close at least once and half at least twice, and there are 21 months with no
+profit on average; a new business averages 68%; with `stops`, 53% (5th percentile
+3%).
+
+Planning figures: the plan preview's income and the starting point of the
+lifestyle ratchet are the profit entered, because the business is open at the
+start. The funded test does not count future earned income at all, so the
+requirement is unchanged; what changes is how fast savings grow towards it. On a
+path, the tax plan for the rest of the year and the income the lifestyle ratchet
+follows read the business as it is: nothing while closed, the reduced amount after
+a restart. An `income_change` event that sets the profit to an amount sets the
+amount paid after any restart cuts so far.
+
+**Lumpy profit** (`monthly_lumpiness`). Each month's profit is multiplied by an
+independent factor with mean exactly 1 and the entered standard deviation (0.5:
+months typically within 50% of the average; 1.0 for work paid in a few large
+invoices). The factor is lognormal, so no month pays exactly nothing, and it is
+limited to twelve average months in one month. The expected total of a year is
+unchanged. Measured for the same person (20,000 paths): at 0.5 a year's total
+varies by 14% (the entered figure over the square root of twelve) and lifetime
+profit is within 4.4% of the amount entered on 90% of paths; at 1.0 the monthly
+spread is 0.99 after the limit, a year's total varies by 29%, one month in ten
+pays under a quarter of the average, and lifetime profit is between 92% and 109%
+on 90% of paths. Median terminal net worth moves by 0.3%: this option matters for
+cash flow within a year, not for the plan.
+
+Both options draw from a stream of their own per income (two numbers a month,
+whatever the state of the business), so switching either on moves nothing else:
+pay, layoffs, markets, lifespans and health are the same bits.
+
+**Fat tails for a listed employer** (`tails: fat` on a grant's `company`). The
+company's own monthly factor is the fat one of the portfolio's single stock
+(section 2.11): the exponential of a Student-t with four degrees of freedom,
+limited to eight standard deviations and a factor of five, with mean exactly 1
+and the standard deviation of the bell-curve factor it replaces. A month's own
+move of more than four standard deviations happens about 5 times in 1,000 months
+against 8 in 100,000. The expected price and its volatility are unchanged.
+Measured for an employee on $100,000 with an $80,000 grant and $20,000 a year of
+refresh grants over 30 years, typical job risk (20,000 paths): lifetime pay and
+equity average 1.12 times thirty salaries either way (5th percentile 0.76, 95th
+1.58).
+
+**Ruin** (`ruin`). With `by_volatility` the shares have a chance each year of
+becoming worthless for good, read from the stock's own volatility exactly as the
+portfolio's single stock reads it (0.3% a year at 25% company-specific volatility,
+1% at 35%, 3% at 50% and above); `stated` gives the chance directly. In every
+other month the return is raised by the same odds, so the expected price is
+unchanged and a grant already made has the same expected value. What is not kept
+is what a ruined employer would have granted later: unvested shares are worth
+nothing and refresh grants stop until the person is laid off and rehired, when
+the stock starts again as a new employer's. For the same employee with a stock of
+35% volatility (0.5% a year) lifetime pay and equity average 1.114 against 1.122;
+at 60% volatility (3% a year) 1.079 against 1.122. Nothing happens to a job that
+has not started yet. The shares already vested and kept in the portfolio follow
+the portfolio's own single-stock setting, which is a separate process and does
+not know about a ruin here.
+
+**The job follows the share price** (`layoff_link`). The research note's rule: the
+monthly chance of a layoff is three times as high while the employer's shares
+have lost more than 40% over the last twelve months for reasons of the company's
+own (the market's part is taken out), and if the shares become worthless the job
+is lost that month. The comparison uses the price history up to the month before
+and the job's own layoff number, so no random number is added or moved. This is
+not mean-preserving: it adds layoffs, and they come when the unvested shares are
+worth least. It has no effect when the job's risk level is `none` or career risk
+is off. How much it adds depends on how volatile the stock is, because a 40% fall
+is rare for a steady company and common for a wild one: a stock of 35% volatility
+is in that state about 4% of the time, one of 60% about a quarter of the time.
+Measured for the same
+employee (20,000 paths): at 35% volatility layoffs per career rise from 1.93 to
+2.08 with the link alone and to 2.23 with ruin as well, and lifetime pay and
+equity fall from 1.122 to 1.105 times thirty salaries; at 60% volatility layoffs
+rise to 2.88 and to 3.86, and lifetime pay and equity fall to 1.023 (5th
+percentile 0.65 against 0.75). The multiplier and the threshold are the research
+note's judgement, not estimates.
+
+**When a private company has its outcome** (`exit_timing: lognormal`). By default
+the outcome has the same chance every year (12%), so the single most likely year
+is the first and one company in eight has its outcome within twelve months. With
+`lognormal` the wait follows the research note's own equation: a lognormal with a
+median you state (5 years by default; about 7 for a company at seed or series A,
+3 for a late-stage one) and a log standard deviation of 0.5. The chance of the
+outcome in a month is that distribution's hazard: almost nothing in the first
+year (0.06% of companies), 3% within two years, half by the median, 92% within
+twice the median. Recession months stop the clock, as they block the outcome by
+default. The kinds of outcome and their sizes are untouched, so the expected
+payout per share is the same; what changes is when it arrives, and with it how
+many shares have vested by then. Measured for an employee with an $80,000 grant
+and $20,000 a year of refresh grants at a company that fails half the time
+(20,000 paths): a payout has arrived within one, two, five and ten years on 0.0%,
+1.1%, 18% and 42% of paths against 5.2%, 9.9%, 21% and 33%; over 30 years 50%
+against 48% (under the default 5% of companies still have no outcome after 30
+years). Equity received over 30 years averages $455,000 against $439,000 (4%
+more, because later outcomes find more shares vested and none are left waiting).
+
+**How large a private outcome can be** (`exit_size: pareto_tail`). By default a
+large outcome pays between 4 and 20 times the paper value, every multiple in that
+range equally likely on a ratio scale, and nothing can pay more. Venture outcomes
+do not stop at 20 times: the distribution quoted in the research note falls off
+like a power law. With `pareto_tail` the large class pays a Pareto multiple from
+4 times, cut off at 200 times, whose index (1.55, close to the 1.4 that
+distribution implies) is solved so that the average multiple of the class is
+exactly the default's 9.94. The chance of each kind of outcome, the other kinds
+and the expected payout are unchanged; inside the large class the median falls
+from 8.9 to 6.2 times and one outcome in twelve pays more than 20 times. On
+paths, the same companies have the same kind of outcome in the same month.
+Measured for the same employee (20,000 paths): the 99th percentile of equity
+received falls from $3.5 million to $3.0 million and the largest single path
+rises from $11 million to $65 million; the mean is $446,000 against $439,000,
+inside the sampling error of a tail this heavy (about 2%).
+
+The five employer-stock settings draw nothing: each reads a number the job draws
+every month anyway (for a listed company the liquidity number, which the default
+discards). Markets, lifespans, health and business profit are the same bits with
+them on, and so is every layoff unless the link is on.
+
+**Effect on plans.** For the demo household with business income (the side
+hustle and later consulting), switching closures on at the defaults lowers
+success from 92.7% to 90.2% and median terminal net worth from $1.01 million to
+$0.92 million, and moves the median age of financial independence from 47.7 to
+49.8; lumpiness at 1.0 leaves all three where they were (92.6%). For the demo
+household with employer stock, fat tails leave success at 83.7%; a 4% yearly ruin
+chance gives 83.9% and with the link 84.1% (10,000 paths each, same seed; the
+standard error of each difference is a few tenths of a point). Success does not
+fall there because that household retires when it is funded: a lost job delays
+retirement (the median age of financial independence moves from 39.3 to 39.9)
+and lowers later spending rather than causing a shortfall. The third
+demo household has neither kind of income and is unchanged.
 
 ## 7. Spending
 
@@ -2652,7 +3168,22 @@ A success rate alone hides most of what matters, so the engine also reports:
 **Random streams.** The generator is xoshiro256++, seeded through SplitMix64, with
 one independent stream per `(seed, path, subsystem)`: market, inflation, each
 person's career, equity compensation, each person's health, each person's
-longevity, expense shocks, each property, and life events. The number of draws from
+longevity, expense shocks, each property, and life events. The opt-in models have
+streams of their own (market parameters, rare disasters, extra asset draws, career
+shape and business outcomes, household health processes and personal frailty, event
+amounts, benefactors' lifespans, spending processes, policy, local housing markets),
+so switching one on never moves a draw of the default model (market parameters: two
+words a path when a long-run uncertainty is set; rare disasters: fifteen words a
+path when they are on; matched bootstrap joins reuse the restart word and draw
+nothing extra; extra asset draws: three words a month when crypto cycles or custom
+loss events are on, while fat tails, the stock's stated hazard and the crypto
+presets reuse words that are drawn anyway; the career shapes of section 6
+(fat-tailed wage shocks, the two-part pay cut, the monthly job search) draw
+nothing extra either, reading words of the person's career stream that every job
+draws each month; business closures and lumpy profit: two words a month per
+self-employment income from that income's own stream, whatever the state of the
+business; the employer-stock options draw nothing extra, reading words of the
+equity stream that every job draws each month). The number of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
@@ -2807,7 +3338,10 @@ default model's.
   of four historical episodes are available as stresses (`stress: lost_generation`,
   `historical_episode`, section 2.8), and expected returns can start from today's
   valuation (`market.valuation`, section 2.7). These are scenarios the user chooses,
-  not probabilities the model assigns.
+  not probabilities the model assigns. By default the long-run averages are also
+  treated as known; two opt-in settings address the tails further (2.9 uncertain
+  long-run averages, 2.10 rare disasters), and both are judgements, not estimates
+  from other countries' data.
 * Bootstrap: bond returns and the yield level on a path are not mutually
   consistent; the pull of rates to their mean is a modelling device. *Optional:*
   `market.bond_pricing: from_yield` prices each path's bond returns from its own
@@ -2822,7 +3356,15 @@ default model's.
   fat-tailed model (`market.kind: fat_tailed`, section 2.3) adds fat tails and
   volatility clustering to it and shares its other limits: no mean reversion and a
   constant yield. Its effect shows in drawdowns more than in success rates.
-* Crypto parameters are assumptions, not estimates.
+* Crypto parameters are assumptions, not estimates. That includes the outlooks,
+  the token hazards and the spell lengths of the opt-in cycles (2.11).
+* The single stock's own shocks are lognormal and the custom asset's normal unless
+  fat tails are asked for (2.11); the fat shapes are a judgement, not a fit.
+  Volatility is constant within a path for every asset except crypto with cycles
+  on. Employer stock held as equity compensation uses the normal shape and has no
+  ruin hazard unless its own options are set (section 6); a ruin there does not
+  reach shares already vested and kept, which follow the portfolio's single
+  stock.
 * With the optional features: the valuation tilt puts all of the reversion in
   prices (there are no separate earnings shocks), and its half-life and normal
   level are parameters, not estimates the model defends. A replayed episode
@@ -2908,6 +3450,21 @@ default model's.
   effect of it) and `assumptions.health_model: states` (7.14, in which sick years
   cost more and precede death). Still not modelled: health affecting earnings, and
   wealth or spending affecting health.
+* By default wage shocks and the pay change after a layoff are bell curves, and
+  the length of a spell out of work is fixed on the day of the layoff. Opt-in
+  shapes address each (section 6.6); their numbers are judgements, not fits to
+  earnings or duration data. Even with them on, the passing wage shock stays
+  normal and the variance of wage shocks does not change over the business cycle.
+* By default a self-employment income never closes and pays the same every month
+  of a year, an employer's stock cannot collapse and says nothing about the job,
+  and a private company's outcome is most likely in its first year and capped at
+  20 times paper value. Opt-in settings address each (section 6). Their numbers
+  are judgements: the closure chances are not fitted to business-survival data,
+  and the link between a share price and a layoff is the research note's rule of
+  thumb. Even with them on, a closed business does not become a job, a restart is
+  the same income at a lower level, a private company's paper value does not move
+  before its outcome, and there are no secondary sales, lock-ups or liquidation
+  preferences.
 * The lifecycle wage curve falls 15 to 22% in real terms from 45 to 65, which
   reflects the data (including shorter hours) but will understate pay for someone
   who stays full-time in a stable job; use the flat profile.

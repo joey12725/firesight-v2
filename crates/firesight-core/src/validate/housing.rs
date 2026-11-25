@@ -618,7 +618,9 @@ mod tests {
         if let PropertyUse::Rental(t) = &mut p.properties[i].usage {
             t.dynamics = RentalDynamics::Simple;
         }
-        assert!(!serde_json::to_string(&p).unwrap().contains("dynamics"));
+        assert!(!serde_json::to_string(&p.properties[i])
+            .unwrap()
+            .contains("dynamics"));
         let d: RentalDynamics = serde_json::from_str(r#"{"type":"realistic"}"#).unwrap();
         assert_eq!(
             d,

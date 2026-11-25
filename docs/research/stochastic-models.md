@@ -125,6 +125,8 @@ Literature calibrations for reference: CGM (rho 1, sigma_eta 0.10-0.13, sigma_ep
 
 The medium default is deliberately about half the literature variance. **Judgement**, for two reasons. First, job loss and its scarring are modelled explicitly in section 3; Guvenen et al. show that once nonemployment shocks are separate, the Gaussian part shrinks to rho 0.97 and sigma_eps 0.135 (a pure Gaussian fit to the same data needs rho 1.02 and sigma_eps 0.76). Second, a large share of measured transitory variance in survey data is measurement error.
 
+As built, the persistent shock is Gaussian by default; `risk.wage_shocks: fat_tailed` makes it a two-part normal mixture with the same mean and variance, `risk.layoff_pay_cut: two_part` and `risk.job_search: monthly` reshape the pay cut and the spell of section 3 (docs/methodology.md section 6). Their numbers are judgements (`career_shapes` in params.json).
+
 Keep sigma constant over the business cycle. [Guvenen, Ozkan and Song (2014)](https://doi.org/10.1086/675535) find that recessions do not raise the variance of earnings shocks; they fatten the left tail, which the job-loss module produces.
 
 ### Knobs
@@ -464,6 +466,10 @@ A stock with 40% total volatility grows at the median about 0.5 x (0.40^2 - 0.16
 If the stock is the user's employer, multiply that earner's job-loss hazard by 3 in any year the idiosyncratic return is below -40% (judgement).
 
 Knobs: private stage, paper value, include in base plan (default no); single-stock preset and a diversification schedule.
+
+As built, the portfolio's single-stock sleeve uses a lognormal factor by default; the Student-t(4) shape above is the opt-in `portfolio.single_stock.tails: fat`, and `ruin_hazard` can be stated directly (docs/methodology.md 2.11).
+
+As built for stock from an employer (docs/methodology.md section 6): by default the wait for a private company's outcome is memoryless (a constant yearly chance) and a listed employer's stock is lognormal with no ruin and no link to the job. The lognormal wait above is the opt-in `exit_timing: lognormal`; a Pareto tail on the large class is the opt-in `exit_size: pareto_tail`; the Student-t(4) shape, the ruin hazard and the job-loss link are the opt-in `tails: fat`, `ruin` and `layoff_link` on a listed employer. The link is applied month by month (three times the layoff chance while the trailing twelve-month company-specific return is below -40%), not year by year.
 
 Left out: exercise strategy, AMT, 83(b), QSBS (tax module); preference waterfalls.
 

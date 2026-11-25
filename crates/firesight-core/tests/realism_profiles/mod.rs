@@ -10,6 +10,7 @@ pub fn variants(base: &Profile) -> Vec<(String, Profile)> {
     let bootstrap = MarketKind::Bootstrap {
         mean_block_months: 60,
         from_year: None,
+        joins: BootstrapJoins::Uniform,
     };
     let mut p = base.clone();
     p.assumptions.market.kind = bootstrap;

@@ -10,6 +10,7 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::behavior::{DistressRules, InvestorBehavior};
+use super::{CryptoAssumptions, LossEvent, TailShape};
 
 /// Number of asset classes. Balances and returns are `[f64; N_ASSETS]` indexed by
 /// [`AssetClass::index`].
@@ -316,6 +317,9 @@ pub struct PortfolioPolicy {
     /// `pause_deferrals_in_distress`).
     #[serde(skip_serializing_if = "DistressRules::is_default")]
     pub distress: DistressRules,
+    /// Assumptions for the "crypto" asset class: the outlook for its average return,
+    /// the kind of token and whether its volatility comes in spells.
+    pub crypto: CryptoAssumptions,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -339,6 +343,7 @@ impl Default for PortfolioPolicy {
             behavior: InvestorBehavior::Disciplined,
             pause_deferrals_in_distress: false,
             distress: DistressRules::default(),
+            crypto: CryptoAssumptions::default(),
         }
     }
 }
@@ -466,6 +471,14 @@ pub struct CustomAsset {
     /// is part of the return above, not on top of it, and is taxed each year as
     /// ordinary income in a taxable account. 0 for an asset that pays nothing.
     pub income_yield: f64,
+    /// How often the asset's own monthly surprises are extreme: `normal` (the bell
+    /// curve) or `fat` (a few far wilder months, same volatility and same average
+    /// return). Default `normal`.
+    pub tails: TailShape,
+    /// An occasional sudden, permanent loss on top of the ordinary ups and downs,
+    /// for example a default in a credit fund. `volatility` describes the ordinary
+    /// months; these losses add risk beyond it. Default none.
+    pub loss_event: Option<LossEvent>,
 }
 
 impl Default for CustomAsset {
@@ -476,6 +489,8 @@ impl Default for CustomAsset {
             volatility: 0.12,
             equity_corr: 0.3,
             income_yield: 0.0,
+            tails: TailShape::Normal,
+            loss_event: None,
         }
     }
 }
@@ -490,6 +505,18 @@ pub struct SingleStock {
     pub volatility: f64,
     /// Sensitivity to the US stock market (1.0 moves one-for-one with it).
     pub beta: f64,
+    /// How often the company's own monthly surprises are extreme: `normal` (the
+    /// bell curve) or `fat` (a few far wilder months, such as a profit warning or a
+    /// takeover bid, with the same volatility and the same average return). Default
+    /// `normal`.
+    pub tails: TailShape,
+    /// Chance each year that the company fails and the holding becomes worthless,
+    /// as a decimal from 0 to 0.5 (0.01 = 1% a year, which is 26% over 30 years).
+    /// Surviving years earn slightly more to make up for it, so the average return
+    /// is unchanged. Leave empty to have it set from the volatility: about 0.3% a
+    /// year for a large company, 1% for a typical growth company, 3% for a small
+    /// or newly listed one. Default empty.
+    pub ruin_hazard: Option<f64>,
 }
 
 impl Default for SingleStock {
@@ -497,6 +524,8 @@ impl Default for SingleStock {
         Self {
             volatility: 0.35,
             beta: 1.1,
+            tails: TailShape::Normal,
+            ruin_hazard: None,
         }
     }
 }

@@ -359,7 +359,10 @@ impl State {
                             IncomeChangeKind::SetSalary { amount } => {
                                 let expected = plan.selfemp[k].model.expected_real_annual(years);
                                 rt.scale = if expected > 0.0 {
-                                    amount.max(0.0) / (expected * rt.st.factor.max(1e-9))
+                                    amount.max(0.0)
+                                        / (expected
+                                            * rt.st.factor.max(1e-9)
+                                            * rt.st.business.restart_share())
                                 } else {
                                     0.0
                                 };

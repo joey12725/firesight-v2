@@ -32,6 +32,7 @@ const VALUATION_KINDS: [MarketKind; 3] = [
     MarketKind::Bootstrap {
         mean_block_months: 60,
         from_year: None,
+        joins: BootstrapJoins::Uniform,
     },
     MarketKind::Regime,
     MarketKind::Lognormal,

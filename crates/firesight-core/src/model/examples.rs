@@ -122,6 +122,9 @@ fn early_career_saver(start: YearMonth) -> Profile {
                 company: EquityCompany::Public {
                     volatility: 0.45,
                     beta: 1.3,
+                    tails: TailShape::Normal,
+                    ruin: StockRuin::Never,
+                    layoff_link: false,
                 },
                 unvested_value: 60_000.0,
                 vest_months_remaining: 36,
@@ -630,6 +633,8 @@ fn side_hustle_landlord(start: YearMonth) -> Profile {
             real_growth: 0.01,
             ends_at_retirement: true,
             solo_401k_fraction: 0.0,
+            failure: BusinessFailure::Never,
+            monthly_lumpiness: 0.0,
             ..SelfEmployment::default()
         }),
         start: Some(When::date(move_month)),

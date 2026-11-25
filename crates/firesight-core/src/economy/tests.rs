@@ -78,6 +78,7 @@ fn bootstrap(mean_block_months: u32) -> MarketKind {
     MarketKind::Bootstrap {
         mean_block_months,
         from_year: None,
+        joins: BootstrapJoins::Uniform,
     }
 }
 
@@ -91,6 +92,7 @@ const ALL_KINDS: [(&str, MarketKind); 4] = [
         MarketKind::Bootstrap {
             mean_block_months: 60,
             from_year: None,
+            joins: BootstrapJoins::Uniform,
         },
     ),
     ("regime", MarketKind::Regime),
@@ -694,6 +696,7 @@ fn bootstrap_respects_from_year_and_clamps_silly_values() {
             &market(MarketKind::Bootstrap {
                 mean_block_months: block,
                 from_year: Some(year),
+                joins: BootstrapJoins::Uniform,
             }),
             data,
         )
@@ -1512,7 +1515,11 @@ fn single_stock_is_mean_preserving_with_a_ruin_hazard() {
     let base = EconomyModel::new(&market(bootstrap(60)), data);
     let with_stock = |volatility: f64, beta: f64| {
         base.clone().with_assets(&PortfolioPolicy {
-            single_stock: SingleStock { volatility, beta },
+            single_stock: SingleStock {
+                volatility,
+                beta,
+                ..SingleStock::default()
+            },
             ..PortfolioPolicy::default()
         })
     };
@@ -1643,6 +1650,7 @@ fn custom_asset_follows_the_user_parameters() {
                     volatility,
                     equity_corr,
                     income_yield: 0.0,
+                    ..CustomAsset::default()
                 }),
                 ..PortfolioPolicy::default()
             });
@@ -1675,6 +1683,7 @@ fn custom_asset_follows_the_user_parameters() {
             volatility: f64::NAN,
             equity_corr: 9.0,
             income_yield: 0.0,
+            ..CustomAsset::default()
         }),
         ..PortfolioPolicy::default()
     });
@@ -1874,6 +1883,7 @@ fn no_nan_anywhere_in_any_model() {
             MarketKind::Bootstrap {
                 mean_block_months: block,
                 from_year,
+                joins: BootstrapJoins::Uniform,
             },
         ));
     }
@@ -1946,6 +1956,16 @@ fn draw_counts_are_fixed_per_month() {
     for (name, kind, market_draws, inflation_draws) in [
         ("bootstrap", bootstrap(60), 8 * months, 0),
         ("bootstrap iid", bootstrap(1), 8 * months, 0),
+        (
+            "bootstrap matched",
+            MarketKind::Bootstrap {
+                mean_block_months: 12,
+                from_year: None,
+                joins: BootstrapJoins::Matched,
+            },
+            8 * months,
+            0,
+        ),
         ("historical", MarketKind::Historical, 7 * months, 0),
         ("regime", MarketKind::Regime, 17 * months, months),
         ("lognormal", MarketKind::Lognormal, 12 * months + 1, months),
@@ -1986,6 +2006,7 @@ fn portfolio_parameters_do_not_move_the_market() {
         single_stock: SingleStock {
             volatility: 0.9,
             beta: 2.0,
+            ..SingleStock::default()
         },
         custom_asset: Some(CustomAsset {
             name: "x".into(),
@@ -1993,6 +2014,7 @@ fn portfolio_parameters_do_not_move_the_market() {
             volatility: 0.5,
             equity_corr: -0.9,
             income_yield: 0.0,
+            ..CustomAsset::default()
         }),
         ..PortfolioPolicy::default()
     };

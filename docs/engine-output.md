@@ -570,3 +570,64 @@ the values of all existing fields are unchanged.
 
 Profile schema (inputs): the switches are listed in `docs/methodology.md` section 18
 and in the schema block of `docs/architecture.md`.
+
+## Additions made by the richer-distributions work
+
+Profile schema (inputs), all optional and off by default, so existing profiles
+give the same results:
+
+* `assumptions.market.kind.joins` on the bootstrap (`"uniform"` | `"matched"`,
+  default `uniform`): how the month a new block starts from is chosen.
+* `assumptions.market.equity_premium_uncertainty` and
+  `assumptions.market.inflation_uncertainty` (an uncertain number or null, default
+  null): a per-path shift of the long-run stock return and of inflation, mean zero.
+  The adjustment plus the furthest shift must stay within the adjustment's own
+  limits (-0.1..0.1 and -0.05..0.15), or the range gets an `out_of_range` error at
+  the field that sets the offending end (`low`, `high`, `sd`, `p10` or `p90`).
+* `assumptions.market.disasters`: `{ annual_probability (0 = off), depth, years,
+  inflation_probability, inflation }`, where `depth`, `years` and `inflation` are
+  uncertain numbers.
+
+* `portfolio.single_stock.tails` (`"normal"` | `"fat"`, default `normal`) and
+  `portfolio.single_stock.ruin_hazard` (a yearly probability from 0 to 0.5, or null,
+  default null: set from the volatility).
+* `portfolio.crypto`: `{ outlook ("skeptic" | "neutral" | "believer", default
+  neutral), token ("bitcoin_or_ether" | "other_tokens", default bitcoin_or_ether),
+  dynamics ({"type": "steady"} | {"type": "cycles", calm_months, wild_months,
+  volatility_ratio}, default steady) }`.
+* `portfolio.custom_asset.tails` (`"normal"` | `"fat"`, default `normal`) and
+  `portfolio.custom_asset.loss_event` (`{ annual_probability, loss,
+  mean_includes_losses }` or null, default null), where `loss` is an uncertain
+  number between 0 and 1.
+
+* `incomes[].kind.risk.wage_shocks` (`"normal"` | `"fat_tailed"`, default
+  `normal`), `incomes[].kind.risk.layoff_pay_cut` (`"normal"` | `"two_part"`,
+  default `normal`) and `incomes[].kind.risk.job_search` (`"drawn_at_layoff"` |
+  `"monthly"`, default `drawn_at_layoff`), on jobs only. They are plain choices, so
+  they add no validation codes: a misspelt value is refused when the profile is
+  read. They add three schema types: `WageShockShape`, `PayCutShape` and
+  `JobSearchModel`.
+
+* `incomes[].kind.failure` on self-employment (`{"type": "never"}` | `{"type":
+  "hazard", young_annual_probability, mature_annual_probability, young_years,
+  years_in_business (number or null), recession_multiplier, then}`, default
+  `never`, where `then` is `{"type": "stops"}` | `{"type": "restart", gap_months,
+  income_fraction}`) and `incomes[].kind.monthly_lumpiness` (0 to 2, default 0).
+* `incomes[].kind.equity[].company` gains, for `public`: `tails` (`"normal"` |
+  `"fat"`, default `normal`), `ruin` (`{"type": "never"}` | `{"type":
+  "by_volatility"}` | `{"type": "stated", annual_probability}`, default `never`)
+  and `layoff_link` (true | false, default false); for `private`: `exit_timing`
+  (`{"type": "constant_hazard"}` | `{"type": "lognormal", median_years, sigma}`,
+  default `constant_hazard`) and `exit_size` (`"classes"` | `"pareto_tail"`,
+  default `classes`).
+  These add five schema types (`BusinessFailure`, `AfterFailure`, `StockRuin`,
+  `ExitTiming`, `ExitSize`; `tails` reuses `TailShape`) and no validation codes:
+  out-of-range numbers are `out_of_range` errors at the field's path. In a traced
+  path a business closure is logged as a `laid_off` event labelled "Business
+  closed" and a restart as a `rehired` event labelled "Self-employment
+  restarted"; no output document changes shape.
+
+The `adjusted_history` warning is also raised, at the option's own path, when the
+historical replay is run with a long-run uncertainty or disasters switched on. The
+sleeve options add no warning codes; out-of-range values are `out_of_range` or
+`dist_order` errors at the field's path. No output document changes shape.

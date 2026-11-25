@@ -107,6 +107,9 @@ pub(crate) struct State {
     pub sx: super::spendx::SpendXState,
     /// Opt-in housing realism: rent market, slow sales, extra property streams.
     pub hx: super::housing_ext::HxState,
+    /// One per self-employment income (`Stream::Business`); read only when the
+    /// income has a closure risk or monthly lumpiness.
+    pub rng_business: Vec<Rng>,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -329,6 +332,7 @@ impl State {
             rng_housing: vec![rng.clone(); plan.props.len()],
             sx: super::spendx::SpendXState::new(plan),
             hx: super::housing_ext::HxState::new(plan),
+            rng_business: vec![rng.clone(); plan.selfemp.len()],
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -570,16 +574,24 @@ impl State {
         let mut market = Rng::stream(seed, path, Stream::Market);
         let mut inflation = Rng::stream(seed, path, Stream::Inflation);
         let mut tails = Rng::stream(seed, path, Stream::MarketTails);
-        plan.econ.generate(
+        let mut asset_ext = plan
+            .econ
+            .has_asset_ext()
+            .then(|| Rng::stream(seed, path, Stream::AssetExt));
+        plan.econ.generate_with(
             &mut EconomyStreams {
                 market: &mut market,
                 inflation: &mut inflation,
                 tails: &mut tails,
             },
+            asset_ext.as_mut(),
             path,
             months,
             econ,
         );
+        if plan.econ.has_path_overlays() {
+            plan.econ.apply_path_overlays(seed, path, econ);
+        }
         self.realism_begin(plan, seed, path);
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
         if plan.rz.any {
@@ -592,6 +604,9 @@ impl State {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }
         self.hx.reset(plan, seed, path);
+        for (rng, sp) in self.rng_business.iter_mut().zip(&plan.selfemp) {
+            *rng = Rng::stream(seed, path, Stream::Business(sp.stream));
+        }
 
         // Retirement date when the trigger fixes it.
         self.retired = false;

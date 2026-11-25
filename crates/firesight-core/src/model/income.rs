@@ -4,7 +4,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{
+    BusinessFailure, ExitSize, ExitTiming, JobSearchModel, PayCutShape, StockRuin, TailShape,
+    WageShockShape, When,
+};
 
 /// One source of income belonging to one person.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -181,6 +184,18 @@ pub struct CareerRisk {
     /// `level` other than none and `assumptions.career_risk` on.
     #[serde(skip_serializing_if = "crate::career_realism::is_default")]
     pub late_career: LateCareer,
+    /// The shape of the lasting yearly pay surprise: `normal` (the default) or
+    /// `fat_tailed` (quiet most years, a large move in about one year in seven).
+    /// Expected pay is the same either way. Ignored when `level` is `none`.
+    pub wage_shocks: WageShockShape,
+    /// The shape of the lasting pay change after a layoff: `normal` (the default)
+    /// or `two_part` (many return at about the old pay, the rest take a loss with
+    /// a long tail). The average change is the same either way.
+    pub layoff_pay_cut: PayCutShape,
+    /// How long unemployment lasts: `drawn_at_layoff` (the default) or `monthly`
+    /// (a chance of finding work each month that falls as the search drags on and
+    /// follows recessions month by month).
+    pub job_search: JobSearchModel,
 }
 
 /// How hard a layoff hits older workers.
@@ -397,6 +412,24 @@ pub enum EquityCompany {
         /// amplifies it.
         #[serde(default = "default_beta")]
         beta: f64,
+        /// How often the company's own monthly surprises are extreme: `normal` (the
+        /// bell curve) or `fat` (a few far wilder months, same volatility and same
+        /// average return). Default `normal`.
+        #[serde(default)]
+        tails: TailShape,
+        /// Whether the shares can become worthless for good: `never` (the default),
+        /// `by_volatility` (a chance each year set by `volatility` and `beta`) or
+        /// `stated`. Unvested grants are then worth nothing and no further grants
+        /// arrive from this employer.
+        #[serde(default)]
+        ruin: StockRuin,
+        /// Ties the job to the share price. When true, the chance of a layoff is
+        /// three times as high while the shares have fallen more than 40% over the
+        /// last twelve months for reasons of the company's own (not the market),
+        /// and the job is lost if the shares become worthless. Has no effect when
+        /// the job's risk level is `none`. Default false.
+        #[serde(default)]
+        layoff_link: bool,
     },
     /// A private company: shares are worth nothing spendable until an IPO or sale.
     Private {
@@ -413,6 +446,16 @@ pub enum EquityCompany {
         /// `fail_prob`. Kept so that existing profiles still load.
         #[serde(default = "default_exit_volatility")]
         exit_volatility: f64,
+        /// How the date of the outcome is decided: `constant_hazard` (the default:
+        /// the same chance every year) or `lognormal` (unlikely in the first year or
+        /// two, then most likely around a typical wait that you state).
+        #[serde(default)]
+        exit_timing: ExitTiming,
+        /// How large the best outcomes can be: `classes` (the default: at most 20
+        /// times the paper value) or `pareto_tail` (a few outcomes far above that,
+        /// up to 200 times, with the same average payout).
+        #[serde(default)]
+        exit_size: ExitSize,
     },
 }
 
@@ -437,6 +480,9 @@ impl Default for EquityCompany {
         EquityCompany::Public {
             volatility: default_stock_volatility(),
             beta: default_beta(),
+            tails: TailShape::Normal,
+            ruin: StockRuin::Never,
+            layoff_link: false,
         }
     }
 }
@@ -477,6 +523,17 @@ pub struct SelfEmployment {
     /// `business_risk` on. Leave empty for no income after a failure.
     #[serde(skip_serializing_if = "crate::career_realism::is_default")]
     pub fallback_wage: Option<FallbackWage>,
+    /// Whether the business can close: `never` (the default) or `hazard` (a chance
+    /// each year, higher for a young business and in recessions, followed by
+    /// either a restart at lower profit or no income at all). A closure is a risk
+    /// on top of the profit entered: it lowers average lifetime profit.
+    pub failure: BusinessFailure,
+    /// How unevenly profit arrives from month to month within a year, as a
+    /// standard deviation relative to the average month (0.5 = months typically
+    /// within 50% of the average; 1.0 for work paid in a few large invoices). The
+    /// expected total for the year does not change. 0, the default, pays the same
+    /// amount every month of a year.
+    pub monthly_lumpiness: f64,
 }
 
 /// The job a person takes when their business fails.
@@ -527,6 +584,8 @@ impl Default for SelfEmployment {
             business_risk: BusinessRisk::Off,
             years_operating: 0.0,
             fallback_wage: None,
+            failure: BusinessFailure::Never,
+            monthly_lumpiness: 0.0,
         }
     }
 }

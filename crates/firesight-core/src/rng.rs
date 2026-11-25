@@ -9,6 +9,20 @@
 //!   random numbers of another (say, markets). That is what makes scenario comparison
 //!   a paired experiment.
 //!
+//! The streams, by [`Stream::id`] (ids are frozen; new streams are only ever added):
+//!
+//! * 1 to 5: `Market`, `Inflation`, `EquityComp`, `Shocks`, `Events`.
+//! * `0x0100_0000 + i` to `0x0400_0000 + i`: `Career(i)`, `Health(i)`, `Longevity(i)`,
+//!   `Housing(i)`.
+//! * 40 to 42: `MarketParams`, `Disaster`, `AssetExt` (opt-in market models).
+//! * `0x2B00_0000 + i`, `0x2B10_0000 + i`: `CareerShape(i)`, `Business(i)` (opt-in
+//!   career models).
+//! * 60 and `0x2C00_0000 + i`: `HealthPath`, `Frailty(i)` (opt-in health models).
+//! * 70 to 72: `EventShape`, `Benefactor`, `SpendingPath` (opt-in event and spending
+//!   models).
+//! * 80 and `0x2E00_0000 + i`: `Policy`, `LocalMarket(i)` (opt-in policy and housing
+//!   models).
+//!
 //! Rules for callers:
 //!
 //! * Never share one `Rng` between subsystems, and never let the number of draws from a
@@ -132,11 +146,49 @@ pub enum Stream {
     Parent(usize),
     /// Whether a working partner cuts back to care for the other at home.
     SpousalCare,
+    /// Per-path uncertainty about the market's long-run parameters (for example the
+    /// long-run mean return), drawn once per path. Opt-in market models only.
+    MarketParams,
+    /// The rare-disaster jump process: whether a disaster strikes, how deep and how
+    /// long. Opt-in market models only.
+    Disaster,
+    /// Extra draws for derived asset sleeves: crypto volatility cycles and loss
+    /// events on the custom asset, three words a month. Opt-in market models only.
+    AssetExt,
+    /// Extra career draws for one person (index into `people`): mixture wage shocks,
+    /// duration-dependent unemployment. Opt-in career models only.
+    CareerShape(usize),
+    /// The opt-in closure risk and monthly lumpiness of one self-employment income
+    /// (index into `incomes`): two words a month, drawn only when one of the two
+    /// is on. Opt-in career models only.
+    Business(usize),
+    /// Household-wide health processes: medical inflation, uncertain mortality
+    /// improvement. Opt-in health models only.
+    HealthPath,
+    /// Frailty and care-cost draws for one person (index into `people`), including
+    /// the link between spouses' lifetimes. Opt-in health models only.
+    Frailty(usize),
+    /// Amounts and timing shapes of user events. Kept apart from [`Stream::Events`]
+    /// so that giving an event an amount range never moves whether or when any
+    /// event occurs.
+    EventShape,
+    /// Lifespans of people outside the household who leave an inheritance.
+    Benefactor,
+    /// Per-path spending processes: heavy-tailed expense shocks, an uncertain
+    /// retirement spending path.
+    SpendingPath,
+    /// Social Security reform and pension sponsor outcomes.
+    Policy,
+    /// Local housing factors for one property or one local market (index into the
+    /// plan's property or market table): local house-price cycles.
+    LocalMarket(usize),
 }
 
 impl Stream {
     /// A stable 64-bit identifier. These values are part of the reproducibility
-    /// contract: never renumber them, only add new ones.
+    /// contract: never renumber them, only add new ones. Ids 6 to 31 and indexed bases
+    /// `0x0500_0000` to `0x2AFF_FFFF` are free for streams of the core model; the
+    /// opt-in models start at 40 and `0x2B00_0000` so the two cannot collide.
     pub const fn id(self) -> u64 {
         match self {
             Stream::Market => 1,
@@ -174,6 +226,18 @@ impl Stream {
             Stream::LtcPremiumRates => 1701,
             Stream::HealthStates(i) => 0x1700_0000 + i as u64,
             Stream::ReturnToWork(i) => 0x1900_0000 + i as u64,
+            Stream::MarketParams => 40,
+            Stream::Disaster => 41,
+            Stream::AssetExt => 42,
+            Stream::CareerShape(i) => 0x2B00_0000 + i as u64,
+            Stream::Business(i) => 0x2B10_0000 + i as u64,
+            Stream::HealthPath => 60,
+            Stream::Frailty(i) => 0x2C00_0000 + i as u64,
+            Stream::EventShape => 70,
+            Stream::Benefactor => 71,
+            Stream::SpendingPath => 72,
+            Stream::Policy => 80,
+            Stream::LocalMarket(i) => 0x2E00_0000 + i as u64,
         }
     }
 }
@@ -555,60 +619,146 @@ mod tests {
     const GOLDEN_STREAM_1_0_MARKET: [u64; 2] =
         [13_782_392_658_221_407_413, 12_316_620_447_257_498_702];
 
+    /// Every stream with the id it must keep for ever. Indexed streams appear at two
+    /// indices, one of them large, to show their ranges do not run into each other.
+    const ALL_STREAMS: [(Stream, u64); 71] = [
+        (Stream::Market, 1),
+        (Stream::Inflation, 2),
+        (Stream::EquityComp, 3),
+        (Stream::Shocks, 4),
+        (Stream::Events, 5),
+        (Stream::Career(0), 0x0100_0000),
+        (Stream::Career(1), 0x0100_0001),
+        (Stream::Health(0), 0x0200_0000),
+        (Stream::Health(1), 0x0200_0001),
+        (Stream::Longevity(0), 0x0300_0000),
+        (Stream::Longevity(1), 0x0300_0001),
+        (Stream::Housing(0), 0x0400_0000),
+        (Stream::Housing(1), 0x0400_0001),
+        (Stream::MarketParams, 40),
+        (Stream::Disaster, 41),
+        (Stream::AssetExt, 42),
+        (Stream::CareerShape(0), 0x2B00_0000),
+        (Stream::CareerShape(1), 0x2B00_0001),
+        (Stream::CareerShape(0xF_FFFF), 0x2B0F_FFFF),
+        (Stream::Business(0), 0x2B10_0000),
+        (Stream::Business(1), 0x2B10_0001),
+        (Stream::Business(0xF_FFFF), 0x2B1F_FFFF),
+        (Stream::HealthPath, 60),
+        (Stream::Frailty(0), 0x2C00_0000),
+        (Stream::Frailty(1), 0x2C00_0001),
+        (Stream::Frailty(0xF_FFFF), 0x2C0F_FFFF),
+        (Stream::EventShape, 70),
+        (Stream::Benefactor, 71),
+        (Stream::SpendingPath, 72),
+        (Stream::Policy, 80),
+        (Stream::LocalMarket(0), 0x2E00_0000),
+        (Stream::LocalMarket(1), 0x2E00_0001),
+        (Stream::LocalMarket(0xF_FFFF), 0x2E0F_FFFF),
+        (Stream::Housing(0xF_FFFF), 0x040F_FFFF),
+        // The household-realism streams.
+        (Stream::Vehicle(0), 0x1100_0000),
+        (Stream::Vehicle(1), 0x1100_0001),
+        (Stream::CategoryPrices, 1100),
+        (Stream::DetailedShocks, 1101),
+        (Stream::ChildArrival(0), 0x1200_0000),
+        (Stream::ChildArrival(1), 0x1200_0001),
+        (Stream::CollegePrices, 1200),
+        (Stream::ChildCollege(0), 0x1280_0000),
+        (Stream::ChildCollege(1), 0x1280_0002),
+        (Stream::ChildSupport(0), 0x1280_0001),
+        (Stream::ChildSupport(1), 0x1280_0003),
+        (Stream::Maintenance(0), 0x1300_0000),
+        (Stream::Maintenance(1), 0x1300_0001),
+        (Stream::InsuranceDrift, 1302),
+        (Stream::RentMarket, 1300),
+        (Stream::Liquidity, 1301),
+        (Stream::CareerExt(0, 0), 0x1400_0000),
+        (Stream::CareerExt(0, 1), 0x1400_0001),
+        (Stream::CareerExt(1, 0), 0x1401_0000),
+        (Stream::CareerExt(2, 0), 0x1402_0000),
+        (Stream::PolicyRisk, 1500),
+        (Stream::HomeEquityCredit, 1600),
+        (Stream::RentalMarket(0), 0x1600_0000),
+        (Stream::RentalMarket(1), 0x1600_0001),
+        (Stream::HealthStates(0), 0x1700_0000),
+        (Stream::HealthStates(1), 0x1700_0001),
+        (Stream::CoupleLongevity, 1700),
+        (Stream::LtcPremiumRates, 1701),
+        (Stream::MarketTails, 1800),
+        (Stream::ReturnToWork(0), 0x1900_0000),
+        (Stream::ReturnToWork(1), 0x1900_0001),
+        (Stream::PanicSelling, 1900),
+        (Stream::OneMoreYear, 1901),
+        (Stream::Divorce, 2000),
+        (Stream::Parent(0), 0x1A00_0000),
+        (Stream::Parent(1), 0x1A00_0001),
+        (Stream::SpousalCare, 2001),
+    ];
+
+    #[test]
+    fn stream_ids_are_frozen_and_distinct() {
+        let mut ids = Vec::new();
+        for (stream, id) in ALL_STREAMS {
+            assert_eq!(stream.id(), id, "{stream:?}");
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), ALL_STREAMS.len(), "two streams share an id");
+        // The streams of the opt-in models sit well clear of the original ones: scalar
+        // ids from 40 (the originals end at 5) and indexed bases from 0x2B00_0000 (the
+        // originals end at 0x0400_0000).
+        for (stream, id) in &ALL_STREAMS[13..33] {
+            assert!(
+                (40..=80).contains(id) || *id >= 0x2B00_0000,
+                "{stream:?} has id {id:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn new_streams_have_frozen_first_outputs() {
+        // The first output of each added stream at seed 1, path 0. Like the Market
+        // golden above, these pin the seeding of streams that results depend on.
+        let first = |s: Stream| Rng::stream(1, 0, s).next_u64();
+        assert_eq!(
+            [
+                first(Stream::MarketParams),
+                first(Stream::Disaster),
+                first(Stream::AssetExt),
+                first(Stream::CareerShape(0)),
+                first(Stream::Business(0)),
+                first(Stream::HealthPath),
+                first(Stream::Frailty(0)),
+                first(Stream::EventShape),
+                first(Stream::Benefactor),
+                first(Stream::SpendingPath),
+                first(Stream::Policy),
+                first(Stream::LocalMarket(0)),
+            ],
+            GOLDEN_NEW_STREAMS
+        );
+    }
+
+    const GOLDEN_NEW_STREAMS: [u64; 12] = [
+        5_458_287_948_875_346_490,
+        15_882_482_210_106_529_295,
+        18_285_030_360_065_947_463,
+        4_888_787_612_225_172_317,
+        6_975_771_661_061_866_017,
+        10_365_349_134_361_254_871,
+        18_369_743_888_041_068_161,
+        3_066_968_319_890_547_591,
+        7_109_291_859_835_201_360,
+        1_268_094_573_638_561_933,
+        6_159_906_066_936_963_187,
+        13_004_500_759_943_957_365,
+    ];
+
     #[test]
     fn different_streams_paths_and_seeds_differ() {
-        let streams = [
-            Stream::Market,
-            Stream::Inflation,
-            Stream::Career(0),
-            Stream::Career(1),
-            Stream::EquityComp,
-            Stream::Health(0),
-            Stream::Health(1),
-            Stream::Longevity(0),
-            Stream::Longevity(1),
-            Stream::Shocks,
-            Stream::Housing(0),
-            Stream::Housing(1),
-            Stream::Events,
-            Stream::Vehicle(0),
-            Stream::Vehicle(1),
-            Stream::CategoryPrices,
-            Stream::DetailedShocks,
-            Stream::ChildArrival(0),
-            Stream::ChildArrival(1),
-            Stream::CollegePrices,
-            Stream::ChildCollege(0),
-            Stream::ChildCollege(1),
-            Stream::ChildSupport(0),
-            Stream::ChildSupport(1),
-            Stream::Maintenance(0),
-            Stream::Maintenance(1),
-            Stream::InsuranceDrift,
-            Stream::RentMarket,
-            Stream::Liquidity,
-            Stream::CareerExt(0, 0),
-            Stream::CareerExt(0, 1),
-            Stream::CareerExt(1, 0),
-            Stream::CareerExt(2, 0),
-            Stream::PolicyRisk,
-            Stream::HomeEquityCredit,
-            Stream::RentalMarket(0),
-            Stream::RentalMarket(1),
-            Stream::HealthStates(0),
-            Stream::HealthStates(1),
-            Stream::CoupleLongevity,
-            Stream::LtcPremiumRates,
-            Stream::MarketTails,
-            Stream::ReturnToWork(0),
-            Stream::ReturnToWork(1),
-            Stream::PanicSelling,
-            Stream::OneMoreYear,
-            Stream::Divorce,
-            Stream::Parent(0),
-            Stream::Parent(1),
-            Stream::SpousalCare,
-        ];
+        let streams = ALL_STREAMS.map(|(s, _)| s);
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {
             for path in [0u64, 1, 2, 1_000_000] {

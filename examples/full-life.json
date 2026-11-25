@@ -191,7 +191,10 @@
           "level": "typical",
           "job_mobility": "typical",
           "recession_pay": "typical",
-          "late_career": "realistic"
+          "late_career": "realistic",
+          "wage_shocks": "normal",
+          "layoff_pay_cut": "normal",
+          "job_search": "drawn_at_layoff"
         },
         "bonus": {
           "target_fraction": 0.08,
@@ -231,7 +234,11 @@
         "fallback_wage": {
           "annual": 64000.0,
           "search_months": 4
-        }
+        },
+        "failure": {
+          "type": "never"
+        },
+        "monthly_lumpiness": 0.0
       },
       "start": null,
       "end": null
@@ -578,10 +585,19 @@
     "custom_asset": null,
     "single_stock": {
       "volatility": 0.35,
-      "beta": 1.1
+      "beta": 1.1,
+      "tails": "normal",
+      "ruin_hazard": null
     },
     "tax_loss_harvesting": true,
-    "pause_deferrals_in_distress": true
+    "pause_deferrals_in_distress": true,
+    "crypto": {
+      "outlook": "neutral",
+      "token": "bitcoin_or_ether",
+      "dynamics": {
+        "type": "steady"
+      }
+    }
   },
   "properties": [
     {
@@ -686,7 +702,8 @@
       "kind": {
         "type": "bootstrap",
         "mean_block_months": 60,
-        "from_year": null
+        "from_year": null,
+        "joins": "uniform"
       },
       "equity_premium_adjustment": 0.0,
       "inflation_adjustment": 0.0,
@@ -697,7 +714,31 @@
         "fair_cape": 17.3,
         "half_life_years": 15.0
       },
-      "dynamic_yields": true
+      "dynamic_yields": true,
+      "equity_premium_uncertainty": null,
+      "inflation_uncertainty": null,
+      "disasters": {
+        "annual_probability": 0.0,
+        "depth": {
+          "type": "pert",
+          "low": 0.2,
+          "mode": 0.4,
+          "high": 0.75
+        },
+        "years": {
+          "type": "pert",
+          "low": 3.0,
+          "mode": 8.0,
+          "high": 20.0
+        },
+        "inflation_probability": 0.3,
+        "inflation": {
+          "type": "pert",
+          "low": 0.02,
+          "mode": 0.05,
+          "high": 0.12
+        }
+      }
     },
     "taxes": {
       "kind": {

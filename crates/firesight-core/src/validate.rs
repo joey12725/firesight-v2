@@ -28,6 +28,17 @@ mod housing_realism;
 mod market_realism;
 mod realism;
 mod spending_realism;
+// The shared check for a user-supplied distribution lives beside its sampler; it is
+// re-exported here so validation code calls it like any other check:
+// `check_uncertain(&mut self.r, &path, "Windfall amount", &dist, Bounds::MONEY)`.
+use crate::dist::CompiledDist;
+pub use crate::dist::{check_uncertain, Bounds};
+
+/// Accepted `equity_premium_adjustment`, and accepted adjustment plus the furthest
+/// per-path shift of `equity_premium_uncertainty`, as annual decimals.
+const EQUITY_ADJUSTMENT_RANGE: (f64, f64) = (-0.1, 0.1);
+/// The same for `inflation_adjustment` and `inflation_uncertainty`.
+const INFLATION_ADJUSTMENT_RANGE: (f64, f64) = (-0.05, 0.15);
 
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -62,7 +73,7 @@ impl Report {
         r
     }
 
-    fn error(&mut self, code: &str, path: &str, message: impl Into<String>) {
+    pub(crate) fn error(&mut self, code: &str, path: &str, message: impl Into<String>) {
         self.errors.push(Issue {
             code: code.into(),
             path: path.into(),
@@ -547,6 +558,7 @@ impl Checker<'_> {
                         0.0,
                         1.0,
                     );
+                    self.business(&k, se);
                 }
                 IncomeKind::Pension(pn) => {
                     self.r.money(&format!("{k}/annual"), "Pension", pn.annual);
@@ -577,6 +589,86 @@ impl Checker<'_> {
                     );
                 }
             }
+        }
+    }
+
+    /// The opt-in risks of a self-employment income.
+    fn business(&mut self, k: &str, se: &SelfEmployment) {
+        self.r.range(
+            &format!("{k}/monthly_lumpiness"),
+            "Monthly lumpiness",
+            se.monthly_lumpiness,
+            0.0,
+            2.0,
+        );
+        let BusinessFailure::Hazard {
+            young_annual_probability,
+            mature_annual_probability,
+            young_years,
+            years_in_business,
+            recession_multiplier,
+            then,
+        } = se.failure
+        else {
+            return;
+        };
+        let f = format!("{k}/failure");
+        self.r.range(
+            &format!("{f}/young_annual_probability"),
+            "Chance of a young business closing",
+            young_annual_probability,
+            0.0,
+            0.5,
+        );
+        self.r.range(
+            &format!("{f}/mature_annual_probability"),
+            "Chance of an established business closing",
+            mature_annual_probability,
+            0.0,
+            0.5,
+        );
+        self.r.range(
+            &format!("{f}/young_years"),
+            "Years a business counts as young",
+            young_years,
+            0.0,
+            30.0,
+        );
+        if let Some(years) = years_in_business {
+            self.r.range(
+                &format!("{f}/years_in_business"),
+                "Years in business",
+                years,
+                0.0,
+                100.0,
+            );
+        }
+        self.r.range(
+            &format!("{f}/recession_multiplier"),
+            "Recession multiplier",
+            recession_multiplier,
+            1.0,
+            10.0,
+        );
+        if let AfterFailure::Restart {
+            gap_months,
+            income_fraction,
+        } = then
+        {
+            self.r.range(
+                &format!("{f}/then/gap_months"),
+                "Months without income",
+                f64::from(gap_months),
+                0.0,
+                120.0,
+            );
+            self.r.range(
+                &format!("{f}/then/income_fraction"),
+                "Profit after a restart",
+                income_fraction,
+                0.0,
+                2.0,
+            );
         }
     }
 
@@ -722,7 +814,22 @@ impl Checker<'_> {
                 );
             }
             match g.company {
-                EquityCompany::Public { volatility, beta } => {
+                EquityCompany::Public {
+                    volatility,
+                    beta,
+                    tails: _,
+                    ruin,
+                    layoff_link: _,
+                } => {
+                    if let StockRuin::Stated { annual_probability } = ruin {
+                        self.r.range(
+                            &format!("{gp}/company/ruin/annual_probability"),
+                            "Chance of the shares becoming worthless",
+                            annual_probability,
+                            0.0,
+                            0.5,
+                        );
+                    }
                     self.r.range(
                         &format!("{gp}/company/volatility"),
                         "Volatility",
@@ -737,7 +844,29 @@ impl Checker<'_> {
                     liquidity_hazard,
                     fail_prob,
                     exit_volatility,
+                    exit_timing,
+                    exit_size: _,
                 } => {
+                    if let ExitTiming::Lognormal {
+                        median_years,
+                        sigma,
+                    } = exit_timing
+                    {
+                        self.r.range(
+                            &format!("{gp}/company/exit_timing/median_years"),
+                            "Typical wait for the outcome",
+                            median_years,
+                            0.25,
+                            40.0,
+                        );
+                        self.r.range(
+                            &format!("{gp}/company/exit_timing/sigma"),
+                            "Spread of the wait",
+                            sigma,
+                            0.05,
+                            2.0,
+                        );
+                    }
                     self.r.range(
                         &format!("{gp}/company/liquidity_hazard"),
                         "Liquidity hazard",
@@ -918,6 +1047,62 @@ impl Checker<'_> {
             -1.0,
             4.0,
         );
+        // Opt-in shapes of the single stock, crypto and the custom asset.
+        if let Some(hazard) = pf.single_stock.ruin_hazard {
+            self.r.range(
+                "/portfolio/single_stock/ruin_hazard",
+                "Chance of total loss per year",
+                hazard,
+                0.0,
+                0.5,
+            );
+        }
+        if let CryptoDynamics::Cycles {
+            calm_months,
+            wild_months,
+            volatility_ratio,
+        } = pf.crypto.dynamics
+        {
+            let (lo, hi) = crate::economy::CYCLE_MONTHS_RANGE;
+            self.r.range(
+                "/portfolio/crypto/dynamics/calm_months",
+                "Length of a calm spell in months",
+                calm_months,
+                lo,
+                hi,
+            );
+            self.r.range(
+                "/portfolio/crypto/dynamics/wild_months",
+                "Length of a wild spell in months",
+                wild_months,
+                lo,
+                hi,
+            );
+            let (lo, hi) = crate::economy::CYCLE_RATIO_RANGE;
+            self.r.range(
+                "/portfolio/crypto/dynamics/volatility_ratio",
+                "Wild-to-calm volatility ratio",
+                volatility_ratio,
+                lo,
+                hi,
+            );
+        }
+        if let Some(event) = pf.custom_asset.as_ref().and_then(|c| c.loss_event.as_ref()) {
+            self.r.range(
+                "/portfolio/custom_asset/loss_event/annual_probability",
+                "Chance of a loss per year",
+                event.annual_probability,
+                0.0,
+                0.5,
+            );
+            check_uncertain(
+                &mut self.r,
+                "/portfolio/custom_asset/loss_event/loss",
+                "Share lost",
+                &event.loss,
+                Bounds::FRACTION,
+            );
+        }
         self.r.range(
             "/portfolio/expense_ratio",
             "Expense ratio",
@@ -1590,11 +1775,136 @@ impl Checker<'_> {
         }
     }
 
+    /// Long-run uncertainty and rare disasters (`assumptions.market`).
+    /// A long-run uncertainty moves an adjustment for a whole simulated life, so
+    /// the adjustment plus the furthest shift either way (the range less its
+    /// average) must itself be an adjustment the validator would accept. `dist` has
+    /// passed `check_uncertain`. The error goes to the field that sets the
+    /// offending end of the range.
+    fn shifted_adjustment(
+        &mut self,
+        path: &str,
+        what: &str,
+        dist: &Uncertain,
+        (name, adjustment): (&str, f64),
+        (lo, hi): (f64, f64),
+    ) {
+        // An adjustment outside its own range is reported at its own path.
+        if !(lo..=hi).contains(&adjustment) {
+            return;
+        }
+        let compiled = CompiledDist::new(dist);
+        let mean = compiled.mean();
+        let (lowest, highest) = (
+            adjustment + (compiled.min() - mean),
+            adjustment + (compiled.max() - mean),
+        );
+        // Room for rounding: the average is that of the compiled sampler, which
+        // differs from the textbook one in about the eighth decimal.
+        const SLACK: f64 = 1e-6;
+        let (low_field, high_field) = match dist {
+            Uncertain::Uniform { .. } | Uncertain::Triangular { .. } | Uncertain::Pert { .. } => {
+                ("low", "high")
+            }
+            Uncertain::Normal { .. } => ("sd", "sd"),
+            Uncertain::Lognormal { .. } => ("p90", "p90"),
+            Uncertain::Quantiles { .. } => ("p10", "p90"),
+        };
+        let (too_low, too_high) = (lowest < lo - SLACK, highest > hi + SLACK);
+        // Six decimals are plenty for a rate and hide the rounding of the sums.
+        let shown = |x: f64| (x * 1e6).round() / 1e6;
+        let (mean, lowest, highest) = (shown(mean), shown(lowest), shown(highest));
+        let mut report = |field: &str, reached: f64, side: &str| {
+            self.r.error(
+                "out_of_range",
+                &format!("{path}/{field}"),
+                format!(
+                    "{what}: with {name} at {adjustment}, the furthest shift {side} (the range less its average of {mean}) takes it to {reached} a year for a whole simulated life; {name} plus the shift must stay between {lo} and {hi}. Narrow the range."
+                ),
+            );
+        };
+        if too_low {
+            report(low_field, lowest, "down");
+        }
+        if too_high {
+            report(high_field, highest, "up");
+        }
+    }
+
+    fn market_risk(&mut self) {
+        let m = &self.p.assumptions.market;
+        if let Some(dist) = &m.equity_premium_uncertainty {
+            let path = "/assumptions/market/equity_premium_uncertainty";
+            let what = "Uncertainty about the long-run stock return";
+            if check_uncertain(&mut self.r, path, what, dist, Bounds::new(-0.2, 0.2)) {
+                self.shifted_adjustment(
+                    path,
+                    what,
+                    dist,
+                    ("equity_premium_adjustment", m.equity_premium_adjustment),
+                    EQUITY_ADJUSTMENT_RANGE,
+                );
+            }
+        }
+        if let Some(dist) = &m.inflation_uncertainty {
+            let path = "/assumptions/market/inflation_uncertainty";
+            let what = "Uncertainty about long-run inflation";
+            if check_uncertain(&mut self.r, path, what, dist, Bounds::new(-0.1, 0.1)) {
+                self.shifted_adjustment(
+                    path,
+                    what,
+                    dist,
+                    ("inflation_adjustment", m.inflation_adjustment),
+                    INFLATION_ADJUSTMENT_RANGE,
+                );
+            }
+        }
+        let d = &m.disasters;
+        let base = "/assumptions/market/disasters";
+        self.r.range(
+            &format!("{base}/annual_probability"),
+            "Annual probability of a disaster",
+            d.annual_probability,
+            0.0,
+            0.1,
+        );
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/depth"),
+            "Disaster depth",
+            &d.depth,
+            Bounds::new(0.0, crate::economy::MAX_DISASTER_DEPTH),
+        );
+        let (shortest, longest) = crate::economy::DISASTER_MONTHS_RANGE;
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/years"),
+            "Disaster length in years",
+            &d.years,
+            Bounds::new(shortest as f64 / 12.0, longest as f64 / 12.0),
+        );
+        self.r.range(
+            &format!("{base}/inflation_probability"),
+            "Probability of an inflation burst",
+            d.inflation_probability,
+            0.0,
+            1.0,
+        );
+        check_uncertain(
+            &mut self.r,
+            &format!("{base}/inflation"),
+            "Extra inflation in a disaster",
+            &d.inflation,
+            Bounds::new(0.0, crate::economy::MAX_BURST_INFLATION),
+        );
+    }
+
     fn assumptions(&mut self) {
         let a = &self.p.assumptions;
         if let MarketKind::Bootstrap {
             mean_block_months,
             from_year,
+            ..
         } = a.market.kind
         {
             if !(1..=600).contains(&mean_block_months) {
@@ -1620,16 +1930,17 @@ impl Checker<'_> {
             "/assumptions/market/equity_premium_adjustment",
             "Equity premium adjustment",
             a.market.equity_premium_adjustment,
-            -0.1,
-            0.1,
+            EQUITY_ADJUSTMENT_RANGE.0,
+            EQUITY_ADJUSTMENT_RANGE.1,
         );
         self.r.range(
             "/assumptions/market/inflation_adjustment",
             "Inflation adjustment",
             a.market.inflation_adjustment,
-            -0.05,
-            0.15,
+            INFLATION_ADJUSTMENT_RANGE.0,
+            INFLATION_ADJUSTMENT_RANGE.1,
         );
+        self.market_risk();
         for (i, s) in a.market.stress.iter().enumerate() {
             let sp = format!("/assumptions/market/stress/{i}");
             match s {
@@ -2005,6 +2316,24 @@ impl Checker<'_> {
             && p.assumptions.market.equity_premium_adjustment != 0.0
         {
             self.r.warn("adjusted_history", "/assumptions/market/equity_premium_adjustment", "The historical replay is being run with stock returns shifted from the record. Set the adjustment to 0 to replay history as it happened.");
+        }
+        if matches!(p.assumptions.market.kind, MarketKind::Historical) {
+            let m = &p.assumptions.market;
+            for (on, field) in [
+                (
+                    m.equity_premium_uncertainty.is_some(),
+                    "equity_premium_uncertainty",
+                ),
+                (m.inflation_uncertainty.is_some(), "inflation_uncertainty"),
+                (
+                    m.disasters.annual_probability > 0.0,
+                    "disasters/annual_probability",
+                ),
+            ] {
+                if on {
+                    self.r.warn("adjusted_history", &format!("/assumptions/market/{field}"), "The historical replay is being run with random changes laid over the record, so its paths are no longer history as it happened. Switch this off to replay history exactly.");
+                }
+            }
         }
         if p.assumptions.market.equity_premium_adjustment > 0.02 {
             self.r.warn("returns_optimistic", "/assumptions/market/equity_premium_adjustment", "Adding more than two points a year to historical stock returns is very optimistic.");
@@ -2489,5 +2818,283 @@ mod tests {
         let v = serde_json::to_value(&r).unwrap();
         assert!(v["errors"][0]["code"].is_string());
         assert!(v["warnings"].is_array());
+    }
+
+    #[test]
+    fn market_risk_options_are_checked() {
+        use serde_json::json;
+        let base = "/assumptions/market";
+        // Sensible settings pass.
+        let r = patched(&[
+            PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.01}),
+            ),
+            PatchOp::set(
+                format!("{base}/inflation_uncertainty"),
+                json!({"type": "triangular", "low": -0.005, "mode": 0.0, "high": 0.015}),
+            ),
+            PatchOp::set(format!("{base}/disasters/annual_probability"), json!(0.01)),
+            PatchOp::set(format!("{base}/kind/joins"), json!("matched")),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert!(r.warnings.is_empty(), "{:#?}", r.warnings);
+        // A spread that reaches beyond 20 points a year (4 sd).
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.06}),
+            )],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/sd"),
+        );
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/inflation_uncertainty"),
+                json!({"type": "uniform", "low": 0.02, "high": -0.02}),
+            )],
+            "dist_order",
+            &format!("{base}/inflation_uncertainty/high"),
+        );
+        // The adjustment plus the furthest shift must itself be a valid adjustment:
+        // each range alone is inside its own limits (20 and 10 points), but lasts a
+        // lifetime on top of the adjustment. Default stock adjustment -0.015 and a
+        // normal with sd 0.025 reaches -0.015 - 4 x 0.025 = -0.115, below -0.1.
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "normal", "mean": 0.0, "sd": 0.025}),
+            )],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/sd"),
+        );
+        // sd 0.02 reaches -0.095 and +0.065: accepted.
+        let r = patched(&[PatchOp::set(
+            format!("{base}/equity_premium_uncertainty"),
+            json!({"type": "normal", "mean": 0.0, "sd": 0.02}),
+        )]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        // Only the spread counts, not where the range is centred: 0.30 to 0.40 is a
+        // shift of -0.05 to +0.05, which a zero adjustment has room for; but at the
+        // highest adjustment (0.1) the upward half does not fit.
+        let centred_high = json!({"type": "uniform", "low": 0.0, "high": 0.1});
+        let r = patched(&[
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.0)),
+            PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                centred_high.clone(),
+            ),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert_error(
+            &[
+                PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.1)),
+                PatchOp::set(format!("{base}/equity_premium_uncertainty"), centred_high),
+            ],
+            "out_of_range",
+            &format!("{base}/equity_premium_uncertainty/high"),
+        );
+        // Inflation: a uniform -0.1..0.1 fits an adjustment of 0.05 exactly
+        // (-0.05..0.15) and no other; at the default 0 the low end reaches -0.1.
+        let widest = json!({"type": "uniform", "low": -0.1, "high": 0.1});
+        let r = patched(&[
+            PatchOp::set(format!("{base}/inflation_adjustment"), json!(0.05)),
+            PatchOp::set(format!("{base}/inflation_uncertainty"), widest.clone()),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert_error(
+            &[PatchOp::set(
+                format!("{base}/inflation_uncertainty"),
+                widest.clone(),
+            )],
+            "out_of_range",
+            &format!("{base}/inflation_uncertainty/low"),
+        );
+        // The reviewer's corner: the highest adjustments with the widest ranges.
+        let r = patched(&[
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.1)),
+            PatchOp::set(
+                format!("{base}/equity_premium_uncertainty"),
+                json!({"type": "uniform", "low": -0.2, "high": 0.2}),
+            ),
+            PatchOp::set(format!("{base}/inflation_adjustment"), json!(0.15)),
+            PatchOp::set(format!("{base}/inflation_uncertainty"), widest),
+        ]);
+        // The upward halves do not fit (0.1 + 0.2 and 0.15 + 0.1); the downward
+        // halves do (0.1 - 0.2 = -0.1 and 0.15 - 0.1 = 0.05).
+        for (at, rejected) in [
+            ("equity_premium_uncertainty/high", true),
+            ("inflation_uncertainty/high", true),
+            ("equity_premium_uncertainty/low", false),
+            ("inflation_uncertainty/low", false),
+        ] {
+            assert_eq!(
+                has(&r.errors, "out_of_range", &format!("{base}/{at}")),
+                rejected,
+                "{at}: {:#?}",
+                r.errors
+            );
+        }
+        assert!(r.errors[0].message.contains("takes it to 0.3 a year"));
+        for (field, value) in [
+            ("annual_probability", json!(0.2)),
+            ("annual_probability", json!(-0.01)),
+            ("inflation_probability", json!(1.5)),
+        ] {
+            let path = format!("{base}/disasters/{field}");
+            assert_error(&[PatchOp::set(&path, value)], "out_of_range", &path);
+        }
+        // A depth of 100%, a disaster shorter than a year, a burst above 25 points.
+        for (field, value, at) in [
+            (
+                "depth",
+                json!({"type": "pert", "low": 0.2, "mode": 0.5, "high": 1.0}),
+                "high",
+            ),
+            (
+                "years",
+                json!({"type": "uniform", "low": 0.5, "high": 5.0}),
+                "low",
+            ),
+            (
+                "years",
+                json!({"type": "uniform", "low": 5.0, "high": 60.0}),
+                "high",
+            ),
+            (
+                "inflation",
+                json!({"type": "uniform", "low": 0.0, "high": 0.4}),
+                "high",
+            ),
+        ] {
+            let path = format!("{base}/disasters/{field}");
+            assert_error(
+                &[PatchOp::set(&path, value)],
+                "out_of_range",
+                &format!("{path}/{at}"),
+            );
+        }
+        // Random overlays on the historical replay get the adjusted-history warning.
+        let r = patched(&[
+            PatchOp::set(format!("{base}/kind"), json!({"type": "historical"})),
+            PatchOp::set(format!("{base}/equity_premium_adjustment"), json!(0.0)),
+            PatchOp::set(format!("{base}/disasters/annual_probability"), json!(0.01)),
+        ]);
+        assert!(has(
+            &r.warnings,
+            "adjusted_history",
+            "/assumptions/market/disasters/annual_probability"
+        ));
+    }
+
+    /// The opt-in business and employer-stock options: every number is checked at
+    /// the path an editor control binds to, and the defaults are clean.
+    #[test]
+    fn business_and_employer_stock_options_are_checked() {
+        let business = |se: serde_json::Value| {
+            PatchOp::append("/incomes", json!({"id": "shop", "owner": 0, "kind": se}))
+        };
+        let k = "/incomes/@shop/kind";
+        let hazard = |extra: serde_json::Value| {
+            let mut failure = json!({"type": "hazard"});
+            for (key, value) in extra.as_object().unwrap() {
+                failure[key] = value.clone();
+            }
+            business(json!({"type": "self_employment", "net_annual": 50_000.0, "failure": failure}))
+        };
+        // Everything at its default, switched on, is valid.
+        let r = patched(&[
+            hazard(json!({})),
+            PatchOp::set(format!("{k}/monthly_lumpiness"), json!(1.0)),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        let r = patched(&[hazard(
+            json!({"then": {"type": "stops"}, "years_in_business": 2.0}),
+        )]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        for (extra, at) in [
+            (
+                json!({"young_annual_probability": 0.6}),
+                "young_annual_probability",
+            ),
+            (
+                json!({"mature_annual_probability": -0.01}),
+                "mature_annual_probability",
+            ),
+            (json!({"young_years": 31.0}), "young_years"),
+            (json!({"years_in_business": -1.0}), "years_in_business"),
+            (json!({"recession_multiplier": 0.5}), "recession_multiplier"),
+            (
+                json!({"recession_multiplier": 11.0}),
+                "recession_multiplier",
+            ),
+            (
+                json!({"then": {"type": "restart", "gap_months": 121}}),
+                "then/gap_months",
+            ),
+            (
+                json!({"then": {"type": "restart", "income_fraction": 2.5}}),
+                "then/income_fraction",
+            ),
+        ] {
+            assert_error(
+                &[hazard(extra)],
+                "out_of_range",
+                &format!("{k}/failure/{at}"),
+            );
+        }
+        for bad in [-0.1, 2.5] {
+            assert_error(
+                &[business(
+                    json!({"type": "self_employment", "monthly_lumpiness": bad}),
+                )],
+                "out_of_range",
+                &format!("{k}/monthly_lumpiness"),
+            );
+        }
+
+        let job = |company: serde_json::Value| {
+            PatchOp::append(
+                "/incomes",
+                json!({"id": "tech", "owner": 0, "kind": {"type": "job", "salary": 100_000.0,
+                    "equity": [{"id": "rsu", "unvested_value": 10_000.0, "company": company}]}}),
+            )
+        };
+        let c = "/incomes/@tech/kind/equity/@rsu/company";
+        for company in [
+            json!({"type": "public", "tails": "fat", "ruin": {"type": "by_volatility"}, "layoff_link": true}),
+            json!({"type": "public", "ruin": {"type": "stated"}}),
+            json!({"type": "private", "exit_timing": {"type": "lognormal"}, "exit_size": "pareto_tail"}),
+        ] {
+            let r = patched(&[job(company)]);
+            assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        }
+        for bad in [-0.01, 0.51] {
+            assert_error(
+                &[job(
+                    json!({"type": "public", "ruin": {"type": "stated", "annual_probability": bad}}),
+                )],
+                "out_of_range",
+                &format!("{c}/ruin/annual_probability"),
+            );
+        }
+        for (timing, at) in [
+            (
+                json!({"type": "lognormal", "median_years": 0.1}),
+                "median_years",
+            ),
+            (
+                json!({"type": "lognormal", "median_years": 41.0}),
+                "median_years",
+            ),
+            (json!({"type": "lognormal", "sigma": 0.01}), "sigma"),
+            (json!({"type": "lognormal", "sigma": 2.5}), "sigma"),
+        ] {
+            assert_error(
+                &[job(json!({"type": "private", "exit_timing": timing}))],
+                "out_of_range",
+                &format!("{c}/exit_timing/{at}"),
+            );
+        }
     }
 }
