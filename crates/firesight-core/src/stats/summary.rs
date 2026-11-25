@@ -1215,12 +1215,7 @@ fn scatter(table: &Table) -> Scatter {
                 scalar: *s,
                 values: picks
                     .iter()
-                    .map(|r| {
-                        round_dp(
-                            f64::from(table.column(*s)[*r]),
-                            unit_decimals(s.unit()),
-                        )
-                    })
+                    .map(|r| round_dp(f64::from(table.column(*s)[*r]), unit_decimals(s.unit())))
                     .collect(),
             })
             .collect(),

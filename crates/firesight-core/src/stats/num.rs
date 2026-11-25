@@ -257,7 +257,11 @@ pub(crate) fn sorted_finite(values: impl Iterator<Item = f32>) -> Vec<f32> {
     } else {
         const DIGITS: [(u32, u32); 3] = [(0, 11), (11, 11), (22, 10)];
         // The three digit histograms in one pass over the keys.
-        let mut counts = [vec![0usize; 1 << 11], vec![0usize; 1 << 11], vec![0usize; 1 << 10]];
+        let mut counts = [
+            vec![0usize; 1 << 11],
+            vec![0usize; 1 << 11],
+            vec![0usize; 1 << 10],
+        ];
         for &k in &keys {
             for (c, (shift, bits)) in counts.iter_mut().zip(DIGITS) {
                 c[((k >> shift) & ((1 << bits) - 1)) as usize] += 1;

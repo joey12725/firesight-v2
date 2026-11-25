@@ -1276,6 +1276,7 @@ fn audit(feature: &Feature, slug: &str) {
         for t in 0..months {
             let (x, y) = (&a.positions[t], &b.positions[t]);
             for p in 0..2 {
+                // 0: dead, or (career) no longer drawn from by anything.
                 if x.career[p] != 0 && y.career[p] != 0 {
                     assert_eq!(
                         x.career[p],
@@ -1283,6 +1284,8 @@ fn audit(feature: &Feature, slug: &str) {
                         "{}: career stream of person {p} moved in month {t}",
                         at(path)
                     );
+                }
+                if x.health[p] != 0 && y.health[p] != 0 {
                     assert_eq!(
                         x.health[p],
                         y.health[p],

@@ -155,7 +155,8 @@ pub fn run_path<R: Recorder>(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StreamAudit {
     /// The next word of each person's `Stream::Career` generator; 0 once they have
-    /// died (the stream is no longer drawn from).
+    /// died or no job or business of theirs will draw from it again (the engine
+    /// then stops advancing it).
     pub career: [u64; crate::MAX_PEOPLE],
     /// The same for `Stream::Health`.
     pub health: [u64; crate::MAX_PEOPLE],
@@ -191,9 +192,12 @@ pub fn audit_streams<R: Recorder>(
             career: [0; crate::MAX_PEOPLE],
             health: [0; crate::MAX_PEOPLE],
         };
+        let (career_read, _) = state.streams_still_read(plan);
         for p in 0..crate::MAX_PEOPLE {
             if state.alive[p] {
-                a.career[p] = state.rng_career[p].clone().next_u64();
+                if career_read[p] {
+                    a.career[p] = state.rng_career[p].clone().next_u64();
+                }
                 a.health[p] = state.rng_health[p].clone().next_u64();
             }
         }

@@ -250,11 +250,7 @@ pub(crate) fn pack(hist: &[u32]) -> Vec<u8> {
 /// Walks packed bytes for `hist.len() / HIST_BINS` blocks, calling `f(slot, count)`
 /// for every packed count. `None` (after possibly some calls) if the bytes are
 /// malformed.
-fn for_each_packed(
-    bytes: &[u8],
-    hist: &mut [u32],
-    mut f: impl FnMut(&mut u32, u32),
-) -> Option<()> {
+fn for_each_packed(bytes: &[u8], hist: &mut [u32], mut f: impl FnMut(&mut u32, u32)) -> Option<()> {
     let mut pos = 0;
     for block in hist.chunks_exact_mut(HIST_BINS) {
         let runs = get_varint(bytes, &mut pos)?;
@@ -303,7 +299,8 @@ fn packed_is_valid(bytes: &[u8], blocks: usize) -> bool {
         };
         let mut at = 0usize;
         for _ in 0..runs {
-            let (Some(skip), Some(len)) = (get_varint(bytes, &mut pos), get_varint(bytes, &mut pos))
+            let (Some(skip), Some(len)) =
+                (get_varint(bytes, &mut pos), get_varint(bytes, &mut pos))
             else {
                 return false;
             };

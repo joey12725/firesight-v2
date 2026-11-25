@@ -706,7 +706,10 @@ fn grow<const N: usize>(
             .enumerate()
         {
             if skip & empty_bit(p, k) != 0 {
-                debug_assert!(h.iter().all(|v| v.to_bits() == 0), "an empty bucket is held");
+                debug_assert!(
+                    h.iter().all(|v| v.to_bits() == 0),
+                    "an empty bucket is held"
+                );
                 continue;
             }
             let mut total = 0.0;
@@ -891,7 +894,10 @@ impl Accounts {
     fn find_empty(&self) -> u8 {
         let mut empty = 0;
         for (p, pa) in self.person.iter().enumerate() {
-            for (k, h) in [&pa.traditional, &pa.roth.value, &pa.hsa].into_iter().enumerate() {
+            for (k, h) in [&pa.traditional, &pa.roth.value, &pa.hsa]
+                .into_iter()
+                .enumerate()
+            {
                 if h.iter().all(|v| v.to_bits() == 0) {
                     empty |= empty_bit(p, k);
                 }
@@ -984,7 +990,9 @@ impl Accounts {
     /// Roth money the owner can withdraw today without tax or penalty at any age:
     /// contributions plus seasoned conversions (capped at the bucket's value).
     pub fn roth_accessible(&self, person: usize) -> f64 {
-        self.person.get(person).map_or(0.0, |p| p.roth.accessible(self.idle))
+        self.person
+            .get(person)
+            .map_or(0.0, |p| p.roth.accessible(self.idle))
     }
 
     /// Applies one month of returns to every invested bucket, interest to cash, and

@@ -1421,18 +1421,14 @@ impl EconomyModel {
             Kind::FatTailed(p) => {
                 let mut state = p.start(rng);
                 for t in 0..months {
-                    let core = p.step(
-                        &mut state,
-                        rng,
-                        streams.inflation,
-                        streams.tails,
-                        emit.normal,
-                    );
+                    let core = p.step(&mut state, rng, &mut inflation, streams.tails, emit.normal);
                     let m = self.assets.month(&self.adjust, &core);
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }
             }
         }
+        *streams.market = market;
+        *streams.inflation = inflation;
         if self.bonds_from_yield {
             // Block bootstrap only. The path starts at today's yield, so month 0
             // earns its carry and no price change.
@@ -1477,8 +1473,6 @@ impl EconomyModel {
             Some(d) => d.fill(out),
             None => out.dividend_yields.clear(),
         }
-        *streams.market = market;
-        *streams.inflation = inflation;
     }
 
     /// Emits one table row: the residuals of the synthesised columns (2 draws, used

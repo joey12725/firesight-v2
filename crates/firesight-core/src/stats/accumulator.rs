@@ -456,7 +456,11 @@ impl Accumulator {
         self.check_sizes(other)?;
         self.check_mergeable(other.version, other.years, &other.scalars)?;
         add_counts(&mut self.hist, &other.hist);
-        self.absorb(Totals::of(other), other.scalars.clone(), other.samples.clone());
+        self.absorb(
+            Totals::of(other),
+            other.scalars.clone(),
+            other.samples.clone(),
+        );
         Ok(())
     }
 
@@ -1146,7 +1150,9 @@ mod tests {
                 a = before.clone();
             }
         }
-        assert!(a.merge_bytes(&Accumulator::new(kit.years + 1).to_bytes()).is_err());
+        assert!(a
+            .merge_bytes(&Accumulator::new(kit.years + 1).to_bytes())
+            .is_err());
         assert_eq!(a, before);
     }
 

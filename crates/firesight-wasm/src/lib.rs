@@ -383,7 +383,11 @@ pub mod api {
         }
 
         /// See the wasm export.
-        pub fn summarize(&mut self, profile_json: &str, today: YearMonth) -> Result<String, String> {
+        pub fn summarize(
+            &mut self,
+            profile_json: &str,
+            today: YearMonth,
+        ) -> Result<String, String> {
             let (acc, prepared) = self.parts(profile_json, today)?;
             let mut summary = stats::Summary::from_accumulator(acc, &prepared.context);
             if let Some(plan) = &prepared.plan {

@@ -1284,15 +1284,28 @@ fn identical_operations_give_identical_bits() {
 /// `f64` does not tell +0.0 from -0.0).
 fn balance_bits(a: &Accounts) -> Vec<u64> {
     let mut out = vec![a.cash.to_bits()];
-    out.extend(a.taxable.value.iter().chain(&a.taxable.basis).map(|v| v.to_bits()));
+    out.extend(
+        a.taxable
+            .value
+            .iter()
+            .chain(&a.taxable.basis)
+            .map(|v| v.to_bits()),
+    );
     for p in &a.person {
         let r = &p.roth;
         let flat = p.traditional.iter().chain(&r.value).chain(&p.hsa);
         out.extend(flat.chain(&r.unseasoned).map(|v| v.to_bits()));
-        out.extend([r.contribution_basis.to_bits(), r.seasoned_conversions.to_bits()]);
+        out.extend([
+            r.contribution_basis.to_bits(),
+            r.seasoned_conversions.to_bits(),
+        ]);
     }
     let y = &a.ytd;
-    let ytd = y.k401_employee.iter().chain(&y.k401_additions).chain(&y.ira);
+    let ytd = y
+        .k401_employee
+        .iter()
+        .chain(&y.k401_additions)
+        .chain(&y.ira);
     out.extend(ytd.chain(&y.roth_ira).chain(&y.hsa).map(|v| v.to_bits()));
     out
 }
