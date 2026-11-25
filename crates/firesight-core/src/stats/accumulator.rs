@@ -429,7 +429,7 @@ struct WireOwned {
 impl Accumulator {
     /// Layout version written by this build. Bump whenever a field, the histogram
     /// grid or one of the series / scalar enums changes.
-    pub const VERSION: u32 = 5;
+    pub const VERSION: u32 = 6;
 
     /// An empty accumulator for a horizon of `years` calendar years.
     pub fn new(years: u32) -> Accumulator {

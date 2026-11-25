@@ -35,6 +35,7 @@ use crate::stats::TraceEventKind;
 use crate::tax::{self, FilingStatus, Indexation, TaxInputs};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, TriggerPlan};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_PENALTY, TAX_STATE};
 
@@ -49,8 +50,8 @@ const REFINANCE_THRESHOLD: f64 = 0.01;
 /// Closing costs of a refinance: this share of the balance plus a fixed amount in
 /// today's dollars (lender, title and appraisal fees; a judgement in the usual
 /// 2 to 5% range, at the low end because nothing is paid for points).
-const REFINANCE_COST_FRACTION: f64 = 0.02;
-const REFINANCE_COST_FIXED: f64 = 2_000.0;
+pub(crate) const REFINANCE_COST_FRACTION: f64 = 0.02;
+pub(crate) const REFINANCE_COST_FIXED: f64 = 2_000.0;
 /// The interest saved over this many years must exceed the closing costs.
 const REFINANCE_PAYBACK_YEARS: f64 = 4.0;
 
@@ -144,13 +145,20 @@ impl State {
             }
         }
         let (mut young, mut other) = (0, 0);
-        for c in &plan.children {
-            let born = (plan.start + c.birth).year();
+        for (k, c) in plan.children.iter().enumerate() {
+            let birth = self.child_birth(plan, k);
+            if birth >= super::family::NEVER {
+                continue;
+            }
+            let born = (plan.start + birth).year();
             let age = year - born;
+            let n = self.child_count(k);
             if (0..17).contains(&age) {
-                young += 1;
-            } else if (17..19).contains(&age) || ((19..23).contains(&age) && c.college > 0.0) {
-                other += 1;
+                young += n;
+            } else if (17..19).contains(&age)
+                || ((19..19 + self.college_years(k) as i32).contains(&age) && c.college > 0.0)
+            {
+                other += n;
             }
         }
         // A surviving spouse files jointly for the year of the death.
@@ -246,6 +254,7 @@ impl State {
             refresh,
         );
         self.params.foreign_tax_rate = self.foreign_rate;
+        self.policy_rates(1 << status.index());
         self.law_ready = 1 << status.index();
         self.law_state = self.tax_state;
     }
@@ -261,6 +270,7 @@ impl State {
                 &mut self.params,
                 status.index(),
             );
+            self.policy_rates(bit);
             self.law_ready |= bit;
         }
     }
@@ -303,6 +313,10 @@ impl State {
                 }
             }
         }
+        let mut adults_on = AdultPhases {
+            employer,
+            ..AdultPhases::default()
+        };
         for i in 0..self.n {
             if !self.present[i] {
                 continue;
@@ -316,6 +330,7 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             });
+            adults_on.note(phase);
             let (premium, pocket) = plan.health.expected_annual_parts_at(age, phase, t as u32);
             let (premium, pocket) = (premium / 12.0 * price, pocket / 12.0 * price);
             r.health += premium + pocket + self.irmaa_m[i];
@@ -327,7 +342,10 @@ impl State {
             // does not know when it ends.
             let h = &self.health[i];
             if (t as u32) >= h.ltc_start_month && (t as u32) < h.ltc_end_month {
-                let care = h.ltc_monthly_cost * plan.health.excess_growth(t as u32) * price;
+                let mut care = h.ltc_monthly_cost * plan.health.excess_growth(t as u32) * price;
+                if plan.dynamics.spousal_care {
+                    care *= self.spousal_care_factor(i, t);
+                }
                 r.health += care;
                 r.medical += care;
                 r.care = true;
@@ -340,8 +358,17 @@ impl State {
                     * price;
             }
         }
+        if plan.family.cover_children {
+            let kids = self.child_health(plan, t, price, adults_on);
+            r.health += kids.total;
+            r.aca_premium += kids.aca_premium;
+            r.aca_benchmark += kids.aca_benchmark;
+        }
         if (t as i32) < self.kids_until {
             r.children = self.children_cost(plan, t) * price;
+        }
+        if plan.dynamics.active {
+            r.debt += self.dynamics_run_rate(plan, t, price);
         }
         for d in &self.debts {
             if d.balance > 0.0 {
@@ -408,6 +435,9 @@ impl State {
         self.rental_carry = r.rental_loss_suspended * back;
         self.magi_hist = [self.magi_hist[1], r.magi_irmaa];
         self.magi_known = (self.magi_known + 1).min(2);
+        if plan.family.any_college {
+            self.note_aid_income(r.magi_irmaa);
+        }
         self.prev_interest = self.ty.interest * annualise;
         self.prev_ordinary_div = self.ty.ordinary_dividends * annualise;
         self.prev_qualified_div = self.ty.qualified_dividends * annualise;
@@ -438,7 +468,8 @@ impl State {
         let price = econ.price_level[t];
         // Social Security records and benefits for the year just ended.
         for i in 0..self.n {
-            if !self.alive[i] {
+            // A former partner's record is frozen when they leave.
+            if !self.alive[i] || self.dynamics.left[i] {
                 continue;
             }
             if matches!(
@@ -455,6 +486,9 @@ impl State {
                 let pia = plan
                     .ss
                     .pia_real(&self.records[i], plan.people[i].birth, now, price);
+                if plan.rz.any && self.rz_record_frozen(i) {
+                    continue;
+                }
                 if let Some(c) = &mut self.claimants[i] {
                     c.pia_real = Some(pia);
                 }
@@ -535,6 +569,7 @@ impl State {
         if new_year || first {
             self.price_jan = price;
             self.index = self.indexation(plan, year, price);
+            self.realism_year_start(now);
         }
         let (status, adults, young, other) = self.household_for_tax(plan, year);
         // The law is re-indexed each January and rebuilt when the residence changes.
@@ -568,6 +603,9 @@ impl State {
         if !matches!(plan.profile.portfolio.glide, GlidePath::None) {
             let years = self.years_to_retirement(plan, t, price);
             self.target = accounts::glide_target(&plan.profile.portfolio, years);
+            if plan.beh.any {
+                self.panic_retarget(plan);
+            }
         }
         if new_year && plan.rebalance_annual {
             self.rebalance(plan);
@@ -642,7 +680,7 @@ impl State {
         }
         self.ss_dirty = true;
         if t >= self.ss_from {
-            let b = plan.ss.monthly(now, &self.claimants, price);
+            let b = self.policy_benefits(now, plan.ss.monthly(now, &self.claimants, price));
             for i in 0..self.n {
                 if self.present[i] {
                     benefits[i] = b.paid[i] * m_left;
@@ -853,6 +891,10 @@ impl State {
                 self.sepp[i] = 0.0;
             }
         }
+        self.trz.qcd_expected = 0.0;
+        if plan.profile.retirement.qcd {
+            self.qcd_plan(plan, t, price, m_left, &mut rmd);
+        }
         self.pinputs = PlanInputs {
             ages: ages_now,
             ..PlanInputs::default()
@@ -880,7 +922,8 @@ impl State {
                 } else {
                     0.0
                 };
-                let net_need = spend_month * m_left + tax_rest_base - income_rest + due;
+                let net_need = spend_month * m_left + tax_rest_base - income_rest + due
+                    - self.trz.qcd_expected;
                 self.pinputs = PlanInputs {
                     // The plan works at the tax year's scale: amounts for the months
                     // still to come, annualised when the year started part-way.
@@ -902,6 +945,11 @@ impl State {
                     cash_floor: 0.0,
                     in_drawdown: self.in_drawdown(),
                 };
+                if plan.hd.cash_out.is_some() {
+                    let rate = econ.mortgage_rate[t];
+                    self.hd.long_yield = econ.long_yield[t];
+                    self.hd_cash_out_before_plan(plan, t, price, rate, &base_result);
+                }
                 self.wplan = plan_year_memo(
                     &plan.profile.retirement.withdrawal_order,
                     plan.profile.retirement.early_access,

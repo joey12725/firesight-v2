@@ -103,6 +103,10 @@ pub(crate) struct State {
     pub rng_health: [Rng; MAX_PEOPLE],
     pub rng_shocks: Rng,
     pub rng_housing: Vec<Rng>,
+    /// Vehicles, price wedges, detailed shocks and the unemployment cut (`spendx.rs`).
+    pub sx: super::spendx::SpendXState,
+    /// Opt-in housing realism: rent market, slow sales, extra property streams.
+    pub hx: super::housing_ext::HxState,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -133,6 +137,8 @@ pub(crate) struct State {
     /// First month in which a job can start or end (`State::job_calendar`); 0
     /// means look now.
     pub next_job_change: i32,
+    /// Opt-in career-realism state (`career_realism`).
+    pub rz: crate::career_realism::RealismState,
     pub selfemp: Vec<SeRt>,
     pub streams: Vec<StreamRt>,
     pub props: Vec<PropertyState>,
@@ -157,6 +163,8 @@ pub(crate) struct State {
     pub kids_until: i32,
     /// Cached modelled child cost per month, today's dollars (negative: stale).
     pub kids_real: f64,
+    /// Per-path state of the opt-in family features.
+    pub fam: super::family::FamilyState,
     // Location and tax law.
     pub tax_state: StateCode,
     pub in_us: bool,
@@ -291,7 +299,19 @@ pub(crate) struct State {
     pub chk_debt_flow: f64,
     // Trace buffers (detail mode only).
     pub trace_events: Vec<TraceEvent>,
+    /// Per-path state of the tax and policy realism options.
+    pub trz: super::tax_realism::TaxRealismState,
     pub tax_details: Vec<(i32, TaxDetail)>,
+    /// Housing decisions in force (`housing_decisions.rs`).
+    pub hd: super::housing_decisions::HdState,
+    /// The opt-in health, longevity and care features (`care.rs`).
+    pub care: super::care::CareState,
+    /// Market annotations of the traced path, due month first (`market_notes.rs`).
+    pub market_notes: super::market_notes::MarketNotes,
+    /// Behaviour features (`sim/behavior`).
+    pub beh: super::behavior::BehaviorState,
+    // Household dynamics (`sim/dynamics`).
+    pub dynamics: super::dynamics::DynamicsState,
 }
 
 impl State {
@@ -307,6 +327,8 @@ impl State {
             rng_health: [rng.clone(), rng.clone()],
             rng_shocks: rng.clone(),
             rng_housing: vec![rng.clone(); plan.props.len()],
+            sx: super::spendx::SpendXState::new(plan),
+            hx: super::housing_ext::HxState::new(plan),
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -328,6 +350,7 @@ impl State {
             acc: Accounts::default(),
             jobs: vec![JobRt::default(); plan.jobs.len()],
             next_job_change: 0,
+            rz: crate::career_realism::RealismState::new(&plan.rz),
             selfemp: vec![
                 SeRt {
                     st: SelfEmploymentState::default(),
@@ -365,6 +388,7 @@ impl State {
             service_growth: 1.0,
             kids_until: 0,
             kids_real: -1.0,
+            fam: super::family::FamilyState::new(plan),
             tax_state: StateCode::NONE,
             in_us: true,
             foreign_rate: None,
@@ -475,7 +499,13 @@ impl State {
             chk_mort_flow: 0.0,
             chk_debt_flow: 0.0,
             trace_events: Vec::new(),
+            trz: super::tax_realism::TaxRealismState::default(),
             tax_details: Vec::new(),
+            hd: super::housing_decisions::HdState::new(plan),
+            care: super::care::CareState::default(),
+            market_notes: Default::default(),
+            beh: super::behavior::BehaviorState::default(),
+            dynamics: super::dynamics::DynamicsState::default(),
         }
     }
 
@@ -517,33 +547,51 @@ impl State {
             last = last.max(d);
             self.alive[i] = true;
             self.present[i] = person.joins <= 0;
-            self.health[i] = plan.health.initial_state(
+            self.records[i] = person.record0;
+        }
+        if plan.care.active {
+            self.care_begin(plan, seed, path);
+            last = self.death_month[..plan.people.len()]
+                .iter()
+                .fold(1, |a, &d| a.max(d));
+        }
+        for (i, person) in plan.people.iter().enumerate() {
+            self.health[i] = plan.health.initial_state_scaled(
                 person.sex,
                 person.age0.max(0) as u32,
-                d,
+                self.death_month[i],
                 &mut self.rng_health[i],
+                self.care.ltc_scale[i],
             );
-            self.records[i] = person.record0;
         }
         self.months = last.min(plan.horizon_months).max(1) as usize;
         let months = self.months;
 
         let mut market = Rng::stream(seed, path, Stream::Market);
         let mut inflation = Rng::stream(seed, path, Stream::Inflation);
+        let mut tails = Rng::stream(seed, path, Stream::MarketTails);
         plan.econ.generate(
             &mut EconomyStreams {
                 market: &mut market,
                 inflation: &mut inflation,
+                tails: &mut tails,
             },
             path,
             months,
             econ,
         );
+        self.realism_begin(plan, seed, path);
         self.rng_equity = Rng::stream(seed, path, Stream::EquityComp);
+        if plan.rz.any {
+            self.rz.begin(&plan.rz, seed, path);
+        }
         self.rng_shocks = Rng::stream(seed, path, Stream::Shocks);
+        self.sx.begin(plan, seed, path);
+        self.beh.begin(&plan.beh, seed, path);
         for (i, rng) in self.rng_housing.iter_mut().enumerate() {
             *rng = Rng::stream(seed, path, Stream::Housing(i));
         }
+        self.hx.reset(plan, seed, path);
 
         // Retirement date when the trigger fixes it.
         self.retired = false;
@@ -688,6 +736,7 @@ impl State {
             .map(|c| c.birth + 22 * 12)
             .max()
             .unwrap_or(0);
+        self.kids_until = self.fam.begin(plan, seed, path, self.kids_until);
 
         // Location and tax.
         self.tax_state = plan.state0;
@@ -784,11 +833,16 @@ impl State {
         self.port_return = 0.0;
         self.trace_events.clear();
         self.tax_details.clear();
+        self.hd.begin(plan, seed, path);
+        if detail {
+            self.plan_market_notes(plan, econ);
+        }
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs
         // the funded test before the first annual plan, and would otherwise read
         // whatever the previous path in this workspace left behind.
         self.init_first_year(plan);
+        self.begin_dynamics(plan, seed, path);
     }
 
     /// Applies one stress overlay if its date is known. `at_retirement` is true when
@@ -831,6 +885,14 @@ impl State {
                 months,
                 inflation,
             }),
+            StressPlan::HistoricalEpisode { start, episode } => {
+                resolve(start).map(|from_month| ResolvedStress::HistoricalEpisode {
+                    from_month,
+                    episode,
+                })
+            }
+            StressPlan::LostGeneration { start, months } => resolve(start)
+                .map(|from_month| ResolvedStress::LostGeneration { from_month, months }),
         };
         if let Some(r) = resolved {
             plan.econ.apply_stress(&r, econ);
@@ -921,6 +983,9 @@ impl State {
                 value += p.value;
                 mortgage += p.mortgage_balance();
             }
+        }
+        if self.hd.any_line {
+            mortgage += self.hd.liability();
         }
         (value, mortgage)
     }

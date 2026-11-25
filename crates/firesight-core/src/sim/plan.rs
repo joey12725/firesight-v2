@@ -15,8 +15,8 @@ use crate::health::{HealthModel, MortalityModel};
 use crate::housing::{amortized_payment, PropertyModel};
 use crate::math;
 use crate::model::{
-    Category, ChildCosts, Cola, College, CostOfLivingChange, DebtKind, EmployerPlan, EventKind,
-    IncomeChangeKind, IncomeKind, Profile, PropertyUse, Rebalance, RetirementChange,
+    Category, ChildCosts, Cola, College, CostOfLivingChange, DebtKind, EmployerPlan, Episode,
+    EventKind, IncomeChangeKind, IncomeKind, Profile, PropertyUse, Rebalance, RetirementChange,
     RetirementTrigger, Sex, ShockLevel, SocialSecurityBasis, SpendingChangeKind, SpendingTarget,
     Stress, TaxKind, WageGrowth, WealthBasis, When, WhenContext, WhenFunded, WithdrawalOrder,
     YearMonth,
@@ -138,7 +138,7 @@ impl Sched {
         when.map_or(Sched::At(i32::MIN), |w| Sched::from_when(w, ctx))
     }
 
-    fn end(when: Option<&When>, ctx: &WhenContext) -> Sched {
+    pub(crate) fn end(when: Option<&When>, ctx: &WhenContext) -> Sched {
         when.map_or(Sched::Never, |w| Sched::from_when(w, ctx))
     }
 }
@@ -256,6 +256,8 @@ pub(crate) struct ItemPlan {
     pub start: Sched,
     pub end: Sched,
     pub owner: Option<usize>,
+    /// A rent line that follows the path's rent market (`rent_growth: market`).
+    pub market_rent: bool,
 }
 
 /// A property slot: `profile.properties` first, then one per `buy_home` event.
@@ -340,6 +342,7 @@ pub(crate) enum EvKind {
         job: Option<usize>,
         fraction: f64,
     },
+    Divorce(crate::model::DivorceTerms),
 }
 
 /// A compiled life event.
@@ -366,6 +369,14 @@ pub(crate) enum StressPlan {
         start: Sched,
         months: usize,
         inflation: f64,
+    },
+    HistoricalEpisode {
+        start: Sched,
+        episode: Episode,
+    },
+    LostGeneration {
+        start: Sched,
+        months: usize,
     },
 }
 
@@ -409,11 +420,17 @@ pub struct Plan {
     pub(crate) children: Vec<ChildPlan>,
     /// Bit `k` set when some child's birthday falls in a month with `t % 12 == k`.
     pub(crate) birthday_months: u32,
+    /// Opt-in family features (children's health cover, uncertain births, ...).
+    pub(crate) family: super::family::FamilyPlan,
     pub(crate) jobs: Vec<JobPlan>,
     pub(crate) selfemp: Vec<SePlan>,
+    /// Opt-in career-realism settings (`career_realism`).
+    pub(crate) rz: crate::career_realism::RealismPlan,
     pub(crate) streams: Vec<StreamPlan>,
     pub(crate) items: Vec<ItemPlan>,
     pub(crate) props: Vec<PropPlan>,
+    /// Which opt-in housing realism options are on.
+    pub(crate) hx: super::housing_ext::HxPlan,
     pub(crate) debts: Vec<DebtPlan>,
     pub(crate) events: Vec<EventPlan>,
     pub(crate) stresses: Vec<StressPlan>,
@@ -456,6 +473,9 @@ pub struct Plan {
     /// Expected real return of the target mix after fees, for planning tests.
     pub(crate) expected_real_return: f64,
     pub(crate) shocks: ShockPlan,
+    /// Opt-in spending realism (vehicles, seasonality, price wedges, detailed shocks,
+    /// unemployment cut); see `spendx.rs`.
+    pub(crate) sx: super::spendx::SpendXPlan,
     pub(crate) state0: StateCode,
     pub(crate) in_us0: bool,
     pub(crate) foreign_rate0: Option<f64>,
@@ -479,6 +499,15 @@ pub struct Plan {
     pub(crate) eq12_months: u32,
     /// Household earned-income rate at the start, today's dollars per year.
     pub(crate) income_rate0: f64,
+    /// Housing decisions (home-equity borrowing, downsizing, refinancing, rental
+    /// dynamics), all opt-in.
+    pub(crate) hd: super::housing_decisions::HdPlan,
+    /// The opt-in health, longevity and care features (`sim/care.rs`).
+    pub(crate) care: super::care::CarePlan,
+    /// Behaviour features (`sim/behavior`), all off by default.
+    pub(crate) beh: super::behavior::BehaviorPlan,
+    /// Household dynamics: divorce, parents, caregiving, life insurance.
+    pub(crate) dynamics: super::dynamics::DynamicsPlan,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -606,13 +635,14 @@ impl Plan {
         let mut growth_pay = [0.0f64; MAX_PEOPLE];
         let mut survival: Vec<Vec<f64>> = Vec::new();
         let mut mortality = Vec::new();
-        for person in &profile.household.people {
-            let m = MortalityModel::new(
+        for (i, person) in profile.household.people.iter().enumerate() {
+            let m = MortalityModel::new_scaled(
                 person.birth,
                 person.sex,
                 person.health,
                 start,
                 &profile.assumptions.longevity,
+                crate::longevity_links::income_multiplier(profile, i, data),
                 data,
             );
             survival.push(m.survival_table().to_vec());
@@ -756,7 +786,7 @@ impl Plan {
             };
             let ss_annuity = ss.annuity(
                 person.birth,
-                person.social_security.claim_age,
+                person.social_security.planned_claim_age(),
                 income_discount,
                 &survival[i],
             );
@@ -766,13 +796,16 @@ impl Plan {
                 age0,
                 joins: person.joins.map_or(i32::MIN, |j| j - start),
                 mortality: mortality[i].clone(),
-                claim_age: person.social_security.claim_age,
+                claim_age: person.social_security.planned_claim_age(),
                 basis,
                 record0,
                 ss_annuity,
             });
         }
         let income_rate0: f64 = earnings.iter().sum();
+        let care = super::care::CarePlan::compile(profile, &people, data);
+        let ages0: Vec<i32> = people.iter().map(|p| p.age0).collect();
+        let beh = super::behavior::BehaviorPlan::compile(profile, data, &ages0);
 
         // Budget.
         let items: Vec<ItemPlan> = profile
@@ -788,15 +821,22 @@ impl Plan {
                     RetirementChange::Factor { factor } => monthly * factor,
                     RetirementChange::Amount { amount } => amount * per_month,
                 };
+                let market_rent = item.category == Category::Rent
+                    && item.rent_growth == crate::model::RentGrowth::Market;
                 ItemPlan {
                     category: item.category,
                     essential: item.essential,
                     monthly,
                     monthly_retired,
-                    growth: item.effective_real_growth(),
+                    growth: if market_rent {
+                        0.0
+                    } else {
+                        item.effective_real_growth()
+                    },
                     start: Sched::start(item.start.as_ref(), &ctx),
                     end: Sched::end(item.end.as_ref(), &ctx),
                     owner: item.owner,
+                    market_rent,
                 }
             })
             .collect();
@@ -882,6 +922,14 @@ impl Plan {
                 }
             })
             .collect();
+        let mut children = children;
+        super::family::drop_usda_health_share(
+            &mut children,
+            profile,
+            data,
+            tiers[tier],
+            usda_factor,
+        );
 
         // Properties: existing ones, then one slot per purchase event.
         let default_property_tax = law.property_tax_rate(state0);
@@ -1050,6 +1098,7 @@ impl Plan {
                     }),
                     fraction: employee_fraction.clamp(0.0, 1.0),
                 },
+                EventKind::Divorce(terms) => EvKind::Divorce(*terms),
             };
             events.push(EventPlan {
                 name: if event.name.is_empty() {
@@ -1062,6 +1111,14 @@ impl Plan {
                 uncertainty_months: (event.timing_uncertainty_years * 12.0).max(0.0),
                 kind,
             });
+        }
+
+        let (sx, sx_mean_fraction) =
+            super::spendx::SpendXPlan::compile(profile, data, &ctx, &mut debts, budget0);
+        if let Some(det) = &sx.detailed {
+            for prop in &mut props {
+                prop.model.carve_out_maintenance(det.home_rate);
+            }
         }
 
         let stresses = profile
@@ -1088,6 +1145,14 @@ impl Plan {
                     start: Sched::from_when(&start, &ctx),
                     months: (years * 12.0).round().max(0.0) as usize,
                     inflation,
+                },
+                Stress::HistoricalEpisode { start, episode } => StressPlan::HistoricalEpisode {
+                    start: Sched::from_when(&start, &ctx),
+                    episode,
+                },
+                Stress::LostGeneration { start, years } => StressPlan::LostGeneration {
+                    start: Sched::from_when(&start, &ctx),
+                    months: (years * 12.0).round().max(0.0) as usize,
                 },
             })
             .collect();
@@ -1170,6 +1235,7 @@ impl Plan {
             ShockLevel::Off => 0.0,
             ShockLevel::Typical => num(shock_model, &["lambda_per_year", "default"]),
             ShockLevel::High => 2.0 * num(shock_model, &["lambda_per_year", "default"]),
+            ShockLevel::Detailed => 0.0,
         };
         let median = num(shock_model, &["median_fraction_of_annual_spending"]);
         let sigma = num(shock_model, &["sigma"]);
@@ -1178,7 +1244,8 @@ impl Plan {
             monthly_probability,
             log_median: math::ln(median),
             sigma,
-            mean_fraction: 12.0 * monthly_probability * median * math::exp(0.5 * sigma * sigma),
+            mean_fraction: 12.0 * monthly_probability * median * math::exp(0.5 * sigma * sigma)
+                + sx_mean_fraction,
         };
 
         let exclusion = &data.tax_federal["capital_gains_and_property"]["home_sale_exclusion"];
@@ -1243,6 +1310,9 @@ impl Plan {
         let rent_growth: Vec<f64> = growth_table(Category::Rent.default_real_growth()).collect();
         let service_growth: Vec<f64> = growth_table(CHILD_SERVICE_REAL_GROWTH).collect();
 
+        let hx = super::housing_ext::HxPlan::compile(profile, &props);
+        let hd = super::housing_decisions::HdPlan::compile(profile, &props);
+
         Ok(Plan {
             profile: profile.clone(),
             start,
@@ -1252,11 +1322,14 @@ impl Plan {
                 .iter()
                 .fold(0, |mask, c| mask | 1 << c.birth.rem_euclid(12)),
             children,
+            family: super::family::compile(profile, start),
             jobs,
             selfemp,
+            rz: crate::career_realism::RealismPlan::compile(profile, data),
             streams,
             items,
             props,
+            hx,
             debts,
             events,
             stresses,
@@ -1283,6 +1356,7 @@ impl Plan {
             target0,
             expected_real_return,
             shocks,
+            sx,
             state0,
             in_us0,
             foreign_rate0,
@@ -1299,6 +1373,10 @@ impl Plan {
             plain_mix: !matches!(policy.rebalance, Rebalance::Never),
             eq12_months,
             income_rate0,
+            hd,
+            care,
+            beh,
+            dynamics: super::dynamics::DynamicsPlan::compile(profile, data, start, n),
         })
     }
 

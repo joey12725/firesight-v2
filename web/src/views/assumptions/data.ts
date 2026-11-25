@@ -20,6 +20,7 @@ export const MARKET_NAME: Record<MarketType, string> = {
   bootstrap: 'History reshuffled',
   regime: 'Calm and turbulent regimes',
   lognormal: 'Textbook random walk',
+  fat_tailed: 'Random walk with fat tails',
   historical: 'History as it happened',
 };
 
@@ -33,9 +34,11 @@ export function marketStatement(profile: Profile): string {
       return `Every simulated month is a real month from the US record${kind.from_year ? ` since ${kind.from_year}` : ', 1926 to 2026'}, taken in runs that average ${block}. Stocks, bonds, cash, inflation, house prices and recessions always come from the same month, so they move together as they did; only the order of the runs is new.`;
     }
     case 'regime':
-      return 'Markets switch at random between a calm state and a turbulent one, fitted to the US record. Volatility clusters and crashes arrive with recessions, but nothing pulls stocks back after a long run, so this model has the widest range of long-term outcomes of the four.';
+      return 'Markets switch at random between a calm state and a turbulent one, fitted to the US record. Volatility clusters and crashes arrive with recessions, but nothing pulls stocks back after a long run, so this model has the widest range of long-term outcomes of the four main models.';
     case 'lognormal':
       return 'Every month is an independent draw with history’s average returns, volatilities and correlations. There are no regimes, no crashes that cluster and no multi-year inflation spells: the textbook model, kept for comparison.';
+    case 'fat_tailed':
+      return 'Every month is a draw with history’s average returns and volatilities, but from a distribution with fat tails: extreme months are more common, volatile spells cluster and fade over a few years, and stock markets fall together in a sell-off. Crashes are deeper and more frequent than in the textbook random walk; nothing pulls stocks back after a long run.';
     case 'historical':
       return 'Each simulated life starts in a real month between 1926 and 2026 and lives through exactly what followed. There are only 1,203 different market histories, they overlap heavily, and a life that starts late in the record runs off its end and carries on from 1926.';
   }

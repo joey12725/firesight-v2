@@ -122,6 +122,10 @@ pub(super) struct StateWork {
     pub surtax: f64,
     pub excise: f64,
     pub local: f64,
+    /// State payroll tax on wages (California SDI), with `state_detail: full`.
+    pub payroll: f64,
+    /// Tax added back by a high-income recapture of the lower brackets (New York).
+    pub recapture: f64,
     pub total: f64,
 }
 
@@ -444,13 +448,27 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
             let capped = schedule.tax(o.taxable - gains) + st.capital_gains_rate * gains;
             tax = tax.min(capped);
         }
+        if st.recapture_agi_start > 0.0 {
+            o.recapture = recapture_extra(st, s, o.agi, o.taxable);
+            tax += o.recapture;
+        }
         o.tax_before_credits = tax;
         let standard_credit = (st.standard_credit[s]
             - st.standard_credit_phaseout_rate
                 * (o.taxable - st.standard_credit_phaseout_start[s]).max(0.0))
         .max(0.0);
-        o.credits =
-            (st.personal_credit[s] + st.dependent_credit * dependents + standard_credit).min(tax);
+        let ss_credit = if st.ss_credit_rate > 0.0 && w.taxable_ss > 0.0 {
+            (st.ss_credit_rate * w.taxable_ss
+                - st.ss_credit_phase_out_rate * (w.agi - st.ss_credit_phase_out_start[s]).max(0.0))
+            .max(0.0)
+        } else {
+            0.0
+        };
+        o.credits = (st.personal_credit[s]
+            + st.dependent_credit * dependents
+            + standard_credit
+            + ss_credit)
+            .min(tax);
         o.income_tax = tax - o.credits;
 
         if st.capital_gains_surtax_rate > 0.0 && w.agi > st.capital_gains_surtax_agi_threshold {
@@ -472,8 +490,61 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
             st.local_rate * o.agi.max(0.0)
         };
     }
-    o.total = o.income_tax + o.surtax + o.excise + o.local;
+    if st.sdi_rate > 0.0 {
+        let mut wages = 0.0;
+        for w in &x.wages {
+            wages += w.max(0.0);
+        }
+        o.payroll = st.sdi_rate * wages;
+    }
+    o.total = o.income_tax + o.surtax + o.excise + o.local + o.payroll;
     o
+}
+
+/// Tax added by a state's recapture of the benefit of its lower brackets for high
+/// earners (New York, Tax Law 601(d)-(e)), on top of the schedule's tax on `taxable`.
+///
+/// Above `recapture_agi_start` of state AGI the benefit is taken back tier by tier:
+///
+/// * Taxable income up to the top of bracket `j0` (`recapture_first_bracket`): the
+///   tax is moved toward a flat rate of that bracket on all of it, by the fraction
+///   `(agi - start) / width` (rounded to four places, as in the state's worksheets),
+///   capped at one.
+/// * Taxable income in a higher bracket `m`: the benefit up to the top of bracket
+///   `m - 1` is already fully recaptured (`base`, the flat tax at that rate on
+///   `lower[m]` less the schedule's tax there), and the further benefit up to the top
+///   of bracket `m` (`increment`) comes in over `width` of AGI above `lower[m]`.
+/// * Above `recapture_agi_top` of AGI every dollar pays the top rate.
+///
+/// Zero when the state has no such rule, the profile has not asked for it, or AGI
+/// is at or below the start.
+pub(super) fn recapture_extra(st: &StateYear, s: usize, agi: f64, taxable: f64) -> f64 {
+    let b = &st.brackets[s];
+    if st.recapture_agi_start <= 0.0 || b.len < 2 || agi <= st.recapture_agi_start || taxable <= 0.0
+    {
+        return 0.0;
+    }
+    let table = b.tax(taxable);
+    if agi > st.recapture_agi_top {
+        return b.rate[b.len - 1] * taxable - table;
+    }
+    let width = st.recapture_phase_width;
+    let phase = |excess: f64| ((excess.clamp(0.0, width) / width) * 10_000.0).round() / 10_000.0;
+    let first = st.recapture_first_bracket[s];
+    let mut m = 0;
+    for (i, lower) in b.lower.iter().enumerate().take(b.len) {
+        if taxable > *lower {
+            m = i;
+        }
+    }
+    if m <= first {
+        return (b.rate[first] * taxable - table) * phase(agi - st.recapture_agi_start);
+    }
+    let m = m.min(b.len - 2);
+    let base = b.rate[m - 1] * b.lower[m] - b.tax(b.lower[m]);
+    let top = b.lower[m + 1];
+    let increment = b.rate[m] * top - b.tax(top) - base;
+    base + increment * phase(agi - b.lower[m])
 }
 
 /// Deductions and taxable income (step 5).

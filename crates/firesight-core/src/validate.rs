@@ -19,6 +19,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::*;
 
+mod behavior;
+mod care;
+mod dynamics;
+mod family;
+mod housing;
+mod housing_realism;
+mod market_realism;
+mod realism;
+mod spending_realism;
+
 /// One finding.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
@@ -183,14 +193,23 @@ pub fn validate(profile: &Profile) -> Report {
     c.household();
     c.incomes();
     c.spending();
+    c.spending_realism();
     c.accounts_and_portfolio();
     c.properties_and_debts();
     c.events();
+    c.housing_realism();
+    c.household_dynamics();
     c.retirement();
+    c.housing_decisions();
     c.assumptions();
+    c.family();
+    c.realism();
+    c.care_errors();
+    c.behavior();
     if c.r.errors.is_empty() {
         // Lints read the profile as a whole and assume it is structurally sound.
         c.plausibility();
+        c.care_warnings();
     }
     c.r
 }
@@ -366,6 +385,15 @@ impl Checker<'_> {
                     );
                 }
             }
+            crate::career_realism::validate::person(
+                &mut self.r,
+                &path,
+                person,
+                p.incomes.iter().any(|inc| {
+                    inc.owner == i
+                        && matches!(inc.kind, IncomeKind::Job(_) | IncomeKind::SelfEmployment(_))
+                }),
+            );
             if let Some(joins) = person.joins {
                 if i == 0 {
                     self.r.error("joins_first_person", &format!("{path}/joins"), "Only the second person can join later; the first person is in the household from the start.");
@@ -487,6 +515,12 @@ impl Checker<'_> {
             match &inc.kind {
                 IncomeKind::Job(job) => self.job(&k, job),
                 IncomeKind::SelfEmployment(se) => {
+                    crate::career_realism::validate::self_employment(
+                        &mut self.r,
+                        &k,
+                        se,
+                        p.assumptions.career_risk,
+                    );
                     self.r.money(
                         &format!("{k}/net_annual"),
                         "Net self-employment income",
@@ -547,6 +581,7 @@ impl Checker<'_> {
     }
 
     fn job(&mut self, k: &str, job: &Job) {
+        crate::career_realism::validate::job(&mut self.r, k, job, self.p.assumptions.career_risk);
         self.r.money(&format!("{k}/salary"), "Salary", job.salary);
         match job.growth {
             WageGrowth::Flat { real_raise } => {
@@ -1411,6 +1446,7 @@ impl Checker<'_> {
                         1.0,
                     );
                 }
+                EventKind::Divorce(terms) => self.divorce_event(&k, terms),
             }
         }
     }
@@ -1628,8 +1664,14 @@ impl Checker<'_> {
                         0.5,
                     );
                 }
+                Stress::HistoricalEpisode { start, .. } => self.when(&format!("{sp}/start"), start),
+                Stress::LostGeneration { start, years } => {
+                    self.when(&format!("{sp}/start"), start);
+                    market_realism::lost_generation_years(&sp, *years, &mut self.r);
+                }
             }
         }
+        market_realism::check(&a.market, &mut self.r);
         if let TaxKind::Flat { rate } = a.taxes.kind {
             self.r.range(
                 "/assumptions/taxes/kind/rate",

@@ -30,8 +30,12 @@
 //! Dollar amounts in `data/` carry their own year (2026 for employer and Medicare,
 //! the latest published plan year for the ACA benchmark, 2025 for care costs). They
 //! are used as today's dollars without rolling them to the profile's start month.
-//! Children's health costs are not modelled here: the USDA-style child cost in the
-//! spending module already includes them.
+//! Children's health costs are not modelled here by default: the USDA-style child cost
+//! in the spending module already includes them. The opt-in
+//! `spending.healthcare.cover_children` charges them by coverage phase instead (see
+//! [`children`]).
+
+pub mod children;
 
 use serde_json::Value;
 
@@ -230,6 +234,21 @@ impl MortalityModel {
         longevity: &Longevity,
         data: &Data,
     ) -> MortalityModel {
+        Self::new_scaled(birth, sex, health, start, longevity, 1.0, data)
+    }
+
+    /// [`MortalityModel::new`] with the stochastic curve's mortality also
+    /// multiplied by `extra` (the income gradient, `longevity_links`). An `extra`
+    /// of exactly 1 gives the curve of `new` bit for bit.
+    pub fn new_scaled(
+        birth: YearMonth,
+        sex: Sex,
+        health: HealthStatus,
+        start: YearMonth,
+        longevity: &Longevity,
+        extra: f64,
+        data: &Data,
+    ) -> MortalityModel {
         let age0 = birth.age_months_at(start).max(0) as u32;
         let survival = match *longevity {
             Longevity::FixedAge { age } => {
@@ -239,8 +258,8 @@ impl MortalityModel {
                 s.push(0.0);
                 s
             }
-            Longevity::Stochastic { improvement } => {
-                Self::cohort_curve(age0, sex, health, start, improvement, data)
+            Longevity::Stochastic { improvement, .. } => {
+                Self::cohort_curve(age0, sex, health, start, improvement, extra, data)
             }
         };
         let mut sum = 0.0;
@@ -260,16 +279,20 @@ impl MortalityModel {
         health: HealthStatus,
         start: YearMonth,
         improvement: bool,
+        extra: f64,
         data: &Data,
     ) -> Vec<f64> {
         let mortality = &data.actuarial["mortality"];
         let presets = &mortality["health_multiplier"]["presets"];
-        let multiplier = match health {
+        let mut multiplier = match health {
             HealthStatus::Excellent => num(presets, &["healthy_high_income"]),
             HealthStatus::Good => GOOD_HEALTH_MULTIPLIER,
             HealthStatus::Average => num(presets, &["average"]),
             HealthStatus::Poor => num(presets, &["poor_health"]),
         };
+        if extra != 1.0 {
+            multiplier *= extra;
+        }
         let base_year = num(mortality, &["base_table", "base_year"]) as i32;
         let end_age_months = (data.life_table.max_age() as u32 + 1) * 12;
         let months = end_age_months.saturating_sub(age0).max(1) as usize;
@@ -641,6 +664,8 @@ pub struct HealthModel {
     ltc_monthly_cost: [f64; 3],
     /// Mix-weighted cost per month.
     ltc_blended_monthly: f64,
+    /// Monthly increments for putting children on the household's plan.
+    child: children::ChildCoverage,
 }
 
 fn sex_index(sex: Sex) -> usize {
@@ -909,6 +934,7 @@ impl HealthModel {
             ],
             ltc_monthly_cost,
             ltc_blended_monthly,
+            child: children::ChildCoverage::new(employer),
         }
     }
 
@@ -1030,6 +1056,21 @@ impl HealthModel {
         months_to_death: u32,
         rng: &mut Rng,
     ) -> HealthState {
+        self.initial_state_scaled(sex, age_months_at_start, months_to_death, rng, 1.0)
+    }
+
+    /// [`HealthModel::initial_state`] with the probability of a care episode
+    /// multiplied by `ltc_scale` (capped at the model's maximum probability): the
+    /// health-state model's factor for the state the person dies in. A scale of
+    /// exactly 1 is the unscaled model, bit for bit.
+    pub fn initial_state_scaled(
+        &self,
+        sex: Sex,
+        age_months_at_start: u32,
+        months_to_death: u32,
+        rng: &mut Rng,
+        ltc_scale: f64,
+    ) -> HealthState {
         let u_occurs = open_uniform(rng);
         let u_duration = open_uniform(rng);
         let u_type = open_uniform(rng);
@@ -1050,6 +1091,11 @@ impl HealthModel {
             return state;
         }
         let p = self.ltc_probability(sex, f64::from(death_age_months) / 12.0);
+        let p = if ltc_scale == 1.0 {
+            p
+        } else {
+            (p * ltc_scale).min(self.ltc_max_probability)
+        };
         let per_sex = &self.ltc_sex[sex_index(sex)];
         let (years, monthly_cost, care) = if self.risk {
             if u_occurs >= p {
@@ -1258,7 +1304,7 @@ mod tests {
             sex,
             health,
             start,
-            &Longevity::Stochastic { improvement },
+            &Longevity::stochastic(improvement),
             data(),
         )
     }
@@ -1458,7 +1504,7 @@ mod tests {
             Sex::Male,
             HealthStatus::Average,
             YearMonth::ym(2026, 11),
-            &Longevity::Stochastic { improvement: true },
+            &Longevity::stochastic(true),
             data(),
         );
         assert_eq!(odd.age_months_at_start(), 65 * 12 + 4);

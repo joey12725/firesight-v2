@@ -1,6 +1,8 @@
 //! Shared builders for the simulation integration tests.
 #![allow(dead_code)]
 
+pub mod care;
+
 use firesight_core::data::Data;
 use firesight_core::model::*;
 use firesight_core::sim::{self, Plan, Workspace};
@@ -109,6 +111,7 @@ pub fn quiet(people: Vec<Person>, die_at: f64) -> Profile {
             longevity: Longevity::FixedAge { age: die_at },
             career_risk: false,
             health_risk: false,
+            ..Assumptions::default()
         },
         ..Profile::default()
     }
@@ -144,6 +147,7 @@ pub fn job(id: &str, owner: usize, salary: f64) -> Income {
             growth: WageGrowth::Flat { real_raise: 0.0 },
             risk: CareerRisk {
                 level: RiskLevel::None,
+                ..CareerRisk::default()
             },
             ..Job::default()
         }),
@@ -165,3 +169,169 @@ pub const MARKETS: [MarketKind; 4] = [
     MarketKind::Lognormal,
     MarketKind::Historical,
 ];
+
+/// Switches every opt-in career-realism feature on wherever it applies (jobs keep
+/// their own layoff level; `career_risk` is left as the profile has it).
+pub fn career_realism_on(mut p: Profile) -> Profile {
+    for income in &mut p.incomes {
+        match &mut income.kind {
+            IncomeKind::Job(j) => {
+                j.risk.job_mobility = JobMobility::High;
+                j.risk.recession_pay = RecessionPay::Typical;
+                j.risk.late_career = LateCareer::Realistic;
+            }
+            IncomeKind::SelfEmployment(se) => {
+                se.business_risk = BusinessRisk::High;
+                se.fallback_wage = Some(FallbackWage::default());
+            }
+            _ => {}
+        }
+    }
+    for person in &mut p.household.people {
+        person.disability_risk = DisabilityRisk::Typical;
+        person.ltd_insurance = Some(LtdInsurance::default());
+    }
+    p
+}
+
+/// Switches on every opt-in housing decision (home-equity borrowing, downsizing,
+/// cash-out refinancing and prepayment, realistic rentals), for the conservation
+/// and finite-value tests.
+pub fn with_housing_decisions(mut p: Profile) -> Profile {
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::Heloc(Heloc::default());
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenFundedRatioBelow { ratio: 0.9 },
+        ..Downsize::default()
+    });
+    p.debt_policy.cash_out_refinance = Some(CashOutRefinance::default());
+    p.debt_policy.mortgage_prepayment = MortgagePrepayment::WhenRateAbove { real_rate: None };
+    realistic_rentals(p)
+}
+
+/// Every rental (owned or bought later) with realistic dynamics.
+pub fn realistic_rentals(mut p: Profile) -> Profile {
+    let realistic = |u: &mut PropertyUse| {
+        if let PropertyUse::Rental(t) = u {
+            t.dynamics = RentalDynamics::Realistic {
+                annual_turnover: 0.25,
+            };
+        }
+    };
+    for prop in &mut p.properties {
+        realistic(&mut prop.usage);
+    }
+    for e in &mut p.events {
+        if let EventKind::BuyHome(b) = &mut e.kind {
+            realistic(&mut b.usage);
+        }
+    }
+    p
+}
+
+/// The same with a reverse mortgage (a standby line opened when savings fall below
+/// five years of spending) in place of the home-equity line, and a move to a rental
+/// after the first death in a couple.
+pub fn with_housing_decisions_hecm(p: Profile) -> Profile {
+    let mut p = with_housing_decisions(p);
+    p.retirement.home_equity_borrowing = HomeEquityBorrowing::ReverseMortgage(ReverseMortgage {
+        open_when: ReverseMortgageOpen::SavingsBelow { years: 5.0 },
+        ..ReverseMortgage::default()
+    });
+    // Widowed couples move to a rental; single people stay.
+    p.retirement.downsize = Some(Downsize {
+        when: DownsizeWhen::WhenWidowed,
+        rent_instead: true,
+        ..Downsize::default()
+    });
+    p
+}
+
+/// Every budget line `factor` times larger, so that savings run out on many paths.
+pub fn overspending(mut p: Profile, factor: f64) -> Profile {
+    for item in &mut p.spending.items {
+        item.amount *= factor;
+    }
+    p
+}
+
+/// The dual-income demo with every household-dynamics feature switched on
+/// (divorce risk and a divorce event, parents with estates and care, spousal
+/// caregiving, life insurance), for the conservation and finite-value tests.
+pub fn household_dynamics() -> Profile {
+    let mut p = Profile::examples(START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .unwrap()
+        .profile;
+    p.household.married = Some(START - 48);
+    p.household.divorce_risk = DivorceRisk::Typical(DivorceTerms {
+        keeps_home: false,
+        support: Support {
+            annual: 9_000.0,
+            years: 4.0,
+            direction: SupportDirection::Receives,
+        },
+        ..DivorceTerms::default()
+    });
+    p.events.push(LifeEvent {
+        id: "divorce".into(),
+        name: "Divorce".into(),
+        when: When::date(START + 200),
+        probability: 0.3,
+        kind: EventKind::Divorce(DivorceTerms {
+            support: Support {
+                annual: 15_000.0,
+                years: 6.0,
+                direction: SupportDirection::Pays,
+            },
+            ..DivorceTerms::default()
+        }),
+        ..LifeEvent::default()
+    });
+    p.spending.healthcare.spousal_care = true;
+    p.household.parents = vec![
+        Parent {
+            id: "mom".into(),
+            child: 0,
+            birth: START - 74 * 12,
+            sex: Sex::Female,
+            estate: 450_000.0,
+            share: 0.5,
+            inherited_ira_fraction: 0.5,
+            ..Parent::default()
+        },
+        Parent {
+            id: "dad_in_law".into(),
+            child: 1,
+            birth: START - 79 * 12,
+            sex: Sex::Male,
+            estate: 300_000.0,
+            share: 1.0,
+            inherited_ira_fraction: 0.3,
+            care_support: Some(CareSupport {
+                probability: 0.6,
+                annual_cost: 7_242.0,
+                hours: 0.5,
+                caregiver: None,
+            }),
+            ..Parent::default()
+        },
+    ];
+    p.household.people[0].life_insurance = vec![LifePolicy {
+        id: "term".into(),
+        name: "Term life".into(),
+        kind: PolicyKind::Term {
+            years_remaining: 15.0,
+        },
+        death_benefit: 1_000_000.0,
+        annual_premium: 1_100.0,
+    }];
+    p.household.people[1].life_insurance = vec![LifePolicy {
+        id: "whole".into(),
+        name: "Whole life".into(),
+        kind: PolicyKind::Permanent,
+        death_benefit: 250_000.0,
+        annual_premium: 3_000.0,
+    }];
+    p
+}

@@ -3,6 +3,7 @@
 //! This lives in its own test binary because it replaces the global allocator with
 //! one that counts allocations made by the current thread.
 
+mod behavior_profiles;
 mod common;
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -72,6 +73,54 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    profiles.push(spending_realism());
+    profiles.push(family_features());
+    // The opt-in career-realism features, all on, on every demo household.
+    let with_realism: Vec<Profile> = profiles
+        .iter()
+        .cloned()
+        .map(common::career_realism_on)
+        .collect();
+    profiles.extend(with_realism);
+    // The tax and policy realism options on, too.
+    let mut realism = kitchen_sink_lite();
+    realism.assumptions.taxes.policy_risk = Some(firesight_core::model::PolicyRisk {
+        ss_haircut_probability: 0.7,
+        tax_increase_probability: 0.7,
+        ..Default::default()
+    });
+    realism.portfolio.tax_loss_harvesting = true;
+    realism.retirement.qcd = true;
+    // And with the spending-realism features under them (QCDs read the month's
+    // seasonal and price-wedge factors of giving).
+    let mut both = spending_realism();
+    both.assumptions.taxes.policy_risk = realism.assumptions.taxes.policy_risk;
+    both.portfolio.tax_loss_harvesting = true;
+    both.retirement.qcd = true;
+    profiles.push(realism);
+    profiles.push(both);
+    // Every opt-in housing decision on, with savings running out so that they act.
+    profiles.push(common::with_housing_decisions(common::overspending(
+        kitchen_sink_lite(),
+        2.0,
+    )));
+    profiles.push(common::with_housing_decisions_hecm(common::overspending(
+        kitchen_sink_lite(),
+        2.0,
+    )));
+    // The opt-in health, longevity and care features on every demo household.
+    let with_care: Vec<Profile> = profiles
+        .iter()
+        .take(3)
+        .map(|p| {
+            let mut p = common::care::all_care(p.clone());
+            p.name = format!("{} (care features)", p.name);
+            p
+        })
+        .collect();
+    profiles.extend(with_care);
+    profiles.extend(behavior_profiles::behavior_profiles());
+    profiles.push(common::household_dynamics());
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));
@@ -94,6 +143,64 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
             assert!(sink.years > 300 && sink.total.is_finite());
         }
     }
+}
+
+/// The example household with every opt-in spending realism feature on.
+fn spending_realism() -> Profile {
+    use firesight_core::model::*;
+    let mut p = Profile::example();
+    p.name = "spending realism".into();
+    p.assumptions.career_risk = true;
+    p.spending.vehicles = vec![Vehicle {
+        id: "car".into(),
+        name: "Car".into(),
+        price: 35_000.0,
+        replace_every_years: 8.0,
+        age_years: 5.0,
+        financing: Some(VehicleFinancing::default()),
+        ..Vehicle::default()
+    }];
+    p.spending.seasonality = Seasonality::Typical;
+    p.spending.category_inflation = CategoryInflation::Stochastic;
+    p.spending.shocks = ShockLevel::Detailed;
+    p.spending.unemployment_cut = 0.15;
+    p
+}
+
+/// The two-earner family with every opt-in family feature on: children on the health
+/// plan, an uncertain second birth, stochastic college, adult support and leave.
+fn family_features() -> Profile {
+    use firesight_core::model::*;
+    let mut p = Profile::examples(common::START)
+        .into_iter()
+        .find(|e| e.slug == "dual-income-family")
+        .expect("the dual-income example")
+        .profile;
+    p.name = "family features".into();
+    p.spending.healthcare.cover_children = true;
+    for (i, c) in p.household.children.iter_mut().enumerate() {
+        c.college_cost = CollegeCost::Stochastic {
+            attend_probability: 0.95,
+            real_tuition_growth: 0.01,
+            tuition_volatility: 0.012,
+            aid_scale: 1.0,
+        };
+        c.adult_support = Some(AdultSupport::default());
+        if i == 1 {
+            c.arrival = Arrival::Uncertain {
+                probability: 0.85,
+                delay_mean_months: 4.0,
+                twins_probability: 0.2,
+            };
+            c.parental_leave = Some(ParentalLeave::default());
+            c.second_parental_leave = Some(ParentalLeave {
+                person: 1,
+                months: 2,
+                pay_fraction: 0.5,
+            });
+        }
+    }
+    p
 }
 
 /// A household with events, stresses, a rental and a partner who joins: the paths
@@ -138,4 +245,33 @@ fn kitchen_sink_lite() -> Profile {
         ..LifeEvent::default()
     });
     p
+}
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+/// The optional market refinements allocate nothing per path either, retirement-dated
+/// stresses included (they rewrite the path inside the month loop).
+#[test]
+fn the_market_refinements_simulate_paths_without_allocating() {
+    for example in Profile::examples(common::START) {
+        for (label, profile) in realism_profiles::variants(&example.profile) {
+            let plan = common::compile(&profile);
+            let mut ws = Workspace::new(&plan);
+            let mut sink = Sink::default();
+            for i in 0..20 {
+                sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+            }
+            let before = allocations();
+            for i in 20..220 {
+                sim::run_path(&plan, 3, i, &mut ws, &mut sink);
+            }
+            let made = allocations() - before;
+            assert_eq!(
+                made, 0,
+                "{} ({label}): {made} allocations over 200 paths",
+                example.slug
+            );
+        }
+    }
 }

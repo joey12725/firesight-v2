@@ -2,8 +2,9 @@ import type { Debt, Property } from '@/engine/types';
 import { set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
 import { Disclosure, Field, Switch, moneyCompact, percent } from '@/ui';
-import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SegmentField, ToggleField } from '../fields';
-import { useEdit, useHelp, useProfile } from '../hooks';
+import { ChoiceField, Group, MoneyField, NumField, Optional, PercentField, Realism, Row, SegmentField, ToggleField } from '../fields';
+import { useEdit, useHelp, useProfile, useValue } from '../hooks';
+import { MAKE, debtPolicyRealism, propertyRealism } from '../realism';
 import { AddButton, Item, ItemList } from '../Section';
 import { useAdd } from '../useAdd';
 
@@ -13,8 +14,11 @@ const USE = [
   { value: 'vacation', label: 'Vacation' },
 ] as const;
 
+type CostModel = Pick<Property, 'maintenance' | 'assessment' | 'insurance_real_growth'>;
+
 /** Running costs and price behaviour shared by owned properties and planned purchases. */
 export function PropertyCostFields({ path }: { path: string }) {
+  const costs = useValue<CostModel>(path);
   return (
     <div className="space-y-3">
       <Row cols={3}>
@@ -27,11 +31,79 @@ export function PropertyCostFields({ path }: { path: string }) {
         <PercentField path={`${path}/appreciation_vs_national`} label="vs national" step={0.005} />
         <PercentField path={`${path}/idiosyncratic_volatility`} label="Own volatility" />
       </Row>
+      <Realism summary="Lumpy repairs, assessment caps and insurance repricing" on={propertyRealism(costs)}>
+        <SegmentField
+          path={`${path}/maintenance`}
+          label="Upkeep arrives as"
+          options={[
+            { value: 'smooth', label: 'A smooth cost' },
+            { value: 'lumpy', label: 'Major repairs' },
+          ]}
+        />
+        <Row>
+          <ChoiceField
+            path={`${path}/assessment`}
+            label="Tax assessed on"
+            options={[
+              { value: 'market', label: 'Market value' },
+              { value: 'capped', label: 'A capped value' },
+            ]}
+            read={(v) => (v as CostModel['assessment']).type}
+            write={MAKE.assessment}
+          />
+          {costs.assessment.type === 'capped' && <PercentField path={`${path}/assessment/annual_cap`} label="Yearly cap" step={0.005} />}
+        </Row>
+        {costs.assessment.type === 'capped' && <MoneyField path={`${path}/assessment/assessed_value`} label="Assessed value today" nullable placeholder="Value or purchase price" />}
+        <SegmentField
+          path={`${path}/insurance_real_growth`}
+          label="Insurance premiums"
+          options={[
+            { value: 'fixed', label: 'Follow the value' },
+            { value: 'stochastic', label: 'Drift and reprice' },
+          ]}
+        />
+      </Realism>
     </div>
   );
 }
 
+type RentalUse = Extract<Property['use'], { type: 'rental' }>;
+type MortgageKind = NonNullable<Property['mortgage']>['kind'];
+
+/** Fixed or adjustable rate, at `path` (an existing mortgage's `kind`, or a purchase's `mortgage_kind`). */
+export function MortgageKindFields({ path }: { path: string }) {
+  const kind = useValue<MortgageKind>(path);
+  return (
+    <>
+      <SegmentField
+        path={path}
+        label="Rate type"
+        options={[
+          { value: 'fixed', label: 'Fixed' },
+          { value: 'arm', label: 'Adjustable (ARM)' },
+        ]}
+        read={(v) => (v as MortgageKind).type}
+        write={MAKE.mortgageKind}
+      />
+      {kind.type === 'arm' && (
+        <>
+          <Row>
+            <NumField path={`${path}/fixed_months`} label="Fixed for" kind="months" suffix="mo" />
+            <NumField path={`${path}/adjust_every_months`} label="Then resets every" kind="months" suffix="mo" />
+          </Row>
+          <Row cols={3}>
+            <PercentField path={`${path}/margin`} label="Margin" step={0.00125} />
+            <PercentField path={`${path}/periodic_cap`} label="Cap per reset" />
+            <PercentField path={`${path}/lifetime_cap`} label="Lifetime cap" />
+          </Row>
+        </>
+      )}
+    </>
+  );
+}
+
 export function RentalFields({ path }: { path: string }) {
+  const use = useValue<RentalUse>(path);
   return (
     <div className="space-y-3">
       <Row>
@@ -44,6 +116,19 @@ export function RentalFields({ path }: { path: string }) {
         <PercentField path={`${path}/land_fraction`} label="Land share" />
       </Row>
       <NumField path={`${path}/years_in_service`} label="Years already rented out" kind="years" suffix="yrs" />
+      <Realism summary="Vacancy spells, market rents and tenant costs" on={use.dynamics.type === 'realistic' ? 1 : 0}>
+        <SegmentField
+          path={`${path}/dynamics`}
+          label="Tenants and rents"
+          options={[
+            { value: 'simple', label: 'Simple' },
+            { value: 'realistic', label: 'Realistic' },
+          ]}
+          read={(v) => (v as RentalUse['dynamics']).type}
+          write={(type) => ({ type })}
+        />
+        {use.dynamics.type === 'realistic' && <PercentField path={`${path}/dynamics/annual_turnover`} label="Tenancies ending each year" />}
+      </Realism>
     </div>
   );
 }
@@ -81,6 +166,7 @@ function PropertyItem({ property, index }: { property: Property; index: number }
               <NumField path={`${path}/mortgage/remaining_months`} label="Time left" kind="months" suffix="mo" />
               <MoneyField path={`${path}/mortgage/payment`} label="Payment (P&I)" nullable placeholder="Computed" suffix="/mo" />
             </Row>
+            <MortgageKindFields path={`${path}/mortgage/kind`} />
           </div>
         )}
       </div>
@@ -123,6 +209,9 @@ export function PropertySection() {
   const reserved = profile.events.flatMap((e) => (e.kind.type === 'buy_home' ? [e.kind.property_id] : []));
   const addProperty = (name: string, value: Record<string, unknown>) => add(name, value, { taken: reserved });
   const addDebt = useAdd('/debts');
+  const mortgaged = profile.properties.some((p) => p.mortgage) || profile.events.some((e) => e.kind.type === 'buy_home');
+  // A cash-out refinance needs only an owned main home: one with no mortgage has the most room to borrow.
+  const hasHome = profile.properties.some((p) => p.use.type === 'primary') || profile.events.some((e) => e.kind.type === 'buy_home' && e.kind.use.type === 'primary');
   return (
     <>
       <Group title="Property">
@@ -137,13 +226,41 @@ export function PropertySection() {
           <AddButton label="Vacation home" onAdd={() => addProperty('Vacation home', { use: { type: 'vacation' }, value: 300_000 })} />
         </div>
       </Group>
-      {(profile.properties.some((p) => p.mortgage) || profile.events.some((e) => e.kind.type === 'buy_home')) && (
-        <Group title="Mortgages">
-          <ToggleField
-            path="/debt_policy/refinance_mortgages"
-            label="Refinance when rates fall"
-            hint="Each January, if the market rate is a point or more below the loan’s and four years of saved interest cover the closing costs."
-          />
+      {(mortgaged || hasHome) && (
+        <Group title={mortgaged ? 'Mortgages' : 'Borrowing against the home'}>
+          {mortgaged && (
+            <ToggleField
+              path="/debt_policy/refinance_mortgages"
+              label="Refinance when rates fall"
+              hint="Each January, if the market rate is a point or more below the loan’s and four years of saved interest cover the closing costs."
+            />
+          )}
+          <Realism summary={mortgaged ? 'Cash-out refinancing and paying down early' : 'Cash-out refinancing'} on={debtPolicyRealism(profile.debt_policy)}>
+            <Optional path="/debt_policy/cash_out_refinance" label="Refinance for cash before penalised withdrawals" present={profile.debt_policy.cash_out_refinance !== null} make={MAKE.cashOutRefinance}>
+              <Row cols={3}>
+                <PercentField path="/debt_policy/cash_out_refinance/max_ltv" label="Up to, of value" />
+                <PercentField path="/debt_policy/cash_out_refinance/rate_premium" label="Rate premium" step={0.00125} />
+                <NumField path="/debt_policy/cash_out_refinance/term_years" label="Term" kind="years" suffix="yrs" />
+              </Row>
+            </Optional>
+            {mortgaged && (
+              <Row>
+                <ChoiceField
+                  path="/debt_policy/mortgage_prepayment"
+                  label="Prepay the mortgage"
+                  options={[
+                    { value: 'never', label: 'Never' },
+                    { value: 'when_rate_above', label: 'When its rate is high' },
+                  ]}
+                  read={(v) => (v as typeof profile.debt_policy.mortgage_prepayment).type}
+                  write={(type) => ({ type })}
+                />
+                {profile.debt_policy.mortgage_prepayment.type === 'when_rate_above' && (
+                  <PercentField path="/debt_policy/mortgage_prepayment/real_rate" label="Real rate to beat" nullable placeholder="Automatic" />
+                )}
+              </Row>
+            )}
+          </Realism>
         </Group>
       )}
 

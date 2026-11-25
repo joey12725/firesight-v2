@@ -45,6 +45,7 @@ export const summaryShape = obj({
     extra_spending_ratio: nullableEstimate,
     initial_withdrawal_rate: spread,
     home_sale_rate: estimate,
+    medicaid_rate: estimate,
     years_cutting_share: n,
     median_lifetime_tax: n,
     lifetime_tax: spread,
@@ -72,7 +73,7 @@ export const summaryShape = obj({
   depletion: ageCurve,
   distributions: arr(
     obj({ scalar, unit, count: num, missing: num, mean: n, std_dev: n, min: n, max: n, quantiles: arr(n, 9), dots: arr(n), edges: nums, counts: nums }),
-    36,
+    37,
   ),
   scatter: obj({ paths: nums, columns: arr(obj({ scalar, values: nnums })) }),
   failure: obj({
@@ -156,7 +157,7 @@ export const pathTraceShape = obj({
     obj({ year: num, price_level: num, result: record(anything), lines: arr(obj({ key: str, label: str, amount: num, note: nullable(str) })) }),
   ),
   events: arr(obj({ month: str, kind: oneOf(T.TRACE_EVENT_KINDS), label: str, amount: n })),
-  scalars: arr(obj({ scalar, value: n }), 36),
+  scalars: arr(obj({ scalar, value: n }), 37),
 });
 
 const digestRate = obj({ p: num, lo: num, hi: num });

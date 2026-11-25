@@ -6,6 +6,7 @@
 //! wealth      = investable assets - non-mortgage debt        (basis: investable)
 //!             = that + property value - mortgages             (basis: net_worth)
 //! need        = retirement budget + home running costs + modelled healthcare
+//!               + the average yearly cost of replacing `spending.vehicles`
 //!               - income already being received that continues
 //!               + tax on the withdrawals that pay for it
 //! gross       = need / withdrawal_rate
@@ -172,7 +173,15 @@ impl State {
         };
         let (ess, disc, _) = self.budget_as(plan, t, true, retire_month);
         let mut need = (ess + disc) * 12.0;
+        if !plan.sx.vehicles.is_empty() {
+            need += self.sx_vehicle_need(plan, ti, retire_month);
+        }
         let mut lumps = 0.0;
+        if plan.dynamics.active {
+            let (annual, lump) = self.dynamics_requirement(plan, t, price);
+            need += annual;
+            lumps += lump;
+        }
 
         // Homes cost money to run for ever; their mortgages are a debt to clear.
         // A rental is income (possibly negative) that continues.
@@ -192,6 +201,10 @@ impl State {
                     need += mortgage * 12.0 / price;
                 }
             }
+        }
+        if self.hd.any_line && rule.basis == WealthBasis::Investable {
+            // Borrowing against the home is a debt to clear, like a mortgage.
+            lumps += self.hd.liability() / price;
         }
 
         // Healthcare once retired.
@@ -238,8 +251,11 @@ impl State {
 
         // Child costs still to come, as a sum to set aside.
         if ti < self.kids_until {
-            for c in &plan.children {
-                let age = (ti - c.birth).max(0);
+            for (k, c) in plan.children.iter().enumerate() {
+                let Some((birth, n)) = self.child_for_funding(plan, k, ti) else {
+                    continue;
+                };
+                let age = (ti - birth).max(0);
                 let mut m = age;
                 // Whole years from the next birthday on, the part-year first.
                 if m < 22 * 12 && m % 12 != 0 {
@@ -250,12 +266,12 @@ impl State {
                         c.college
                     };
                     let months = 12 - m % 12;
-                    lumps += annual * f64::from(months) / 12.0;
+                    lumps += annual * f64::from(months) / 12.0 * n;
                     m += months;
                 }
                 if m < 22 * 12 {
                     for lump in &c.lump_year[(m / 12) as usize..] {
-                        lumps += lump;
+                        lumps += lump * n;
                     }
                 }
             }
@@ -306,6 +322,9 @@ impl State {
             }
         }
         let mut benefits = [0.0; MAX_PEOPLE];
+        // A policy-risk cut that has already happened is known to the household
+        // (exactly 1 before it, and without `policy_risk`).
+        let ss_cut = self.trz.policy.ss_scale((plan.start + ti).year());
         for i in 0..self.n {
             if !self.present[i] {
                 continue;
@@ -314,6 +333,7 @@ impl State {
                 continue;
             };
             let Some(pia) = c.pia_real else { continue };
+            let pia = pia * ss_cut;
             if self.ss_claimed[i] {
                 // Paid already: the benefit at its claimed level.
                 let fra = plan.ss.full_retirement_age_months(c.birth.year());
@@ -460,7 +480,11 @@ impl State {
                 max_month,
                 ..
             } => {
-                if (funded && ti + 1 >= min_month) || ti + 1 >= max_month {
+                let mut go = funded && ti + 1 >= min_month;
+                if plan.beh.any {
+                    go = self.confirm_retirement(plan, t, go);
+                }
+                if go || ti + 1 >= max_month {
                     self.retire_month = ti + 1;
                 }
             }

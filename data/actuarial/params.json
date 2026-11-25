@@ -1374,6 +1374,92 @@
     ],
     "confidence": "medium-high for incidence and cost; medium for care-type mix and the offset"
   },
+  "health_mortality_care": {
+    "summary": "Opt-in extensions: health states that drive costs and mortality (assumptions.health_model: states), linked lifespans of partners (longevity.couple_dependence: linked), the income gradient of mortality (longevity.income_gradient), Medicaid for long-term care (spending.healthcare.medicaid) and long-term-care insurance (person.ltc_insurance). Judgement constants used by these features are listed in unverified_from_memory.health_mortality_care_judgements.",
+    "health_states": {
+      "states": ["healthy", "chronic", "frail"],
+      "definition": "chronic = two or more of the ten NHIS chronic conditions and not frail; frail = Fried frailty phenotype (3 or more of 5 criteria).",
+      "prevalence_targets": {
+        "multiple_chronic_conditions": {
+          "18-44": 0.067,
+          "45-64": 0.330,
+          "65+": 0.637,
+          "source": "Boersma, Black and Ward, Prevalence of Multiple Chronic Conditions Among US Adults, 2018. Preventing Chronic Disease 2020;17:200130 (NHIS 2018), table by age group. https://www.cdc.gov/pcd/issues/2020/20_0130.htm"
+        },
+        "frail": {
+          "65-69": 0.09,
+          "65+": 0.15,
+          "90+": 0.38,
+          "source": "Bandeen-Roche et al., Frailty in older adults: a nationally representative profile in the United States, J Gerontol A 2015;70(11):1427-1434 (NHATS 2011, community-dwelling). Fried et al. 2001 (Cardiovascular Health Study) report 6.9% overall, 16.3% at 80-84 and 25.7% at 85-89."
+        }
+      },
+      "transitions": {
+        "form": "Annual, by age a at the start of the year: P(healthy->chronic) = logistic(onset_intercept + onset_slope * (a - 50)); P(chronic->frail) = logistic(frailty_intercept + frailty_slope * (a - 80)); P(healthy->frail) = healthy_to_frail_share * P(chronic->frail); P(frail->chronic) = frail_recovery; chronic does not return to healthy.",
+        "onset_intercept": -4.1549,
+        "onset_slope": 0.05006,
+        "frailty_intercept": -2.7433,
+        "frailty_slope": 0.06057,
+        "calibration": "Fitted (Nelder-Mead, least squares on relative errors) so that the chain run from age 18 on the SSA 2023 period table, with the hazard ratios below and the marginal mortality of the table kept exactly, reproduces the six prevalence targets (averaged over the two sexes, weighted by survivors). Fitted: 6.9% / 30.5% / 67.1% with two or more conditions at 18-44 / 45-64 / 65+ (targets 6.7 / 33.0 / 63.7); frail 8.3% at 65-69, 17.0% at 65+, 34.7% at 90+ (targets 9 / 15 / 38). healthy_to_frail_share and frail_recovery are judgements.",
+        "confidence": "medium: the prevalences are sourced, the functional form and the two judgement constants are not"
+      },
+      "mortality_hazard_ratio": {
+        "healthy": 1.0,
+        "chronic": 1.73,
+        "frail": 2.79,
+        "source": "chronic: Nunes et al., Multimorbidity and mortality in older adults: a systematic review and meta-analysis, Arch Gerontol Geriatr 2016;67:130-138 (pooled HR 1.73 for two or more morbidities). frail: Crow et al., Mortality risk along the frailty spectrum: data from NHANES 1999-2004, J Am Geriatr Soc 2018;66(3):496-502, fully adjusted HR 2.79 (95% CI 2.35-3.30) frail vs robust, adults 60+ (NHATS estimates 2.7 to 4.0). Applied relative to healthy at the same age; normalised every year so that the person's mortality, averaged over the states of the survivors, equals the life table exactly.",
+        "confidence": "medium"
+      },
+      "out_of_pocket_multiplier": {
+        "healthy": 1.0,
+        "chronic": 1.91,
+        "frail": 2.79,
+        "source": "chronic: AHRQ MEPS Statistical Brief #498 (Soni 2017, 2014 data): elderly adults with Medicare and private supplemental coverage, mean out-of-pocket $1,685 with multiple chronic conditions vs $883 with one or none (ratio 1.91). frail: the chronic ratio times the severe/no functional disability ratio of Park and Stimpson, JAMA Netw Open 2024;7(6):e2417300 ($2,137 vs $1,468, ratio 1.46): a judgement combining the two. Normalised every year so the mean among the living at each age is unchanged.",
+        "confidence": "medium for chronic, low for frail"
+      }
+    },
+    "couple_dependence": {
+      "frank_alpha": 7.065,
+      "frank_source": "Frank copula association fitted to the joint-life data of a large Canadian insurer analysed by Frees, Carriere and Valdez (Annuity valuation with dependent mortality, J Risk Insur 1996). Value: Dufresne, Hashorva, Ratovomirija and Toukourou, On age difference in joint lifetime modelling with life insurance annuity applications, Annals of Actuarial Science 2018 (arXiv:1601.04351), Table 4.1, overall IFM estimate 7.065.",
+      "bereavement_relative_risk": 1.41,
+      "bereavement_months": 6,
+      "bereavement_source": "Moon, Kondo, Glymour and Subramanian, Widowhood and mortality: a meta-analysis, PLoS ONE 2011;6(8):e23465: pooled relative risk 1.41 (1.26-1.57) in the first six months after bereavement, 1.14 after. Only the first-six-months excess is added here; the lasting excess is taken to be shared frailty, already in the copula.",
+      "confidence": "medium: the copula is fitted on insured annuitants and includes some short-term dependence, so the two together may overstate dependence a little"
+    },
+    "income_gradient": {
+      "measure": "Race-adjusted period life expectancy at 40 by percentile of household income (within sex and age), US 2001-2014, and the mean household income of each percentile in 2012 dollars.",
+      "source": "Chetty, Stepner, Abraham et al., The Association Between Income and Life Expectancy in the United States, 2001-2014. JAMA 2016;315(16):1750-1766. Health Inequality Project online Table 1 (https://healthinequality.org/dl/health_ineq_online_table_1.csv), columns hh_inc and le_raceadj.",
+      "cpi_2012_to_2026_09": 1.4676,
+      "cpi_note": "CPI-U growth from the 2012 average to September 2026, computed from data/history/monthly.csv; converts the 2012-dollar incomes to today's dollars.",
+      "method": "A person's mortality is multiplied by the factor m(p) that moves the SSA 2023 period life expectancy at 40 (by sex) by le40(p) minus the mean of le40 over the 100 percentiles: a proportional shift of the whole curve, as in the Gompertz fits of the paper. An association, not a causal effect of income.",
+      "female": {
+        "hh_income_2012": [433, 1919, 3718, 5467, 7089, 8570, 9891, 11142, 12368, 13526, 14617, 15692, 16747, 17778, 18788, 19787, 20779, 21765, 22748, 23728, 24707, 25686, 26667, 27652, 28641, 29635, 30635, 31640, 32651, 33670, 34699, 35739, 36793, 37859, 38942, 40037, 41146, 42273, 43414, 44571, 45744, 46933, 48135, 49352, 50587, 51835, 53100, 54385, 55688, 57013, 58356, 59723, 61112, 62521, 63953, 65410, 66884, 68384, 69904, 71455, 73028, 74629, 76260, 77924, 79623, 81360, 83142, 84964, 86832, 88754, 90727, 92764, 94866, 97040, 99293, 101634, 104071, 106625, 109306, 112141, 115151, 118363, 121808, 125521, 129572, 133992, 138843, 144239, 150285, 157146, 165094, 174413, 185647, 199593, 217631, 242346, 279176, 341872, 477421, 1923274],
+        "le40_race_adjusted": [78.78, 80.46, 81.17, 81.53, 81.63, 81.67, 81.7, 81.79, 81.75, 81.75, 82.01, 82.16, 82.35, 82.33, 82.46, 82.69, 82.62, 82.7, 82.94, 82.93, 83.0, 83.06, 83.12, 83.27, 83.35, 83.37, 83.43, 83.54, 83.72, 83.83, 83.78, 83.83, 84.0, 84.07, 84.1, 84.15, 84.28, 84.29, 84.28, 84.45, 84.52, 84.46, 84.62, 84.81, 84.72, 84.77, 85.0, 84.99, 84.99, 85.02, 84.99, 85.19, 85.14, 85.27, 85.34, 85.28, 85.54, 85.5, 85.67, 85.55, 85.51, 85.83, 85.85, 85.84, 86.01, 86.03, 85.89, 86.05, 86.08, 86.08, 86.26, 86.25, 86.33, 86.42, 86.37, 86.43, 86.63, 86.56, 86.67, 86.69, 86.7, 86.94, 87.03, 87.07, 87.12, 87.35, 87.43, 87.38, 87.5, 87.46, 87.79, 87.83, 88.03, 88.04, 88.3, 88.41, 88.53, 88.46, 88.61, 88.87]
+      },
+      "male": {
+        "hh_income_2012": [356, 1603, 3222, 4905, 6551, 8128, 9651, 11103, 12531, 13934, 15275, 16572, 17838, 19076, 20295, 21496, 22683, 23858, 25023, 26177, 27328, 28473, 29616, 30758, 31896, 33034, 34173, 35315, 36460, 37609, 38765, 39928, 41097, 42275, 43462, 44658, 45862, 47077, 48302, 49538, 50782, 52038, 53305, 54582, 55874, 57182, 58505, 59841, 61197, 62567, 63958, 65363, 66788, 68230, 69692, 71172, 72675, 74199, 75745, 77316, 78913, 80537, 82191, 83879, 85602, 87363, 89165, 91008, 92901, 94847, 96849, 98913, 101043, 103248, 105535, 107918, 110409, 113024, 115779, 118699, 121804, 125121, 128690, 132562, 136757, 141343, 146402, 152024, 158353, 165601, 173990, 183889, 195871, 210824, 230267, 257052, 297207, 365424, 511692, 1982300],
+        "le40_race_adjusted": [72.74, 74.5, 75.45, 75.84, 76.03, 76.18, 76.28, 76.19, 76.35, 76.39, 76.47, 76.56, 76.75, 76.84, 77.0, 77.11, 77.36, 77.42, 77.63, 77.7, 77.93, 78.14, 78.25, 78.41, 78.48, 78.59, 78.77, 78.98, 79.09, 79.18, 79.32, 79.52, 79.61, 79.81, 80.05, 80.13, 80.25, 80.4, 80.45, 80.73, 80.83, 80.77, 80.98, 81.07, 81.05, 81.31, 81.27, 81.45, 81.52, 81.69, 81.7, 81.86, 81.82, 81.87, 82.0, 82.19, 82.29, 82.26, 82.52, 82.57, 82.47, 82.71, 82.83, 82.82, 82.94, 82.94, 83.06, 83.32, 83.28, 83.37, 83.58, 83.64, 83.76, 83.64, 83.79, 84.03, 84.0, 84.01, 84.15, 84.18, 84.27, 84.38, 84.47, 84.64, 84.64, 85.08, 84.98, 85.05, 85.24, 85.41, 85.62, 85.83, 85.92, 86.17, 86.15, 86.32, 86.52, 86.77, 86.91, 87.34]
+      },
+      "check": "p1 / p50 / p100 life expectancy at 40: men 72.74 / 81.69 / 87.34, women 78.78 / 85.02 / 88.87 (the paper's 14.6- and 10.1-year top-to-bottom gaps are for the top and bottom 1%).",
+      "confidence": "high for the table; medium for using current earnings as the lifetime-income rank"
+    },
+    "medicaid": {
+      "asset_limit_individual": 2000,
+      "asset_limit_note": "SSI resource limit used by most states for nursing-home Medicaid; fixed in dollars by statute since 1989, so not indexed. A few states differ (NY, IL, CA).",
+      "csra_min_2026": 32532,
+      "csra_max_2026": 162660,
+      "mmmna_min_2026": 2643.75,
+      "home_equity_limit_2026": 752000,
+      "special_income_level_2026": 2982,
+      "personal_needs_allowance_federal_minimum": 30,
+      "source": "CMS, 2026 SSI and Spousal Impoverishment Standards (CMCS informational bulletin, revised April 2026); summarised by medicaidplanningassistance.org (Medicaid eligibility 2026): CSRA $32,532-$162,660, MMMNA minimum $2,643.75 until July 2026, home equity limit $752,000 in most states, special income level 300% of the $994 SSI federal benefit rate = $2,982. Personal needs allowance minimum $30 a month: 42 U.S.C. 1396a(q). Estate recovery after the death of the recipient and any surviving spouse: 42 U.S.C. 1396p(b).",
+      "confidence": "high for the federal figures; state rules vary (the national defaults are used)"
+    },
+    "ltc_insurance": {
+      "rate_increase_evidence": "Average cumulative increase since 2001: 31% on policies sold under the NAIC rate-stability rules and 55% on older policies (LTC Shop data reported by InvestmentNews, States try to beat back rate increases on long-term-care policies, 13 September 2018). Requested increases averaged 47% (2021) and 56% (2024) per filing in Milliman's surveys (SOA LTC newsletter 2022 and 2025); approved increases are smaller (Maryland's 2025 approvals averaged 14.6%). The 31%/55% figures were checked against the InvestmentNews article; the Milliman and Maryland figures were not re-verified and are context only.",
+      "tax": "Benefits of a tax-qualified policy within the per-diem limit are not income (IRC 7702B); treated as untaxed here.",
+      "confidence": "low for the size and frequency of increases (judgement calibrated to the 31% figure)"
+    }
+  },
   "expense_shocks": {
     "summary": "Irregular lumpy household expenses (car repair or replacement beyond plan, home repair, legal, family emergencies, uncovered dental/vet) as a compound Poisson process scaled to the household's annual spending. Medical shocks are excluded here (healthcare module).",
     "model": {
@@ -1436,6 +1522,73 @@
       "large planned purchases (user enters those as one-off goals)"
     ],
     "confidence": "medium-low (frequency is sourced; severity distribution as a share of spending is a judgement)"
+  },
+  "spending_realism": {
+    "summary": "Opt-in spending realism (spending.vehicles, seasonality, category_inflation, shocks = detailed, unemployment_cut). Everything here is read only when the matching switch is on.",
+    "judgement_constants": {
+      "note": "Constants that are judgements, not taken from a source. Each is a named constant in crates/firesight-core/src/sim/spendx.rs, and a unit test there keeps the code equal to this list.",
+      "replacement_jitter_sd_months": 6.0,
+      "replacement_jitter_clip_sd": 2.0,
+      "unemployment_cut_phase_months": 3.0,
+      "shock_branching_ratio": 0.3,
+      "shock_cluster_half_life_months": 12.0,
+      "shock_z_cap": 3.5
+    },
+    "category_inflation": {
+      "model": "Annual AR(1) on the log of a category's price level relative to CPI: x_k = phi x_(k-1) + sigma_eps z_k, x_0 = 0. The price multiplier is exp(x_k - Var(x_k)/2) with Var(x_k) = sigma_eps^2 (1 - phi^(2k)) / (1 - phi^2), so its expectation is exactly 1 in every year and it is exactly 1 today. The category's long-run real growth (Category::default_real_growth, or real_growth on the line) stays separate: the wedge is the deviation from the trend.",
+      "source": "Bureau of Labor Statistics CPI-U sub-indexes relative to CPI-U all items (CPIAUCNS), retrieved from FRED (Federal Reserve Bank of St. Louis) on 2026-11-18; fitted by tools/calibrate_category_inflation.py on annual averages 1980-2024 (the last year with all twelve months in every series), least squares on the linearly detrended log ratio.",
+      "confidence": "medium for the data and the fit; low for out-of-sample persistence (45 annual observations, and the detrended medical and education ratios are unit roots in this sample, so phi is capped at 0.95, a judgement, to keep the wedge stationary).",
+      "group_of_category": {
+        "groceries": "food",
+        "dining": "food",
+        "utilities": "utilities",
+        "transport": "transport",
+        "rent": "shelter",
+        "healthcare": "medical",
+        "education": "education",
+        "childcare": "education"
+      },
+      "groups": {
+        "food": {"series": "CPIUFDNS", "label": "CPI-U Food, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0008, "phi_estimated": 0.79, "phi": 0.79, "sigma_eps": 0.0102},
+        "utilities": {"series": "CUUR0000SAH2", "label": "CPI-U Fuels and utilities, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0022, "phi_estimated": 0.923, "phi": 0.923, "sigma_eps": 0.0305},
+        "transport": {"series": "CPITRNSL", "label": "CPI-U Transportation, SA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": -0.0034, "phi_estimated": 0.675, "phi": 0.675, "sigma_eps": 0.0313},
+        "shelter": {"series": "CUUR0000SAH1", "label": "CPI-U Shelter, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0048, "phi_estimated": 0.812, "phi": 0.812, "sigma_eps": 0.0124},
+        "medical": {"series": "CPIMEDNS", "label": "CPI-U Medical care, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0166, "phi_estimated": 0.995, "phi": 0.95, "sigma_eps": 0.0205},
+        "education": {"series": "CUUR0000SEEB", "label": "CPI-U Tuition, other school fees and childcare, NSA", "sample": "1980-2024 annual averages, n=45", "real_trend_per_year": 0.0285, "phi_estimated": 1.027, "phi": 0.95, "sigma_eps": 0.0244}
+      },
+      "left_out": [
+        "correlation between groups (each wedge is independent)",
+        "a household's own consumption basket within a group (the wedge is the national sub-index)",
+        "the modelled healthcare module, children's costs and owned-home costs, which have their own price paths"
+      ]
+    },
+    "seasonality": {
+      "model": "Monthly weights per category, rescaled in code to average exactly 1, so a line's annual total is unchanged. January first.",
+      "source": "utilities: Federal Reserve G.17, industrial production of electric and gas utilities, not seasonally adjusted (IPG2211A2N). groceries, dining, transport: US Census Bureau Monthly Retail Trade, sales not seasonally adjusted, of grocery stores (MRTSSM4451USN), food services and drinking places (MRTSSM722USN) and gasoline stations (MRTSSM447USN). All retrieved from FRED (Federal Reserve Bank of St. Louis) on 2026-11-24 and averaged by tools/calibrate_seasonality.py: each month over its calendar year's monthly mean, 2010-2019.",
+      "confidence": "utilities, groceries, dining, transport: medium for the data, medium-low as a description of a household's line, because each series is a proxy (energy delivered to all customers, not household bills, and a utilities line also holds water, internet and phone, which are flat; fuel is only part of transport; store sales include some non-household buyers). travel, education, entertainment, personal, giving: judgement, not fitted to data. They follow well-known qualitative patterns (summer and year-end travel, term-time tuition bills, holiday shopping; industry estimates that about 30% of annual charitable giving falls in December, not confirmed against a primary source). For scale, the same Census source puts December sales of clothing stores (MRTSSM448USN) at 1.57 times and of sporting goods, hobby, musical instrument and book stores (MRTSSM451USN) at 1.59 times their monthly mean; personal and entertainment lines also hold services that do not peak (gym, grooming, streaming), so their December weight is set well below that. The BLS Consumer Expenditure Survey publishes annual and quarterly means, not a monthly table, so it was not used.",
+      "weights": {
+        "utilities": [1.16, 1.051, 0.979, 0.866, 0.889, 0.995, 1.096, 1.085, 0.976, 0.892, 0.936, 1.074],
+        "groceries": [0.983, 0.914, 1.001, 0.972, 1.029, 0.998, 1.023, 1.018, 0.98, 1.006, 1.013, 1.063],
+        "dining": [0.908, 0.911, 1.032, 1.005, 1.049, 1.014, 1.027, 1.033, 0.983, 1.021, 0.975, 1.041],
+        "transport": [0.889, 0.859, 0.995, 1.012, 1.08, 1.059, 1.075, 1.076, 1.016, 1.038, 0.957, 0.944],
+        "education": [1.5, 0.3, 0.3, 0.3, 0.3, 0.4, 0.6, 2.5, 1.6, 0.3, 0.3, 0.3],
+        "travel": [0.7, 0.7, 0.9, 0.9, 1.0, 1.4, 1.6, 1.4, 0.9, 0.9, 0.9, 1.5],
+        "entertainment": [0.9, 0.9, 0.95, 0.95, 1.0, 1.05, 1.1, 1.05, 0.95, 1.0, 1.0, 1.2],
+        "personal": [0.9, 0.85, 0.95, 1.0, 1.0, 0.95, 0.95, 1.15, 1.0, 1.0, 1.1, 1.2],
+        "giving": [0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 0.76, 3.6]
+      },
+      "flat_categories": "rent, healthcare, insurance, childcare and other are spent evenly."
+    },
+    "detailed_shocks": {
+      "model": "Four independent compound-Poisson shock types. Each month, type k fires with probability 1 - exp(-lambda_k (1 - n) (1 + e) / 12) and costs base_k * LogNormal(ln median_k, sigma_k) with the normal draw capped at +-3.5 sd. base_home = market value of owned primary homes; base_car = Transport budget lines plus the replacement price of vehicles spread over their cycle; base_medical and base_family = annual spending. e is a shared excitement that decays by half every 12 months and rises with every shock, so one shock raises the chance of another (Hawkes clustering); lambda is scaled by (1 - n) and e starts at its long-run mean n / (1 - n), so the expected frequency is lambda in every month. The excitement follows the random draws alone: a type whose base is zero (no home, no transport spending) still fires and excites the others, it just costs nothing, so the other types keep their frequency and every shock keeps its date whatever the household owns. The detailed level adds variance, not cost: the expected annual cost of the car, medical and family types at the start is netted out of the budget like the typical level, and the expected cost of home repairs (lambda x median x exp(sigma^2 / 2) = 0.366% of value a year) is taken out of the maintenance_rate paid on an owner-occupied home (default 1% of value, which as a rule of thumb covers repairs as well as routine upkeep), not below zero. The household still plans (funded test, annual budget) with the full maintenance_rate, so the repairs stay an expected cost of the home.",
+      "confidence": "frequency and median of medical: medium-low (JP Morgan Chase Institute, Coping with Costs, 2017: 16% of families a year make an extraordinary medical payment, median $1,143; figures already quoted under expense_shocks.evidence); car repair median: medium-low (same source, $953, set against about $12,000 of transport spending); car repair frequency: judgement (the same source counts 8% of families a year, but only payments more than two standard deviations above the family's normal month; 0.4 a year is meant to include ordinary unplanned repairs); home repair and family emergency: judgement, no source fetched (home repair: about 0.37% of home value a year on average, roughly a third of the 1% default maintenance_rate it is carved out of); clustering: judgement.",
+      "types": {
+        "home_repair": {"lambda_per_year": 0.4, "median_fraction_of_home_value": 0.005, "sigma": 1.1, "confidence": "judgement"},
+        "car_repair": {"lambda_per_year": 0.4, "median_fraction_of_transport_spending": 0.08, "sigma": 0.9, "confidence": "median medium-low (JPMCI 2017, $953); frequency a judgement (JPMCI counts 8% a year for extraordinary repairs only)"},
+        "medical_adjacent": {"lambda_per_year": 0.16, "median_fraction_of_annual_spending": 0.02, "sigma": 1.0, "confidence": "medium-low: JPMCI 2017, 16% of families a year, median $1,143 about 2% of annual spending"},
+        "family_emergency": {"lambda_per_year": 0.12, "median_fraction_of_annual_spending": 0.03, "sigma": 1.2, "confidence": "judgement"}
+      }
+    }
   },
   "children": {
     "summary": "Deterministic per-child annual cost by age band and household income tier (USDA), re-inflated with simulated CPI, plus explicit childcare for ages 0-4 and an explicit college goal. No randomness by default.",
@@ -1940,6 +2093,65 @@
       "spending reductions at first death (handled by the household module: default survivor spends 70% of the couple's baseline)"
     ]
   },
+  "household_behavior": {
+    "summary": "Parameters of the opt-in household-behaviour features (crates/firesight-core/src/sim/behavior). Each entry names the code constant it documents; unit tests in that module keep the two equal.",
+    "return_to_work": {
+      "older_search_multiplier": {
+        "value": 1.1,
+        "code": "sim::behavior::work::OLDER_SEARCH_MULTIPLIER",
+        "model": "Median job-search length from 65 = unemployment-model median for 55+ times this.",
+        "evidence": "BLS Current Population Survey, 2024 annual averages, table 31 (Unemployed persons by age and duration of unemployment): mean duration 28.9 weeks at 65 and over against 26.2 weeks at 55 to 64 (ratio 1.10); medians 10.9 against 12.0 weeks (ratio 0.91).",
+        "source": "https://www.bls.gov/cps/data/aa2024/cpsaat31.htm",
+        "confidence": "low (judgement: means and medians disagree in direction, and a retiree re-entering the labour force is not an unemployed worker)"
+      },
+      "resume_retirement_ratio": {
+        "value": 1.0,
+        "code": "sim::behavior::work::RESUME_RETIREMENT_RATIO",
+        "model": "A household that went back to work stops again in the first January its funded ratio is at least this.",
+        "confidence": "judgement (the plan is fully funded again)"
+      }
+    },
+    "panic_selling": {
+      "code": "model::PanicSelling::default()",
+      "drawdown_trigger": 0.25,
+      "probability": 0.08,
+      "share": 0.5,
+      "reentry_recovered_within": 0.05,
+      "reentry_max_months": 36,
+      "evidence": "Vanguard, How America Saves 2009: in 2008 16% of defined-contribution participants traded, 2% abandoned equities entirely, and of the fall in the equity share of plan assets from 73% to 61% over 2008 about 4 percentage points came from participants shifting to fixed income (the rest from prices), i.e. about 5.5% of equities held. probability x share = 0.08 x 0.5 = 4% of stocks sold per fall of 25% or more, at the low end of that figure. Morningstar, Mind the Gap 2024: investor returns trailed fund total returns by about 1.1 points a year over the ten years to 2023 (all US funds; timing of purchases and sales).",
+      "source": "Vanguard How America Saves 2009 (as reported by PLANSPONSOR, 2009); https://www.morningstar.com/lp/mind-the-gap",
+      "confidence": "low (a behavioural assumption: plan savers are inert; the re-entry rule and the trigger depth are judgements)"
+    },
+    "adaptive_claiming": {
+      "reserve_months": {
+        "value": 12.0,
+        "code": "sim::behavior::claiming::RESERVE_MONTHS",
+        "model": "Claim now when investable savings < reserve_months x monthly budget + the benefit given up until the latest claim age.",
+        "confidence": "judgement (a year of spending as a cash reserve is a rule of thumb, not a measured quantity)"
+      }
+    },
+    "distress_pause": {
+      "high_interest_rate": {
+        "value": 0.08,
+        "code": "model::DistressRules::default().high_interest_rate",
+        "evidence": "Federal Reserve G.19 Consumer Credit: commercial bank interest rate on credit card plans, all accounts, 21.58% in 2024 (annual average). Student and auto loans in the shipped examples are at 5% and 6.5%.",
+        "source": "https://www.federalreserve.gov/releases/g19/",
+        "confidence": "judgement (the 8% line separates card and personal-loan rates from typical secured and student loans; it is not a published threshold)"
+      },
+      "penalty_months": {
+        "value": 3,
+        "code": "sim::behavior::distress::PENALTY_MONTHS",
+        "confidence": "judgement (a retired household draws a quarter's money at a time)"
+      }
+    },
+    "retirement_confirmation": {
+      "code": "model::RetirementConfirmation::default(), model::OneMoreYear::default()",
+      "months": 6,
+      "max_equity_drawdown": 0.2,
+      "one_more_year_probability": 0.25,
+      "confidence": "judgement (no agreed estimate of how long households wait for confirmation or how often they add a year; the defaults are illustrative and the user's to set)"
+    }
+  },
   "housing": {
     "summary": "Transaction and carrying-cost parameters for an owned home, and the idiosyncratic price risk to layer on top of the national home price index produced by the scenario generator.",
     "closing_costs": {
@@ -2096,6 +2308,273 @@
       "natural-disaster loss beyond insurance",
       "mortgage refinancing decisions (separate module)"
     ]
+  },
+  "housing_realism": {
+    "summary": "Parameters of the opt-in housing realism options: lumpy maintenance, insurance drift, market rents, slow home sales and adjustable-rate mortgages (assessment caps are a rule, not a parameter). Each number is either sourced or marked as a judgement; code constants are kept equal to this section by a unit test (sim/housing_ext_tests.rs).",
+    "maintenance": {
+      "capital_share": {
+        "value": 0.5,
+        "judgement": true,
+        "confidence": "low. The housing.maintenance_pct_of_value entry has 1% routine plus 0.5% capital replacement (a third); half is used so the lumps are visible at the default 1% rate."
+      },
+      "weibull_shape": {
+        "value": 3,
+        "judgement": true,
+        "confidence": "low (gives a coefficient of variation of about 0.36 for a component's lifetime)"
+      },
+      "initial_age_span": {
+        "value": 1.13,
+        "judgement": true,
+        "confidence": "medium (a uniform draw on [0, 1.13 L] has the mean age of a stationary renewal process with shape 3)"
+      },
+      "components": {
+        "roof": {"life_years": 25.0, "budget_share": 0.30},
+        "heating and cooling": {"life_years": 17.0, "budget_share": 0.25},
+        "water heater": {"life_years": 11.0, "budget_share": 0.05},
+        "exterior paint and siding": {"life_years": 12.0, "budget_share": 0.20},
+        "appliances and flooring": {"life_years": 13.0, "budget_share": 0.20},
+        "source": "Mean lives: NAHB and Bank of America Home Equity, Study of Life Expectancy of Home Components (February 2007), as reported by secondary sources: asphalt-shingle roofs 20 to 30 years, furnaces 15 to 20, tank water heaters 8 to 12 (the original table was not re-read). Budget shares are a judgement.",
+        "confidence": "medium for lives (secondary reports of a 2007 study), low for shares"
+      }
+    },
+    "insurance_drift": {
+      "evidence": "Urban Institute, Housing Finance at a Glance (September 2026), quoted in housing.homeowners_insurance_pct_of_value: average premium on newly originated agency mortgages rose from $1,270 (2018) to $1,856 (2024), +46%, about 6.5% a year against CPI-U of about 3.8% a year (251 to 314), so about 2.6 points a year in real terms.",
+      "mu": {"value": 0.005, "judgement": true, "confidence": "low. Long-run mean of the persistent real growth rate; below the 2018-2024 pace because repricing cannot continue for decades."},
+      "rho": {"value": 0.97, "judgement": true, "confidence": "low (monthly persistence, about 0.7 a year)"},
+      "sigma": {"value": 0.004, "judgement": true, "confidence": "low. Monthly innovation sd of the annual real growth rate; with rho it gives a stationary sd of about 1.6 points a year, so that the 2018-2024 episode (about 2.6 points a year real for six years) is roughly half a standard deviation above the mean."},
+      "jump_rate": {"value": 0.08, "judgement": true, "confidence": "low (repricing events a year)"},
+      "jump_log_median": {"value": -2.2, "judgement": true, "confidence": "low (median jump 11%)"},
+      "jump_log_sd": {"value": 0.5, "judgement": true, "confidence": "low"}
+    },
+    "rent_market": {
+      "evidence": "housing.rent_growth: CPI rent of primary residence has grown 0.5 to 1.0 points faster than CPI-U since the mid-1980s; real rent growth sd about 2% a year; local rents co-move with the local price factor. Those figures are themselves marked medium confidence and quoted from memory.",
+      "real_trend": {"value": 0.005, "source": "equal to the engine's default real growth of a rent line (model::Category::Rent)", "confidence": "medium"},
+      "hpi_passthrough": {"value": 0.15, "judgement": true, "confidence": "low"},
+      "hpi_real_trend": {"value": 0.01, "judgement": true, "confidence": "low (real home prices rose about 1% a year since the 1970s)"},
+      "local_persistence": {"value": 0.985, "judgement": true, "confidence": "low (half-life about 4 years)"},
+      "local_sd": {"value": 0.05, "judgement": true, "confidence": "low"},
+      "renewal_pass_through": {"value": 0.75, "judgement": true, "confidence": "low"},
+      "forced_move_probability": {"value": 0.06, "judgement": true, "confidence": "low"},
+      "new_lease_premium": {"value": 0.04, "judgement": true, "confidence": "low"}
+    },
+    "liquidity": {
+      "evidence": "NAR (2012 analysis of existing-home sales): median time on market of non-distressed sellers peaked at 10 weeks in 2009 (10.0 months of supply, median price down 12.9%); 6 to 7 weeks is a balanced market. Campbell, Giglio and Pathak, Forced Sales and House Prices, American Economic Review 101(5), 2011 (NBER w14866): forced sales close 3 to 7% below comparable homes (death 5 to 7%, bankruptcy 3%); foreclosures about 27%.",
+      "base_close_months": {"value": 2, "judgement": true, "confidence": "low (3 to 4 weeks on market plus 30 to 45 days to close)"},
+      "base_extra_months": {"value": 0.5, "judgement": true, "confidence": "low"},
+      "stress_extra_months": {"value": 3.0, "judgement": true, "confidence": "low. Gives a mean of about 5 months at full stress (2 plus the whole months of an exponential wait of mean 3.5)."},
+      "full_stress_discount": {"value": 0.06, "judgement": true, "confidence": "low. Sized from Campbell, Giglio and Pathak (2011), forced sales 3 to 7% below comparable homes; their discount is for the seller's circumstances (death, bankruptcy), and the engine applies a figure of that size to any sale that must close in a stressed market and none in a normal one."},
+      "full_stress_price_fall": {"value": 0.10, "judgement": true, "confidence": "low (2008 saw falls of 10 to 12% over twelve months)"}
+    },
+    "arm": {
+      "evidence": "Fannie Mae Selling Guide B2-1.4-02 and its ARM plan notices: 5/1 hybrids with 2/2/5 and 5/2/5 caps were accepted, margins of 2.25 to 3 points over the index, and the rate may never fall below the margin. The index is the 30-day average SOFR in current plans; the engine uses the simulated Treasury bill yield as the index.",
+      "initial_discount_to_fixed": {"value": 0.0075, "judgement": true, "confidence": "low. 5/1 ARMs were typically 0.5 to 1 point below the 30-year fixed rate in 2010 to 2019 (recalled); the spread was negative in 2023."}
+    },
+    "left_out": [
+      "metro-level rent and price indices",
+      "interest-only and negative-amortisation ARMs; ARMs with an initial cap different from the periodic cap",
+      "price negotiation during a sale; the buyer's financing falling through",
+      "rent control and eviction law"
+    ]
+  },
+  "housing_decisions": {
+    "summary": "Parameters of the opt-in housing decisions (crates/firesight-core/src/home_equity.rs, sim/housing_decisions.rs): home-equity lines, reverse mortgages, downsizing, cash-out refinancing and prepayment, realistic rental dynamics. Sourced values carry their source; judgements say so. tests/housing_decision_constants.rs keeps the code equal to this section.",
+    "heloc": {
+      "default_max_combined_ltv": {
+        "value": 0.8,
+        "source": "Lender practice: combined loan-to-value limits of 80 to 85% for home-equity lines (CFPB, What you should know about home equity lines of credit, 2012; lender disclosures).",
+        "confidence": "medium"
+      },
+      "default_spread_over_bills": {
+        "value": 0.035,
+        "source": "Prime rate = federal funds target + 3 points (bank convention). Bankrate national average HELOC rate 7.81% on 3 December 2025 against a 6.75% prime (margin about 1 point); 2025 readings 7.8 to 8.9%. Bills sit near the federal funds rate, so bills + 3.5 points is prime + 0.5.",
+        "confidence": "medium"
+      },
+      "draw_and_repay_years": {
+        "value": [10, 20],
+        "source": "CFPB HELOC brochure (2012): a draw period of, for example, 10 years, then repayment often over 10 or 20 years.",
+        "confidence": "medium"
+      },
+      "default_freeze_probability": {
+        "value": 0.3,
+        "source": "Judgement. Federal Reserve Senior Loan Officer Opinion Survey, April 2008: about 50% of domestic banks had tightened terms on existing HELOCs over the past six months, nearly all citing falling collateral values; about 70% had tightened standards for new lines. No borrower-level share of frozen or cut lines is published. 0.3 is the chance per downturn that the household's lender freezes its line.",
+        "confidence": "judgement"
+      },
+      "housing_slump_drawdown": {
+        "value": 0.1,
+        "source": "Judgement: lenders tightened existing lines when collateral values fell (SLOOS April 2008); a 10% fall of national prices from their peak marks a slump outside a recession.",
+        "confidence": "judgement"
+      }
+    },
+    "hecm": {
+      "upfront_mip": {
+        "value": 0.02,
+        "source": "HUD Mortgagee Letter 2017-12 (case numbers from 2 October 2017): upfront mortgage insurance premium 2.00% of the maximum claim amount for all loans.",
+        "confidence": "high"
+      },
+      "annual_mip": {
+        "value": 0.005,
+        "source": "HUD Mortgagee Letter 2017-12: annual mortgage insurance premium 0.50% of the loan balance.",
+        "confidence": "high"
+      },
+      "max_claim_2026": {
+        "value": 1249125.0,
+        "source": "HUD Mortgagee Letter 2025-22 (11 December 2025): 2026 nationwide HECM maximum claim amount $1,249,125 (2025: $1,209,750); indexed on a path with national home prices.",
+        "confidence": "high"
+      },
+      "min_age": {
+        "value": 62.0,
+        "source": "24 CFR 206.33: the youngest borrower must be at least 62.",
+        "confidence": "high"
+      },
+      "expected_rate_floor": {
+        "value": 0.03,
+        "source": "HUD principal limit factor tables from October 2017 start at an expected rate of 3.0% (NRMLA, Barnes, New HECM Math, 2017).",
+        "confidence": "medium"
+      },
+      "first_year_share": {
+        "value": 0.6,
+        "source": "HUD Mortgagee Letter 2013-27: at most 60% of the principal limit in the first 12 months, or mandatory obligations plus 10% of the principal limit if more.",
+        "confidence": "high"
+      },
+      "origination_fee": {
+        "value": [2500.0, 6000.0, 200000.0],
+        "source": "24 CFR 206.31: the greater of $2,500 or 2% of the first $200,000 of the maximum claim amount plus 1% above it, capped at $6,000.",
+        "confidence": "high"
+      },
+      "principal_limit_factors": {
+        "value": [[0.524, 0.47, 0.41, 0.357, 0.312, 0.272], [0.588, 0.524, 0.467, 0.416, 0.372, 0.332], [0.658, 0.605, 0.556, 0.511, 0.471, 0.434], [0.75, 0.715, 0.682, 0.65, 0.62, 0.592]],
+        "ages": [62, 72, 82, 92],
+        "expected_rates": [0.03, 0.04, 0.05, 0.06, 0.07, 0.08],
+        "source": "HUD, HECM Program: Selected Principal Limit Factors, effective 10/2/2017 (slides published with ML 2017-12, August 2017). Interpolated linearly between the grid points; the full HUD table is by whole age and eighth of a point.",
+        "confidence": "medium"
+      },
+      "default_lender_margin": {
+        "value": 0.02,
+        "source": "Judgement, not verified against a survey: adjustable HECM lender margins taken as 1.5 to 3 points over the index; 2 points is mid-range.",
+        "confidence": "judgement"
+      },
+      "default_other_closing_costs": {
+        "value": 3000.0,
+        "source": "Judgement, not verified against a survey: appraisal, title, counselling and recording fees taken as a few thousand dollars.",
+        "confidence": "judgement"
+      }
+    },
+    "downsize": {
+      "default_to_value_fraction": {
+        "value": 0.6,
+        "source": "Judgement: a move to a home worth about 60% as much; the schema field lets each household set its own.",
+        "confidence": "judgement"
+      },
+      "default_selling_cost_fraction": {
+        "value": 0.06,
+        "source": "The bottom of the seller's cost range in housing.closing_costs.seller_pct_of_price (6 to 10%: commissions of about 5% after the 2024 NAR settlement, transfer taxes, title and concessions), and the default of a sell_property event.",
+        "confidence": "medium"
+      },
+      "default_buying_cost_fraction": {
+        "value": 0.03,
+        "source": "housing.closing_costs.buyer_pct_of_price default (2 to 5%: origination, appraisal, title insurance, recording); no mortgage-related costs when bought for cash.",
+        "confidence": "medium"
+      },
+      "min_down_payment": {
+        "value": 0.2,
+        "source": "Judgement: 20% down is the conventional line below which lenders require mortgage insurance (80% loan-to-value); a household moving down is taken to buy within it, and to rent if its proceeds cannot make it.",
+        "confidence": "judgement"
+      },
+      "loan_months": {
+        "value": 360,
+        "source": "The 30-year fixed-rate mortgage, the benchmark of Freddie Mac's Primary Mortgage Market Survey and the most common US home loan.",
+        "confidence": "medium"
+      },
+      "widowed_delay_months": {
+        "value": 12,
+        "source": "Judgement: the schema's when_widowed moves a year after the first death; planners commonly advise against major decisions in the first year of bereavement.",
+        "confidence": "judgement"
+      },
+      "children_leave_ages": {
+        "value": [18, 22],
+        "source": "Judgement (a convention of the schema): a child leaves home at 18, or at 22 when college is planned.",
+        "confidence": "judgement"
+      }
+    },
+    "cash_out_refinance": {
+      "default_max_ltv": {
+        "value": 0.8,
+        "source": "Fannie Mae Eligibility Matrix (April 2026): standard cash-out refinance of a one-unit principal residence, maximum LTV 80% (75% for second homes and investment properties).",
+        "confidence": "high"
+      },
+      "default_rate_premium": {
+        "value": 0.0025,
+        "source": "Fannie Mae loan-level price adjustment matrix (2026, as tabulated by The Mortgage Reports): at 75-80% LTV and a 740-759 score a cash-out refinance carries 2.375% of the loan against 1.125% for a rate-and-term refinance, 1.25 points more; at the usual conversion of 4 to 6 points of price per point of rate (a judgement) that is about 0.2 to 0.3 points of rate. Less at lower LTVs and better scores.",
+        "confidence": "low"
+      },
+      "closing_costs": {
+        "value": [0.02, 2000.0],
+        "source": "Judgement shared with the rate refinance (sim/year.rs REFINANCE_COST_FRACTION and REFINANCE_COST_FIXED): 2% of the loan plus $2,000 in today's dollars, the low end of the usual 2 to 5% because no points are paid.",
+        "confidence": "judgement"
+      },
+      "min_months_between": {
+        "value": 12,
+        "source": "Judgement: closing costs make refinancing more often than yearly uneconomic, and lenders commonly require months of seasoning between refinances.",
+        "confidence": "judgement"
+      },
+      "raise_months_of_spending": {
+        "value": 12.0,
+        "source": "Judgement: once retired, a refinance raises at least a year of planned spending (and in the annual plan the penalised withdrawals until 59 and a half), so that one carries the household for a while.",
+        "confidence": "judgement"
+      },
+      "min_cash": {
+        "value": 10000.0,
+        "source": "Judgement: a cash-out below $10,000 (today's dollars) is not worth its closing costs.",
+        "confidence": "judgement"
+      }
+    },
+    "rental_dynamics": {
+      "default_annual_turnover": {
+        "value": 0.25,
+        "source": "Invitation Homes, full-year 2024 results (February 2025): same-store annual turnover 22.6% (24.3% in 2023), average length of stay about 38 months, about 40 days empty between residents (Form 10-K FY2024); single-family rentals. Apartments turn over faster.",
+        "confidence": "medium"
+      },
+      "recession_spell_factor": {
+        "value": 1.5,
+        "source": "Judgement: vacancy spells taken as half again as long in a recession; the Census Housing Vacancy Survey's rental vacancy rate rose by about a tenth to a quarter around 2008-09. HVS duration tables (e.g. 1999-2001: 27-28% of vacant for-rent units empty under a month, 22-24% six months or more) are consistent with mean spells of a few months.",
+        "confidence": "judgement"
+      },
+      "recession_share": {
+        "value": 0.13,
+        "source": "Judgement: about the share of postwar US months in NBER recessions, used only to keep the long-run vacancy at the entered rate.",
+        "confidence": "judgement"
+      },
+      "rent_index_annual_persistence": {
+        "value": 0.8,
+        "source": "Judgement: market rents deviate from trend for years (the 2021-23 surge took about three years to fade).",
+        "confidence": "judgement"
+      },
+      "rent_index_sd": {
+        "value": 0.05,
+        "source": "Judgement informed by the Zillow Observed Rent Index, whose year-over-year growth peaked at 17.2% in February 2022 (Zillow Research) after near zero in 2020: market rents within about 10% of trend most of the time.",
+        "confidence": "judgement"
+      },
+      "eviction_annual": {
+        "value": 0.02,
+        "source": "Judgement informed by the Eviction Lab: 3.6 million eviction cases filed in 2018, a filing rate of 7.8% of renter homes, about 6 in 100 renter households threatened; fewer end with a judgement and a lost tenant.",
+        "confidence": "judgement"
+      },
+      "eviction_cost_months": {
+        "value": 3.0,
+        "source": "Judgement: rent lost while the case runs, legal fees and damage, in months of rent.",
+        "confidence": "judgement"
+      },
+      "capex_share": {
+        "value": 0.5,
+        "source": "Judgement: half of a rental's maintenance budget comes as large repairs (roof, heating, appliances), the rest as routine upkeep.",
+        "confidence": "judgement"
+      },
+      "capex_monthly_probability": {
+        "value": 0.016666666666666666,
+        "source": "Judgement: a large repair every five years on average.",
+        "confidence": "judgement"
+      }
+    }
   },
   "equity_compensation": {
     "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
@@ -2381,7 +2860,7 @@
       "Retirement earnings test (before full retirement age): $1 withheld per $2 of earnings above $24,480 in 2026 ($1 per $3 above $65,160 in the year FRA is reached). Withheld months are credited back at FRA, so it is a deferral, not a tax.",
       "Windfall Elimination Provision and Government Pension Offset were repealed by the Social Security Fairness Act (effective for benefits after December 2023); no need to model them.",
       "Taxation thresholds for benefits ($25,000 / $34,000 single, $32,000 / $44,000 joint) are not indexed, so the taxable share rises over a long nominal simulation (tax module).",
-      "Trust fund risk: the 2025 Trustees Report projected OASI reserve depletion in 2033 with 77% of scheduled benefits payable (combined OASDI 2034, 81%); the 2026 report was not checked for this file. Offer a scenario switch: full scheduled benefits (default) versus a 20-23% cut from 2033.",
+      "Trust fund risk: the 2025 Trustees Report projected OASI reserve depletion in 2033 with 77% of scheduled benefits payable (combined OASDI 2034, 81%); the Summary of the 2026 Trustees Reports moves it to the fourth quarter of 2032 with 78% payable (combined OASDI 2034, 83%; data/tax/us-federal-2026.json, social_security.trust_fund). Offer a scenario switch: full scheduled benefits (default) versus a 20-23% cut from 2033.",
       "PIA is rounded down to the next lower dime and the monthly benefit to the next lower dollar; Medicare Part B is normally deducted from the benefit (hold-harmless limits the Part B increase to the COLA for most people not paying IRMAA)."
     ],
     "sources": [
@@ -2414,6 +2893,64 @@
       "home_price_beta": 1.0,
       "idiosyncratic_volatility": 0.14
     },
+    "career_realism": {
+      "note": "JUDGEMENT constants of the opt-in career-realism features (src/career_realism). Each is shaped by the evidence named beside it but is not an estimate from that data. A test keeps the code constants equal to this section.",
+      "job_mobility": {
+        "annual_move_probability_by_age_band": [0.30, 0.20, 0.12, 0.08, 0.05, 0.03],
+        "age_bands": ["<25", "25-34", "35-44", "45-54", "55-64", "65+"],
+        "high_level_multiplier": 1.6,
+        "max_annual_probability": 0.6,
+        "recession_rate_multiplier": 0.6,
+        "mean_log_jump_by_age_band": [0.08, 0.08, 0.05, 0.05, 0.02, 0.02],
+        "recession_jump_penalty": 0.04,
+        "jump_sd": 0.12,
+        "evidence": "Fallick and Fleischman (Federal Reserve Board FEDS 2004-34): 2.6% of employed people change employers each month, falling with age and in recessions. FRBSF Economic Letter 2016-30 (SIPP): 1.7-1.9% a month at ages 40-44. BLS NLSY79 job counts (from memory: about 12 jobs from 18 to 52). Topel and Ward (QJE 1992): job changes are about a third of early-career wage growth. Atlanta Fed Wage Growth Tracker: switchers out-earn stayers by one to three points in expansions (8.4% vs 5.6% in August 2022) and the premium turns negative in and after recessions."
+      },
+      "recession_pay": {
+        "annual_freeze_probability": 0.25,
+        "annual_cut_probability": 0.15,
+        "cut_min": 0.05,
+        "cut_max": 0.20,
+        "cut_months": 9,
+        "freeze_cooldown_months": 12,
+        "bonus_factor": 0.7,
+        "bonus_slack_months": 12,
+        "evidence": "No source gives these sizes: they are judgements. Direction only: Daly, Hobijn and Lucking (FRBSF Economic Letter 2012-10) and an FRBSF letter of July 2013 report that the share of workers with a frozen (unchanged) annual wage reached a record high after the Great Recession; an administrative study of Washington State hourly stayers (2020 AEA conference paper) found 15-20% with no change in a year even in normal times. Exact percentages were not retrieved."
+      },
+      "late_career": {
+        "from_age": 55,
+        "spell_multiplier_by_age_band": [1.3, 1.6, 1.8],
+        "scar_multiplier": 1.3,
+        "never_probability_at_55": 0.15,
+        "never_probability_per_year": 0.04,
+        "never_probability_max": 0.6,
+        "spell_cap_months": 48,
+        "evidence": "All sizes are judgements. Direction and rough scale: Johnson and Gosselin (Urban Institute, 2018), reported by ProPublica ('Forced Out'): in the Health and Retirement Study 56% of workers over 50 in long-term full-time jobs were pushed out before they chose to retire, and only about one in ten of them ever again earned as much as before (thresholds: six months of unemployment or a 50% earnings drop; includes exits for poor health). Not a per-layoff probability, so the rising never-again probability is shaped to be consistent with it rather than estimated from it. These multipliers apply on top of the career model's own age_multiplier_on_median 1.4 (55+) and age_50_plus_multiplier 1.5."
+      },
+      "disability": {
+        "band_from_age": [20, 30, 35, 40, 45, 50, 55, 60],
+        "incidence_per_1000_by_age_band": [1.0, 1.6, 2.2, 3.6, 5.5, 8.0, 12.0, 14.0],
+        "annual_recovery": 0.03,
+        "return_scar": 0.10,
+        "ssdi_wait_months": 5,
+        "ltd_wait_months": 3,
+        "min_insured_years": 5,
+        "min_onset_age": 20,
+        "evidence": "The age profile, recovery rate, scar, LTD wait and insured-history rule are judgements. Verified: SSA Trustees Report 2025 age-sex-adjusted ultimate disabled-worker incidence 4.6 awards per 1,000 exposed a year (Alternative II; 4.8 in 2023, 4.5 in 2024); SSA Annual Statistical Report on the SSDI Program 2024 (read through search summaries, the SSA site refuses automated access): disabled-worker awards by age 50-54 16.2%, 55-59 28.0%, 60-61 12.6%, 62-FRA 14.8%; the table here averages about 5.2 per 1,000 under the age mix of employed people (about 13% above the Trustees' rate); SSDI waiting period of five full months; computation years for disability AIME: elapsed years after age 21, one dropout year per five elapsed years up to five, minimum two (SSA POMS RS 00605.016). The OACT age-specific incidence tables could not be retrieved."
+      },
+      "business": {
+        "fail_hazard_by_year": [0.204, 0.15, 0.12, 0.10, 0.09],
+        "fail_hazard_later": 0.07,
+        "recession_hazard_multiplier": 1.3,
+        "regime_hazard_beta": 0.25,
+        "high_hazard_multiplier": 1.5,
+        "regime_persistence": 0.7,
+        "regime_sd": [0.20, 0.35],
+        "recession_profit_drop": [0.10, 0.20],
+        "max_annual_failure": 0.95,
+        "evidence": "Verified: BLS Business Employment Dynamics via The Economics Daily: 79.6% of establishments born in March 1994 were open a year later (TED 2018); the survival rate of the March 2013 cohort fell 20.4 points in its first year and 34.7% of it was open in March 2023 (TED 2024). The first-year hazard is that figure; the hazards for years 2 to 5 and later are judgements fitted so that ten-year survival is about 34%. The regime, recession and level multipliers are judgements. Establishment data: sole proprietors are not separately measured."
+      }
+    },
     "irs_single_life_table": {
       "note": "Life expectancy at ages 20, 25, ..., 70 from the IRS Single Life Table, 26 CFR 1.401(a)(9)-9(b) (effective 2022), used for the 72(t) amortisation payment (decumulation::SINGLE_LIFE_EXPECTANCY). Check against the regulation.",
       "first_age": 20,
@@ -2432,9 +2969,83 @@
         18.8
       ]
     },
+    "health_mortality_care_judgements": {
+      "note": "Judgements of the opt-in health, longevity and care features (health_mortality_care), not data: health_states::HEALTHY_TO_FRAIL_SHARE, FRAIL_RECOVERY, LTC_STATE_FACTOR; medicaid::PERSONAL_NEEDS_ALLOWANCE (most states set more than the $30 federal minimum); ltc_insurance::RATE_INCREASE_PROBABILITY, RATE_INCREASE_MIN, RATE_INCREASE_MAX (chosen so a policy bought today sees about 30% of increases in 17 years, the post-2001 record), LAPSE_INCOME_SHARE, LAPSE_ASSET_DRAW (the share of investable assets counted with income in the lapse test).",
+      "healthy_to_frail_share": 0.25,
+      "frail_recovery": 0.1,
+      "ltc_state_factor": [0.5, 1.0, 2.0],
+      "personal_needs_allowance": 60,
+      "rate_increase_probability": 0.08,
+      "rate_increase_min": 0.1,
+      "rate_increase_max": 0.3,
+      "lapse_income_share": 0.1,
+      "lapse_asset_draw": 0.04
+    },
     "good_health_mortality_multiplier": {
       "note": "Mortality multiplier of the schema's default health status 'good' (health::GOOD_HEALTH_MULTIPLIER): a judgement between the population table (1.0) and mortality.health_multiplier.presets.healthy_high_income (0.75).",
       "value": 0.85
+    },
+    "family": {
+      "note": "Judgement defaults of the opt-in family features (model/family.rs DEFAULT_* and sim/family.rs constants; a unit test in sim/family.rs keeps them equal to this list). None is fetched from a source: arrival_probability and arrival_delay_mean_months sit near time-to-pregnancy reviews (most couples conceive within a year) but are not a published statistic; college_attend_probability is the chance a child with a college plan attends; tuition_volatility, tuition_ar1 and aid_sd shape the spread of college prices and aid; aid_max caps the discount; adult_support_* are the chance, yearly amount, mean length and start window of support for an adult child (only anchored loosely to Pew's 18% of 25-34 year olds living with a parent in 2023); leave_pay_fraction is the share of pay during parental leave. Sourced family parameters (twin rate, college duration, aid schedule, leave months) are documented beside their constants.",
+      "arrival_probability": 0.85,
+      "arrival_delay_mean_months": 4.0,
+      "college_attend_probability": 0.95,
+      "tuition_volatility": 0.012,
+      "tuition_ar1": 0.8,
+      "aid_sd": 0.1,
+      "aid_max": 0.9,
+      "adult_support_probability": 0.3,
+      "adult_support_annual": 12000.0,
+      "adult_support_mean_years": 2.0,
+      "adult_support_start_window_months": 72.0,
+      "leave_pay_fraction": 0.6
+    },
+    "housing_realism": {
+      "note": "Opt-in housing realism figures recalled rather than fetched (housing::maintenance::COMPONENTS and housing::arm::INITIAL_DISCOUNT; sim/housing_ext_tests.rs keeps them equal to this entry). Component lives: NAHB and Bank of America Home Equity, Study of Life Expectancy of Home Components (February 2007); the study exists, but its table was not re-read and the figures here are round numbers from secondary reports of it. ARM discount: the gap between the initial rate of a 5/1 ARM and the 30-year fixed rate, recalled as 0.5 to 1 point through 2010 to 2019.",
+      "home_component_life_years": {
+        "roof": 25.0,
+        "heating and cooling": 17.0,
+        "water heater": 11.0,
+        "exterior paint and siding": 12.0,
+        "appliances and flooring": 13.0
+      },
+      "arm_initial_discount_to_fixed": 0.0075
+    },
+    "policy_risk_defaults": {
+      "note": "Defaults and window of assumptions.taxes.policy_risk (policy::DEFAULT_* and POLICY_WINDOW_YEARS). All judgements, not forecasts. window_years: the year a change begins is drawn uniformly from this many years from earliest_year. ss_haircut_probability: even odds that a depletion is closed with a benefit cut. tax_increase_probability and tax_increase_points: some chance of a two-point rise in every ordinary rate. The sourced defaults are the OASI figures of the Summary of the 2026 Trustees Reports (https://www.ssa.gov/oact/TRSUM/index.html, as in data/tax/us-federal-2026.json, social_security.trust_fund): factor 0.78, the share payable after depletion, and earliest year 2033, the first whole year after depletion in the fourth quarter of 2032.",
+      "window_years": 15,
+      "ss_haircut_probability": 0.5,
+      "tax_increase_probability": 0.25,
+      "tax_increase_points": 0.02
+    },
+    "tax_loss_harvesting": {
+      "note": "Thresholds of portfolio.tax_loss_harvesting (sim::tax_realism::TLH_LOSS_THRESHOLD, TLH_MIN_LOSS_REAL). Judgements: a holding is harvested when it stands this fraction below its cost basis and the loss is at least min_loss_real in today's dollars. Automated harvesting services act on losses of a few percent; the minimum keeps the household from trading for trivial amounts. Wash sales are assumed avoided by buying a similar but not identical fund of the same asset class; no trading cost or tracking difference is charged.",
+      "loss_threshold": 0.05,
+      "min_loss_real": 1000.0
+    },
+    "divorce_late_rate_under_65": {
+      "note": "Annual divorce hazard after fifteen years of marriage while the first person is under 65 (model::LATE_DIVORCE_RATE_UNDER_65): Brown and Lin (2012) report 10.05 divorces per 1,000 married persons aged 50 and older in 2010, quoted from memory; applying it to couples under 50 married fifteen years or more is a judgement.",
+      "value": 0.01
+    },
+    "divorce_spending_factor": {
+      "note": "Default share of shared spending one adult keeps after a divorce (model::DIVORCE_SPENDING_FACTOR): a judgement within the OECD square-root (0.71) and OECD-modified (0.67) equivalence scales.",
+      "value": 0.7
+    },
+    "spousal_care_share": {
+      "note": "Share of paid home-care hours a partner at home provides instead (model::SPOUSAL_CARE_SHARE): a judgement; no source found for the share of paid hours replaced.",
+      "value": 0.5
+    },
+    "spousal_care_reduce_probability": {
+      "note": "Probability that a working partner cuts their hours when the other enters home care (model::SPOUSAL_CARE_REDUCE_PROBABILITY): 15% of working family caregivers went part time or cut hours, AARP and NAC 'Caregiving in the U.S. 2020' as reported by Next Avenue, not checked against the report's tables; for all family caregivers, not spouses only.",
+      "value": 0.15
+    },
+    "spousal_care_stop_probability": {
+      "note": "Probability that a working partner stops working instead (model::SPOUSAL_CARE_STOP_PROBABILITY): 6% quit and 5% retired early, same secondary source as spousal_care_reduce_probability.",
+      "value": 0.11
+    },
+    "spousal_care_hours_cut": {
+      "note": "Share of full-time work given up by a partner who cuts their hours (model::SPOUSAL_CARE_HOURS_CUT): half time, a judgement.",
+      "value": 0.5
     }
   },
   "long_run_assumptions": {
@@ -2446,5 +3057,49 @@
       "gold_real_return": "Annual geometric real return of gold. Gold kept its real value over the very long run (0 to 1% a year; 1926-2026 about 2.4% including the 1970s repricing after the end of the gold standard). 1% is the upper end of the long-run range. Before this was fixed the models implied 3.4%, 4.3% and 5.3%: the 1968-2026 nominal mean set against full-sample inflation."
     },
     "confidence": "judgement; the direction and rough size are supported by the long-run record, the exact values are not estimable"
+  },
+  "market_realism": {
+    "summary": "Parameters of the optional market refinements (assumptions.market: valuation, stress episodes, the fat-tailed model, dynamic_yields). Each entry gives its value, where it comes from and how sure it is. Constants are kept equal to this section by tests/unverified_constants.rs.",
+    "valuation": {
+      "starting_cape": 40.0,
+      "fair_cape": 17.3,
+      "half_life_years": 15.0,
+      "source": "starting_cape: Shiller CAPE of the S&P 500, 38 to 42 through 2026 (YCharts 39.8 February 2026; Financer 38.2 March 2026; multpl.com about 40.5), rounded. fair_cape: mean of Shiller's CAPE since 1881, about 17.3 (Shiller's online data as summarised by multpl.com and Financer). half_life_years: Campbell and Shiller (1998, 'Valuation Ratios and the Long-Run Stock Market Outlook', Journal of Portfolio Management 24(2); 2001 update, NBER w8221) find that valuation ratios forecast ten-year price changes and revert mostly through prices, without pinning down the speed.",
+      "confidence": "starting_cape sourced (update it with the published value); fair_cape sourced as a statistic, but reverting all the way to it is the bearish reading; half_life_years judgement"
+    },
+    "historical_episodes": {
+      "great_depression_1929": "1929-09 to 1945-02, 186 months",
+      "stagflation_1966": "1966-01 to 1982-07, 199 months",
+      "dot_com_2000": "2000-04 to 2013-02, 155 months",
+      "financial_2008": "2007-11 to 2013-01, 63 months",
+      "source": "Computed from data/history/monthly.csv (CRSP total market deflated by CPI-U): each window runs from the month after the real peak (1929-08, 2000-03, 2007-10) to the month the real index regained it. 1966: the Dow Jones Industrial Average peaked in January 1966 and the secular bear market ended at the August 1982 low; the total-market real index regained its January 1966 level briefly in 1967, so this window is set by those dates, not by the rule.",
+      "confidence": "1929, 2000 and 2008 computed from the embedded record; the 1966 end date is a judgement (it ends at the 1982 low, so it includes none of the recovery)"
+    },
+    "lost_generation": {
+      "years": 20.0,
+      "equity_real_return": -0.02,
+      "inflation": -0.003,
+      "long_yield": 0.01,
+      "glide_years": 8.0,
+      "bill_yield": 0.001,
+      "source": "Japan after 1989. TOPIX 2,881 at the end of 1989 and 1,086 at the end of 1998 (Cabinet Office of Japan, Annual Report on the Japanese Economy and Public Finance 2002); TOPIX -1.96% a year in price from the end of 1990 to August 2013 (CFA Institute, Enterprising Investor, 2013). Consumer price inflation averaged -0.28% a year over 1999-2012 (World Bank via FRED, FPCPITOTLZGJPN). 10-year government bond yield 6.96% in 1990, 1.54% in 1998, 1.00% in 2003 and 0.7 to 1.7% through 2013 (OECD via FRED, IRLTLT01JPA156N).",
+      "confidence": "inflation, long_yield and glide_years sourced (rounded); equity_real_return a judgement between the post-1990 (about -1%) and peak-dated (about -5%) readings; years a judgement (the 'two lost decades'); bill_yield a judgement for 'near zero'"
+    },
+    "fat_tailed": {
+      "arch": 0.15,
+      "garch": 0.83,
+      "dof": 5.0,
+      "variance_cap": 16.0,
+      "mixing_cap": 8.0,
+      "source": "GARCH(1,1) (Bollerslev 1986) with Student-t shocks (Bollerslev 1987, Review of Economics and Statistics 69(3)). arch, garch and dof fitted by simulated moments to data/history/calibration.json: median over 1,203-month simulated samples of the excess kurtosis of monthly US stock returns (record 7.36), and of the autocorrelation of absolute returns at lags 1 and 12 (record 0.219 and 0.148); a grid over arch 0.12-0.21, persistence 0.97-0.99, dof 5-8. Maximum likelihood on the same record gives arch 0.13, garch 0.83, dof 7.3 (computed for this calibration), whose samples are thinner-tailed (kurtosis 3.5). variance_cap: the record's highest trailing 12-month variance of US stocks (71% annualised, 12 months to April 1933) over the full-sample variance (18.3%) is about 15. Calm and turbulent correlations are computed from the record at build time (trailing 12-month volatility above its 75th percentile); stock-stock correlation rising in bear markets matches Longin and Solnik (2001, Journal of Finance 56(2)).",
+      "confidence": "arch, garch and dof fitted to the embedded record (moment targets, not likelihood); variance_cap from the record, rounded; mixing_cap a judgement shared with the regime model"
+    },
+    "dynamic_yields": {
+      "adjustment_annual": 0.3,
+      "recession_cut_annual": 0.1,
+      "yield_range": [0.002, 0.15],
+      "source": "Partial-adjustment form after Lintner (1956, 'Distribution of Incomes of Corporations Among Dividends, Retained Earnings, and Taxes', American Economic Review 46(2)). recession_cut_annual calibrated so that replaying 2007-11 to 2013-01 cuts the US dividend run rate by about 20% from peak to trough, against the 21% fall of S&P 500 dividends per share from $28.39 (2008) to $22.41 (2009) in Shiller's data as tabulated by DQYDJ.",
+      "confidence": "adjustment_annual a judgement (published speeds of adjustment vary widely); recession_cut_annual calibrated to one episode; yield_range a judgement that only bounds collapsed indices"
+    }
   }
 }

@@ -3,7 +3,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::YearMonth;
+use super::behavior::Claiming;
+use super::{
+    AdultSupport, Arrival, CollegeCost, DivorceRisk, LifePolicy, Parent, ParentalLeave, YearMonth,
+};
 
 /// The people the plan covers and where they live.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -18,6 +21,24 @@ pub struct Household {
     /// Where the household lives at the start. Drives state tax, property tax defaults
     /// and health insurance prices.
     pub location: Location,
+    /// Month the couple married, as "YYYY-MM". Used by `divorce_risk` (the risk
+    /// depends on how long the marriage has lasted) and by the Social Security rule
+    /// that a marriage of ten years or more gives a divorced spouse benefits on the
+    /// former partner's record. Leave empty when not married or not relevant; a
+    /// divorce then counts the marriage from the plan's start (or the partner's
+    /// joining).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub married: Option<YearMonth>,
+    /// Risk that the couple divorces, drawn on each path from US divorce rates by
+    /// length of marriage. "off" (the default) models no divorce; a `divorce` event
+    /// can still schedule one.
+    #[serde(skip_serializing_if = "DivorceRisk::is_off")]
+    pub divorce_risk: DivorceRisk,
+    /// Parents (or other relatives) whose deaths leave the household an
+    /// inheritance. Empty (the default): inheritances are not modelled, except as
+    /// a `windfall` event.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parents: Vec<Parent>,
 }
 
 /// One adult in the household.
@@ -46,6 +67,62 @@ pub struct Person {
     /// Social Security claiming plan and how the benefit is estimated.
     #[serde(default)]
     pub social_security: SocialSecurity,
+    /// Whether a long-term disability can end this person's work before retirement.
+    /// Off by default. When on, each month a worker below full retirement age faces
+    /// an age-dependent chance of a disability that ends all wage and
+    /// self-employment income. It pays Social Security Disability Insurance after a
+    /// five-month wait (the person's benefit as of onset, converting to the
+    /// retirement benefit at full retirement age) and any `ltd_insurance`, and ends
+    /// with a small yearly chance of recovery.
+    #[serde(default, skip_serializing_if = "crate::career_realism::is_default")]
+    pub disability_risk: DisabilityRisk,
+    /// Employer or private long-term disability insurance. Needs `disability_risk`
+    /// on. Leave empty for none.
+    #[serde(default, skip_serializing_if = "crate::career_realism::is_default")]
+    pub ltd_insurance: Option<LtdInsurance>,
+    /// A long-term-care insurance policy this person owns, if any. Leave empty for
+    /// none (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ltc_insurance: Option<super::LtcInsurance>,
+    /// Life insurance policies on this person's life. Empty (the default): none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub life_insurance: Vec<LifePolicy>,
+}
+
+/// Whether a long-term work-limiting disability is simulated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DisabilityRisk {
+    /// No disability: the person works until the plan says otherwise (the default).
+    #[default]
+    Off,
+    /// Disability onset at rates shaped like Social Security's disabled-worker award
+    /// incidence (about 4.6 per 1,000 insured a year on average, rising steeply with
+    /// age; the age profile is a judgement), a 3% yearly chance of recovery.
+    Typical,
+}
+
+/// Long-term disability insurance paid after the first three months of a disability.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct LtdInsurance {
+    /// Share of base salary at the time of onset that the policy replaces before
+    /// offsets, 0 to 1. Typical group policies replace 0.6. The benefit is reduced by
+    /// the Social Security Disability Insurance the person receives (the usual
+    /// offset), and is taxable (employer-paid premiums).
+    pub replacement: f64,
+    /// Age at which the benefit stops, for example 65. Typical policies pay to 65 or
+    /// to full retirement age.
+    pub to_age: f64,
+}
+
+impl Default for LtdInsurance {
+    fn default() -> Self {
+        Self {
+            replacement: 0.6,
+            to_age: 65.0,
+        }
+    }
 }
 
 impl Default for Person {
@@ -58,6 +135,10 @@ impl Default for Person {
             health: HealthStatus::default(),
             joins: None,
             social_security: SocialSecurity::default(),
+            disability_risk: DisabilityRisk::default(),
+            ltd_insurance: None,
+            ltc_insurance: None,
+            life_insurance: Vec::new(),
         }
     }
 }
@@ -104,6 +185,21 @@ pub struct SocialSecurity {
     pub claim_age: f64,
     /// How the benefit amount is worked out.
     pub basis: SocialSecurityBasis,
+    /// Whether the claim age is fixed (`claim_age`, the default) or decided along the
+    /// way: claim early when savings run short, otherwise delay toward a latest age.
+    #[serde(skip_serializing_if = "Claiming::is_fixed")]
+    pub claiming: Claiming,
+}
+
+impl SocialSecurity {
+    /// The claim age the plan starts from: `claim_age`, or the latest age for
+    /// adaptive claiming.
+    pub fn planned_claim_age(&self) -> f64 {
+        match self.claiming {
+            Claiming::Fixed => self.claim_age,
+            Claiming::Adaptive { latest, .. } => latest,
+        }
+    }
 }
 
 impl Default for SocialSecurity {
@@ -111,6 +207,7 @@ impl Default for SocialSecurity {
         Self {
             claim_age: 67.0,
             basis: SocialSecurityBasis::default(),
+            claiming: Claiming::Fixed,
         }
     }
 }
@@ -177,6 +274,33 @@ pub struct Child {
     /// aid or scholarships). 1.0 means parents pay everything.
     #[serde(default = "one")]
     pub college_share: f64,
+    /// For a planned child (birth month in the future): whether the child is certain to
+    /// arrive on that date or the birth is uncertain (may not happen, may be later,
+    /// may be twins). Default certain.
+    #[serde(default, skip_serializing_if = "Arrival::is_certain")]
+    pub arrival: Arrival,
+    /// Whether the college cost is the plan's fixed figure or uncertain (random tuition
+    /// growth, income-dependent aid, whether the child attends, how many years).
+    /// Default fixed.
+    #[serde(default, skip_serializing_if = "CollegeCost::is_fixed")]
+    pub college_cost: CollegeCost,
+    /// Opt-in: after school the child may return home or need money for a random spell
+    /// (a "boomerang" child), which adds spending for those years. Empty (the default)
+    /// means the child is never supported as an adult.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adult_support: Option<AdultSupport>,
+    /// Opt-in: when this child is born during the plan (a child already born has no
+    /// leave), the named person's wages drop to a fraction of pay for some months.
+    /// Retirement deferrals, payroll tax and Social Security earnings follow the pay
+    /// actually received. Twins are one leave. State paid-family-leave programmes are
+    /// not modelled. Empty (the default) means no leave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parental_leave: Option<ParentalLeave>,
+    /// Opt-in: a second leave at the same birth, for the other parent (name a different
+    /// `person` than `parental_leave` does). It starts in the birth month too, with
+    /// its own length and pay fraction. Empty (the default) means no second leave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_parental_leave: Option<ParentalLeave>,
 }
 
 fn one() -> f64 {
@@ -193,6 +317,11 @@ impl Default for Child {
             childcare_monthly: None,
             college: College::default(),
             college_share: 1.0,
+            arrival: Arrival::Certain,
+            college_cost: CollegeCost::Fixed,
+            adult_support: None,
+            parental_leave: None,
+            second_parental_leave: None,
         }
     }
 }

@@ -25,7 +25,7 @@ beforeAll(() => {
   // The engine is slow to warm up when the machine is busy.
 }, 120_000);
 
-const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord'];
+const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord', 'full-life'];
 
 describe('cashFlowModel on real engine output', () => {
   for (const slug of SLUGS) {

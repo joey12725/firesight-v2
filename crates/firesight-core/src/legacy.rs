@@ -307,6 +307,7 @@ impl Migration<'_> {
                 childcare_monthly: None,
                 college: College::None,
                 college_share: 1.0,
+                ..Child::default()
             });
         }
         if dependents > 0 {
@@ -338,6 +339,7 @@ impl Migration<'_> {
             people,
             children,
             location,
+            ..Household::default()
         };
     }
 
@@ -629,6 +631,7 @@ impl Migration<'_> {
                     rate,
                     remaining_months: months,
                     payment: Some(payment),
+                    ..Mortgage::default()
                 });
             }
         }
@@ -661,6 +664,7 @@ impl Migration<'_> {
                 rent_real_growth: 0.0,
                 land_fraction: 0.2,
                 years_in_service: 0.0,
+                dynamics: RentalDynamics::Simple,
             }),
             value,
             basis: None,
@@ -846,7 +850,7 @@ impl Migration<'_> {
                 "Mortgage" => {
                     let years = num(a, "remaining_term").unwrap_or(30.0);
                     let months = (years * 12.0).round().clamp(1.0, 600.0) as u32;
-                    let loan = Mortgage { balance: value, rate: rate.unwrap_or(0.04).clamp(0.0, 0.25), remaining_months: months, payment: None };
+                    let loan = Mortgage { balance: value, rate: rate.unwrap_or(0.04).clamp(0.0, 0.25), remaining_months: months, payment: None, ..Mortgage::default() };
                     match self.profile.properties.iter_mut().find(|p| matches!(p.usage, PropertyUse::Primary) && p.mortgage.is_none()) {
                         Some(home) => {
                             home.mortgage = Some(loan);

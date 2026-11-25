@@ -55,12 +55,27 @@ use std::ops::Range;
 use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
+mod behavior;
+mod care;
+mod cash_out;
+mod downsize;
+mod dynamics;
 mod events;
+mod family;
+mod housing_decisions;
+mod housing_ext;
+mod market_notes;
 mod month;
 mod plan;
 mod preview;
+mod realism;
 mod record;
+mod rz_business;
+mod rz_disability;
+mod rz_late;
+mod spendx;
 mod state;
+mod tax_realism;
 mod trigger;
 mod year;
 
@@ -69,6 +84,16 @@ pub use plan::{
     PURCHASE_RETRY_MONTHS,
 };
 pub use preview::PlanPreview;
+/// Constants of planned downsizing, for the parameter tests.
+pub mod downsize_constants {
+    pub use super::downsize::{
+        DOWNSIZE_LOAN_MONTHS, DOWNSIZE_MIN_DOWN, LEAVE_AGE, LEAVE_AGE_COLLEGE, WIDOWED_DELAY_MONTHS,
+    };
+}
+/// Constants of cash-out refinancing, for the parameter tests.
+pub mod cash_out_constants {
+    pub use super::cash_out::{CASH_OUT_MIN_CASH, CASH_OUT_MIN_MONTHS, CASH_OUT_RAISE_MONTHS};
+}
 
 /// Reusable per-worker buffers: the economy path and the path state. Create one per
 /// thread or worker and pass it to every `run_path` call.
@@ -114,10 +139,69 @@ pub fn run_path<R: Recorder>(
     } = workspace;
     state.begin(plan, seed, path_index, economy, detail, *check);
     recorder.begin_path(path_index);
-    for t in 0..state.months {
+    // A divorce can shorten the path (it ends when the person who stays dies),
+    // so the bound is read every month.
+    let mut t = 0;
+    while t < state.months {
         state.month(plan, economy, recorder, t);
+        t += 1;
     }
     state.finish(plan, economy, recorder);
+}
+
+/// Where the household-level base random streams stand after one month of a path:
+/// what [`audit_streams`] reports, for the tests of the random-number discipline.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamAudit {
+    /// The next word of each person's `Stream::Career` generator; 0 once they have
+    /// died (the stream is no longer drawn from).
+    pub career: [u64; crate::MAX_PEOPLE],
+    /// The same for `Stream::Health`.
+    pub health: [u64; crate::MAX_PEOPLE],
+}
+
+/// [`run_path`], also returning each person's drawn month of death (the
+/// `Stream::Longevity` draws as the path uses them) and, for every month simulated,
+/// the position of the career and health streams after it. Two profiles whose
+/// positions agree month by month have drawn the same variates from those streams.
+/// The market draws are the workspace's `economy` after the call. For tests.
+#[doc(hidden)]
+pub fn audit_streams<R: Recorder>(
+    plan: &Plan,
+    seed: u64,
+    path_index: u64,
+    workspace: &mut Workspace,
+    recorder: &mut R,
+) -> ([u32; crate::MAX_PEOPLE], Vec<StreamAudit>) {
+    let detail = recorder.wants_detail();
+    let Workspace {
+        economy,
+        state,
+        check,
+    } = workspace;
+    state.begin(plan, seed, path_index, economy, detail, *check);
+    recorder.begin_path(path_index);
+    let deaths = state.death_month;
+    let mut months = Vec::with_capacity(state.months);
+    let mut t = 0;
+    while t < state.months {
+        state.month(plan, economy, recorder, t);
+        let mut a = StreamAudit {
+            career: [0; crate::MAX_PEOPLE],
+            health: [0; crate::MAX_PEOPLE],
+        };
+        for p in 0..crate::MAX_PEOPLE {
+            if state.alive[p] {
+                a.career[p] = state.rng_career[p].clone().next_u64();
+                a.health[p] = state.rng_health[p].clone().next_u64();
+            }
+        }
+        months.push(a);
+        t += 1;
+    }
+    state.finish(plan, economy, recorder);
+    (deaths, months)
 }
 
 /// Simulates every path in `paths` into `acc`, creating a workspace internally.

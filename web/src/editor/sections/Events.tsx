@@ -8,10 +8,12 @@ import { findCity, loadCities, relocationFactors, type City } from '../cities';
 import { ChoiceField, Group, MoneyField, NumField, PercentField, Row, SliderField, ToggleField } from '../fields';
 import { useEdit, useHelp, useIssues, usePeople, useProfile, useValue } from '../hooks';
 import { CATEGORIES, US_STATES, categoryLabel } from '../labels';
+import { MAKE } from '../realism';
 import { Item, ItemList } from '../Section';
 import { useAdd } from '../useAdd';
 import { WhenField, describeWhen } from '../WhenField';
-import { PropertyCostFields, RentalFields } from './Property';
+import { DivorceTerms } from './Household';
+import { MortgageKindFields, PropertyCostFields, RentalFields } from './Property';
 
 type KindType = EventKind['type'];
 
@@ -53,6 +55,7 @@ const KINDS: { type: KindType; label: string; note: string; make: (p: Profile) =
       return job ? { type: 'contribution_change', income: job.id, employee_fraction: 0.15 } : null;
     },
   },
+  { type: 'divorce', label: 'Divorce', note: 'The partner leaves with a share of the assets', make: (p) => (p.household.people.length > 1 ? MAKE.divorce() : null) },
 ];
 
 const kindLabel = (t: KindType) => KINDS.find((k) => k.type === t)?.label ?? t;
@@ -199,6 +202,7 @@ function EventFields({ path, kind }: { path: string; kind: EventKind }) {
             <NumField path={`${k}/term_years`} label="Term" kind="years" suffix="yrs" />
             <PercentField path={`${k}/closing_cost_fraction`} label="Closing costs" />
           </Row>
+          <MortgageKindFields path={`${k}/mortgage_kind`} />
           <ToggleField path={`${k}/replaces_rent`} label="Replaces the rent in my budget" />
           <ChoiceField
             path={`${k}/use`}
@@ -359,6 +363,8 @@ function EventFields({ path, kind }: { path: string; kind: EventKind }) {
           </Row>
         </>
       );
+    case 'divorce':
+      return <DivorceTerms path={k} keepsHome={kind.keeps_home} />;
     case 'contribution_change':
       return (
         <Row>
@@ -440,7 +446,7 @@ export function EventsSection() {
                     className="block w-full rounded-sm px-2.5 py-1.5 text-left hover:bg-surface-3 disabled:opacity-45"
                   >
                     <span className="block text-sm font-medium text-ink-1">{kind.label}</span>
-                    <span className="block text-xs text-ink-3">{made === null ? 'Needs a property, income or workplace plan first' : kind.note}</span>
+                    <span className="block text-xs text-ink-3">{made === null ? kind.type === 'divorce' ? 'Needs a partner in the household first' : 'Needs a property, income or workplace plan first' : kind.note}</span>
                   </button>
                 </li>
               );

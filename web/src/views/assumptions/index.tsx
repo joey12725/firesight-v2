@@ -3,6 +3,7 @@
 // in force for this plan, each with a picture of what it implies, drawn from this plan's
 // own simulation where the Summary carries it and from the historical record (labelled
 // as such) where it does not, and a link to the place in the editor that changes it.
+import { featuresOn, SECTION_TITLE, type SectionId } from '@/editor/realism';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { EnginePool } from '@/engine';
 import type { Summary } from '@/engine/output-types';
@@ -125,6 +126,7 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
   const market = profile.assumptions.market;
   const kind = market.kind.type;
   const adjustments = marketAdjustments(profile);
+  const realism = featuresOn(profile);
   const preview = run.preview;
   const status = filingStatus(profile);
   const ladder = brackets(status);
@@ -202,6 +204,25 @@ export default function AssumptionsView({ profile, summary, run, pool }: ViewPro
               </>
             )}
           </p>
+          {realism.length > 0 && (
+            <p data-testid="assumptions-realism" className="mt-3 max-w-[46rem] text-sm leading-relaxed text-pretty text-ink-2">
+              On top of that this plan switches on <b className="font-semibold text-ink-1">{realism.length} of the 50 optional realism features</b>. Each adds a source of risk or a behaviour the standard model leaves out. By the
+              section of the plan editor where each is set:{' '}
+              {(Object.keys(SECTION_TITLE) as SectionId[])
+                .filter((id) => realism.some((f) => f.section === id))
+                .map((id, i) => (
+                  <span key={id}>
+                    {i > 0 && '; '}
+                    <b className="font-semibold text-ink-1">{SECTION_TITLE[id]}</b>:{' '}
+                    {realism
+                      .filter((f) => f.section === id)
+                      .map((f) => f.label)
+                      .join(', ')}
+                  </span>
+                ))}
+              .
+            </p>
+          )}
           <p className="mt-3 max-w-[46rem] text-xs leading-relaxed text-pretty text-ink-3">
             Each section says what is assumed, shows what that implies for this plan across {count(summary.paths)} simulated lives, and links to where it can be changed. Every dollar figure is in today’s dollars. Figures from the historical record are
             labelled as such: they are data, not simulation output.

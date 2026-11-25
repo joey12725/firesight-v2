@@ -145,8 +145,60 @@ const wholeAge = (age: number) => String(Math.floor(age + 1e-6));
 
 /** Replaces "Person 2" with that person's name. */
 function named(text: string, names: string[]): string {
-  return text.replace(/Person (\d)/g, (_, n: string) => names[Number(n) - 1] ?? `Person ${n}`);
+  return text.replace(/[Pp]erson (\d)/g, (_, n: string) => names[Number(n) - 1] ?? `Person ${n}`);
 }
+
+/** The spending rule's own adjustments, as against belt-tightening while out of work (both are `spending_cut` / `spending_raise`). */
+const bySpendingRule = (e: TraceEvent) => !/^(Unemployed|Back to work):/.test(e.label);
+
+const INHERITED_IRA = /^Inherited IRA distribution/;
+const NEW_VEHICLE = 'New vehicle';
+const BORROWED = /^Borrowed against /;
+const MAJOR_REPAIR = /^Major repair on /;
+const REPRICED = /^Insurance repriced/;
+const SAVING_PAUSED = /^Saving paused/;
+const SAVING_RESUMED = /^Saving resumed/;
+const LINES_FROZEN = /^Lenders freeze home-equity lines/;
+const LINES_REOPENED = /^Home-equity lines open again/;
+const DOWNSIZED = /^Downsized: sold (.*?) and (bought a smaller home(?: with a ([\d.]+)% mortgage)?|rented)$/;
+
+/** A label cut to at most `n` characters at the end of a word, for a marker's title. */
+const short = (label: string, n = 24) => {
+  if (label.length <= n) return label;
+  const cut = label.slice(0, n - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space >= 8 ? cut.slice(0, space) : cut).replace(/[\s:;,.]+$/, '')}…`;
+};
+const howOften = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
+
+/** Titles, weight and tone for the life events the optional features log (the label is the sentence). */
+const LIFE_TURNS: { test: RegExp; title: string; priority: number; trouble?: boolean }[] = [
+  { test: /becomes disabled/, title: 'Disability', priority: 5, trouble: true },
+  { test: /recovers and can work again/, title: 'Recovers', priority: 4 },
+  { test: /starts disability insurance/, title: 'Disability benefits', priority: 2 },
+  { test: /^Involuntary retirement/, title: 'Forced to retire', priority: 5, trouble: true },
+  { test: /^Business failed/, title: 'Business fails', priority: 5, trouble: true },
+  { test: /years of marriage: partner leaves/, title: 'Divorce', priority: 5, trouble: true },
+  { test: /^Changed jobs/, title: 'Changes jobs', priority: 2 },
+  { test: /^Pay freeze/, title: 'Pay freeze', priority: 1, trouble: true },
+  { test: /^Pay cut/, title: 'Pay cut', priority: 2, trouble: true },
+  { test: /^Rent: lease not renewed/, title: 'Forced to move', priority: 2, trouble: true },
+  { test: /adjustable rate reset/, title: 'Mortgage rate resets', priority: 2 },
+  { test: /^Listed .* for sale/, title: 'Lists a home', priority: 3 },
+  { test: /^Took a reverse mortgage/, title: 'Reverse mortgage', priority: 4 },
+  { test: /^Opened a home-equity line/, title: 'Home-equity line', priority: 3 },
+  { test: /^Cash-out refinance/, title: 'Cash-out refinance', priority: 3 },
+  { test: /^Evicted a tenant/, title: 'Evicts a tenant', priority: 1, trouble: true },
+  { test: /^Tenant moved out/, title: 'Tenant moves out', priority: 0 },
+  { test: /looks for work again/, title: 'Looks for work', priority: 4, trouble: true },
+  { test: /stops working again/, title: 'Stops work again', priority: 3 },
+  { test: /claims Social Security at/, title: 'Claims early or late', priority: 3 },
+  { test: /^Retirement postponed/, title: 'Retirement postponed', priority: 3 },
+  { test: /^Funded, but working one more year/, title: 'One more year', priority: 3 },
+  { test: /^Life insurance .*:/, title: 'Life insurance ends', priority: 2 },
+  { test: /dies; the estate does not come/, title: 'A parent dies', priority: 2 },
+];
+// Major repairs, insurance repricing and draws on the home repeat: they are folded in curateEvents, not listed here.
 
 /**
  * The trace's event log, edited for a reader: pairs joined (laid off and rehired),
@@ -168,8 +220,8 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
   const smallShocks = { count: 0, largest: 0 };
 
   /** Folds a yearly repeat into runs (events at most `gap` months apart). */
-  const runs = (kind: TraceEventKind, gap: number) => {
-    const list = raw.map((e, i) => ({ e, i })).filter((x) => x.e.kind === kind);
+  const runs = (kind: TraceEventKind, gap: number, only: (e: TraceEvent) => boolean = () => true) => {
+    const list = raw.map((e, i) => ({ e, i })).filter((x) => x.e.kind === kind && only(x.e));
     const groups: (typeof list)[] = [];
     for (const x of list) {
       const last = groups[groups.length - 1];
@@ -192,16 +244,83 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
     push(s.a, 'roth_conversion', 'Roth conversions', n === 1 ? `Converts ${moneyCompact(total)} from pre-tax to Roth accounts ${s.text}.` : `Converts ${moneyCompact(total)} from pre-tax to Roth accounts over ${n} years, ${s.text}.`, 2);
   }
   const pctOf = (label: string) => Number(/([+-]?[\d.]+)%/.exec(label)?.[1] ?? 0);
-  runs('spending_cut', 26).forEach((group, g) => {
+  runs('spending_cut', 26, bySpendingRule).forEach((group, g) => {
     const s = span(group);
     const deepest = Math.min(...group.map((x) => pctOf(x.e.label)));
     push(s.a, 'spending_cut', 'Spending cut', `The spending rule cuts spending ${group.length === 1 ? 'once' : `${group.length} times`} ${s.text}${Number.isFinite(deepest) && deepest < 0 ? `; the largest single step is ${Math.abs(deepest).toFixed(1)}%` : ''}.`, g === 0 ? 3.5 : 0, true);
   });
-  runs('spending_raise', 26).forEach((group, g) => {
+  runs('spending_raise', 26, bySpendingRule).forEach((group, g) => {
     const s = span(group);
     const biggest = Math.max(...group.map((x) => pctOf(x.e.label)));
     push(s.a, 'spending_raise', 'Spending raised', `The spending rule raises spending ${group.length === 1 ? 'once' : `in ${group.length} years`} ${s.text}${Number.isFinite(biggest) && biggest > 0 ? `; the largest single step is ${biggest.toFixed(1)}%` : ''}.`, g === 0 ? 1 : 0);
   });
+
+  // Optional features that repeat: one entry for each run of them.
+  for (const group of runs('tax_loss_harvest', 30)) {
+    const s = span(group);
+    const total = group.reduce((t, x) => t + (x.e.amount ?? 0), 0);
+    push(s.a, 'tax_loss_harvest', 'Harvests tax losses', `Realises ${moneyCompact(total)} of losses in the taxable account ${s.text}${group.length > 1 ? `, in ${group.length} sales` : ''}, staying invested: the losses offset gains and a little income.`, 2);
+  }
+  for (const group of runs('qualified_charitable_distribution', 14)) {
+    const s = span(group);
+    const total = group.reduce((t, x) => t + (x.e.amount ?? 0), 0);
+    const n = new Set(group.map((x) => life.monthYear[at(x.e)])).size;
+    push(s.a, 'qualified_charitable_distribution', 'Gives from the IRA', n === 1 ? `Giving is paid straight from the IRA ${s.text}, untaxed: ${moneyCompact(total)} in the first payments.` : `Giving is paid straight from the IRA in ${n} years, ${s.text}, untaxed.`, 2);
+  }
+  for (const group of runs('life_event', 14, (e) => INHERITED_IRA.test(e.label))) {
+    const s = span(group);
+    // Two parents can leave IRAs whose ten years of payouts overlap: years are counted once.
+    const n = new Set(group.map((x) => life.monthYear[at(x.e)])).size;
+    const several = group.length > n;
+    push(s.a, 'life_event', 'Inherited IRA', `${several ? 'The inherited IRAs are' : 'The inherited IRA is'} paid out and taxed as income ${n === 1 ? s.text : `over ${n} years, ${s.text}`}.`, 1);
+  }
+
+  // What the housing and saving features log month after month or year after year: one
+  // entry for each run, with how often, over which years and how much.
+  type Run = ReturnType<typeof runs>[number];
+  const fold = (kind: TraceEventKind, gap: number, test: RegExp) =>
+    runs(kind, gap, (e) => test.test(e.label)).map((group: Run) => {
+      group.forEach((x) => used.add(x.i));
+      const amounts = group.map((x) => x.e.amount ?? 0);
+      return { group, n: group.length, s: span(group), first: (group[0] as Run[number]).e, total: amounts.reduce((t, v) => t + v, 0), largest: Math.max(...amounts) };
+    });
+  const consume = (kind: TraceEventKind, test: RegExp) => {
+    const months: number[] = [];
+    raw.forEach((e, i) => {
+      if (e.kind !== kind || !test.test(e.label)) return;
+      used.add(i);
+      months.push(at(e));
+    });
+    return months;
+  };
+  for (const r of fold('life_event', 26, BORROWED)) {
+    const home = named(r.first.label.replace(BORROWED, ''), names);
+    push(r.s.a, 'life_event', 'Borrows on the home', `Borrows ${moneyCompact(r.total)} against ${home} ${r.n === 1 ? '' : `in ${r.n} draws `}${r.s.text}, to cover what savings no longer can.`, 2, true);
+  }
+  for (const r of fold('life_event', Infinity, MAJOR_REPAIR)) {
+    const home = named(r.first.label.replace(MAJOR_REPAIR, ''), names);
+    push(r.s.a, 'life_event', r.n === 1 ? 'Major repair' : 'Major repairs', r.n === 1 ? `A major repair on ${home} costs ${moneyCompact(r.total)} ${r.s.text}.` : `Major repairs on ${home} come ${howOften(r.n)} ${r.s.text} and cost ${moneyCompact(r.total)} in all; the largest is ${moneyCompact(r.largest)}.`, 2, true);
+  }
+  for (const r of fold('life_event', Infinity, REPRICED)) {
+    const steepest = Math.max(...r.group.map((x) => pctOf(x.e.label)));
+    push(r.s.a, 'life_event', 'Insurance repriced', `Home insurance is repriced ${howOften(r.n)} ${r.s.text}${steepest > 0 ? `; the ${r.n === 1 ? 'premium rises' : 'largest rise is'} ${steepest.toFixed(0)}%` : ''}.`, 1, true);
+  }
+  const resumed = consume('other', SAVING_RESUMED);
+  for (const r of fold('other', Infinity, SAVING_PAUSED)) {
+    const why = r.first.label.replace(/^Saving paused:?\s*/, '');
+    const back = resumed.find((m) => m > r.s.a);
+    const detail =
+      r.n === 1
+        ? `Retirement saving is paused ${r.s.text}${why ? ` while ${why}` : ''}${back !== undefined ? `, and resumes at ${who} ${ageOf(back)}` : ''}.`
+        : `Retirement saving is paused ${howOften(r.n)} ${r.s.text}${why ? `, the first time while ${why}` : ''}.`;
+    push(r.s.a, 'other', 'Saving paused', detail, 2, true);
+  }
+  const reopened = consume('market', LINES_REOPENED);
+  for (const r of fold('market', Infinity, LINES_FROZEN)) {
+    const back = reopened.find((m) => m > r.s.a);
+    const detail = r.n === 1 ? `Lenders freeze home-equity lines ${r.s.text}${back !== undefined ? ` and reopen them at ${who} ${ageOf(back)}` : ''}.` : `Lenders freeze home-equity lines ${howOften(r.n)} ${r.s.text}, each time until the downturn is over.`;
+    push(r.s.a, 'market', 'Credit lines frozen', detail, 2, true);
+  }
 
   // Running short and recovering can alternate month by month near the end: the first time is the event, the rest are repeats.
   const shortfalls = raw.filter((e) => e.kind === 'depleted');
@@ -218,11 +337,20 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
     const m = at(e);
     const label = named(e.label, names);
     const amount = e.amount !== null && e.amount > 0 ? moneyCompact(e.amount) : null;
+    // A label that already says the age ("becomes disabled at 52") is not given it twice.
+    const when = /\bat \d+(\.\d+)?(?![\d.%])/.test(label) ? '' : ` at ${who} ${ageOf(m)}`;
     switch (e.kind) {
       case 'roth_conversion':
-      case 'spending_cut':
-      case 'spending_raise':
+      case 'tax_loss_harvest':
+      case 'qualified_charitable_distribution':
         return;
+      case 'spending_cut':
+        // The spending rule's cuts are folded above; this is the household tightening its belt while out of work.
+        if (bySpendingRule(e)) return;
+        return void push(m, e.kind, 'Tightens its belt', `${label.replace(/^Unemployed: d/, 'D')} while out of work, from ${who} ${ageOf(m)}.`, 2, true);
+      case 'spending_raise':
+        if (bySpendingRule(e)) return;
+        return void push(m, e.kind, 'Spending restored', `${label.replace(/^Back to work: d/, 'D')} at ${who} ${ageOf(m)}.`, 0);
       case 'expense_shock': {
         const year = life.monthYear[m] ?? 0;
         const big = (e.amount ?? 0) >= Math.max(10_000, (spending[year] ?? 0) * 0.1);
@@ -231,7 +359,9 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
           smallShocks.largest = Math.max(smallShocks.largest, e.amount ?? 0);
           return;
         }
-        return void push(m, e.kind, 'Unplanned expense', `An unplanned expense of ${amount ?? 'unknown size'} at ${who} ${ageOf(m)}.`, 2, true);
+        // The detailed shocks say what broke ("Home repair"); the plain ones do not.
+        const what = /^Unplanned expense$/i.test(e.label) ? null : e.label;
+        return void push(m, e.kind, what && what.length <= 22 ? what : 'Unplanned expense', what ? `${what}: an unplanned expense of ${amount ?? 'unknown size'} at ${who} ${ageOf(m)}.` : `An unplanned expense of ${amount ?? 'unknown size'} at ${who} ${ageOf(m)}.`, 2, true);
       }
       case 'health_coverage': {
         // Coverage at the start and the move off an employer's plan at retirement go without saying; Medicare is a milestone.
@@ -265,11 +395,16 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       case 'retired':
         return void push(m, e.kind, 'Retires', `Retirement starts at ${who} ${(life.monthAges[m] ?? 0).toFixed(1)}${amount ? ` with ${amount} invested` : ''}.`, 5);
       case 'bought_home': {
+        const moved = DOWNSIZED.exec(label);
+        if (moved) return void push(m, e.kind, 'Downsizes', `Sells ${moved[1]} and buys a smaller home${amount ? ` for ${amount}` : ''} at ${who} ${ageOf(m)}${moved[3] ? `, on a ${moved[3]}% mortgage` : ''}.`, 4);
         const parsed = /^(.*?) \(([\d.]+)% mortgage\)$/.exec(e.label);
         return void push(m, e.kind, 'Buys a home', `“${parsed?.[1] ?? e.label}” goes ahead at ${who} ${ageOf(m)}${amount ? `: a ${amount} home` : ''}${parsed ? ` on a ${parsed[2]}% mortgage` : ''}.`, 4);
       }
-      case 'sold_home':
+      case 'sold_home': {
+        const moved = DOWNSIZED.exec(label);
+        if (moved) return void push(m, e.kind, 'Downsizes', `Sells ${moved[1]} and rents a smaller home at ${who} ${ageOf(m)}${amount ? `, keeping ${amount} from the sale` : ''}.`, 4);
         return void push(m, e.kind, 'Sells a home', `${label} at ${who} ${ageOf(m)}${amount ? ` for ${amount}` : ''}.`, 4);
+      }
       case 'relocated':
         return void push(m, e.kind, label.length <= 22 ? label : 'Moves', `${label} at ${who} ${ageOf(m)}.`, 4);
       case 'claimed_social_security': {
@@ -285,28 +420,55 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
         return void push(m, e.kind, 'Required withdrawals', `Required distributions from pre-tax accounts begin at ${who} ${ageOf(m)}${amount ? ` (${amount} in the first year)` : ''}.`, 2);
       }
       case 'long_term_care':
-        return void push(m, e.kind, 'Long-term care', `${label} at ${who} ${ageOf(m)}.`, 4, true);
+        return void push(m, e.kind, /cares for/.test(label) ? 'Care at home' : /needs care/.test(label) ? 'A parent needs care' : 'Long-term care', `${label} at ${who} ${ageOf(m)}.`, 4, true);
+      case 'health_state':
+        return void push(m, e.kind, 'Health changes', `${label.replace(/ health: /, '’s health becomes: ')} at ${who} ${ageOf(m)}.`, 1, !/healthy/i.test(label));
+      case 'bereavement':
+        return void push(m, e.kind, 'Dies soon after', `${label}.`, 3, true);
+      case 'medicaid':
+        return void push(m, e.kind, 'Medicaid', `${label} at ${who} ${ageOf(m)}.`, 4, true);
+      case 'ltc_insurance':
+        return void push(m, e.kind, 'Care insurance', `${label} at ${who} ${ageOf(m)}.`, /starts paying/.test(label) ? 3 : 2, /lapses|used up|raised/.test(label));
+      case 'policy_change':
+        return void push(m, e.kind, /Social Security/.test(label) ? 'Benefits cut' : 'Taxes rise', `${label.replace(/^Policy risk: /, 'The law changes: ')} from ${who} ${ageOf(m)}.`, 4, true);
+      case 'market':
+        return void push(m, e.kind, /^Panic sale/.test(label) ? 'Panic sale' : /^Back into stocks/.test(label) ? 'Back into stocks' : label.length <= 24 ? label : 'Markets', `${label} at ${who} ${ageOf(m)}.`, /^Panic sale/.test(label) ? 3 : 2, /^Panic sale|freeze/.test(label));
+      case 'child':
+        // Joining and leaving the health plan are bookkeeping; births, college and support are the story.
+        return void push(m, e.kind, label.length <= 24 ? label : /college/.test(label) ? 'College' : /support/.test(label) ? 'Supports a child' : /born/.test(label) ? 'A child is born' : 'Child', `${label}${when}${/needs support/.test(label) && amount ? `: ${amount} a year` : ''}.`, /health plan|independent again/.test(label) ? 1 : 4);
       case 'depleted':
         return;
       case 'recovered':
         return void push(m, e.kind, 'Essentials covered again', `${label} at ${who} ${ageOf(m)}.`, m > lastShort ? 3 : 0);
       case 'died':
         return void push(m, e.kind, label.replace(/ at \d+$/, ''), `${label}.`, 5);
-      case 'windfall':
-        return void push(m, e.kind, label.length <= 22 ? label : 'Windfall', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, 3);
-      case 'major_expense':
+      case 'windfall': {
+        // A parent whose care used up the estate leaves nothing: that is a death, not a windfall.
+        const nothing = /^Inheritance from (.*?): \$0k.*?(?:, after (\$\d+k) of care)?$/.exec(label);
+        if (nothing) return void push(m, 'life_event', 'A parent dies', `${nothing[1]} dies at ${who} ${ageOf(m)} and leaves nothing${nothing[2] ? `: ${nothing[2]} of care used up the estate` : ''}.`, 2);
+        // An inheritance already states its size ("Inheritance from Mom: $180k").
+        return void push(m, e.kind, label.length <= 22 ? label : /^Inheritance/.test(label) ? 'Inheritance' : /^Life insurance/.test(label) ? 'Life insurance pays' : 'Windfall', `${label} at ${who} ${ageOf(m)}${amount && !label.includes('$') ? `: ${amount}` : ''}.`, 3);
+      }
+      case 'major_expense': {
+        // A vehicle on a replacement cycle comes round every few years: marked, but told once in the narrative.
+        const vehicle = /^Replace vehicle: (.*)$/.exec(label)?.[1];
+        if (vehicle) return void push(m, e.kind, NEW_VEHICLE, `Replaces the ${vehicle.charAt(0).toLowerCase()}${vehicle.slice(1)} at ${who} ${ageOf(m)}${amount ? ` for ${amount}` : ''}.`, 1);
         return void push(m, e.kind, label.length <= 22 ? label : 'Major expense', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, 3);
+      }
       case 'career_break':
         return void push(m, e.kind, label.replace(/\s*\(.*\)$/, '').length <= 24 ? label.replace(/\s*\(.*\)$/, '') : 'Career break', `${label}, from ${who} ${ageOf(m)}.`, 3);
       case 'life_event': {
         const refinance = /^Refinanced .* at ([\d.]+%)$/.exec(e.label);
         if (refinance) return void push(m, e.kind, `Refinances at ${refinance[1]}`, `The mortgage is refinanced at ${refinance[1]} at ${who} ${ageOf(m)}.`, 2);
-        return void push(m, e.kind, label.length <= 24 ? label : 'Plan event', `${label} at ${who} ${ageOf(m)}.`, 3);
+        if (INHERITED_IRA.test(e.label)) return;
+        // The optional features write their events here as sentences; a short title is picked from what they say.
+        const turn = LIFE_TURNS.find((t) => t.test.test(label));
+        return void push(m, e.kind, turn?.title ?? (label.length <= 24 ? label : 'Plan event'), `${label}${when}.`, turn?.priority ?? 3, turn?.trouble);
       }
       case 'debt_paid_off':
         return void push(m, e.kind, label.length <= 24 ? label : 'Debt paid off', `${label} at ${who} ${ageOf(m)}.`, 1);
       default:
-        return void push(m, e.kind, label.length <= 24 ? label : label.slice(0, 22) + '…', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, e.kind === 'child' || e.kind === 'partner_joined' ? 4 : 2);
+        return void push(m, e.kind, short(label), `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, e.kind === 'partner_joined' ? 4 : 2);
     }
   });
 
@@ -339,13 +501,23 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
   }
 
   const byKind = (kind: TraceEventKind) => life.events.filter((e) => e.kind === kind);
-  const tell = (kinds: TraceEventKind[], before: number) => life.events.filter((e) => kinds.includes(e.kind) && e.month < before).forEach((e) => out.push({ text: e.detail, year: e.year }));
-
   const fi = byKind('financially_independent')[0];
   const retired = byKind('retired')[0] ?? (fi?.title.includes('retires') ? fi : undefined);
   const turning = retired?.month ?? fi?.month ?? trace.months;
-  // Working years: the things that happened on the way.
-  tell(['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event'], turning);
+  // Working years: the things that happened on the way, in the order they happened. That
+  // includes the turns the optional features add (a disability, a divorce, a failed business)
+  // and the vehicle cycle, told once where it starts.
+  const WORKING: TraceEventKind[] = ['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event', 'policy_change'];
+  const working: { month: number; sentence: Sentence }[] = life.events
+    .filter((e) => e.month < turning && e.title !== NEW_VEHICLE && ((WORKING.includes(e.kind) && (e.kind !== 'child' || e.priority >= 3)) || (e.kind === 'life_event' && e.priority >= 4)))
+    .map((e) => ({ month: e.month, sentence: { text: e.detail, year: e.year } }));
+  const vehicles = life.events.filter((e) => e.title === NEW_VEHICLE);
+  if (vehicles.length > 0) {
+    const first = vehicles[0] as LifeEvent;
+    working.push({ month: first.month, sentence: { text: vehicles.length === 1 ? first.detail : `A vehicle is replaced ${vehicles.length} times over the life, first at ${wholeAge(first.age)}.`, year: first.year } });
+  }
+  working.sort((a, b) => a.month - b.month);
+  working.forEach((w) => out.push(w.sentence));
 
   const fiAge = s('fi_age');
   if (fi && fiAge !== null) {
@@ -378,14 +550,15 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
 
   // Retirement: what happened after.
   life.events
-    .filter((e) => e.priority > 0 && e.month >= turning && ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock'].includes(e.kind))
+    .filter((e) => e.priority > 0 && e.month >= turning && (['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock', 'medicaid', 'policy_change', 'ltc_insurance', 'bereavement'].includes(e.kind) || (e.kind === 'life_event' && e.priority >= 4)))
+    .filter((e) => e.title !== NEW_VEHICLE)
     .forEach((e) => out.push({ text: e.detail, year: e.year }));
 
   // The spending rule, in one sentence rather than one per adjustment.
-  const cuts = trace.events.filter((e) => e.kind === 'spending_cut');
-  const raises = trace.events.filter((e) => e.kind === 'spending_raise');
+  const cuts = trace.events.filter((e) => e.kind === 'spending_cut' && bySpendingRule(e));
+  const raises = trace.events.filter((e) => e.kind === 'spending_raise' && bySpendingRule(e));
   if (cuts.length + raises.length > 0) {
-    const firstCut = byKind('spending_cut')[0];
+    const firstCut = byKind('spending_cut').find((e) => e.title === 'Spending cut');
     const times = (n: number) => (n === 1 ? 'once' : `${n} times`);
     const text =
       cuts.length && raises.length
@@ -393,7 +566,7 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
         : cuts.length
           ? `The spending rule cuts spending ${times(cuts.length)}, first at ${wholeAge(firstCut?.age ?? 0)}, and never raises it.`
           : `The spending rule never has to cut spending, and raises it ${times(raises.length)}.`;
-    out.push({ text, year: (firstCut ?? byKind('spending_raise')[0])?.year });
+    out.push({ text, year: (firstCut ?? byKind('spending_raise').find((e) => e.title === 'Spending raised'))?.year });
   }
 
   const delivered = s('delivered_spending_ratio');

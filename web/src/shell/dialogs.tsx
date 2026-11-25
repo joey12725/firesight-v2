@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { compactProfile } from '@/engine';
 import { useProfileStore } from '@/state/profile-store';
 import { ASSISTANT_MODELS, useSettings, type AssistantModel, type ThemeChoice } from '@/state/settings-store';
 import { shareUrl } from '@/state/share';
@@ -84,7 +85,7 @@ function ShareDialogBody() {
     const s = useProfileStore.getState();
     if (!s.profile) return;
     let live = true;
-    shareUrl({ v: 2, profile: s.profile, scenarios: s.scenarios, run: s.run }, window.location.origin + window.location.pathname).then(
+    shareUrl({ v: 2, profile: compactProfile(s.profile), scenarios: s.scenarios, run: s.run }, window.location.origin + window.location.pathname).then(
       (u) => live && setUrl(u),
       () => live && setFailed(true),
     );

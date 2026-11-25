@@ -40,17 +40,48 @@ export const getPlan: ToolSpec<Record<string, never>> = {
 
 /** Hand-kept so the tool definition (part of the cached prompt) never changes at runtime; a test checks it against the schema. */
 export const SCHEMA_TYPES = [
-  'Profile', 'Household', 'Person', 'Sex', 'HealthStatus', 'SocialSecurity', 'SocialSecurityBasis', 'Child', 'ChildCosts', 'College', 'Location',
-  'Income', 'IncomeKind', 'WageGrowth', 'LifecycleProfile', 'CareerRisk', 'RiskLevel', 'Bonus', 'Commission', 'EquityGrant', 'EquityKind',
-  'EquityCompany', 'EmployerPlan', 'Cola', 'When', 'Spending', 'BudgetItem', 'Category', 'Frequency', 'RetirementChange', 'ShockLevel',
-  'Healthcare', 'HealthcareMode', 'EarlyRetirementCoverage', 'PlanTier', 'Account', 'AccountKind', 'CashYield', 'Allocation', 'PortfolioPolicy',
-  'GlidePath', 'GlidePoint', 'Rebalance', 'AssetLocation', 'CustomAsset', 'SingleStock', 'Property', 'PropertyUse', 'Mortgage', 'Debt',
-  'DebtKind', 'DebtPolicy', 'DebtStrategy', 'LifeEvent', 'EventKind', 'CostOfLivingChange', 'Financing', 'IncomeChangeKind', 'SpendingTarget',
-  'SpendingChangeKind', 'RetirementPlan', 'RetirementTrigger', 'WealthBasis', 'SpendingRule', 'WithdrawalOrder', 'EarlyAccess', 'HomeEquity', 'Assumptions',
-  'MarketModel', 'MarketKind', 'Stress', 'TaxModel', 'TaxKind', 'SocialSecurityHaircut', 'Longevity', 'SimulationSettings',
+  'Profile', 'Household', 'Person', 'Sex', 'HealthStatus', 'SocialSecurity', 'SocialSecurityBasis', 'Claiming', 'DisabilityRisk', 'LtdInsurance',
+  'LtcInsurance', 'InflationRider', 'LifePolicy', 'PolicyKind', 'Child', 'ChildCosts', 'College', 'Arrival', 'CollegeCost', 'AdultSupport',
+  'ParentalLeave', 'Location', 'DivorceRisk', 'Support', 'SupportDirection', 'Parent', 'CareSupport',
+  'Income', 'IncomeKind', 'WageGrowth', 'LifecycleProfile', 'CareerRisk', 'RiskLevel', 'JobMobility', 'RecessionPay', 'LateCareer', 'Bonus',
+  'Commission', 'EquityGrant', 'EquityKind', 'EquityCompany', 'EmployerPlan', 'BusinessRisk', 'FallbackWage', 'Cola', 'When', 'Spending',
+  'BudgetItem', 'Category', 'Frequency', 'RetirementChange', 'RentGrowth', 'ShockLevel', 'Healthcare', 'HealthcareMode',
+  'EarlyRetirementCoverage', 'PlanTier', 'Vehicle', 'VehicleFinancing', 'Seasonality', 'CategoryInflation', 'Account', 'AccountKind', 'CashYield',
+  'Allocation', 'PortfolioPolicy', 'GlidePath', 'GlidePoint', 'Rebalance', 'AssetLocation', 'CustomAsset', 'SingleStock', 'InvestorBehavior',
+  'Reentry', 'DistressRules', 'Property', 'PropertyUse', 'RentalDynamics', 'Mortgage', 'MortgageKind', 'MaintenanceModel', 'Assessment',
+  'InsuranceGrowth', 'Debt', 'DebtKind', 'DebtPolicy', 'DebtStrategy', 'CashOutRefinance', 'MortgagePrepayment', 'LifeEvent', 'EventKind',
+  'CostOfLivingChange', 'Financing', 'IncomeChangeKind', 'SpendingTarget', 'SpendingChangeKind', 'RetirementPlan', 'RetirementTrigger',
+  'WealthBasis', 'RetirementConfirmation', 'OneMoreYear', 'SpendingRule', 'WithdrawalOrder', 'EarlyAccess', 'HomeEquity', 'HomeEquityBorrowing',
+  'ReverseMortgageOpen', 'Downsize', 'DownsizeWhen', 'ReturnToWork', 'JobSearch', 'Assumptions', 'MarketModel', 'MarketKind', 'Stress', 'Episode',
+  'BondPricing', 'Valuation', 'TaxModel', 'TaxKind', 'SocialSecurityHaircut', 'StateDetail', 'PolicyRisk', 'Longevity', 'CoupleDependence',
+  'HousingLiquidity', 'HealthModelKind', 'SimulationSettings',
 ] as const;
 
 const MAX_SCHEMA_CHARS = 7_500;
+
+/** Cuts every `doc` longer than `limit` at the end of a sentence where it can, so a large type still fits one reply. */
+function shortenDocs(value: unknown, limit: number): unknown {
+  if (Array.isArray(value)) return value.map((v) => shortenDocs(v, limit));
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => {
+      if (key !== 'doc' || typeof v !== 'string' || v.length <= limit) return [key, shortenDocs(v, limit)];
+      const cut = v.slice(0, limit);
+      const stop = cut.lastIndexOf('. ');
+      return [key, stop >= limit / 2 ? cut.slice(0, stop + 1) : `${cut.trimEnd()}…`];
+    }),
+  );
+}
+
+/** A type's description within the reply budget: documentation is shortened step by step until it fits. */
+function fitted(described: unknown): unknown {
+  let out = described;
+  for (const limit of [400, 240, 150, 90]) {
+    if (JSON.stringify(out).length <= MAX_SCHEMA_CHARS) break;
+    out = shortenDocs(described, limit);
+  }
+  return out;
+}
 
 export const getSchema: ToolSpec<{ section: string; with_nested?: boolean }> = {
   name: 'get_schema',
@@ -68,7 +99,8 @@ export const getSchema: ToolSpec<{ section: string; with_nested?: boolean }> = {
   pending: (input) => `Looking up ${input.section}`,
   async run(input, ctx) {
     const root = ctx.engine.schema() as SchemaNode;
-    const main = input.section === 'Profile' ? describeRoot(root) : describeType(root, input.section);
+    const full = input.section === 'Profile' ? describeRoot(root) : describeType(root, input.section);
+    const main = full && fitted(full);
     if (!main) throw new ToolError(`There is no schema type "${input.section}". Types: ${typeNames(root).join(', ')}`);
     const nested: unknown[] = [];
     let size = JSON.stringify(main).length;

@@ -40,7 +40,11 @@ and reported the median of the lucky ones.
 
 ## Identities (the enums the simulation fills)
 
-Keys are stable: never renamed, only appended (with a bump of `Accumulator::VERSION`).
+Keys are stable and never renamed. The enums the accumulator stores by position
+(`Status`, `YearSeries`, `PathScalar`, the histogram series) are only appended to, with
+a bump of `Accumulator::VERSION`. `TraceEventKind` is written by key, not by position,
+so a new kind may sit next to its relatives (`tax_loss_harvest`,
+`qualified_charitable_distribution` and `policy_change` come before `market`).
 
 ### `Status` (year-end state of a living household)
 
@@ -95,7 +99,7 @@ income + withdrawals + property_sale + save_employer
     = taxes + spending + saving + property_purchase
 ```
 
-### `PathScalar` (36; one `f32` per path, `null`/NaN = did not happen)
+### `PathScalar` (37; one `f32` per path, `null`/NaN = did not happen)
 
 Supplied by the simulation in `PathEnd`:
 
@@ -121,6 +125,7 @@ Supplied by the simulation in `PathEnd`:
 | `social_security_claim_age_0`, `_1` | age | Each person's **own** age when their benefit is first paid (the profile's claim age if it was already in payment at the start). Indices 31, 32 |
 | `person_retirement_age_0`, `_1` | age | Each person's **own** age when they stop working (person 1: the retirement date plus `partner_offset_years`). Indices 33, 34 |
 | `mortgage_payoff_age` | age | First person's age in the month the household's last mortgage is paid off (by schedule or sale) with none taken out afterwards; null if it never had one or still owes at the end. Index 35 |
+| `medicaid_age` | age | First person's age in the first month Medicaid paid for someone's long-term care after savings were spent down (`spending.healthcare.medicaid`); null if it never did, and always null with the option off. Index 36 |
 
 Derived by the recorder from the year records (anything the simulation puts there is
 overwritten):
@@ -168,8 +173,10 @@ overwritten):
 `equity_event`, `bought_home`, `sold_home`, `relocated`, `windfall`, `major_expense`,
 `expense_shock`, `roth_conversion`, `spending_cut`, `spending_raise`, `depleted`,
 `recovered`, `claimed_social_security`, `health_coverage`, `long_term_care`,
-`rmd_started`, `debt_paid_off`, `child`, `partner_joined`, `died`, `market`,
-`life_event`, `other`.
+`rmd_started`, `debt_paid_off`, `child`, `partner_joined`, `died`,
+`tax_loss_harvest`, `qualified_charitable_distribution`, `policy_change`, `market`,
+`life_event`, `other`, `health_state`, `bereavement`, `medicaid`, `ltc_insurance`
+(in index order; the last four were appended after `other`).
 
 ## Recorder contract (what the simulation calls)
 
@@ -196,7 +203,7 @@ year the record covers (1..=12); `retired` is true once the retirement date has
 passed; `status` from `Status::classify`. The histogram quantities are computed from
 `values`, so there is nothing else to fill.
 
-`PathEnd { scalars: [f32; 36] }`: defaults to all NaN; set the supplied
+`PathEnd { scalars: [f32; 37] }`: defaults to all NaN; set the supplied
 scalars with `set(scalar, value)` and `set_outcome(None | Some(cause))`.
 
 `MonthRecord { month, price_level, status, retired, values: [f64; 43],
@@ -231,7 +238,7 @@ Summary {
   survival:   { household[year], people[person][year] },
   composition:[ { series, kind, values[year] } ]                     // all 43 YearSeries
   fi, retirement, depletion: AgeCurve,
-  distributions: [ ScalarDistribution ]                              // all 36 PathScalars
+  distributions: [ ScalarDistribution ]                              // all 37 PathScalars
   scatter:    { paths[], columns: [ { scalar, values[] } ] },
   failure:    FailureAttribution,
   picks:      [ { label, scalar, path_index, value } ],
@@ -257,6 +264,7 @@ Summary {
 | `extra_spending_ratio` | Estimate | Mean over retired paths of spending above plan as a fraction of plan. Added |
 | `initial_withdrawal_rate` | Spread | First-year draw / investable at retirement, among paths that retire. Added |
 | `home_sale_rate` | Estimate | Share of all paths on which a home was sold as a last resort. These paths are **not** counted as depleted. Added |
+| `medicaid_rate` | Estimate | Share of all paths on which Medicaid paid for long-term care after savings were spent down (`spending.healthcare.medicaid`; 0 with the option off). A month in which Medicaid pays for a nursing-home resident with no partner at home is not counted as depleted. Added with the optional features |
 | `years_cutting_share` | number | Retired path-years in `retired_cutting` or `depleted` |
 | `median_lifetime_tax`, `lifetime_tax`, `lifetime_spending` | number, Spread, Spread | |
 | `funded_ratio` | Spread or null | Present only if the simulation records it |
@@ -397,7 +405,7 @@ when the 95% interval contains zero. `headline` metrics: `success_rate`, `fi_rat
   annual:  { years[], months[], status[], columns: [ { key, unit, values[year] } ] },
   tax_returns: [ { year, price_level, result: {..TaxResult}, lines: [ {key, label, amount, note} ] } ],
   events:  [ { month: "YYYY-MM", kind, label, amount } ],
-  scalars: [ { scalar, value } ] }            // all 36, same as the aggregate row
+  scalars: [ { scalar, value } ] }            // all 37, same as the aggregate row
 ```
 
 Monthly column keys: `net_worth`, `investable`, every `YearSeries` key that is not
@@ -463,8 +471,9 @@ As in `docs/architecture.md` section 6. Beyond the original list: `Engine.warnin
 bytes() }`, `compare(aBytes, bBytes, baselineProfileJson)` (the `Comparison` JSON, B
 minus A), `digest(accBytes, profileJson)`, `planPreview(profileJson)` and
 `exampleProfiles()`. Every function returning a document returns a JSON string.
-`Accumulator::VERSION` is 5 (nine more scalars, a sixth histogram series and the
-per-year shortfall sums); bytes from an older build do not decode.
+`Accumulator::VERSION` is 6 (version 5 added nine scalars, a sixth histogram series
+and the per-year shortfall sums; version 6 appends the 37th scalar, `medicaid_age`);
+bytes from an older build do not decode.
 
 ## Sizes and timings
 
@@ -475,7 +484,7 @@ Measured natively on one Apple M-series core, 60-year horizon, synthetic lives.
 | `record_year` | about 21 ns |
 | 500-path chunk, serialised | 111 KB (161 KB for the first chunk, which carries the 96 sample paths); 52 KB of it is the scalar table |
 | 500-path chunk: encode / decode / merge | 0.8 ms / 0.4 ms / 0.2 ms |
-| 100,000-path accumulator, serialised | about 14.6 MB: histograms 0.2 MB, scalars 14.4 MB (36 x 4 bytes x paths) |
+| 100,000-path accumulator, serialised | about 15.0 MB: histograms 0.2 MB, scalars 14.8 MB (37 x 4 bytes x paths) |
 | `Summary::from_accumulator`, 100,000 paths | about 51 ms |
 | `Summary` JSON, 100,000 paths | 530 KB |
 | `SummaryDigest` JSON | about 1.7 KB |
@@ -516,3 +525,48 @@ default `last_resort`); `debt_policy.refinance_mortgages` (boolean, default true
 `assumptions.market.equity_premium_adjustment` now defaults to `-0.015`. New
 validation warnings: `short_history` (a bootstrap `from_year` leaving under 50 years)
 and `adjusted_history` (the historical replay with a non-zero equity adjustment).
+
+## Additions made by the optional realism features
+
+The optional features of `docs/methodology.md` section 18 changed the JSON documents
+in these places only. Nothing was removed or renamed, and with every feature off
+the values of all existing fields are unchanged.
+
+`Summary`
+* `headline.medicaid_rate` (Estimate).
+* `distributions[]`, `failure.contrasts[]`: one more entry (37 scalars),
+  `medicaid_age`, appended last.
+
+`Comparison`: `scalars[]` has `medicaid_age` too.
+
+`PathTrace`
+* `scalars[]` has 37 entries.
+* `events[].kind` has seven more values: `tax_loss_harvest`,
+  `qualified_charitable_distribution`, `policy_change`, `health_state`,
+  `bereavement`, `medicaid`, `ltc_insurance`.
+* The features write their other events under existing kinds. `life_event`: job
+  changes, pay freezes and cuts, disability onset, recovery and the start of
+  disability insurance, involuntary retirement, business failure, major home
+  repairs, insurance repricing, rent renewals, adjustable-rate resets, listing a
+  home for sale, opening and drawing on a home-equity line or reverse mortgage,
+  cash-out refinancing, a divorce, inherited-IRA distributions, life-insurance
+  lapses, a search for work after retirement, an adaptive Social Security claim,
+  a postponed retirement. `child`: births (late, twins, or not arriving), college
+  start with years and aid, adult support, joining and leaving the health plan.
+  `career_break`: parental leave. `long_term_care`: a parent's care spell and a
+  partner caring at home. `windfall`: inheritances and life-insurance payouts.
+  `expense_shock`: the four typed shocks. `major_expense`: vehicle replacements.
+  `market`: valuation, dividend cuts, stress episodes, panic sales and re-entry,
+  lender freezes. `rehired`: back at work after retirement. `spending_cut` and
+  `spending_raise`: belt-tightening when unemployed. `other`: saving paused and
+  resumed. Labels are sentences for people; consumers should key on `kind`.
+* The year and month series are unchanged in number and meaning. Draws on a
+  home-equity line or reverse mortgage are in `property_sale` (cash from
+  property) and their balances in `mortgage`; a household's payments for a
+  parent's care are in `spend_long_term_care`; premiums for long-term-care
+  insurance are in `spend_healthcare` and life-insurance premiums in essential
+  spending; disability insurance from Social Security is in
+  `income_social_security` and private disability insurance in `income_other`.
+
+Profile schema (inputs): the switches are listed in `docs/methodology.md` section 18
+and in the schema block of `docs/architecture.md`.

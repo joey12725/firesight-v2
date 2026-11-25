@@ -2,9 +2,10 @@ import type { EquityGrant, Income, Job, Person } from '@/engine/types';
 import { remove, set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
 import { Disclosure, Field, Switch, moneyCompact, percent } from '@/ui';
-import { ChoiceField, Group, MoneyField, NumField, OwnerField, PercentField, Row, SegmentField, SliderField, ToggleField } from '../fields';
+import { ChoiceField, Group, MoneyField, NumField, Optional, OwnerField, PercentField, Realism, Row, SegmentField, SliderField, ToggleField } from '../fields';
 import { useEdit, useHelp, useProfile } from '../hooks';
 import { AddButton, Item, ItemList } from '../Section';
+import { MAKE, careerRealism, claimingRealism } from '../realism';
 import { useAdd } from '../useAdd';
 import { WhenField, describeWhen } from '../WhenField';
 
@@ -26,19 +27,12 @@ const CURVE = [
   { value: 'steep', label: 'Steep' },
 ] as const;
 
-/** A sub-object that is either present or null, with a switch to add or remove it. */
-function Optional({ path, label, present, make, children }: { path: string; label: string; present: boolean; make: () => unknown; children: React.ReactNode }) {
-  const edit = useEdit();
-  const help = useHelp(path);
-  return (
-    <div data-path={path} className="space-y-3">
-      <Field inline label={label} help={help}>
-        {({ id }) => <Switch id={id} checked={present} onChange={(on) => edit(set(path, on ? make() : null), { label: `${on ? 'Add' : 'Remove'} ${label.toLowerCase()}` })} />}
-      </Field>
-      {present && <div className="space-y-3 border-l border-line pl-3">{children}</div>}
-    </div>
-  );
-}
+const OFF_TYPICAL = [
+  { value: 'off', label: 'Off' },
+  { value: 'typical', label: 'Typical' },
+] as const;
+
+const OFF_TYPICAL_HIGH = [...OFF_TYPICAL, { value: 'high', label: 'High' }] as const;
 
 function EquityGrants({ path, grants }: { path: string; grants: EquityGrant[] }) {
   const add = useAdd(path);
@@ -108,6 +102,18 @@ function JobFields({ path, job }: { path: string; job: Job }) {
     <>
       <MoneyField path={`${k}/salary`} label="Salary" suffix="/yr" />
       <SegmentField path={`${k}/risk/level`} label="Career risk" options={RISK} help={useHelp(`${k}/risk`)} />
+      <Realism summary="Job changes, recessions and late-career layoffs" on={careerRealism(job.risk)}>
+        <SegmentField path={`${k}/risk/job_mobility`} label="Job changes with pay jumps" options={OFF_TYPICAL_HIGH} />
+        <SegmentField path={`${k}/risk/recession_pay`} label="Pay freezes and cuts in recessions" options={OFF_TYPICAL} />
+        <SegmentField
+          path={`${k}/risk/late_career`}
+          label="Layoffs from 55 on"
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'realistic', label: 'Realistic' },
+          ]}
+        />
+      </Realism>
       <SegmentField
         path={`${k}/growth`}
         label="Pay growth"
@@ -198,6 +204,20 @@ function IncomeFields({ path, income }: { path: string; income: Income }) {
             <PercentField path={`${k}/real_growth`} label="Growth above inflation" />
             <PercentField path={`${k}/solo_401k_fraction`} label="Saved in a solo 401(k)" />
           </Row>
+          <Realism summary="Business cycles and failure" on={kind.business_risk !== 'off' ? 1 : 0}>
+            <SegmentField path={`${k}/business_risk`} label="Good and bad years, and the risk of failing" options={OFF_TYPICAL_HIGH} />
+            {kind.business_risk !== 'off' && (
+              <>
+                <NumField path={`${k}/years_operating`} label="Years in business so far" step={1} suffix="yrs" />
+                <Optional path={`${k}/fallback_wage`} label="Take a job if the business fails" present={kind.fallback_wage !== null} make={MAKE.fallbackWage}>
+                  <Row>
+                    <MoneyField path={`${k}/fallback_wage/annual`} label="Wage" suffix="/yr" />
+                    <NumField path={`${k}/fallback_wage/search_months`} label="Search" kind="months" suffix="mo" />
+                  </Row>
+                </Optional>
+              </>
+            )}
+          </Realism>
           <Timing path={path} endsAtRetirement />
         </>
       );
@@ -256,6 +276,31 @@ const KIND_LABEL: Record<Income['kind']['type'], string> = {
 function headline(income: Income): number {
   const k = income.kind;
   return k.type === 'job' ? k.salary : k.type === 'self_employment' ? k.net_annual : k.annual;
+}
+
+function ClaimingFields({ person, index }: { person: Person; index: number }) {
+  const path = `${join('/household/people', at(person, index))}/social_security/claiming`;
+  const claiming = person.social_security.claiming;
+  return (
+    <div className="space-y-3">
+      <ChoiceField
+        path={path}
+        label={`${person.name || `Person ${index + 1}`}: claiming`}
+        options={[
+          { value: 'fixed', label: 'At the age set above' },
+          { value: 'adaptive', label: 'Adaptive: early if savings run short, else delay' },
+        ]}
+        read={(v) => (v as typeof claiming).type}
+        write={(type) => ({ type })}
+      />
+      {claiming.type === 'adaptive' && (
+        <Row>
+          <NumField path={`${path}/earliest`} label="Earliest age" kind="years" min={62} max={70} />
+          <NumField path={`${path}/latest`} label="Latest age" kind="years" min={62} max={70} />
+        </Row>
+      )}
+    </div>
+  );
 }
 
 function SocialSecurityFields({ person, index }: { person: Person; index: number }) {
@@ -341,6 +386,11 @@ export function IncomeSection() {
         {profile.household.people.map((p, i) => (
           <SocialSecurityFields key={p.id || i} person={p} index={i} />
         ))}
+        <Realism summary="Adaptive claiming" on={claimingRealism(profile.household.people)}>
+          {profile.household.people.map((p, i) => (
+            <ClaimingFields key={p.id || i} person={p} index={i} />
+          ))}
+        </Realism>
         <div data-path="/assumptions/taxes/social_security_haircut" className="space-y-3">
           <Field inline label="Assume benefits are cut in future" help={useHelp('/assumptions/taxes/social_security_haircut')}>
             {({ id }) => (

@@ -18,6 +18,7 @@ use crate::model::{
 use crate::stats::{Recorder, TraceEventKind, YearSeries};
 use crate::MAX_PEOPLE;
 
+use super::family::AdultPhases;
 use super::plan::{Plan, StreamKind, CHILD_SERVICE_REAL_GROWTH};
 use super::state::{State, TAX_FED, TAX_PAYROLL, TAX_SERIES, TAX_STATE};
 
@@ -72,6 +73,10 @@ impl State {
         if self.check {
             self.check_begin();
         }
+        if plan.rz.any {
+            self.rz_month_start(plan);
+            self.rz_disability_step(plan, econ, t);
+        }
 
         // 1. Calendar: deaths, a partner joining, retirement dates, the annual plan.
         let mut replan = t == 0 || month == 1;
@@ -81,9 +86,17 @@ impl State {
                 replan = true;
             }
         }
-        if self.n == 2 && self.alive[1] && !self.present[1] && ti >= plan.people[1].joins {
+        if self.n == 2
+            && self.alive[1]
+            && !self.present[1]
+            && ti >= plan.people[1].joins
+            && !self.dynamics.left[1]
+        {
             self.join(plan, econ.price_level[t], t);
             replan = true;
+        }
+        if plan.dynamics.active {
+            replan |= self.dynamics_month(plan, econ.price_level[t], t);
         }
         if !self.retired && ti >= self.retire_month {
             self.begin_retirement(plan, econ, t);
@@ -101,6 +114,9 @@ impl State {
         // The turn of the year comes before January's events, so that what they add
         // to the tax year (a sale's gain, a taxable windfall) is on this year's
         // return and not on the one being closed.
+        if plan.family.dynamic {
+            self.family_calendar(plan, t, now);
+        }
         let new_year = month == 1 && t > 0;
         if new_year {
             self.close_year(plan, econ, t);
@@ -116,12 +132,16 @@ impl State {
         {
             replan = true;
         }
+        if plan.hx.any {
+            self.hx_month_start(plan, econ, t);
+        }
         // 2. Events due this month (before planning, so the plan sees them).
         if ti >= self.next_event {
             self.run_events(plan, econ, t);
             replan = true;
         }
         let price = econ.price_level[t];
+        self.fam.price = price;
         if replan {
             self.annual_plan(plan, econ, t, new_year);
         }
@@ -180,12 +200,16 @@ impl State {
                 equity_return: eq_return,
                 equity_return_12m: self.eq12,
             };
-            let jm = jp.model.step(
+            let mut jm = jp.model.step(
                 &mut self.jobs[j].st,
                 &climate,
                 &mut self.rng_career[p],
                 &mut self.rng_equity,
             );
+            if plan.rz.any {
+                self.rz_disability_job(plan, j, &mut jm);
+                self.rz_after_job_step(plan, econ, j, t, &climate, &mut jm);
+            }
             if !self.present[p] {
                 continue;
             }
@@ -203,6 +227,11 @@ impl State {
                 self.wage_like += gross;
                 let pay = jm.wages + jm.bonus + jm.commission;
                 if let (Some(ep), true) = (self.jobs[j].plan, pay > 0.0) {
+                    let ep = if plan.beh.any {
+                        self.deferral_plan(plan, ep)
+                    } else {
+                        ep
+                    };
                     let d = self.acc.payroll_deferral(
                         p,
                         &ep,
@@ -318,11 +347,17 @@ impl State {
             let rm = self.retire_month;
             let start = sp.start.month(rm);
             let years = se_years_since(start, t);
+            let disabled_factor = if plan.rz.any {
+                self.rz_se_factor(plan, k, p, t, recession != 0)
+            } else {
+                1.0
+            };
             let rt = &mut self.selfemp[k];
             let profit = sp
                 .model
                 .step(&mut rt.st, years, &climate, &mut self.rng_career[p])
-                * rt.scale;
+                * rt.scale
+                * disabled_factor;
             let active = self.present[p]
                 && !rt.ended
                 && ti >= start
@@ -358,6 +393,13 @@ impl State {
                     self.ty.pretax_deferrals[p] += d.employee_pretax;
                 }
             }
+            if plan.rz.any {
+                self.rz_se_fallback(plan, k, p, t, price);
+            }
+        }
+
+        if plan.beh.any {
+            self.behavior_income(plan, econ, t);
         }
 
         // 4. Other income: pensions, annuities, other streams, Social Security.
@@ -367,7 +409,8 @@ impl State {
             // fraction), at an age threshold, or when someone dies or joins; in
             // between they rise with prices, so the last result is rescaled.
             if month == 1 || self.ss_dirty || ti >= self.ss_next_change {
-                self.ss_cache = plan.ss.monthly(now, &self.claimants, price);
+                self.ss_cache =
+                    self.policy_benefits(now, plan.ss.monthly(now, &self.claimants, price));
                 self.ss_cache_price = price;
                 self.ss_dirty = false;
                 self.ss_next_change = self.next_ss_threshold(plan, t);
@@ -399,6 +442,12 @@ impl State {
                 }
             }
         }
+        // Disability benefits come after Social Security: a disabled person who
+        // already draws a survivor or spousal benefit gets the larger of the two,
+        // not both.
+        if plan.rz.any {
+            self.rz_disability_income(plan, t, price);
+        }
 
         // 6. Spending: the budget, children, healthcare, shocks.
         let mut facility = 0.0;
@@ -418,17 +467,21 @@ impl State {
         } else {
             1.0
         };
-        let essential = self.ess_real * price * living;
-        let discretionary = self.disc_real * price * living;
+        let (ess_f, disc_f, disc_keep) = self.sx_factors(plan, t, month);
+        let essential = self.ess_real * price * living * ess_f;
+        let discretionary = self.disc_real * price * living * disc_f;
         self.spend(YearSeries::SpendEssential, essential);
         self.pay(
             YearSeries::SpendDiscretionary,
-            discretionary * self.disc_mult,
+            discretionary * self.disc_mult * disc_keep,
         );
         self.planned += discretionary;
         if ti < self.kids_until {
             // A child's cost changes on a birthday and each January.
-            if t % 12 == 0 || plan.birthday_months & (1 << (t % 12)) != 0 || self.kids_real < 0.0 {
+            if t % 12 == 0
+                || (plan.birthday_months | self.fam.birthday_extra) & (1 << (t % 12)) != 0
+                || self.kids_real < 0.0
+            {
                 self.kids_real = self.children_cost(plan, t);
             }
             let kids = self.kids_real * price;
@@ -456,11 +509,19 @@ impl State {
                 months_since_start: t as u32,
                 price_level: price,
             };
-            let hm = plan
+            let mut hm = plan
                 .health
                 .step(&mut self.health[i], &ctx, &mut self.rng_health[i]);
             if !self.present[i] {
                 continue;
+            }
+            // A partner caring at home lowers the bill itself, before any insurance
+            // benefit or Medicaid pays part of it.
+            if plan.dynamics.spousal_care && hm.long_term_care > 0.0 {
+                hm.long_term_care *= self.spousal_care_factor(i, t);
+            }
+            if plan.care.active {
+                self.care_month(plan, i, t, price, &mut hm);
             }
             health_cost += hm.premium + hm.out_of_pocket;
             match hm.phase {
@@ -475,9 +536,10 @@ impl State {
                 }
                 _ => {}
             }
-            if hm.long_term_care > 0.0 {
-                self.spend(YearSeries::SpendLongTermCare, hm.long_term_care);
-                self.ltc_real += hm.long_term_care / price;
+            let care = hm.long_term_care;
+            if care > 0.0 {
+                self.spend(YearSeries::SpendLongTermCare, care);
+                self.ltc_real += care / price;
             }
             self.in_facility[i] = hm.ltc_in_facility;
             if hm.ltc_started {
@@ -492,6 +554,30 @@ impl State {
                 });
             }
             self.last_phase[i] = hm.phase;
+        }
+        if plan.family.cover_children {
+            let mut ap = AdultPhases::default();
+            for i in 0..self.n {
+                if self.alive[i] && self.present[i] {
+                    ap.note(self.last_phase[i]);
+                }
+            }
+            ap.employer = employer_coverage;
+            let kids = self.child_health(plan, t, price, ap);
+            health_cost += kids.total;
+            aca_premiums += kids.aca_premium;
+            self.ty.aca_benchmark_premium += kids.aca_benchmark;
+            if self.detail && (kids.total > 0.0) != self.fam.kids_on_plan {
+                self.fam.kids_on_plan = kids.total > 0.0;
+                let on = self.fam.kids_on_plan;
+                self.event(now, TraceEventKind::Child, Some(kids.total / price), || {
+                    if on {
+                        "Children are on the health plan".to_string()
+                    } else {
+                        "Children are off the health plan".to_string()
+                    }
+                });
+            }
         }
         if aca_people > 0 {
             self.ty.aca_months += 1;
@@ -525,6 +611,8 @@ impl State {
                 }
             }
         }
+        self.sx_vehicles(plan, t, price);
+        self.sx_shocks(plan, t, price);
 
         // 7. Housing.
         let home_national = econ.home_national[t];
@@ -534,12 +622,25 @@ impl State {
             let rental = matches!(st.usage, PropertyUse::Rental(_));
             let value_before = st.value;
             let balance = st.mortgage_balance();
-            let hm = plan.props[i].model.step(
-                &mut self.props[i],
-                home_national,
-                price,
-                &mut self.rng_housing[i],
-            );
+            let rate_before = if plan.hx.props {
+                self.hx_prepare(plan, econ, t, i, price)
+            } else {
+                0.0
+            };
+            let hm = if plan.hd.live_rentals {
+                let recession = econ.recession[t] != 0;
+                self.hd_property_step(plan, i, t, home_national, price, recession)
+            } else {
+                plan.props[i].model.step(
+                    &mut self.props[i],
+                    home_national,
+                    price,
+                    &mut self.rng_housing[i],
+                )
+            };
+            if plan.hx.props {
+                self.hx_after_step(plan, t, i, rate_before);
+            }
             if !owned {
                 continue;
             }
@@ -571,6 +672,12 @@ impl State {
             }
         }
         self.home_index *= 1.0 + home_national;
+        if plan.hx.liquidity {
+            self.hx_close_sales(plan, price, t);
+        }
+        if plan.hd.monthly {
+            self.hd_month(plan, econ, t, price);
+        }
 
         // 8. Debts: required payments, then the extra payment by strategy.
         self.pay_debts(plan, t, price);
@@ -598,6 +705,10 @@ impl State {
             self.pay_tax_due();
         }
 
+        if plan.profile.retirement.qcd {
+            self.qcd_month(plan, t, price, now);
+        }
+
         // 9. Cash settlement.
         self.settle(plan, t, price);
 
@@ -616,6 +727,9 @@ impl State {
         self.ty.interest += inc.interest;
         self.ty.ordinary_dividends += inc.ordinary_dividends;
         self.ty.qualified_dividends += inc.qualified_dividends;
+        if plan.profile.portfolio.tax_loss_harvesting {
+            self.harvest_losses(now, price);
+        }
         self.led[YearSeries::InvestmentIncome.index()] =
             inc.interest + inc.ordinary_dividends + inc.qualified_dividends;
         self.led[YearSeries::InvestmentReturn.index()] = inc.net_change;
@@ -633,6 +747,9 @@ impl State {
             if self.acc.max_drift(&self.target) > width {
                 self.rebalance(plan);
             }
+        }
+        if plan.beh.any {
+            self.behavior_after_returns(plan, econ, t);
         }
 
         // 11. Financial independence and the retirement trigger.
@@ -692,7 +809,9 @@ impl State {
                 continue;
             }
             let fra = plan.ss.full_retirement_age_months(person.birth.year()) as i32;
-            let claim = (person.claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
+            // The claimant's claim age (moved by adaptive claiming), else the plan's.
+            let claim_age = self.claimants[i].map_or(person.claim_age, |c| c.claim_age);
+            let claim = (claim_age.clamp(62.0, 70.0) * 12.0).round() as i32;
             let withheld = self.claimants[i].map_or(0.0, |c| c.withheld_months).ceil() as i32;
             for age in [
                 60 * 12,
@@ -762,7 +881,7 @@ impl State {
     }
 
     /// Person `p` stops working: their jobs that end at retirement end now.
-    fn retire_person(&mut self, plan: &Plan, p: usize, t: usize) {
+    pub(super) fn retire_person(&mut self, plan: &Plan, p: usize, t: usize) {
         self.person_retired[p] = true;
         if self.stopped_work[p] == i32::MAX {
             self.stopped_work[p] = t as i32;
@@ -1059,10 +1178,10 @@ impl State {
     pub(crate) fn children_cost(&self, plan: &Plan, t: usize) -> f64 {
         let ti = t as i32;
         let mut minors = 0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for k in 0..plan.children.len() {
+            let age = ti - self.child_birth(plan, k);
             if (0..18 * 12).contains(&age) {
-                minors += 1;
+                minors += self.child_count(k);
             }
         }
         // USDA family-size adjustment (`children.usda_2015.family_size_adjustment`).
@@ -1072,17 +1191,21 @@ impl State {
             _ => 0.76,
         };
         let mut total = 0.0;
-        for c in &plan.children {
-            let age = ti - c.birth;
+        for (k, c) in plan.children.iter().enumerate() {
+            let age = ti - self.child_birth(plan, k);
             if age < 0 {
                 continue;
             }
             let years = (age / 12) as usize;
+            let n = f64::from(self.child_count(k));
             if years < 18 {
-                total += c.core[years] * family + c.care[years] * self.service_growth;
-            } else if years < 22 {
-                total += c.college * self.service_growth;
+                total += (c.core[years] * family + c.care[years] * self.service_growth) * n;
+            } else if years < 18 + self.college_years(k) {
+                total += c.college * self.college_factor(plan, k, t) * n;
             }
+        }
+        if plan.family.any_support {
+            total += self.adult_support_rate(plan, t);
         }
         total / 12.0
     }
@@ -1098,16 +1221,28 @@ impl State {
         retired: bool,
         retire_month: i32,
     ) -> (f64, f64, i32) {
+        self.budget_tallied(plan, t, retired, retire_month, None)
+    }
+
+    /// [`State::budget_as`], also adding each line to a per-category [`Tally`].
+    pub(crate) fn budget_tallied(
+        &self,
+        plan: &Plan,
+        t: usize,
+        retired: bool,
+        retire_month: i32,
+        mut tally: Option<&mut super::spendx::Tally>,
+    ) -> (f64, f64, i32) {
         let ti = t as i32;
         let years = (t / 12) as i32;
         let mut ess = 0.0;
         let mut disc = 0.0;
         let mut next = i32::MAX;
-        let survivor_factor = if self.survivor {
+        let survivor_factor = (if self.survivor {
             plan.profile.spending.survivor_factor
         } else {
             1.0
-        };
+        }) * self.dynamics.shared_factor;
         for (i, item) in plan.items.iter().enumerate() {
             let start = item.start.month(retire_month);
             let end = item.end.month(retire_month);
@@ -1133,6 +1268,9 @@ impl State {
             if amount == 0.0 {
                 continue;
             }
+            if item.market_rent {
+                amount *= self.hx.rent.paid;
+            }
             if item.growth != 0.0 {
                 amount *= if (years as usize) < plan.growth_years {
                     plan.item_growth[i * plan.growth_years + years as usize]
@@ -1148,12 +1286,26 @@ impl State {
             }
             if item.essential {
                 ess += amount;
+                if let Some(tl) = tally.as_deref_mut() {
+                    if item.market_rent {
+                        tl.market_rent[0] += amount;
+                    } else {
+                        tl.e[item.category.index()] += amount;
+                    }
+                }
             } else {
                 disc += amount * self.creep;
+                if let Some(tl) = tally.as_deref_mut() {
+                    if item.market_rent {
+                        tl.market_rent[1] += amount * self.creep;
+                    } else {
+                        tl.d[item.category.index()] += amount * self.creep;
+                    }
+                }
             }
         }
         if self.extra_rent > 0.0 {
-            ess += self.extra_rent
+            let extra = self.extra_rent
                 * plan
                     .rent_growth
                     .get(years as usize)
@@ -1162,6 +1314,10 @@ impl State {
                         math::powi(1.0 + Category::Rent.default_real_growth(), years)
                     })
                 * survivor_factor;
+            ess += extra;
+            if let Some(tl) = tally.as_mut() {
+                tl.e[Category::Rent.index()] += extra;
+            }
         }
         // Shocks add variance, not level: their expected cost comes out of the
         // baseline budget, discretionary lines first.
@@ -1177,7 +1333,14 @@ impl State {
 
     /// Recomputes the monthly budget.
     pub(crate) fn rebudget(&mut self, plan: &Plan, t: usize) {
-        let (ess, disc, next) = self.budget_as(plan, t, self.retired, self.retire_month);
+        let (ess, disc, next) = if plan.sx.tally {
+            let mut tally = super::spendx::Tally::default();
+            let r = self.budget_tallied(plan, t, self.retired, self.retire_month, Some(&mut tally));
+            self.sx.tally = tally;
+            r
+        } else {
+            self.budget_as(plan, t, self.retired, self.retire_month)
+        };
         self.ess_real = ess;
         self.disc_real = disc;
         // Real growth steps once a year, so look again at the next anniversary.
@@ -1304,6 +1467,9 @@ impl State {
             );
             self.ledger_withdrawals(&ex);
         }
+        if plan.hd.cash_out.is_some() && self.acc.cash < -DUST {
+            self.hd_cash_out_before_shortfall(plan, t, price);
+        }
         if self.acc.cash < -DUST {
             // Cash has run out: sell investments, penalty-free sources first, then
             // with the penalty.
@@ -1322,7 +1488,7 @@ impl State {
         // has to be found now is only what would make it grow.
         let overdraft = (-self.cash_start).max(0.0);
         let mut essentials_cut = false;
-        if -self.acc.cash - overdraft > DUST {
+        if -self.acc.cash - overdraft > DUST && !self.hx_bridged(plan) {
             // Nothing liquid is left to sell. Spending is cut to what there is: what
             // can be postponed first; then property is sold if the plan allows it;
             // then the essentials. Obligations that cannot be cut
@@ -1330,6 +1496,7 @@ impl State {
             // is reported as debt and repaid from later surpluses.
             let mut release = plan.profile.retirement.home_equity == HomeEquity::LastResort
                 && self.props.iter().any(|p| p.owned);
+            let mut borrow = plan.hd.lines;
             const CUTS: [(YearSeries, bool); 6] = [
                 (YearSeries::SpendDiscretionary, false),
                 (YearSeries::SpendOneOff, true),
@@ -1343,12 +1510,22 @@ impl State {
                 if missing <= DUST {
                     break;
                 }
+                if essential && borrow {
+                    // Before property is sold or an essential is cut, the household
+                    // borrows against its home if the plan allows it.
+                    borrow = false;
+                    self.hd_borrow(plan, t, price, missing);
+                    missing = -self.acc.cash - overdraft;
+                    if missing <= DUST {
+                        break;
+                    }
+                }
                 if essential && release {
                     // Before an essential is cut, property is sold.
                     release = false;
                     self.release_home_equity(plan, t, price, missing);
                     missing = -self.acc.cash - overdraft;
-                    if missing <= DUST {
+                    if missing <= DUST || self.hx_bridged(plan) {
                         break;
                     }
                 }
@@ -1361,14 +1538,22 @@ impl State {
             }
         }
         // Housing costs, debt service and tax cannot be cut: if they alone are more
-        // than there is, property goes too.
+        // than there is, the household borrows against its home, then property goes.
+        if plan.hd.lines && -self.acc.cash - overdraft > DUST && !self.hx_bridged(plan) {
+            self.hd_borrow(plan, t, price, -self.acc.cash - overdraft);
+        }
         if -self.acc.cash - overdraft > DUST
+            && !self.hx_bridged(plan)
             && plan.profile.retirement.home_equity == HomeEquity::LastResort
             && self.props.iter().any(|p| p.owned)
         {
             self.release_home_equity(plan, t, price, -self.acc.cash - overdraft);
         }
-        let depleted = essentials_cut || -self.acc.cash - overdraft > DUST;
+        // A home listed as a last resort bridges the months to closing; Medicaid
+        // paying for long-term care is a safety net, not depletion.
+        let depleted = (essentials_cut
+            || (-self.acc.cash - overdraft > DUST && !self.hx_bridged(plan)))
+            && !(plan.care.active && self.care_safety_net(t));
         if depleted {
             self.depleted_year = true;
             if !self.ever_depleted {
@@ -1401,8 +1586,13 @@ impl State {
         } else {
             self.efund_target
         } + self.tax_reserve();
-        if self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
-            let surplus = self.acc.cash - cap;
+        // In distress (opt-in) the surplus pays high-interest debt and stays in cash.
+        let hold = plan.beh.any && self.distress_settle(plan, t, cap);
+        if !hold && self.acc.cash > cap + 1.0 && (!self.retired || month == 12) {
+            if plan.hd.surplus {
+                self.hd_surplus(plan, t, cap);
+            }
+            let surplus = (self.acc.cash - cap).max(0.0);
             self.acc.cash -= surplus;
             let flows = self.acc.save_surplus(surplus, &self.sctx, &target);
             for p in 0..MAX_PEOPLE {

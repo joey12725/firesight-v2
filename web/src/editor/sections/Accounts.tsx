@@ -3,9 +3,10 @@ import { set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
 import { Disclosure, Field, Switch, moneyCompact } from '@/ui';
 import { AllocationEditor } from '../AllocationEditor';
-import { ChoiceField, Group, MoneyField, NumField, OwnerField, PercentField, Row, SegmentField, SliderField, TextField } from '../fields';
+import { ChoiceField, Group, MoneyField, NumField, OwnerField, PercentField, Realism, Row, SegmentField, SliderField, TextField, ToggleField } from '../fields';
 import { useEdit, useHelp, useProfile } from '../hooks';
 import { ACCOUNT_KINDS } from '../labels';
+import { portfolioRealism } from '../realism';
 import { AddButton, Item } from '../Section';
 import { useAdd } from '../useAdd';
 
@@ -178,6 +179,39 @@ function PortfolioFields({ portfolio }: { portfolio: PortfolioPolicy }) {
           </div>
         </Disclosure>
       )}
+      <Realism summary="Tax-loss harvesting, panic selling and pausing saving" on={portfolioRealism(portfolio)}>
+        <ToggleField path="/portfolio/tax_loss_harvesting" label="Harvest tax losses in the taxable account" />
+        <ChoiceField
+          path="/portfolio/behavior"
+          label="In a crash"
+          options={[
+            { value: 'disciplined', label: 'Sticks to the plan' },
+            { value: 'panic_prone', label: 'May sell stocks in a panic' },
+          ]}
+          read={(v) => (v as PortfolioPolicy['behavior']).type}
+          write={(type) => ({ type })}
+        />
+        {portfolio.behavior.type === 'panic_prone' && (
+          <>
+            <Row cols={3}>
+              <PercentField path="/portfolio/behavior/drawdown_trigger" label="After a fall of" />
+              <PercentField path="/portfolio/behavior/probability" label="Chance" />
+              <PercentField path="/portfolio/behavior/share" label="Stocks sold" />
+            </Row>
+            <Row>
+              <PercentField path="/portfolio/behavior/reentry/recovered_within" label="Buys back within, of the peak" />
+              <NumField path="/portfolio/behavior/reentry/max_months" label="Or after" kind="months" suffix="mo" />
+            </Row>
+          </>
+        )}
+        <ToggleField path="/portfolio/pause_deferrals_in_distress" label="Pause retirement saving when money is tight" />
+        {portfolio.pause_deferrals_in_distress && (
+          <Row>
+            <ToggleField path="/portfolio/distress/keep_match" label="Keep the employer match" />
+            <PercentField path="/portfolio/distress/high_interest_rate" label="Debt counts as costly from" />
+          </Row>
+        )}
+      </Realism>
     </Group>
   );
 }

@@ -4,6 +4,7 @@ import { toast, useUi } from '@/state/ui-store';
 import { Button, Icon, IconButton, Select, type IconName } from '@/ui';
 import { useProfile } from './hooks';
 import { PlanCheck, sectionForPath } from './PlanCheck';
+import { SECTION_TITLE } from './realism';
 import { Section } from './Section';
 import { AccountsSection } from './sections/Accounts';
 import { AssumptionsSection } from './sections/Assumptions';
@@ -26,14 +27,14 @@ interface SectionDef {
 }
 
 export const SECTIONS: SectionDef[] = [
-  { id: 'household', icon: 'users', title: 'Household', paths: ['/household', '/name'], summary: summary.householdSummary, Body: HouseholdSection },
-  { id: 'income', icon: 'briefcase', title: 'Income', paths: ['/incomes'], summary: summary.incomeSummary, Body: IncomeSection },
-  { id: 'spending', icon: 'creditCard', title: 'Spending', paths: ['/spending'], summary: summary.spendingSummary, Body: SpendingSection },
-  { id: 'accounts', icon: 'landmark', title: 'Savings and accounts', paths: ['/accounts', '/portfolio'], summary: summary.accountsSummary, Body: AccountsSection },
-  { id: 'property', icon: 'home', title: 'Property and debts', paths: ['/properties', '/debts', '/debt_policy'], summary: summary.propertySummary, Body: PropertySection },
-  { id: 'events', icon: 'calendar', title: 'Life events', paths: ['/events'], summary: summary.eventsSummary, Body: EventsSection },
-  { id: 'retirement', icon: 'sunrise', title: 'Retirement plan', paths: ['/retirement'], summary: summary.retirementSummary, Body: RetirementSection },
-  { id: 'assumptions', icon: 'sliders', title: 'Assumptions', paths: ['/assumptions', '/simulation'], summary: summary.assumptionsSummary, Body: AssumptionsSection },
+  { id: 'household', icon: 'users', title: SECTION_TITLE.household, paths: ['/household', '/name'], summary: summary.householdSummary, Body: HouseholdSection },
+  { id: 'income', icon: 'briefcase', title: SECTION_TITLE.income, paths: ['/incomes'], summary: summary.incomeSummary, Body: IncomeSection },
+  { id: 'spending', icon: 'creditCard', title: SECTION_TITLE.spending, paths: ['/spending'], summary: summary.spendingSummary, Body: SpendingSection },
+  { id: 'accounts', icon: 'landmark', title: SECTION_TITLE.accounts, paths: ['/accounts', '/portfolio'], summary: summary.accountsSummary, Body: AccountsSection },
+  { id: 'property', icon: 'home', title: SECTION_TITLE.property, paths: ['/properties', '/debts', '/debt_policy'], summary: summary.propertySummary, Body: PropertySection },
+  { id: 'events', icon: 'calendar', title: SECTION_TITLE.events, paths: ['/events'], summary: summary.eventsSummary, Body: EventsSection },
+  { id: 'retirement', icon: 'sunrise', title: SECTION_TITLE.retirement, paths: ['/retirement'], summary: summary.retirementSummary, Body: RetirementSection },
+  { id: 'assumptions', icon: 'sliders', title: SECTION_TITLE.assumptions, paths: ['/assumptions', '/simulation'], summary: summary.assumptionsSummary, Body: AssumptionsSection },
 ];
 
 /** Opens the section holding `path`, scrolls its field into view and focuses it. */
@@ -43,16 +44,27 @@ function useFocusPath(container: React.RefObject<HTMLElement | null>) {
     if (!focusPath) return;
     const ui = useUi.getState();
     ui.toggleSection(sectionForPath(focusPath), true);
-    // Wait for the section body to render.
-    const frame = requestAnimationFrame(() => {
+    const locate = () => {
       const nodes = [...(container.current?.querySelectorAll<HTMLElement>('[data-path]') ?? [])];
-      const best = nodes
+      return nodes
         .filter((n) => focusPath === n.dataset.path || focusPath.startsWith(`${n.dataset.path}/`) || n.dataset.path?.startsWith(`${focusPath}/`))
         .sort((a, b) => (b.dataset.path?.length ?? 0) - (a.dataset.path?.length ?? 0))[0];
-      const target = best ?? container.current?.querySelector<HTMLElement>(`[data-section="${sectionForPath(focusPath)}"]`);
+    };
+    const section = () => container.current?.querySelector<HTMLElement>(`[data-section="${sectionForPath(focusPath)}"]`);
+    const show = (target: HTMLElement | null | undefined) => {
       target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       target?.querySelector<HTMLElement>('input, select, button')?.focus({ preventScroll: true });
       ui.setFocusPath(null);
+    };
+    // Wait for the section body to render.
+    let frame = requestAnimationFrame(() => {
+      const best = locate();
+      if (best?.dataset.path === focusPath) return show(best);
+      // The field may be in a folded group of optional realism: open those around it and look again.
+      const folded = (best ?? section())?.querySelectorAll<HTMLElement>('.realism > button[aria-expanded="false"]');
+      if (!folded?.length) return show(best ?? section());
+      folded.forEach((button) => button.click());
+      frame = requestAnimationFrame(() => show(locate() ?? section()));
     });
     return () => cancelAnimationFrame(frame);
   }, [focusPath, container]);

@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{BondPricing, Episode, HousingLiquidity, Valuation, When};
 
 /// Assumptions about markets, taxes and lifespans.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -21,6 +21,19 @@ pub struct Assumptions {
     /// Simulate random medical costs and long-term care. Turning this off uses average
     /// costs every year.
     pub health_risk: bool,
+    /// "instant" (default): selling a home closes the month it is decided at market
+    /// value. "realistic": a sale takes months and may close at a discount in bad
+    /// markets.
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub housing_liquidity: HousingLiquidity,
+    /// How each adult's health evolves. "independent" (the default): medical costs,
+    /// long-term care and mortality are drawn separately from each other.
+    /// "states": each adult moves year by year between healthy, chronic conditions
+    /// and frail; a sicker state raises out-of-pocket costs, the chance of
+    /// long-term care and the risk of dying, so expensive years come before death.
+    /// Life expectancy and average costs are kept the same as with "independent".
+    #[serde(skip_serializing_if = "HealthModelKind::is_independent")]
+    pub health_model: HealthModelKind,
 }
 
 impl Default for Assumptions {
@@ -31,7 +44,34 @@ impl Default for Assumptions {
             longevity: Longevity::default(),
             career_risk: true,
             health_risk: true,
+            housing_liquidity: HousingLiquidity::Instant,
+            health_model: HealthModelKind::Independent,
         }
+    }
+}
+
+/// How health, costs and mortality relate (`assumptions.health_model`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HealthModelKind {
+    /// Medical costs, long-term care and the age at death are drawn independently
+    /// of each other. The default.
+    #[default]
+    Independent,
+    /// A yearly Markov chain of health states (healthy, two or more chronic
+    /// conditions, frail) calibrated to US prevalence data. The state multiplies
+    /// out-of-pocket costs (about 1.9 times for chronic and 2.8 times for frail
+    /// relative to healthy), the chance that the end of life needs paid care, and the
+    /// mortality hazard (1.73 and 2.79 times), all normalised so that life
+    /// expectancy and average costs are unchanged.
+    States,
+}
+
+impl HealthModelKind {
+    /// True for the default (left out when a profile is written, so profiles saved
+    /// before the option existed read and write back unchanged).
+    pub fn is_independent(&self) -> bool {
+        *self == HealthModelKind::Independent
     }
 }
 
@@ -54,6 +94,29 @@ pub struct MarketModel {
     pub inflation_adjustment: f64,
     /// Stress scenarios forced onto every path, on top of the random draws.
     pub stress: Vec<Stress>,
+    /// Block bootstrap only: where bond returns come from. `sampled` (the default)
+    /// takes each month's bond return from the resampled history row; `from_yield`
+    /// prices the bond from the path's own 10-year yield (interest plus the price
+    /// change of a 10-year bond when the yield moves), so a path's bond returns and
+    /// its yield level agree.
+    #[serde(skip_serializing_if = "BondPricing::is_sampled")]
+    pub bond_pricing: BondPricing,
+    /// Start expected stock returns from today's valuation instead of the
+    /// historical average: an expensive market returns less over the next decade or
+    /// two while its valuation drifts back to normal. Applies to the bootstrap,
+    /// regime, lognormal and fat-tailed models. Leave empty to keep history's
+    /// average from the first month.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valuation: Option<Valuation>,
+    /// Let the dividend yield of stocks move with the market: it rises when prices
+    /// fall, drifts back as companies adjust their dividends, falls in recessions
+    /// (dividend cuts) and, with `valuation`, rises as an expensive market returns
+    /// to normal. Total returns are unchanged; only the split between taxable
+    /// dividends and price gains moves, and with it taxes and income-tested costs.
+    /// Bond interest and cash interest always follow the path's yields. Default
+    /// off (constant dividend yields).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dynamic_yields: bool,
 }
 
 /// Default of [`MarketModel::equity_premium_adjustment`]: a judgement between the
@@ -68,6 +131,9 @@ impl Default for MarketModel {
             equity_premium_adjustment: DEFAULT_EQUITY_PREMIUM_ADJUSTMENT,
             inflation_adjustment: 0.0,
             stress: Vec::new(),
+            bond_pricing: BondPricing::default(),
+            valuation: None,
+            dynamic_yields: false,
         }
     }
 }
@@ -93,6 +159,12 @@ pub enum MarketKind {
     /// Independent lognormal returns each month: the simple textbook model, with no
     /// crashes clustering and no mean reversion.
     Lognormal,
+    /// Like `lognormal`, with the same average returns and volatilities, but with
+    /// fat tails (Student-t shocks), volatile spells that cluster and fade over a few
+    /// years (GARCH), and stocks markets that move together more in turbulent
+    /// months, all fitted to the US record since 1926. Crashes are deeper and more
+    /// frequent than in `lognormal`; there is still no mean reversion.
+    FatTailed,
     /// Replay history exactly: path 1 starts in the first month of the record, path 2
     /// in the next, and so on. Answers "would this plan have survived 1966?". Set
     /// `equity_premium_adjustment` to 0 with this model, or the replay is history
@@ -145,6 +217,26 @@ pub enum Stress {
         #[serde(default = "d_stag_inflation")]
         inflation: f64,
     },
+    /// Live through a real market episode again: from the start date, every market
+    /// series (stocks, bonds, bills, inflation, home prices, rate moves and
+    /// recessions) follows what actually happened from the episode's first month,
+    /// for as long as the episode lasted.
+    HistoricalEpisode {
+        /// When the episode starts on the plan's timeline.
+        start: When,
+        /// Which episode to replay.
+        episode: Episode,
+    },
+    /// A Japan-1990-style lost generation: stocks go nowhere after inflation for
+    /// decades, prices drift slightly down and interest rates sink toward zero.
+    LostGeneration {
+        /// When it starts.
+        start: When,
+        /// How long it lasts, in years. Japan's stagnation ran from 1990 into the
+        /// 2010s.
+        #[serde(default = "d_lost_generation_years")]
+        years: f64,
+    },
 }
 
 fn d_drawdown() -> f64 {
@@ -158,6 +250,9 @@ fn d_stag_years() -> f64 {
 }
 fn d_stag_inflation() -> f64 {
     0.08
+}
+fn d_lost_generation_years() -> f64 {
+    super::DEFAULT_LOST_GENERATION_YEARS
 }
 
 /// Tax assumptions.
@@ -173,6 +268,31 @@ pub struct TaxModel {
     /// Plan for a cut in Social Security benefits when the trust fund runs short.
     /// Leave empty to assume benefits are paid in full.
     pub social_security_haircut: Option<SocialSecurityHaircut>,
+    /// Index the thresholds that current law ties to the chained CPI (income tax
+    /// brackets, the standard deduction, capital-gain thresholds, QBI thresholds, the
+    /// child credit amounts, IRA and HSA limits and the Roth and IRA income ranges)
+    /// at about a quarter of a point a year less than the CPI-U that drives
+    /// everything else. Off by default, which indexes them with the CPI-U. Brackets
+    /// creep up on real income by about 2.5% per decade when on. 401(k) limits, IRMAA
+    /// tiers and state schedules stay on the CPI-U. No effect when `index_brackets`
+    /// is off.
+    #[serde(skip_serializing_if = "is_false")]
+    pub chained_cpi: bool,
+    /// How much of the state rules to apply. `basic` (the default) is the schedule,
+    /// deductions, exemptions and the main retirement and Social Security rules.
+    /// `full` adds three rules the basic tables leave out: California's 1.3% State
+    /// Disability Insurance payroll tax on wages, New York's recapture of the lower
+    /// brackets above $107,650 of income, and Utah's Social Security benefits credit.
+    /// It changes nothing for households in other states.
+    #[serde(skip_serializing_if = "is_basic")]
+    pub state_detail: StateDetail,
+    /// Policy risk: on each simulated path, with the stated probabilities, Social
+    /// Security benefits are cut from a random year at or after the trust-fund date
+    /// and/or ordinary income tax rates rise from a random year. Makes policy a
+    /// distribution instead of a switch (`social_security_haircut` is the switch).
+    /// Leave empty for no policy change. Cuts stack on `social_security_haircut`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_risk: Option<PolicyRisk>,
 }
 
 impl Default for TaxModel {
@@ -181,8 +301,34 @@ impl Default for TaxModel {
             kind: TaxKind::UsCurrentLaw,
             index_brackets: true,
             social_security_haircut: None,
+            chained_cpi: false,
+            state_detail: StateDetail::Basic,
+            policy_risk: None,
         }
     }
+}
+
+/// Serde helper: options that are off are left out of the JSON, so profiles written
+/// before an option existed serialise exactly as they did.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_basic(d: &StateDetail) -> bool {
+    *d == StateDetail::Basic
+}
+
+/// How completely state tax rules are applied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StateDetail {
+    /// State schedule, deductions, exemptions, credits and retirement-income rules as
+    /// in the standard tables.
+    #[default]
+    Basic,
+    /// Also California SDI on wages, New York's tax-benefit recapture for high
+    /// earners and Utah's Social Security benefits credit.
+    Full,
 }
 
 /// Tax system.
@@ -223,6 +369,46 @@ impl Default for SocialSecurityHaircut {
     }
 }
 
+/// Random future changes in policy, drawn once per path.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PolicyRisk {
+    /// Chance, on each path, that Social Security benefits are cut at some point at
+    /// or after `earliest_year`. 0 for never, 1 for always. A judgement, not a
+    /// forecast: 0.5 says the shortfall is as likely to be paid for with other
+    /// changes (taxes, retirement age) as to fall on benefits.
+    pub ss_haircut_probability: f64,
+    /// Share of scheduled benefits still paid once the cut has happened (0.78 = a 22%
+    /// cut: the 2026 Trustees Reports say 78% of scheduled benefits are payable once
+    /// the OASI trust fund is depleted late in 2032, 83% for the combined funds from
+    /// 2034).
+    pub ss_haircut_factor: f64,
+    /// First calendar year in which a change can begin. The year is then drawn
+    /// uniformly from the following fifteen years (this year included). The Trustees
+    /// project the OASI trust fund to run short in the last quarter of 2032, so 2033
+    /// is the first whole year of reduced benefits.
+    pub earliest_year: i32,
+    /// Chance, on each path, that federal ordinary income tax rates are raised at
+    /// some point at or after `earliest_year`.
+    pub tax_increase_probability: f64,
+    /// Points added to every federal ordinary income bracket rate once the increase
+    /// has happened, as a decimal (0.02 turns a 22% rate into 24%). Capital gains,
+    /// payroll and state taxes are unchanged.
+    pub tax_increase_points: f64,
+}
+
+impl Default for PolicyRisk {
+    fn default() -> Self {
+        Self {
+            ss_haircut_probability: crate::policy::DEFAULT_SS_HAIRCUT_PROBABILITY,
+            ss_haircut_factor: crate::policy::DEFAULT_SS_HAIRCUT_FACTOR,
+            earliest_year: crate::policy::DEFAULT_EARLIEST_YEAR,
+            tax_increase_probability: crate::policy::DEFAULT_TAX_INCREASE_PROBABILITY,
+            tax_increase_points: crate::policy::DEFAULT_TAX_INCREASE_POINTS,
+        }
+    }
+}
+
 /// How lifespans are simulated.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -234,6 +420,28 @@ pub enum Longevity {
         /// or two of life expectancy for younger people.
         #[serde(default = "d_true")]
         improvement: bool,
+        /// Whether the two partners' lifespans are linked. "independent" (the
+        /// default): each age at death is drawn on its own. "linked": couples tend
+        /// to live similarly long (shared lifestyle and circumstances, as measured on
+        /// joint annuity contracts), and the survivor's risk of dying rises for six
+        /// months after the partner's death. Each person's own life expectancy is
+        /// unchanged; only how the two lifespans move together changes.
+        #[serde(default, skip_serializing_if = "CoupleDependence::is_independent")]
+        couple_dependence: CoupleDependence,
+        /// Scale mortality by the household's income rank: in US data people with
+        /// higher household incomes live longer (about 15 years more at the top 1%
+        /// than at the bottom 1% for men, 10 for women; Chetty et al. 2016). This is
+        /// an association, not a claim that income itself causes longer lives. The
+        /// rank comes from the gross incomes running at the start unless
+        /// `income_percentile` is given. Off by default.
+        #[serde(default, skip_serializing_if = "is_false")]
+        income_gradient: bool,
+        /// The household's percentile (1 to 100) in the national income
+        /// distribution, used by `income_gradient` instead of ranking the incomes
+        /// in the profile. Use it when current income is not a fair picture of
+        /// lifetime income (for example early in a career or in retirement).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        income_percentile: Option<f64>,
     },
     /// Everyone lives to exactly this age. Simple, but hides the risk of living longer.
     FixedAge {
@@ -246,9 +454,41 @@ fn d_true() -> bool {
     true
 }
 
+/// How the partners' lifespans relate (`longevity.couple_dependence`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CoupleDependence {
+    /// The two ages at death are drawn independently. The default.
+    #[default]
+    Independent,
+    /// Shared frailty (a Frank copula fitted to joint-life annuity data) and a
+    /// raised risk for the survivor in the six months after bereavement (relative
+    /// risk 1.41). Has no effect for a single person.
+    Linked,
+}
+
+impl CoupleDependence {
+    /// True for the default (left out when a profile is written).
+    pub fn is_independent(&self) -> bool {
+        *self == CoupleDependence::Independent
+    }
+}
+
+impl Longevity {
+    /// Stochastic lifespans with every option at its default except `improvement`.
+    pub fn stochastic(improvement: bool) -> Longevity {
+        Longevity::Stochastic {
+            improvement,
+            couple_dependence: CoupleDependence::Independent,
+            income_gradient: false,
+            income_percentile: None,
+        }
+    }
+}
+
 impl Default for Longevity {
     fn default() -> Self {
-        Longevity::Stochastic { improvement: true }
+        Longevity::stochastic(true)
     }
 }
 

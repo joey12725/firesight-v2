@@ -75,7 +75,7 @@ export function retirementSummary(p: Profile): string {
 }
 
 export function assumptionsSummary(p: Profile): string {
-  const model: Record<string, string> = { bootstrap: 'History reshuffled', regime: 'Regime model', lognormal: 'Random walk', historical: 'History replayed' };
+  const model: Record<string, string> = { bootstrap: 'History reshuffled', regime: 'Regime model', lognormal: 'Random walk', fat_tailed: 'Fat-tailed random walk', historical: 'History replayed' };
   const m = p.assumptions.market;
   const parts = [model[m.kind.type] ?? m.kind.type];
   if (m.equity_premium_adjustment !== 0) parts.push(`stocks ${m.equity_premium_adjustment > 0 ? '+' : ''}${percent(m.equity_premium_adjustment)}`);

@@ -5,6 +5,7 @@
 //! the loop; these tests drive it over the demo households and over a household
 //! built to exercise every event kind, income kind and policy at once.
 
+mod behavior_profiles;
 mod common;
 
 use std::collections::BTreeMap;
@@ -97,6 +98,7 @@ pub fn kitchen_sink() -> Profile {
             real_growth: 0.01,
             ends_at_retirement: false,
             solo_401k_fraction: 0.1,
+            ..SelfEmployment::default()
         }),
         end: Some(When::age(0, 72.0)),
         ..Income::default()
@@ -171,6 +173,7 @@ pub fn kitchen_sink() -> Profile {
                 state: Some("CA".into()),
                 ..Location::default()
             },
+            ..Household::default()
         },
         incomes: vec![job_a, job_b, side, pension, annuity, support],
         spending: Spending {
@@ -229,6 +232,7 @@ pub fn kitchen_sink() -> Profile {
                     rate: 0.045,
                     remaining_months: 280,
                     payment: None,
+                    ..Mortgage::default()
                 }),
                 hoa_monthly: 120.0,
                 ..Property::default()
@@ -242,6 +246,7 @@ pub fn kitchen_sink() -> Profile {
                     rent_real_growth: 0.005,
                     land_fraction: 0.25,
                     years_in_service: 4.0,
+                    dynamics: RentalDynamics::Simple,
                 }),
                 value: 300_000.0,
                 basis: Some(240_000.0),
@@ -250,6 +255,7 @@ pub fn kitchen_sink() -> Profile {
                     rate: 0.06,
                     remaining_months: 300,
                     payment: None,
+                    ..Mortgage::default()
                 }),
                 ..Property::default()
             },
@@ -478,6 +484,57 @@ fn every_feature_at_once_conserves_money() {
     }
 }
 
+/// Policy risk, tax-loss harvesting, qualified charitable distributions and full
+/// state detail all on, on top of everything else.
+pub fn with_realism_options(mut p: Profile) -> Profile {
+    p.assumptions.taxes.policy_risk = Some(PolicyRisk {
+        ss_haircut_probability: 0.7,
+        tax_increase_probability: 0.7,
+        ..PolicyRisk::default()
+    });
+    p.assumptions.taxes.chained_cpi = true;
+    p.assumptions.taxes.state_detail = StateDetail::Full;
+    p.portfolio.tax_loss_harvesting = true;
+    p.retirement.qcd = true;
+    p
+}
+
+#[test]
+fn tax_and_policy_realism_options_conserve_money() {
+    let profile = with_realism_options(kitchen_sink());
+    for kind in MARKETS {
+        let plan = compile(&with_market(profile.clone(), kind));
+        let acc = run_checked(&plan, 5, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
+    }
+    for example in Profile::examples(START) {
+        let plan = compile(&with_realism_options(example.profile));
+        run_checked(&plan, 11, 0..paths());
+    }
+}
+
+#[test]
+fn care_features_conserve_money() {
+    // The opt-in health, longevity and care features on the demo households and on
+    // everything at once.
+    for example in Profile::examples(START) {
+        let plan = compile(&care::all_care(example.profile.clone()));
+        let acc = run_checked(&plan, 13, 0..paths());
+        assert_eq!(acc.paths, paths(), "{}", example.slug);
+    }
+    for kind in MARKETS {
+        let plan = compile(&with_market(care::all_care(kitchen_sink()), kind));
+        let acc = run_checked(&plan, 5, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
+    }
+    let plan = compile(&care::all_care(kitchen_sink()));
+    let mut ws = Workspace::new(&plan);
+    ws.set_check(true);
+    for path in 0..20 {
+        sim::trace_path_in(&plan, 5, path, &mut ws);
+    }
+}
+
 #[test]
 fn traces_conserve_money_and_show_the_events() {
     let plan = compile(&kitchen_sink());
@@ -541,5 +598,75 @@ fn traces_conserve_money_and_show_the_events() {
             seen.contains(kind),
             "no {kind} event in 40 traced paths: {seen:?}"
         );
+    }
+}
+
+#[test]
+fn housing_decisions_conserve_money() {
+    // Spending high enough that savings run out: lines are opened and drawn, homes
+    // downsized and sold, loans refinanced, with every opt-in housing decision on.
+    let profiles = [
+        with_housing_decisions(overspending(kitchen_sink(), 2.5)),
+        with_housing_decisions(kitchen_sink()),
+        with_housing_decisions_hecm(overspending(kitchen_sink(), 2.5)),
+    ];
+    for profile in profiles {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let acc = run_checked(&plan, 9, 0..paths());
+            assert_eq!(acc.paths, paths());
+        }
+    }
+    for example in Profile::examples(START) {
+        let plan = compile(&with_housing_decisions(overspending(
+            example.profile.clone(),
+            1.6,
+        )));
+        run_checked(&plan, 9, 0..paths());
+        let plan = compile(&with_housing_decisions_hecm(overspending(
+            example.profile,
+            1.6,
+        )));
+        run_checked(&plan, 9, 0..paths());
+    }
+}
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+#[test]
+fn optional_market_refinements_conserve_money() {
+    let mut bases: Vec<Profile> = Profile::examples(START)
+        .into_iter()
+        .map(|e| e.profile)
+        .collect();
+    bases.push(kitchen_sink());
+    for base in &bases {
+        for (label, profile) in realism_profiles::variants(base) {
+            let plan = compile(&profile);
+            let acc = run_checked(&plan, 13, 0..200);
+            assert_eq!(acc.paths, 200, "{} {label}", base.name);
+        }
+    }
+}
+
+#[test]
+fn household_behaviour_features_conserve_money() {
+    for profile in behavior_profiles::behavior_profiles() {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let acc = run_checked(&plan, 13, 0..200);
+            assert_eq!(acc.paths, 200, "{} {kind:?}", profile.name);
+        }
+    }
+}
+
+#[test]
+fn household_dynamics_conserve_money() {
+    let profile = household_dynamics();
+    for kind in MARKETS {
+        let plan = compile(&with_market(profile.clone(), kind));
+        let acc = run_checked(&plan, 9, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
     }
 }

@@ -480,6 +480,12 @@ fn state_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) {
         if o.credits > 0.0 {
             note.push_str(&format!(", less credits of {}", usd(o.credits)));
         }
+        if o.recapture > 0.0 {
+            note.push_str(&format!(
+                ", including {} taken back from the lower brackets (high-income recapture)",
+                usd(o.recapture)
+            ));
+        }
         if o.surtax > 0.0 {
             note.push_str(&format!(", plus investment surtax of {}", usd(o.surtax)));
         }
@@ -509,6 +515,12 @@ fn state_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) {
             "On long-term gains above {}",
             usd(st.capital_gains_excise_deduction)
         ),
+    );
+    lines.push_nonzero(
+        "state_payroll_tax",
+        &format!("{name} disability insurance"),
+        o.payroll,
+        format!("{} of wages, no wage cap", pct(st.sdi_rate)),
     );
     lines.push_nonzero(
         "local_income_tax",

@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::When;
+use super::{CategoryInflation, RentGrowth, Seasonality, Vehicle, When};
 
 /// The household budget and the rules that shape spending over time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -21,13 +21,47 @@ pub struct Spending {
     /// separately and rises.
     pub retirement_smile: bool,
     /// Irregular unplanned expenses (car repairs, a new roof, helping family) drawn at
-    /// random. "typical" averages roughly 3% of annual spending.
+    /// random. "typical" averages roughly 3% of annual spending. "detailed" draws
+    /// separate shock types (home repair scaling with the value of the home you own,
+    /// car repair scaling with transport spending and vehicles, medical-adjacent costs,
+    /// family emergencies) with heavy-tailed sizes, and a bad year makes another shock
+    /// more likely. Like the other levels it adds variance, not cost: the expected cost
+    /// of the car, medical and family types is taken out of the budget, and the expected
+    /// cost of home repairs (about 0.37% of the home's value a year) out of the home's
+    /// `maintenance_rate`.
     pub shocks: ShockLevel,
     /// How health insurance and medical costs are handled.
     pub healthcare: Healthcare,
     /// After one partner dies, household spending is multiplied by this factor.
     /// 0.7 means a survivor spends 70% of what the couple did.
     pub survivor_factor: f64,
+    /// Vehicles replaced on a cycle. Each adds a lumpy purchase every
+    /// `replace_every_years` (with a small random jitter) instead of a smooth cost.
+    /// Leave the purchase and depreciation of these vehicles out of the Transport
+    /// budget lines (keep fuel, insurance and maintenance) or they are counted twice.
+    /// A household that retires when funded counts their average yearly cost.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub vehicles: Vec<Vehicle>,
+    /// Spread each budget line's annual amount unevenly over the months (holiday
+    /// December, summer travel, winter heating). "off" (the default) spends it evenly.
+    /// The annual total does not change.
+    #[serde(skip_serializing_if = "super::spending_ext::is_default")]
+    pub seasonality: Seasonality,
+    /// Give food, utilities, transport, rent, healthcare and education lines their own
+    /// persistent price drift against CPI. "off" (the default) grows every line with CPI.
+    #[serde(skip_serializing_if = "super::spending_ext::is_default")]
+    pub category_inflation: CategoryInflation,
+    /// Fraction of discretionary (non-essential) spending cut while an earner is in an
+    /// unemployment spell, from 0 to 1. The cut phases in over three months and is
+    /// restored over three months on re-employment. 0 (the default) changes nothing.
+    /// Ganong and Noel (2019, American Economic Review), using bank-account data, find
+    /// nondurable spending falls about 6% when unemployment begins, holds while
+    /// benefits last and falls further when they run out (a further 13% in the 2017
+    /// draft of the paper). If discretionary lines are about half of the budget, a 6%
+    /// to 12% fall in total spending is a cut of roughly 0.1 to 0.25 of them, so 0.15 is
+    /// a reasonable choice.
+    #[serde(skip_serializing_if = "super::spending_ext::is_zero")]
+    pub unemployment_cut: f64,
 }
 
 impl Default for Spending {
@@ -39,6 +73,10 @@ impl Default for Spending {
             shocks: ShockLevel::Typical,
             healthcare: Healthcare::default(),
             survivor_factor: 0.7,
+            vehicles: Vec::new(),
+            seasonality: Seasonality::Off,
+            category_inflation: CategoryInflation::Off,
+            unemployment_cut: 0.0,
         }
     }
 }
@@ -54,6 +92,9 @@ pub enum ShockLevel {
     Typical,
     /// Larger and more frequent surprises, averaging around 6% of annual spending.
     High,
+    /// Four kinds of surprise sized from what the household owns and spends, with
+    /// heavy tails and clustering (see `spending.shocks`).
+    Detailed,
 }
 
 /// Health insurance and medical costs.
@@ -71,6 +112,43 @@ pub struct Healthcare {
     pub long_term_care: bool,
     /// Plan generosity, which trades premiums against out-of-pocket costs.
     pub quality: PlanTier,
+    /// Charge each child the household's health-insurance premiums and out-of-pocket
+    /// costs, by the household's coverage phase: the employer family-tier contribution
+    /// while a parent has employer cover, COBRA at the family price, or ACA marketplace
+    /// premiums at the child rates of the age curve (at most three children under 21
+    /// are charged, the ACA rating rule) that also count toward the benchmark premium
+    /// and the premium tax credit. When on, the health-care share of the modelled child
+    /// cost is dropped so health is not counted twice. Off (the default): children
+    /// carry no premiums beyond that share. Only applies to `mode` "modeled".
+    #[serde(skip_serializing_if = "is_false")]
+    pub cover_children: bool,
+    /// Age at which a child leaves the parents' health plan, 26 by default (the ACA
+    /// dependent-coverage age). Used only when `cover_children` is on.
+    #[serde(skip_serializing_if = "is_default_coverage_end_age")]
+    pub children_coverage_end_age: f64,
+    /// Medicaid as the payer of last resort for long-term care. Off (the default):
+    /// care is paid privately until savings run out. On: once countable savings are
+    /// spent down to the asset limit ($2,000), Medicaid pays for care; the person
+    /// pays their income less a small allowance, a spouse at home keeps part of the
+    /// savings and enough income to live on, and after both have died the state
+    /// recovers what it paid from the estate. National default rules; states vary.
+    #[serde(skip_serializing_if = "is_false")]
+    pub medicaid: bool,
+    /// True: when one partner needs paid care at home (a long-term care episode of
+    /// home care), the other partner, if at home and not in care themselves,
+    /// provides half of the hours, halving the bill, and a partner still working
+    /// may cut their hours or stop working (15% and 11% of working caregivers do,
+    /// AARP and NAC 2020). False (the default): all care is paid.
+    #[serde(skip_serializing_if = "is_false")]
+    pub spousal_care: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn is_default_coverage_end_age(v: &f64) -> bool {
+    *v == 26.0
 }
 
 impl Default for Healthcare {
@@ -80,6 +158,10 @@ impl Default for Healthcare {
             early_retirement: EarlyRetirementCoverage::Aca,
             long_term_care: true,
             quality: PlanTier::Silver,
+            cover_children: false,
+            children_coverage_end_age: 26.0,
+            medicaid: false,
+            spousal_care: false,
         }
     }
 }
@@ -155,6 +237,10 @@ pub struct BudgetItem {
     /// If the line belongs to one person (0 or 1) it stops when that person dies and
     /// does not start before they join the household. Leave empty for shared spending.
     pub owner: Option<usize>,
+    /// "fixed" (default): inflation plus `real_growth`. "market": a rent line follows
+    /// the path's simulated local rent market instead (rent category only).
+    #[serde(skip_serializing_if = "super::housing_realism::is_default")]
+    pub rent_growth: RentGrowth,
 }
 
 impl Default for BudgetItem {
@@ -171,6 +257,7 @@ impl Default for BudgetItem {
             end: None,
             in_retirement: RetirementChange::Same,
             owner: None,
+            rent_growth: RentGrowth::Fixed,
         }
     }
 }

@@ -9,6 +9,8 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::behavior::{DistressRules, InvestorBehavior};
+
 /// Number of asset classes. Balances and returns are `[f64; N_ASSETS]` indexed by
 /// [`AssetClass::index`].
 pub const N_ASSETS: usize = 9;
@@ -289,6 +291,35 @@ pub struct PortfolioPolicy {
     pub custom_asset: Option<CustomAsset>,
     /// Risk of the "single_stock" asset class (employer stock or a concentrated holding).
     pub single_stock: SingleStock,
+    /// Harvest tax losses in the taxable account: when a holding stands 5% or more
+    /// below its cost basis (and the loss is at least $1,000 in today's dollars), sell
+    /// it and buy a similar fund of the same asset class, so the portfolio stays
+    /// invested and the wash-sale rule is avoided. Basis resets to the lower value, the
+    /// loss offsets gains and up to $3,000 a year of other income, and any excess is
+    /// carried forward. It defers tax rather than removing it: the lower basis means
+    /// a larger gain when the holding is finally sold. No trading costs or tracking
+    /// difference are charged. Off by default.
+    #[serde(skip_serializing_if = "is_false")]
+    pub tax_loss_harvesting: bool,
+    /// How the household reacts to a stock-market crash: disciplined (the default)
+    /// or prone to selling stocks after a deep fall.
+    #[serde(skip_serializing_if = "InvestorBehavior::is_disciplined")]
+    pub behavior: InvestorBehavior,
+    /// Pause retirement saving in months of financial distress (paying
+    /// early-withdrawal penalties, cutting essentials or carrying high-interest
+    /// debt; being short of the emergency fund alone is not distress): payroll
+    /// deferrals drop to what earns the employer match and the surplus stays in
+    /// cash or pays the debt. Default false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pause_deferrals_in_distress: bool,
+    /// What a pause keeps and what counts as high-interest debt (used only with
+    /// `pause_deferrals_in_distress`).
+    #[serde(skip_serializing_if = "DistressRules::is_default")]
+    pub distress: DistressRules,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Default for PortfolioPolicy {
@@ -304,6 +335,10 @@ impl Default for PortfolioPolicy {
             retirement_cash_years: 0.0,
             custom_asset: None,
             single_stock: SingleStock::default(),
+            tax_loss_harvesting: false,
+            behavior: InvestorBehavior::Disciplined,
+            pause_deferrals_in_distress: false,
+            distress: DistressRules::default(),
         }
     }
 }

@@ -73,15 +73,37 @@ impl State {
         cost_fraction: f64,
         then_rent: f64,
     ) -> f64 {
+        self.sell_slot_discounted(plan, t, slot, cost_fraction, then_rent, 1.0)
+    }
+
+    /// [`State::sell_slot`] at `price_factor` times the market price (slow sales:
+    /// one less the discount of a weak market).
+    pub(crate) fn sell_slot_discounted(
+        &mut self,
+        plan: &Plan,
+        t: usize,
+        slot: usize,
+        cost_fraction: f64,
+        then_rent: f64,
+        price_factor: f64,
+    ) -> f64 {
         let before = self.props[slot];
         let exclusion = plan.home_exclusion[self.filing.index()];
-        let sale = plan.props[slot]
-            .model
-            .sell(&mut self.props[slot], t, cost_fraction, exclusion);
-        if sale.net_proceeds >= 0.0 {
-            self.recv(YearSeries::PropertySale, sale.net_proceeds);
+        let sale = plan.props[slot].model.sell_discounted(
+            &mut self.props[slot],
+            t,
+            cost_fraction,
+            exclusion,
+            price_factor,
+        );
+        let mut net = sale.net_proceeds;
+        if plan.hd.lines {
+            net = self.hd_repay_at_sale(slot, net);
+        }
+        if net >= 0.0 {
+            self.recv(YearSeries::PropertySale, net);
         } else {
-            self.spend(YearSeries::SpendOneOff, -sale.net_proceeds);
+            self.spend(YearSeries::SpendOneOff, -net);
         }
         if self.check {
             self.chk_prop_flow -= before.value;
@@ -100,7 +122,7 @@ impl State {
         }
         self.budget_dirty = true;
         self.req_dirty = true;
-        sale.net_proceeds
+        net
     }
 
     /// Savings are gone and this month cannot be paid: sells property, the least
@@ -120,7 +142,10 @@ impl State {
                 if !st.owned || order != pass {
                     continue;
                 }
-                let net = st.value * (1.0 - LAST_RESORT_SELLING_COST) - st.mortgage_balance();
+                let mut net = st.value * (1.0 - LAST_RESORT_SELLING_COST) - st.mortgage_balance();
+                if plan.hd.lines {
+                    net -= self.hd.lien(slot);
+                }
                 if net <= 0.0 {
                     continue;
                 }
@@ -135,6 +160,16 @@ impl State {
                 } else {
                     0.0
                 };
+                if plan.hx.liquidity {
+                    // The sale takes months: list it, and count what it will bring
+                    // against the shortfall so that no more is listed than needed.
+                    self.hx_list_sale(plan, t, slot, LAST_RESORT_SELLING_COST, rent, true);
+                    missing -= net;
+                    if missing <= 0.0 {
+                        return;
+                    }
+                    continue;
+                }
                 let got = self.sell_slot(plan, t, slot, LAST_RESORT_SELLING_COST, rent);
                 if self.home_sale_month == i32::MAX {
                     self.home_sale_month = t as i32;
@@ -217,6 +252,9 @@ impl State {
                 if !self.props[slot].owned {
                     // Not bought yet (the purchase was postponed): wait for it.
                     return self.events[e].retries >= PURCHASE_RETRY_MONTHS;
+                }
+                if self.hx_list_sale(plan, t, slot, *cost_fraction, *then_rent, false) {
+                    return true;
                 }
                 let net = self.sell_slot(plan, t, slot, *cost_fraction, *then_rent);
                 self.event(now, TraceEventKind::SoldHome, Some(net / price), || {
@@ -359,9 +397,13 @@ impl State {
                         jp.model.start_break(&mut rt.st, *months, *fraction);
                     }
                 }
-                self.event(now, TraceEventKind::CareerBreak, None, || {
-                    format!("{} ({} months)", ev.name, months)
-                });
+                // Not logged for a partner who has left the household (a divorce):
+                // their work is no longer the household's.
+                if !self.dynamics.left.get(*person).is_some_and(|l| *l) {
+                    self.event(now, TraceEventKind::CareerBreak, None, || {
+                        format!("{} ({} months)", ev.name, months)
+                    });
+                }
             }
             EvKind::SpendingChange { target, change } => {
                 let selected = |i: usize| match *target {
@@ -412,6 +454,14 @@ impl State {
                     }
                 }
                 self.event(now, TraceEventKind::LifeEvent, None, || ev.name.clone());
+            }
+            EvKind::Divorce(terms) => {
+                let terms = *terms;
+                if !self.divorce(plan, &terms, &ev.name, price, t) {
+                    self.event(now, TraceEventKind::LifeEvent, None, || {
+                        format!("{}: no partner in the household", ev.name)
+                    });
+                }
             }
         }
         true

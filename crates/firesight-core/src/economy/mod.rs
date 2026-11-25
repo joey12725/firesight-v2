@@ -80,12 +80,19 @@
 //!
 //! See [`EconomyModel::apply_stress`].
 
+mod bonds;
+mod episodes;
+mod fat_tailed;
 mod fit;
+mod income_yields;
+#[cfg(test)]
+mod realism_tests;
 mod regime;
 mod sampler;
 mod stress;
 #[cfg(test)]
 mod tests;
+mod valuation;
 
 use std::sync::{Arc, OnceLock};
 
@@ -94,14 +101,21 @@ use serde_json::Value;
 use crate::data::{Data, History};
 use crate::math;
 use crate::model::{
-    AssetClass, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock, YearMonth,
-    N_ASSETS,
+    AssetClass, BondPricing, CustomAsset, MarketKind, MarketModel, PortfolioPolicy, SingleStock,
+    YearMonth, N_ASSETS,
 };
 use crate::rng::Rng;
 
 use regime::{LognormalParams, LongRun, RegimeParams};
 use sampler::ShockTable;
 
+pub use episodes::{episode_first_month, episode_months};
+pub use fat_tailed::{
+    FAT_TAIL_ARCH, FAT_TAIL_DOF, FAT_TAIL_GARCH, FAT_TAIL_MIXING_CAP, FAT_TAIL_VARIANCE_CAP,
+};
+pub use income_yields::{
+    DIVIDEND_ADJUSTMENT_ANNUAL, DIVIDEND_YIELD_RANGE, RECESSION_DIVIDEND_CUT_ANNUAL,
+};
 pub use stress::{ResolvedStress, CRASH_MONTHS, LOST_DECADE_MONTHS};
 
 // ---------------------------------------------------------------------------------
@@ -226,6 +240,13 @@ pub struct EconomyPath {
     pub home_national: Vec<f64>,
     /// 1 if month `t` is in a recession (drives layoff hazard), else 0.
     pub recession: Vec<u8>,
+    /// With `market.valuation`: log of the CAPE of US stocks over its normal level
+    /// at the end of month `t`. Empty when valuation is off.
+    pub valuation_gap: Vec<f64>,
+    /// With `market.dynamic_yields`: the dividend yields of US and international
+    /// stocks in month `t`, annualised. Empty when off (the constant
+    /// [`DIVIDEND_YIELD`] applies).
+    pub dividend_yields: Vec<[f64; 2]>,
 }
 
 impl EconomyPath {
@@ -305,6 +326,11 @@ impl EconomyPath {
         let mut out = DIVIDEND_YIELD;
         out[AssetClass::Bonds.index()] = self.long_yield[t].max(0.0);
         out[AssetClass::Cash.index()] = self.tbill[t].max(0.0);
+        if let Some(&[us, intl]) = self.dividend_yields.get(t) {
+            out[AssetClass::UsStocks.index()] = us;
+            out[AssetClass::SingleStock.index()] = us;
+            out[AssetClass::IntlStocks.index()] = intl;
+        }
         out
     }
 
@@ -336,6 +362,9 @@ pub struct EconomyStreams<'a> {
     pub market: &'a mut Rng,
     /// `Rng::stream(seed, path, Stream::Inflation)`.
     pub inflation: &'a mut Rng,
+    /// `Rng::stream(seed, path, Stream::MarketTails)`: drawn only by the fat-tailed
+    /// model.
+    pub tails: &'a mut Rng,
 }
 
 // ---------------------------------------------------------------------------------
@@ -491,6 +520,7 @@ enum Kind {
     Historical,
     Regime(Arc<RegimeParams>),
     Lognormal(Arc<LognormalParams>),
+    FatTailed(Arc<fat_tailed::FatTailedParams>),
 }
 
 /// The compiled scenario generator for one profile. Built once in `Plan::compile`.
@@ -506,6 +536,18 @@ pub struct EconomyModel {
     crypto_shock: Arc<ShockTable>,
     /// Sensitivity of each asset class to an equity move imposed by a stress overlay.
     stress_beta: [f64; N_ASSETS],
+    /// Duration and convexity tables, for overlays that move yields and for
+    /// `bond_pricing: from_yield`.
+    bonds: Arc<bonds::BondPricer>,
+    /// Block bootstrap with `bond_pricing: from_yield`: bond returns are repriced
+    /// from the path's yield after generation.
+    bonds_from_yield: bool,
+    /// `market.valuation`, compiled; `None` when off or for the historical replay.
+    valuation: Option<valuation::ValuationTilt>,
+    /// The record's months of the historical episodes, when a stress replays one.
+    episodes: Option<Arc<episodes::EpisodeTables>>,
+    /// `market.dynamic_yields`, compiled; `None` when off.
+    dividends: Option<income_yields::DividendModel>,
 }
 
 /// The tables and model pieces the per-month emit step needs, borrowed once per path.
@@ -917,6 +959,32 @@ impl HistBase {
     }
 }
 
+/// Paths and months of the simulation that estimates the regime model's mean real
+/// equity return for the valuation overlay (a standard error of about 0.05 points
+/// a year).
+const REGIME_ANCHOR_PATHS: u64 = 2000;
+const REGIME_ANCHOR_MONTHS: usize = 720;
+
+/// The regime model's mean monthly real log equity return before adjustments,
+/// computed once per process for the embedded data.
+fn regime_equity_anchor(p: &RegimeParams, embedded: bool) -> f64 {
+    static EMBEDDED: OnceLock<f64> = OnceLock::new();
+    let compute = || p.real_equity_log_mean(REGIME_ANCHOR_PATHS, REGIME_ANCHOR_MONTHS);
+    if embedded {
+        *EMBEDDED.get_or_init(compute)
+    } else {
+        compute()
+    }
+}
+
+/// The bond duration and convexity tables, built once per process.
+fn bond_pricer() -> Arc<bonds::BondPricer> {
+    static TABLES: OnceLock<Arc<bonds::BondPricer>> = OnceLock::new();
+    TABLES
+        .get_or_init(|| Arc::new(bonds::BondPricer::new()))
+        .clone()
+}
+
 /// The regime calibration of the embedded history, computed once per process.
 fn regime_params(data: &Data) -> Arc<RegimeParams> {
     static EMBEDDED: OnceLock<Arc<RegimeParams>> = OnceLock::new();
@@ -1029,6 +1097,12 @@ impl EconomyModel {
                 h,
                 &long_run_from_json(&data.actuarial),
             ))),
+            MarketKind::FatTailed => {
+                Kind::FatTailed(Arc::new(fat_tailed::FatTailedParams::calibrate(
+                    LognormalParams::calibrate(h, &long_run_from_json(&data.actuarial)),
+                    h,
+                )))
+            }
         };
         let adjust = Adjust::new(market);
 
@@ -1095,8 +1169,65 @@ impl EconomyModel {
             stock_shock: Arc::new(ShockTable::constant(1.0)),
             crypto_shock,
             stress_beta: [0.0; N_ASSETS],
+            bonds: bond_pricer(),
+            bonds_from_yield: matches!(market.kind, MarketKind::Bootstrap { .. })
+                && market.bond_pricing == BondPricing::FromYield,
+            valuation: None,
+            episodes: None,
+            dividends: None,
         };
-        model.with_asset_params(&SingleStock::default(), &CustomAsset::default())
+        let mut model = model.with_asset_params(&SingleStock::default(), &CustomAsset::default());
+        if market
+            .stress
+            .iter()
+            .any(|s| matches!(s, crate::model::Stress::HistoricalEpisode { .. }))
+        {
+            model.episodes = Some(Arc::new(episodes::EpisodeTables::new(h)));
+        }
+        if let Some(v) = &market.valuation {
+            let embedded = std::ptr::eq(data, Data::embedded());
+            model.valuation = model
+                .real_equity_log_mean(embedded)
+                .and_then(|m| valuation::ValuationTilt::new(v, m));
+        }
+        if market.dynamic_yields {
+            model.dividends = Some(model.dividend_model(h));
+        }
+        model
+    }
+
+    /// Mean monthly real log return of US equities in this model, adjustments
+    /// included: the anchor of the valuation overlay. `None` for the historical
+    /// replay, which the overlay does not apply to.
+    fn real_equity_log_mean(&self, data_is_embedded: bool) -> Option<f64> {
+        let adjust = math::ln(self.adjust.equity);
+        match &self.kind {
+            Kind::Bootstrap { .. } => {
+                let n = self.rows.len().max(1) as f64;
+                let sum: f64 = self
+                    .rows
+                    .iter()
+                    .map(|r| math::ln_1p(r.m.eq) - math::ln_1p(r.m.cpi))
+                    .sum();
+                Some(sum / n)
+            }
+            Kind::Historical => None,
+            Kind::Regime(p) => Some(regime_equity_anchor(p, data_is_embedded) + adjust),
+            Kind::Lognormal(p) => Some(p.real_equity_log_mean() + adjust),
+            Kind::FatTailed(p) => Some(p.ln.real_equity_log_mean() + adjust),
+        }
+    }
+
+    /// `(starting CAPE, normal CAPE, expected annual shortfall of the US equity log
+    /// return over the first ten years)` when the valuation overlay is on.
+    pub fn valuation_outlook(&self) -> Option<(f64, f64, f64)> {
+        self.valuation
+            .map(|v| (v.starting_cape, v.fair_cape, v.expected_tilt_annual(120)))
+    }
+
+    /// Whether this is the fat-tailed parametric model.
+    pub fn is_fat_tailed(&self) -> bool {
+        matches!(self.kind, Kind::FatTailed(_))
     }
 
     /// Applies the profile's single-stock and custom-asset parameters. Call after
@@ -1194,8 +1325,9 @@ impl EconomyModel {
     /// Allocation-free once `out` has capacity for `months`.
     ///
     /// Draws per month from the `Market` stream: bootstrap 8, historical 7, regime
-    /// 17, lognormal 12 (plus one at the start of a lognormal path). From the `Inflation` stream: 1 in the regime and lognormal
-    /// models, none otherwise.
+    /// 17, lognormal and fat-tailed 12 (plus one at the start of a path). From the `Inflation` stream: 1 in the regime, lognormal
+    /// and fat-tailed models, none otherwise. From `MarketTails`: 3 in the fat-tailed model,
+    /// none otherwise.
     pub fn generate(
         &self,
         streams: &mut EconomyStreams<'_>,
@@ -1286,6 +1418,64 @@ impl EconomyModel {
                     emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
                 }
             }
+            Kind::FatTailed(p) => {
+                let mut state = p.start(rng);
+                for t in 0..months {
+                    let core = p.step(
+                        &mut state,
+                        rng,
+                        streams.inflation,
+                        streams.tails,
+                        emit.normal,
+                    );
+                    let m = self.assets.month(&self.adjust, &core);
+                    emit.put(&mut sink, t, &m, m.intl, m.gold, rng);
+                }
+            }
+        }
+        if self.bonds_from_yield {
+            // Block bootstrap only. The path starts at today's yield, so month 0
+            // earns its carry and no price change.
+            let y_before = self.base.rate_now.0 + self.adjust.inflation_annual;
+            self.bonds.reprice(out, 0, months, y_before);
+        }
+        if let Some(v) = &self.valuation {
+            v.apply(out, &self.stress_beta);
+        }
+        self.refresh_dividends(out);
+    }
+
+    /// The dividend model of `market.dynamic_yields`: the long-run mean monthly
+    /// log returns of US and international stocks (the record's rows with this
+    /// model's adjustments) and the record's share of recession months.
+    fn dividend_model(&self, h: &crate::data::History) -> income_yields::DividendModel {
+        let n = self.base.rows.len().max(1) as f64;
+        let adjust = math::ln(self.adjust.equity) + math::ln(self.adjust.inflation);
+        let mean = |f: fn(&Core) -> f64| -> f64 {
+            self.base
+                .rows
+                .iter()
+                .map(|r| math::ln_1p(f(r)))
+                .sum::<f64>()
+                / n
+                + adjust
+        };
+        let share = h.recession.iter().map(|&r| f64::from(r)).sum::<f64>()
+            / h.recession.len().max(1) as f64;
+        income_yields::DividendModel::new(
+            [mean(|r| r.eq), mean(|r| r.intl)],
+            share,
+            self.valuation.map(|v| v.gap0),
+        )
+    }
+
+    /// Recomputes the path's dividend yields after its returns changed (generation
+    /// or a stress overlay); clears them when `dynamic_yields` is off.
+    #[inline]
+    pub(super) fn refresh_dividends(&self, out: &mut EconomyPath) {
+        match &self.dividends {
+            Some(d) => d.fill(out),
+            None => out.dividend_yields.clear(),
         }
         *streams.market = market;
         *streams.inflation = inflation;

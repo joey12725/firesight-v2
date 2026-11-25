@@ -1,10 +1,11 @@
-import type { BudgetItem, Category, Spending } from '@/engine/types';
+import type { BudgetItem, Category, Profile, Spending } from '@/engine/types';
 import { at, join } from '@/state/pointer';
 import { Disclosure, money, moneyCompact } from '@/ui';
-import { ChoiceField, Group, MoneyField, OwnerField, PercentField, Row, SegmentField, SliderField, ToggleField } from '../fields';
+import { ChoiceField, Group, MoneyField, NumField, Optional, OwnerField, PercentField, Realism, Row, SegmentField, SliderField, ToggleField } from '../fields';
 import { useProfile } from '../hooks';
 import { CATEGORIES, FREQUENCIES, annualAmount, annualInRetirement, budgetTotals, categoryLabel, frequency } from '../labels';
-import { AddButton, Item } from '../Section';
+import { MAKE, healthcareRealism, spendingRealism } from '../realism';
+import { AddButton, Item, ItemList } from '../Section';
 import { useAdd } from '../useAdd';
 import { WhenField } from '../WhenField';
 
@@ -68,6 +69,16 @@ function BudgetItemRow({ item, index }: { item: BudgetItem; index: number }) {
             <PercentField path={`${path}/real_growth`} label="Growth above inflation" nullable placeholder="Default" />
             <OwnerField path={`${path}/owner`} label="Whose expense" nullable />
           </Row>
+          {item.category === 'rent' && (
+            <SegmentField
+              path={`${path}/rent_growth`}
+              label="Rent rises with"
+              options={[
+                { value: 'fixed', label: 'Inflation plus growth' },
+                { value: 'market', label: 'The local rent market' },
+              ]}
+            />
+          )}
         </div>
       </Disclosure>
     </Item>
@@ -140,9 +151,58 @@ function HealthcareFields({ healthcare }: { healthcare: Spending['healthcare'] }
             )}
           </Row>
           <ToggleField path={`${p}/long_term_care`} label="Include the risk of long-term care" />
+          <Realism summary="Children’s cover, Medicaid and care at home" on={healthcareRealism(healthcare)}>
+            <ToggleField path={`${p}/cover_children`} label="Children are on the health plan" />
+            {healthcare.cover_children && <NumField path={`${p}/children_coverage_end_age`} label="Until age" kind="years" min={18} max={26} />}
+            <ToggleField path={`${p}/medicaid`} label="Medicaid pays for care once savings are spent" />
+            <ToggleField path={`${p}/spousal_care`} label="A partner provides part of the care at home" />
+          </Realism>
         </>
       )}
     </Group>
+  );
+}
+
+type Vehicle = Profile['spending']['vehicles'][number];
+
+function VehicleItem({ vehicle, index }: { vehicle: Vehicle; index: number }) {
+  const path = join('/spending/vehicles', at(vehicle, index));
+  return (
+    <Item path={path} fallbackName="Vehicle" figure={moneyCompact(vehicle.price)} detail={`every ${vehicle.replace_every_years} yr`}>
+      <Row>
+        <MoneyField path={`${path}/price`} label="Replacement price" />
+        <PercentField path={`${path}/trade_in_fraction`} label="Covered by the trade-in" />
+      </Row>
+      <Row>
+        <NumField path={`${path}/replace_every_years`} label="Replaced every" step={1} suffix="yrs" />
+        <NumField path={`${path}/age_years`} label="Age now" step={1} suffix="yrs" />
+      </Row>
+      <Optional path={`${path}/financing`} label="Financed with a loan" present={vehicle.financing !== null} make={MAKE.vehicleFinancing}>
+        <Row cols={3}>
+          <PercentField path={`${path}/financing/down_fraction`} label="Paid up front" />
+          <PercentField path={`${path}/financing/rate`} label="Rate" />
+          <NumField path={`${path}/financing/term_months`} label="Term" kind="months" suffix="mo" />
+        </Row>
+      </Optional>
+      <Row>
+        <WhenField path={`${path}/end`} label="Stop replacing" unsetLabel="Never" />
+        <OwnerField path={`${path}/owner`} label="Whose vehicle" nullable />
+      </Row>
+    </Item>
+  );
+}
+
+function Vehicles({ vehicles }: { vehicles: Vehicle[] }) {
+  const add = useAdd('/spending/vehicles');
+  return (
+    <Realism summary="Vehicles replaced on a cycle" on={vehicles.length}>
+      <ItemList empty="No vehicles. Add one to buy a replacement every few years instead of spreading its cost evenly; leave its purchase out of the Transport lines.">
+        {vehicles.map((v, i) => (
+          <VehicleItem key={v.id || i} vehicle={v} index={i} />
+        ))}
+      </ItemList>
+      <AddButton label="Add a vehicle" onAdd={() => add('Car', MAKE.vehicle())} />
+    </Realism>
   );
 }
 
@@ -179,18 +239,37 @@ export function SpendingSection() {
       <Group title="How spending changes">
         <SliderField path="/spending/lifestyle_creep" label="Lifestyle creep" kind="percent" min={0} max={1} step={0.05} hint="Share of each real raise that turns into more spending." />
         <ToggleField path="/spending/retirement_smile" label="Spending declines gently through retirement" />
-        <Row>
+        <SegmentField
+          path="/spending/shocks"
+          label="Unplanned expenses"
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'typical', label: 'Typical' },
+            { value: 'high', label: 'High' },
+            { value: 'detailed', label: 'Detailed' },
+          ]}
+        />
+        <PercentField path="/spending/survivor_factor" label="Survivor's spending" />
+        <Realism summary="Seasons, personal inflation and job loss" on={spendingRealism(profile.spending)}>
           <SegmentField
-            path="/spending/shocks"
-            label="Unplanned expenses"
+            path="/spending/seasonality"
+            label="Spending through the year"
             options={[
-              { value: 'off', label: 'Off' },
-              { value: 'typical', label: 'Typical' },
-              { value: 'high', label: 'High' },
+              { value: 'off', label: 'Even months' },
+              { value: 'typical', label: 'Typical seasons' },
             ]}
           />
-          <PercentField path="/spending/survivor_factor" label="Survivor's spending" />
-        </Row>
+          <SegmentField
+            path="/spending/category_inflation"
+            label="Prices of each category"
+            options={[
+              { value: 'off', label: 'Follow inflation' },
+              { value: 'stochastic', label: 'Drift on their own' },
+            ]}
+          />
+          <SliderField path="/spending/unemployment_cut" label="Discretionary spending cut while out of work" kind="percent" min={0} max={0.5} step={0.01} />
+        </Realism>
+        <Vehicles vehicles={profile.spending.vehicles} />
       </Group>
 
       <HealthcareFields healthcare={profile.spending.healthcare} />

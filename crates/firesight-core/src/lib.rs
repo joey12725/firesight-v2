@@ -14,7 +14,7 @@
 //! | [`rng`], [`math`], [`data`] | deterministic random streams and elementary functions, embedded datasets |
 //! | [`economy`] | joint market, rate, inflation and home-price paths; stress overlays |
 //! | [`tax`], [`benefits`], [`health`] | the annual return; Social Security; mortality, health and care costs |
-//! | [`career`], [`housing`] | jobs and equity compensation; properties and mortgages |
+//! | [`career`], [`housing`], [`home_equity`] | jobs and equity compensation; properties and mortgages; borrowing against a home |
 //! | [`accounts`], [`decumulation`] | tax buckets and their mechanics; spending rules and the withdrawal plan |
 //! | [`sim`] | `Plan::compile` and the monthly loop that ties the modules together |
 //! | [`stats`] | recorders, the mergeable `Accumulator`, `Summary`, `Comparison`, `PathTrace` |
@@ -23,15 +23,23 @@
 pub mod accounts;
 pub mod benefits;
 pub mod career;
+pub mod career_realism;
 pub mod data;
 pub mod decumulation;
 pub mod economy;
 pub mod health;
+pub mod health_states;
+pub mod home_equity;
 pub mod housing;
 pub mod legacy;
+pub mod longevity_links;
+pub mod ltc_insurance;
 pub mod math;
+pub mod medicaid;
 pub mod model;
 pub mod patch;
+pub mod policy;
+pub mod rental_market;
 pub mod rng;
 pub mod scenario;
 pub mod sim;

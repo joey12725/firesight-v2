@@ -607,7 +607,7 @@ mod tests {
         let report = parse(&api::validate(&api::default_profile(TODAY), TODAY));
         assert_eq!(report["errors"].as_array().unwrap().len(), 0, "{report}");
         let examples = parse(&api::example_profiles(TODAY));
-        assert_eq!(examples.as_array().unwrap().len(), 3);
+        assert_eq!(examples.as_array().unwrap().len(), 4);
         for ex in examples.as_array().unwrap() {
             let report = parse(&api::validate(&ex["profile"].to_string(), TODAY));
             assert_eq!(report["errors"].as_array().unwrap().len(), 0, "{report}");

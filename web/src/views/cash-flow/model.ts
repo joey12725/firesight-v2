@@ -221,7 +221,10 @@ export function cashFlowModel(summary: Summary, options: { abroad?: boolean } = 
 
   const inRange = (i: number) => i >= flowStart && i <= end;
   const taxShare = totalIn.map((t, i) => (inRange(i) && t > 0 ? (taxTotal[i] ?? 0) / t : null));
-  const savingRate = gross.map((g, i) => (inRange(i) && g > 0 && (workingShare[i] ?? 0) >= 0.25 ? (savingTotal[i] ?? 0) / g : null));
+  // Saving out of income: the proceeds of a property sale that are banked (a planned downsizing puts a house's worth
+  // into the accounts in one year) are not saving, so they are taken out before the rate is formed.
+  const propertyCash = s('property_sale');
+  const savingRate = gross.map((g, i) => (inRange(i) && g > 0 && (workingShare[i] ?? 0) >= 0.25 ? Math.max(0, (savingTotal[i] ?? 0) - (propertyCash[i] ?? 0)) / g : null));
   const withdrawalRate = withdrawTotal.map((w, i) => {
     const before = investable[i - 1];
     if (!inRange(i) || before === undefined || before <= 0 || 1 - (workingShare[i] ?? 0) < 0.25) return null;

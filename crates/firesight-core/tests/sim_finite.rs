@@ -1,6 +1,7 @@
 //! Every demo household under every market model: nothing a recorder is handed is
 //! ever NaN or infinite, in the aggregate or in a trace.
 
+mod behavior_profiles;
 mod common;
 
 use common::*;
@@ -102,8 +103,14 @@ impl Recorder for Checked {
 #[test]
 fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
     for example in Profile::examples(START) {
-        for kind in MARKETS {
-            let plan = compile(&with_market(example.profile.clone(), kind));
+        // Each demo as shipped and with the opt-in health, longevity and care
+        // features on.
+        for (kind, profile) in MARKETS
+            .iter()
+            .map(|&k| (k, example.profile.clone()))
+            .chain([(MARKETS[0], care::all_care(example.profile.clone()))])
+        {
+            let plan = compile(&with_market(profile, kind));
             let mut ws = Workspace::new(&plan);
             let mut rec = Checked {
                 inner: plan.new_accumulator(),
@@ -146,5 +153,140 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
             assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
             assert!(trace.tax_returns.len() >= 2);
         }
+    }
+}
+
+#[test]
+fn housing_decisions_are_finite_under_every_market_model() {
+    for example in Profile::examples(START) {
+        for (factor, reverse_mortgage) in [(1.0, false), (1.6, false), (1.6, true)] {
+            let spent = overspending(example.profile.clone(), factor);
+            let profile = if reverse_mortgage {
+                with_housing_decisions_hecm(spent)
+            } else {
+                with_housing_decisions(spent)
+            };
+            for kind in MARKETS {
+                let plan = compile(&with_market(profile.clone(), kind));
+                let mut ws = Workspace::new(&plan);
+                let mut rec = Checked {
+                    inner: plan.new_accumulator(),
+                    path: 0,
+                    months: 0,
+                };
+                for i in 0..400 {
+                    sim::run_path(&plan, 23, i, &mut ws, &mut rec);
+                }
+                let summary = plan.summarize(&rec.inner);
+                let json = serde_json::to_string(&summary).unwrap();
+                assert!(!json.contains("NaN") && !json.contains("Infinity"));
+                let mut detail = Checked {
+                    inner: plan.new_accumulator(),
+                    path: 0,
+                    months: 1,
+                };
+                for i in 0..10 {
+                    sim::run_path(&plan, 23, i, &mut ws, &mut detail);
+                }
+            }
+        }
+    }
+}
+
+#[path = "realism_profiles/mod.rs"]
+mod realism_profiles;
+
+#[test]
+fn optional_market_refinements_are_finite() {
+    for example in Profile::examples(START) {
+        for (label, profile) in realism_profiles::variants(&example.profile) {
+            let plan = compile(&profile);
+            let mut ws = Workspace::new(&plan);
+            let mut rec = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 0,
+            };
+            for i in 0..500 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut rec);
+            }
+            let summary = plan.summarize(&rec.inner);
+            let json = serde_json::to_string(&summary).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{label}"
+            );
+            let mut detail = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 1,
+            };
+            for i in 0..10 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut detail);
+            }
+            let trace = sim::trace_path(&plan, 19, 2);
+            let json = serde_json::to_string(&trace).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{label}"
+            );
+        }
+    }
+}
+
+#[test]
+fn household_behaviour_features_keep_every_number_finite() {
+    for profile in behavior_profiles::behavior_profiles() {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let mut ws = Workspace::new(&plan);
+            let mut rec = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 0,
+            };
+            for i in 0..300 {
+                sim::run_path(&plan, 19, i, &mut ws, &mut rec);
+            }
+            let summary = plan.summarize(&rec.inner);
+            let json = serde_json::to_string(&summary).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{}",
+                profile.name
+            );
+            let trace = sim::trace_path(&plan, 19, 1);
+            let json = serde_json::to_string(&trace).unwrap();
+            assert!(
+                !json.contains("NaN") && !json.contains("Infinity"),
+                "{}",
+                profile.name
+            );
+        }
+    }
+}
+
+#[test]
+fn household_dynamics_are_finite() {
+    let plan = compile(&household_dynamics());
+    let mut rec = Checked {
+        inner: plan.new_accumulator(),
+        path: 0,
+        months: 0,
+    };
+    let mut ws = Workspace::new(&plan);
+    for i in 0..2000 {
+        sim::run_path(&plan, 17, i, &mut ws, &mut rec);
+    }
+    let summary = plan.summarize(&rec.inner);
+    let json = serde_json::to_string(&summary).unwrap();
+    assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
+    for i in 0..20 {
+        let trace = sim::trace_path(&plan, 17, i);
+        let json = serde_json::to_string(&trace).unwrap();
+        assert!(
+            !json.contains("NaN") && !json.contains("Infinity"),
+            "path {i}"
+        );
     }
 }

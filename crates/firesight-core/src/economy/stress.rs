@@ -1,7 +1,7 @@
 //! Stress overlays: deterministic rewrites of a generated path from a start month on.
 
 use crate::math;
-use crate::model::{AssetClass, N_ASSETS};
+use crate::model::{AssetClass, Episode, N_ASSETS};
 
 use super::{EconomyModel, EconomyPath};
 
@@ -67,13 +67,17 @@ pub enum ResolvedStress {
         months: usize,
         inflation: f64,
     },
+    /// The record's months of `episode` from `from_month` (`economy::episodes`).
+    HistoricalEpisode { from_month: usize, episode: Episode },
+    /// `months` of Japan-style stagnation from `from_month` (`economy::episodes`).
+    LostGeneration { from_month: usize, months: usize },
 }
 
 /// `r + beta * delta`, never below a total loss. A return of exactly -1.0 marks a
 /// collapse (a failed token or company) and is left alone: an imposed market move
 /// does not bring it back.
 #[inline]
-fn shifted(r: f64, beta: f64, delta: f64) -> f64 {
+pub(super) fn shifted(r: f64, beta: f64, delta: f64) -> f64 {
     if r <= -1.0 {
         return -1.0;
     }
@@ -98,6 +102,21 @@ impl EconomyModel {
                 months,
                 inflation,
             } => self.apply_stagflation(out, from_month, months, inflation),
+            ResolvedStress::HistoricalEpisode {
+                from_month,
+                episode,
+            } => self.apply_episode(out, from_month, episode),
+            ResolvedStress::LostGeneration { from_month, months } => {
+                self.apply_lost_generation(out, from_month, months)
+            }
+        }
+        if let Some(v) = &self.valuation {
+            if let Some((from, end)) = super::valuation::stress_window(stress) {
+                v.after_stress(out, from, end, &self.stress_beta);
+            }
+        }
+        if self.dividends.is_some() {
+            self.refresh_dividends(out);
         }
     }
 

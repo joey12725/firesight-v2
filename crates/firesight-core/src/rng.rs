@@ -69,6 +69,69 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Replacement-date jitter of one vehicle (`spending.vehicles`, index in the list).
+    Vehicle(usize),
+    /// Yearly innovations of the category price wedges (`spending.category_inflation`).
+    CategoryPrices,
+    /// Detailed irregular expenses (`spending.shocks = "detailed"`).
+    DetailedShocks,
+    /// Whether, when and how many: the arrival of one planned child (index into
+    /// `household.children`). Three draws per uncertain child per path.
+    ChildArrival(usize),
+    /// The path of college prices relative to CPI, shared by all children (60 draws
+    /// when any child has stochastic college costs).
+    CollegePrices,
+    /// Whether a child attends, for how many years and how much aid: three draws per
+    /// child with stochastic college costs (index into `household.children`).
+    ChildCollege(usize),
+    /// Whether, when and for how long an adult child needs support: three draws per
+    /// child with `adult_support` (index into `household.children`).
+    ChildSupport(usize),
+    /// Major-repair timing of one property (lumpy maintenance), per property slot.
+    Maintenance(usize),
+    /// The path's homeowner's-insurance premium index (drift and repricing jumps),
+    /// shared by every property with stochastic insurance growth.
+    InsuranceDrift,
+    /// The path's local rent market (market-rent budget lines).
+    RentMarket,
+    /// Time to close and discount of home sales (realistic housing liquidity).
+    Liquidity,
+    /// Variates of the career-realism extensions (`career_realism`): `kind` picks the
+    /// subsystem (0 job, 1 person, 2 self-employment income) and `index` the job,
+    /// person or income within it. Ids 0x1400_0000 and up are reserved for these.
+    CareerExt(u8, usize),
+    /// Which policy changes (a Social Security cut, a tax increase) happen on a path,
+    /// and from when: four uniforms per path, drawn only when `policy_risk` is set.
+    PolicyRisk,
+    /// Lenders' response to a downturn: whether home-equity lines freeze (drawn only
+    /// when `retirement.home_equity_borrowing` is a home-equity line).
+    HomeEquityCredit,
+    /// Tenants, market rent and repairs of one rental with realistic dynamics (index
+    /// into the plan's property table).
+    RentalMarket(usize),
+    /// Yearly health-state path of one person (`assumptions.health_model: states`).
+    HealthStates(usize),
+    /// Which member of a couple dies first in the linked-lifespan model, and the
+    /// timing of a death after bereavement (`couple_dependence: linked`).
+    CoupleLongevity,
+    /// Class-wide premium increases of long-term-care insurance.
+    LtcPremiumRates,
+    /// The Student-t mixing variables of the fat-tailed market model.
+    MarketTails,
+    /// How long a retired person's search for work lasts
+    /// (`retirement.return_to_work`), one per person.
+    ReturnToWork(usize),
+    /// Whether a panic-prone household sells in a fall (`portfolio.behavior`).
+    PanicSelling,
+    /// Whether a funded household works one more year
+    /// (`retirement.trigger.when_funded.one_more_year`).
+    OneMoreYear,
+    /// When a couple with `divorce_risk` on divorces.
+    Divorce,
+    /// A parent's lifetime and late-life care (by parent index).
+    Parent(usize),
+    /// Whether a working partner cuts back to care for the other at home.
+    SpousalCare,
 }
 
 impl Stream {
@@ -81,10 +144,36 @@ impl Stream {
             Stream::EquityComp => 3,
             Stream::Shocks => 4,
             Stream::Events => 5,
+            Stream::PolicyRisk => 1500,
+            Stream::HomeEquityCredit => 1600,
+            Stream::MarketTails => 1800,
+            Stream::PanicSelling => 1900,
+            Stream::OneMoreYear => 1901,
+            Stream::Divorce => 2000,
+            Stream::SpousalCare => 2001,
+            Stream::Parent(i) => 0x1a00_0000 + i as u64,
             Stream::Career(i) => 0x0100_0000 + i as u64,
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::Vehicle(i) => 0x1100_0000 + i as u64,
+            Stream::CategoryPrices => 1100,
+            Stream::DetailedShocks => 1101,
+            Stream::ChildArrival(i) => 0x1200_0000 + i as u64,
+            Stream::CollegePrices => 1200,
+            // The two share one per-index base: even ids for college, odd for support.
+            Stream::ChildCollege(i) => 0x1280_0000 + 2 * i as u64,
+            Stream::ChildSupport(i) => 0x1280_0000 + 2 * i as u64 + 1,
+            Stream::RentMarket => 1300,
+            Stream::Liquidity => 1301,
+            Stream::Maintenance(i) => 0x1300_0000 + i as u64,
+            Stream::InsuranceDrift => 1302,
+            Stream::CareerExt(kind, i) => 0x1400_0000 + (kind as u64) * 0x1_0000 + i as u64,
+            Stream::RentalMarket(i) => 0x1600_0000 + i as u64,
+            Stream::CoupleLongevity => 1700,
+            Stream::LtcPremiumRates => 1701,
+            Stream::HealthStates(i) => 0x1700_0000 + i as u64,
+            Stream::ReturnToWork(i) => 0x1900_0000 + i as u64,
         }
     }
 }
@@ -482,6 +571,43 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::Vehicle(0),
+            Stream::Vehicle(1),
+            Stream::CategoryPrices,
+            Stream::DetailedShocks,
+            Stream::ChildArrival(0),
+            Stream::ChildArrival(1),
+            Stream::CollegePrices,
+            Stream::ChildCollege(0),
+            Stream::ChildCollege(1),
+            Stream::ChildSupport(0),
+            Stream::ChildSupport(1),
+            Stream::Maintenance(0),
+            Stream::Maintenance(1),
+            Stream::InsuranceDrift,
+            Stream::RentMarket,
+            Stream::Liquidity,
+            Stream::CareerExt(0, 0),
+            Stream::CareerExt(0, 1),
+            Stream::CareerExt(1, 0),
+            Stream::CareerExt(2, 0),
+            Stream::PolicyRisk,
+            Stream::HomeEquityCredit,
+            Stream::RentalMarket(0),
+            Stream::RentalMarket(1),
+            Stream::HealthStates(0),
+            Stream::HealthStates(1),
+            Stream::CoupleLongevity,
+            Stream::LtcPremiumRates,
+            Stream::MarketTails,
+            Stream::ReturnToWork(0),
+            Stream::ReturnToWork(1),
+            Stream::PanicSelling,
+            Stream::OneMoreYear,
+            Stream::Divorce,
+            Stream::Parent(0),
+            Stream::Parent(1),
+            Stream::SpousalCare,
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

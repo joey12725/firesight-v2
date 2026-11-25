@@ -64,6 +64,7 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
   const extra = h.extra_spending_ratio.value;
   const cutYears = sp.years_below_90.value;
   const homeSold = h.home_sale_rate.value;
+  const medicaid = h.medicaid_rate?.value ?? 0;
   const interval = `${(success.lo * 100).toFixed(1)}% to ${(success.hi * 100).toFixed(1)}%, 95% sampling interval`;
   const cutNote = cutYears === null ? 'no retired years to measure' : cutYears < 0.005 ? 'never more than 10% under plan' : `under 90% of plan in ${Math.round(cutYears * 100)}% of retired years`;
   return (
@@ -101,7 +102,13 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
       <Figure
         testId="headline-short"
         label="Money runs short in"
-        note={short === 0 ? 'in no simulated life' : h.depletion_age.p50 === null ? 'of the simulated lives' : `typically around age ${Math.round(h.depletion_age.p50)}`}
+        note={
+          <>
+            {short === 0 ? 'in no simulated life' : h.depletion_age.p50 === null ? 'of the simulated lives' : `typically around age ${Math.round(h.depletion_age.p50)}`}
+            {/* Medicaid paying for care is counted apart from running short, so it is always shown beside it. */}
+            {medicaid >= 0.005 && <span data-testid="headline-medicaid">; in {ofHundred(medicaid).text} Medicaid pays for long-term care</span>}
+          </>
+        }
       >
         <Lives share={short} paths={summary.paths} />
       </Figure>
