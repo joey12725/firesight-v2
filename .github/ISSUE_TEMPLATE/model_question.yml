@@ -1,0 +1,26 @@
+name: Model question
+description: A result looks wrong, or you want to know how something is modelled.
+labels: [model]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Challenges to the model are welcome. [docs/methodology.md](https://github.com/joey12725/firesight-v2/blob/main/docs/methodology.md) describes every relationship and lists known omissions in section 17; it may already answer the question.
+  - type: textarea
+    id: result
+    attributes:
+      label: The result in question
+      description: Which number, in which view, for which plan (a demo household, or an exported plan).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and why
+      description: A source, a hand calculation, or another tool's answer all help.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan file or share link (optional)

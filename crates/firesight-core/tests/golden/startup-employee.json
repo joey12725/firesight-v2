@@ -1,0 +1,198 @@
+{
+  "notes": "Simulated lives; today's dollars; ages are the first person's. success = retired by the plan's latest age and never ran out of liquid assets while alive. lo/hi = 95% sampling interval (model uncertainty is larger). Age quantiles cover all lives: null = fewer than that share ever got there. by_age covers lives still alive at that age.",
+  "paths": 1000,
+  "start_year": 2026,
+  "end_year": 2095,
+  "start_age": 31.2,
+  "success": {
+    "p": 0.889,
+    "lo": 0.868,
+    "hi": 0.907
+  },
+  "fi": {
+    "p": 0.941,
+    "lo": 0.925,
+    "hi": 0.954
+  },
+  "depletion": {
+    "p": 0.111,
+    "lo": 0.093,
+    "hi": 0.132
+  },
+  "fi_age": {
+    "p10": 37.2,
+    "p50": 45.8,
+    "p90": 61.6
+  },
+  "retirement_age": {
+    "p10": 37.3,
+    "p50": 45.8,
+    "p90": 61.6
+  },
+  "terminal_net_worth": {
+    "p10": 0,
+    "p50": 5478000,
+    "p90": 31921000
+  },
+  "lifetime_tax_p50": 2561000,
+  "fi_by_age": {
+    "ages": [
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "p": [
+      0.2,
+      0.725,
+      0.896,
+      0.941,
+      0.941,
+      0.941,
+      0.941
+    ]
+  },
+  "depletion_by_age": {
+    "ages": [
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100
+    ],
+    "p": [
+      0.0,
+      0.0,
+      0.012,
+      0.039,
+      0.072,
+      0.094,
+      0.111
+    ]
+  },
+  "by_age": {
+    "ages": [
+      31,
+      44,
+      58,
+      72,
+      86,
+      100
+    ],
+    "alive": [
+      1.0,
+      0.988,
+      0.96,
+      0.889,
+      0.662,
+      0.154
+    ],
+    "net_worth_p10": [
+      240000,
+      887000,
+      1237000,
+      728000,
+      254000,
+      0
+    ],
+    "net_worth_p50": [
+      259000,
+      1755000,
+      2757000,
+      3990000,
+      6291000,
+      8651000
+    ],
+    "net_worth_p90": [
+      274000,
+      3251000,
+      6728000,
+      13373000,
+      26319000,
+      44355000
+    ],
+    "spending_p10": [
+      70000,
+      74000,
+      81000,
+      87000,
+      83000,
+      72000
+    ],
+    "spending_p50": [
+      71000,
+      79000,
+      102000,
+      92000,
+      92000,
+      105000
+    ],
+    "spending_p90": [
+      74000,
+      86000,
+      108000,
+      100000,
+      211000,
+      385000
+    ]
+  },
+  "spending_delivery": {
+    "delivered_ratio": 0.977,
+    "extra_ratio": 0,
+    "paths_below_90": 0.113,
+    "paths_below_75": 0.113,
+    "years_below_90": 0.041,
+    "worst_cut_p90": 0.493
+  },
+  "failure_causes": [
+    {
+      "cause": "market_sequence",
+      "share": 0.613
+    },
+    {
+      "cause": "health",
+      "share": 0.126
+    },
+    {
+      "cause": "job_loss",
+      "share": 0.072
+    }
+  ],
+  "trace_paths": {
+    "p10": 915,
+    "median": 400,
+    "p90": 287,
+    "failing": 253
+  },
+  "equity": {
+    "company": "Northwind Robotics",
+    "failed": 0.425,
+    "still_private": 0.036,
+    "acquired": 0.364,
+    "ipo": 0.175,
+    "nothing": {
+      "p": 0.564,
+      "lo": 0.533,
+      "hi": 0.594
+    },
+    "loss": 0.282,
+    "net_proceeds": {
+      "p10": -193000,
+      "p50": 1000,
+      "p90": 1844000
+    },
+    "net_proceeds_mean": 556000,
+    "net_proceeds_mean_se": 44000,
+    "success_by_outcome": [
+      0.901,
+      0.833,
+      0.865,
+      0.92
+    ]
+  }
+}

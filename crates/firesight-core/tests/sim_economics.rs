@@ -278,3 +278,255 @@ fn every_return_is_paid_in_full_by_the_end() {
             .all(|e| e.kind != TraceEventKind::Depleted));
     }
 }
+
+/// The same accounting with private-company equity in the plan: incentive options
+/// exercised in the first month (minimum tax), a listing, shares sold over two
+/// years (the credit comes back), non-qualified options and RSUs settled as wages.
+/// Whatever the returns say is owed, with the AMT and the credit in it, is what is
+/// paid over the life: at the event, in instalments, or the next April.
+#[test]
+fn every_equity_return_is_paid_in_full_by_the_end() {
+    let mut p = quiet(vec![person("worker", 40, Sex::Female)], 60.0);
+    p.start = Some(YearMonth::ym(2027, 1));
+    p.assumptions.taxes = TaxModel::default();
+    p.household.location.state = Some("CA".into());
+    p.incomes = vec![job("job", 0, 180_000.0)];
+    p.spending.items = vec![item("living", Category::Other, 6_000.0, true)];
+    p.accounts = vec![
+        account("cash", 0, AccountKind::Cash, 80_000.0),
+        Account {
+            cost_basis: Some(300_000.0),
+            ..account("taxable", 0, AccountKind::Taxable, 400_000.0)
+        },
+    ];
+    p.portfolio.emergency_months = 3.0;
+    p.retirement.trigger = RetirementTrigger::AtAge {
+        person: 0,
+        age: 75.0,
+    };
+    let holding = |id: &str, kind: HoldingKind, shares: f64| EquityHolding {
+        id: id.into(),
+        kind,
+        shares,
+        vested: shares,
+        ..EquityHolding::default()
+    };
+    p.private_equity = vec![PrivateCompany {
+        id: "co".into(),
+        name: "Co".into(),
+        job: Some("job".into()),
+        preferred_price: 10.0,
+        fmv_409a: Some(4.0),
+        outcomes: certain(OutcomeKind::Ipo, 3.0, 4.0, 2.0),
+        tenders: TenderOffers {
+            annual_probability: Some(0.0),
+            ..TenderOffers::default()
+        },
+        holdings: vec![
+            holding(
+                "iso",
+                HoldingKind::Iso {
+                    strike: 1.0,
+                    granted_months_ago: 30,
+                },
+                30_000.0,
+            ),
+            holding(
+                "nso",
+                HoldingKind::Nso {
+                    strike: 2.0,
+                    granted_months_ago: 30,
+                },
+                10_000.0,
+            ),
+            holding(
+                "rsu",
+                HoldingKind::Rsu {
+                    must_be_employed_at_event: false,
+                },
+                5_000.0,
+            ),
+        ],
+        policy: EquityPolicy {
+            exercise: ExerciseTiming::VestedNow,
+            sell_down: SellDown::OverYears { years: 2 },
+            ..EquityPolicy::default()
+        },
+        ..PrivateCompany::default()
+    }];
+    let plan = compile(&p);
+    for path in 0..4 {
+        let trace = sim::trace_path(&plan, 2, path);
+        let price = trace.column("price_level").unwrap();
+        let start_price = |t: usize| if t == 0 { 1.0 } else { price[t - 1] };
+        let nominal = |key: &str| -> f64 {
+            trace.column(key).map_or(0.0, |c| {
+                c.iter().enumerate().map(|(t, v)| v * start_price(t)).sum()
+            })
+        };
+        let paid = nominal("tax_federal")
+            + nominal("tax_state")
+            + nominal("tax_payroll")
+            + nominal("tax_penalties")
+            - nominal("income_other");
+        // Every year here is a whole calendar year from January on.
+        let mut owed = 0.0;
+        let (mut amt, mut credit_used) = (0.0, 0.0);
+        for r in &trace.tax_returns {
+            owed += r.result["total"].as_f64().unwrap();
+            amt += r.result["amt"].as_f64().unwrap();
+            credit_used += r.result["amt_credit_used"].as_f64().unwrap();
+        }
+        let tolerance = 0.5 * (trace.months as f64) * 4.0 * 0.2 + owed * 1e-4;
+        assert!(
+            (paid - owed).abs() <= tolerance,
+            "path {path}: paid {paid:.0}, returns {owed:.0}"
+        );
+        // The equity really went through the returns and the ledger.
+        assert!(amt > 5_000.0, "path {path}: minimum tax {amt:.0}");
+        assert!(
+            credit_used > 0.5 * amt,
+            "path {path}: {credit_used:.0} of {amt:.0} credited back"
+        );
+        let received = nominal("income_equity");
+        let strike = nominal("equity_exercise");
+        assert!((strike - 50_000.0).abs() < 5.0, "strike paid {strike:.0}");
+        assert!(received > 500_000.0, "received {received:.0}");
+        let kinds: Vec<&str> = trace.events.iter().map(|e| e.kind.key()).collect();
+        for kind in ["options_exercised", "company_ipo", "lockup_sale"] {
+            assert!(kinds.contains(&kind), "path {path}: no {kind}");
+        }
+        assert!(trace
+            .events
+            .iter()
+            .all(|e| e.kind != TraceEventKind::Depleted));
+    }
+}
+
+/// The four equity amounts of a life are the ledger's own: gross proceeds are the
+/// `income_equity` series, exercise cost the `equity_exercise` series, and what is
+/// left after both is the tax the equity caused.
+#[test]
+fn equity_scalars_reconcile_with_the_ledger() {
+    let scalar = |trace: &firesight_core::stats::PathTrace, s: PathScalar| -> f64 {
+        trace
+            .scalars
+            .iter()
+            .find(|x| x.scalar == s)
+            .map_or(f64::NAN, |x| x.value)
+    };
+    // Scalars are stored in single precision and trace columns in whole dollars
+    // a month.
+    let close = |a: f64, b: f64, months: u32| {
+        (a - b).abs() <= 5.0 + 1e-6 * a.abs() + 0.5 * f64::from(months) * 0.02
+    };
+
+    // 1. The demo as shipped, 50 lives.
+    let plan = compile(&startup_employee());
+    let (mut paid, mut exercised, mut tendered) = (0, 0, 0);
+    for path in 0..50 {
+        let trace = sim::trace_path(&plan, 5, path);
+        let gross = scalar(&trace, PathScalar::EquityGrossProceeds);
+        let cost = scalar(&trace, PathScalar::EquityExerciseCost);
+        let tender = scalar(&trace, PathScalar::EquityTenderProceeds);
+        let net = scalar(&trace, PathScalar::EquityNetProceeds);
+        let income = column_sum(&trace, "income_equity", 0..trace.months as usize);
+        let strike = column_sum(&trace, "equity_exercise", 0..trace.months as usize);
+        assert!(
+            close(gross, income, trace.months),
+            "path {path}: gross {gross:.0}, ledger {income:.0}"
+        );
+        assert!(
+            close(cost, strike, trace.months),
+            "path {path}: cost {cost:.0}, ledger {strike:.0}"
+        );
+        assert!(tender >= 0.0 && tender <= gross + 1.0, "path {path}");
+        // Tender proceeds are the amounts on the tender lines of the life story.
+        let tender_lines: f64 = trace
+            .events
+            .iter()
+            .filter(|e| e.kind == TraceEventKind::TenderOffer)
+            .filter_map(|e| e.amount)
+            .sum();
+        assert!(
+            (tender - tender_lines).abs() <= 2.0 + 1e-6 * tender,
+            "path {path}: tender {tender:.0}, events {tender_lines:.0}"
+        );
+        // The tax the equity caused. With nothing received and nothing paid it
+        // can only be a saving (the basis of the shares held is a capital loss
+        // when the company fails), never a bill.
+        let tax = gross - cost - net;
+        if gross == 0.0 && cost == 0.0 {
+            assert!(
+                (-15_000.0..=1.0).contains(&tax),
+                "path {path}: tax {tax:.0}"
+            );
+        }
+        // With no exercise there is no minimum tax to strand: the tax is a share
+        // of what came in, under the top combined rate.
+        if cost == 0.0 {
+            assert!(
+                tax <= 0.62 * gross + 1.0,
+                "path {path}: tax {tax:.0} on {gross:.0}"
+            );
+        }
+        assert!(
+            tax >= -0.5 * (cost + 15_000.0) - 5.0,
+            "path {path}: {tax:.0}"
+        );
+        paid += i32::from(gross > 0.0);
+        exercised += i32::from(cost > 0.0);
+        tendered += i32::from(tender > 0.0);
+    }
+    // About 6% of demo lives sell in a tender offer (most companies that run one
+    // are heading up, and a former employee cannot take part), so 50 lives hold a
+    // few at most.
+    assert!(
+        paid >= 10 && exercised >= 3 && tendered >= 1,
+        "{paid} {exercised} {tendered}"
+    );
+
+    // 2. The tax leg exactly, where it can be recomputed from outside: a flat tax
+    // of 30% and a position that is all pay (RSUs settled in cash by an
+    // acquisition). Each year's tax with the equity less the tax without it is 30%
+    // of that year's payout, in the dollars of the month the year is closed.
+    let mut p = startup_with(certain(OutcomeKind::Acquired, 1.5, 2.5, 2.0));
+    p.assumptions.taxes.kind = TaxKind::Flat { rate: 0.30 };
+    p.private_equity[0]
+        .holdings
+        .retain(|h| matches!(h.kind, HoldingKind::Rsu { .. }));
+    let plan = compile(&p);
+    for path in 0..12 {
+        let trace = sim::trace_path(&plan, 5, path);
+        let gross = scalar(&trace, PathScalar::EquityGrossProceeds);
+        let net = scalar(&trace, PathScalar::EquityNetProceeds);
+        assert_eq!(scalar(&trace, PathScalar::EquityExerciseCost), 0.0);
+        assert!(gross > 100_000.0, "path {path}: {gross:.0}");
+        let income = column(&trace, "income_equity");
+        let price = trace.column("price_level").unwrap();
+        // The price level at the start of month `t` (the one flows are deflated by).
+        let start_price = |t: usize| if t == 0 { 1.0 } else { price[t - 1] };
+        let months = trace.months as usize;
+        let mut tax_real = 0.0;
+        let mut t = 0;
+        while t < months {
+            // One calendar year: its months, and the month it is closed in (the
+            // January after it, or the last month of the life).
+            let year = (trace.start + t as i32).year();
+            let mut nominal = 0.0;
+            let mut end = t;
+            while end < months && (trace.start + end as i32).year() == year {
+                nominal += income[end] * start_price(end);
+                end += 1;
+            }
+            let closed_in = end.min(months - 1);
+            tax_real += 0.30 * nominal / start_price(closed_in);
+            t = end;
+        }
+        let caused = gross - net;
+        assert!(
+            (caused - tax_real).abs() <= 5.0 + 2e-4 * tax_real,
+            "path {path}: gross less net {caused:.0}, 30% of each year's payout {tax_real:.0}"
+        );
+    }
+}

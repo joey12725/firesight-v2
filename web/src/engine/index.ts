@@ -8,6 +8,8 @@ export * from './api';
 export * from './errors';
 export * from './pool';
 export * from './output-types';
+export * from './equity-types';
+export * from './equity-math';
 export type * from './types';
 export { aggregatorStats } from './aggregator';
 

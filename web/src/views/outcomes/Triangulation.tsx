@@ -25,7 +25,7 @@ export const MODELS: { type: MarketType; label: string; gist: string }[] = [
 /** The same plan under another market model, everything else untouched. */
 export function withMarket(profile: Profile, type: MarketType): Profile {
   const current = profile.assumptions.market.kind;
-  const kind: MarketKind = type === current.type ? current : type === 'bootstrap' ? { type: 'bootstrap', mean_block_months: 60, from_year: null } : ({ type } as MarketKind);
+  const kind: MarketKind = type === current.type ? current : type === 'bootstrap' ? { type: 'bootstrap', mean_block_months: 60, from_year: null, joins: 'uniform' } : ({ type } as MarketKind);
   return { ...profile, assumptions: { ...profile.assumptions, market: { ...profile.assumptions.market, kind } } };
 }
 

@@ -1277,8 +1277,9 @@ fn draw_counts_do_not_depend_on_state() {
     let (career0, equity0) = rngs(21);
     let mut streams: Vec<(Rng, Rng)> = Vec::new();
     // 0: risky job running; 1: risky job ended at once; 2: risky job on a break and
-    // never started; 3: plain job with risk off.
-    for variant in 0..4 {
+    // never started; 3: plain job with risk off; 4: risky job with a layoff forced
+    // (by an employer's failure) every fifty months.
+    for variant in 0..5 {
         let (mut career, mut equity) = (career0.clone(), equity0.clone());
         let m = if variant == 3 { &quiet } else { &risky };
         let mut s = if variant == 2 {
@@ -1295,6 +1296,9 @@ fn draw_counts_do_not_depend_on_state() {
             if variant == 2 && t == 100 {
                 m.begin(&mut s, 30.0);
                 m.start_break(&mut s, 30, 0.5);
+            }
+            if variant == 4 && t % 50 == 7 {
+                s.force_layoff = true;
             }
             m.step(&mut s, &c, &mut career, &mut equity);
         }
@@ -1316,6 +1320,118 @@ fn draw_counts_do_not_depend_on_state() {
         );
         assert_eq!(got, expected);
     }
+}
+
+#[test]
+fn a_forced_layoff_behaves_like_any_layoff() {
+    let d = data();
+    // Risk off: the hazard is zero, so only the flag can end the job.
+    let m = JobModel::new(&job(104_000.0, flat(), RiskLevel::None), 40.0, false, d);
+    let mut s = m.initial_state();
+    let (mut career, mut equity) = rngs(31);
+    for t in 0..6 {
+        let pay = m.step(&mut s, &climate(t, 40.0), &mut career, &mut equity);
+        assert!(!pay.laid_off);
+    }
+    // The spell and scar come from the same words an ordinary layoff would use.
+    let mut peek = career.clone();
+    let _ = peek.uniform();
+    let z_spell = peek.normal_one_draw();
+    s.force_layoff = true;
+    let pay = m.step(&mut s, &climate(6, 40.0), &mut career, &mut equity);
+    assert!(pay.laid_off && !s.force_layoff);
+    let p = CareerParams::from_data(d);
+    let spell = (p.spell_median[0]
+        * p.spell_age_multiplier[spell_age_band(40.5)]
+        * math::exp(p.spell_sigma[0] * z_spell))
+    .clamp(SPELL_MIN_MONTHS, SPELL_MAX_MONTHS);
+    close(s.spell_months_left + spell.min(1.0), spell, 1e-12);
+    assert_eq!(
+        s.ui_weekly_real,
+        (p.ui_replacement_rate * 104_000.0 / WEEKS_PER_YEAR).min(p.ui_weekly_cap)
+    );
+    // Re-hired when the spell is over, with the scar, and not laid off again.
+    let mut rehired = false;
+    for t in 7..60 {
+        let pay = m.step(&mut s, &climate(t, 40.0), &mut career, &mut equity);
+        assert!(!pay.laid_off);
+        rehired |= pay.rehired;
+    }
+    assert!(rehired);
+    assert_eq!(s.employment, Employment::Employed);
+    assert_eq!(s.pending_scar, 0.0);
+    close(s.months_unemployed_total, spell, 1e-9);
+
+    // The flag means nothing on a job that is already lost or has ended.
+    let mut s = m.initial_state();
+    m.end(&mut s);
+    s.force_layoff = true;
+    let pay = m.step(&mut s, &climate(0, 40.0), &mut career, &mut equity);
+    assert!(!pay.laid_off && !s.force_layoff);
+    assert_eq!(s.employment, Employment::Ended);
+}
+
+#[test]
+fn a_forced_layoff_waits_for_a_career_break_to_end() {
+    let m = JobModel::new(
+        &job(120_000.0, flat(), RiskLevel::None),
+        35.0,
+        false,
+        data(),
+    );
+    let mut s = m.initial_state();
+    let (mut career, mut equity) = rngs(32);
+    m.start_break(&mut s, 3, 0.5);
+    s.force_layoff = true;
+    for t in 0..3 {
+        let pay = m.step(&mut s, &climate(t, 35.0), &mut career, &mut equity);
+        assert!(!pay.laid_off && s.force_layoff, "month {t}");
+        close(pay.wages, 5_000.0, 1e-9);
+    }
+    // The break is over: the layoff happens in the first month back.
+    let pay = m.step(&mut s, &climate(3, 35.0), &mut career, &mut equity);
+    assert!(pay.laid_off && !s.force_layoff);
+    assert!(matches!(
+        s.employment,
+        Employment::Unemployed { .. } | Employment::Employed
+    ));
+    assert!(s.months_unemployed_total > 0.0);
+}
+
+#[test]
+fn the_old_private_grant_reports_its_payout_and_its_failure() {
+    // A recession holds the exit back for six months; then it is certain, and the
+    // company never fails.
+    let g = grant(12_000.0, 12, 0, private(1.0, 0.0));
+    let m = JobModel::new(&equity_job(vec![g]), 30.0, true, data());
+    let mut s = m.initial_state();
+    let (mut career, mut equity) = rngs(33);
+    let (mut payout, mut income) = (0.0, 0.0);
+    for t in 0..24 {
+        let mut c = climate(t, 30.0);
+        c.recession = u8::from(t < 6);
+        let pay = m.step(&mut s, &c, &mut career, &mut equity);
+        assert!(!pay.company_failed);
+        assert!(pay.private_payout <= pay.equity_income);
+        if pay.private_payout > 0.0 {
+            assert_eq!(s.liquidity, Liquidity::Exited);
+        }
+        payout += pay.private_payout;
+        income += pay.equity_income;
+    }
+    // One payout at the event; what vests afterwards is ordinary vesting income.
+    assert!(payout > 0.0 && income > payout);
+
+    let g = grant(12_000.0, 12, 0, private(1.0, 1.0));
+    let m = JobModel::new(&equity_job(vec![g]), 30.0, true, data());
+    let mut s = m.initial_state();
+    let mut failures = 0;
+    for t in 0..24 {
+        let pay = m.step(&mut s, &climate(t, 30.0), &mut career, &mut equity);
+        failures += u32::from(pay.company_failed);
+        assert_eq!(pay.private_payout, 0.0);
+    }
+    assert_eq!(failures, 1);
 }
 
 // ---------------------------------------------------------------- self-employment

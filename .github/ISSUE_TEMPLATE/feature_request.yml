@@ -1,0 +1,16 @@
+name: Feature request
+description: Something FIRESight should model or show.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: The decision you're trying to make
+      description: What question about your plan can't you answer today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: A setting, a chart, a part of life the model leaves out ([known omissions](https://github.com/joey12725/firesight-v2/blob/main/docs/methodology.md#17-known-limitations-and-deliberate-omissions)), or anything else.

@@ -16,6 +16,7 @@
 //! | [`economy`] | joint market, rate, inflation and home-price paths; stress overlays |
 //! | [`tax`], [`benefits`], [`health`] | the annual return; Social Security; mortality, health and care costs |
 //! | [`career`], [`housing`], [`home_equity`] | jobs and equity compensation; properties and mortgages; borrowing against a home |
+//! | [`equity`] | private-company stock and options: fates, vesting, exercises, sales, the outcome preview |
 //! | [`accounts`], [`decumulation`] | tax buckets and their mechanics; spending rules and the withdrawal plan |
 //! | [`sim`] | `Plan::compile` and the monthly loop that ties the modules together |
 //! | [`stats`] | recorders, the mergeable `Accumulator`, `Summary`, `Comparison`, `PathTrace` |
@@ -29,6 +30,7 @@ pub mod data;
 pub mod decumulation;
 pub mod dist;
 pub mod economy;
+pub mod equity;
 pub mod health;
 pub mod health_states;
 pub mod home_equity;
@@ -50,6 +52,7 @@ pub mod stats;
 pub mod tax;
 pub mod validate;
 
+pub use equity::{MAX_COMPANIES, MAX_HOLDINGS, MAX_LOTS, MAX_OUTCOMES};
 pub use model::{AssetClass, Profile, YearMonth, N_ASSETS};
 
 /// Maximum number of adults in a household. Per-person state is stored in fixed

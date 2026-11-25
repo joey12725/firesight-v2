@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     Account, Assumptions, Debt, DebtPolicy, Household, Income, LifeEvent, PortfolioPolicy,
-    Property, RetirementPlan, SimulationSettings, Spending, WhenContext, YearMonth,
+    PrivateCompany, Property, RetirementPlan, SimulationSettings, Spending, WhenContext, YearMonth,
 };
 use crate::MAX_PEOPLE;
 
@@ -32,6 +32,10 @@ pub struct Profile {
     /// Jobs, self-employment, pensions and other income. Social Security is set on
     /// each person and rental income on each property.
     pub incomes: Vec<Income>,
+    /// Stock and options in private companies: startup equity from a current or
+    /// former employer, or shares bought as an investment. Each company has its own
+    /// uncertain outcome. Publicly traded RSUs stay on the job that grants them.
+    pub private_equity: Vec<PrivateCompany>,
     /// The budget and how spending behaves over time.
     pub spending: Spending,
     /// Bank, brokerage and retirement accounts.
@@ -65,6 +69,7 @@ impl Default for Profile {
             start: None,
             household: Household::default(),
             incomes: Vec::new(),
+            private_equity: Vec::new(),
             spending: Spending::default(),
             accounts: Vec::new(),
             portfolio: PortfolioPolicy::default(),
@@ -162,7 +167,7 @@ impl Profile {
     }
 }
 
-fn format_path_error<E: std::fmt::Display>(e: &serde_path_to_error::Error<E>) -> String {
+pub(crate) fn format_path_error<E: std::fmt::Display>(e: &serde_path_to_error::Error<E>) -> String {
     let path = e.path().to_string();
     if path == "." || path.is_empty() {
         e.inner().to_string()

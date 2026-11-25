@@ -2,7 +2,9 @@
 // in every build). Needs `npm run wasm` to have produced src/engine/pkg.
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { defaultProfile, exampleProfiles, initEngineSync } from '@/engine/api';
+import { from409aOps, linkJobOps, newCompany, newHolding, type HoldingType } from '@/editor/equity/model';
+import { defaultProfile, equityPreview, exampleProfiles, initEngineSync } from '@/engine/api';
+import type { Profile } from '@/engine/types';
 import { parsePlan, planFileText } from './files';
 import { append, compactPatch, remove, set } from './patches';
 import { canonicalPath, getAt, uniqueId } from './pointer';
@@ -156,6 +158,103 @@ describe('profile store', () => {
     expect('report' in preview && preview.report.warnings.some((w) => w.code === 'crypto_heavy')).toBe(true);
     expect(store().profile).toBe(before);
     expect('error' in store().preview([set('/nope', 1)])).toBe(true);
+  });
+});
+
+describe('startup equity through the store', () => {
+  const startup = () => exampleProfiles().find((e) => e.slug === 'startup-employee')!.profile;
+  const load = (profile: Profile) => store().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile });
+  const errors = () => store().report.errors.map((e) => `${e.code} ${e.path}`);
+  const KINDS: HoldingType[] = ['iso', 'nso', 'rsu', 'shares'];
+
+  /** The editor's add path: a company, a price, then one holding of each kind. Asserts no error after each step. */
+  function addPath(label: string, withJob: boolean) {
+    const profile = store().profile!;
+    const before = errors();
+    const company = { id: 'newco', ...newCompany(withJob ? profile : { ...profile, incomes: [] }) };
+    expect(company.job === null, label).toBe(!withJob);
+    expect(store().edit([append('/private_equity', company)]).ok, label).toBe(true);
+    expect(errors(), `${label}: add a company`).toEqual(before);
+    store().edit([set('/private_equity/@newco/preferred_price', 14)]);
+    expect(errors(), `${label}: price`).toEqual(before);
+    for (const kind of KINDS) {
+      const { name, ...value } = newHolding(kind, company.job !== null);
+      expect(store().edit([append('/private_equity/@newco/holdings', { id: kind, name, ...value })]).ok, `${label}: ${kind}`).toBe(true);
+      expect(errors(), `${label}: add ${kind}`).toEqual(before);
+    }
+    expect(store().profile!.private_equity.find((c) => c.id === 'newco')!.holdings).toHaveLength(4);
+  }
+
+  it('adds a company, a price and each kind of holding with no validation error, with and without a job', () => {
+    const blank = defaultProfile();
+    const withJob = { ...blank, incomes: [{ id: 'job', name: 'Job', owner: 0, kind: { type: 'job', salary: 120_000 } }] } as unknown as Profile;
+    const cases: [string, Profile][] = [['blank', blank], ['blank with a job', withJob], ...exampleProfiles().map((e): [string, Profile] => [e.slug, e.profile])];
+    for (const [label, profile] of cases) {
+      const hasJob = profile.incomes.some((i) => i.kind.type === 'job');
+      for (const linked of hasJob ? [true, false] : [false]) {
+        load(profile);
+        expect(store().report.errors, label).toEqual([]);
+        addPath(`${label}, ${linked ? 'linked' : 'no job'}`, linked);
+      }
+    }
+  });
+
+  it('appends a company and a holding, undoes them, and targets a scenario', () => {
+    load(startup());
+    const base = store().profile!;
+    store().edit([append('/private_equity', { id: 'second', ...newCompany(base) })], { label: 'Add a company' });
+    expect(store().profile!.private_equity.map((c) => c.id)).toEqual(['northwind', 'second']);
+    // The engine filled in everything the editor did not write.
+    expect(store().profile!.private_equity[1]).toMatchObject({ job: 'priya_job', owner: 0, included: true, outlook: 'typical', outcomes: [], lockup_months: 6, policy: { exercise: 'at_liquidity', at_deadline: 'exercise', tender_sell_fraction: 0.5 } });
+    const { name, ...iso } = newHolding('iso', true);
+    store().edit([append('/private_equity/@second/holdings', { id: 'grant', name, ...iso })]);
+    expect(getAt(store().profile, '/private_equity/@second/holdings/@grant/kind')).toEqual({ type: 'iso', strike: 1, granted_months_ago: 24 });
+    store().undo();
+    expect(store().profile!.private_equity[1]!.holdings).toEqual([]);
+    store().undo();
+    expect(store().profile).toEqual(base);
+    store().redo();
+    expect(store().profile!.private_equity).toHaveLength(2);
+    store().undo();
+
+    // A scenario edit leaves the baseline alone and resolves against it.
+    store().addScenario({ name: 'Equity at zero', patch: [set('/private_equity/@northwind/included', false)] });
+    expect(store().profile!.private_equity[0]!.included).toBe(true);
+    expect(store().resolved.equity_at_zero?.profile?.private_equity[0]!.included).toBe(false);
+    store().setEditTarget('equity_at_zero');
+    store().edit([set('/private_equity/@northwind/outlook', 'pessimistic')]);
+    expect(store().profile!.private_equity[0]!.outlook).toBe('typical');
+    expect(selectEffectiveProfile(store())?.private_equity[0]).toMatchObject({ included: false, outlook: 'pessimistic' });
+    expect(store().scenarios[0]!.patch).toHaveLength(2);
+  });
+
+  it('switching the linked job to None leaves no error, in one undo step', () => {
+    load(startup());
+    const company = store().profile!.private_equity[0]!;
+    const { ops, vestedChanged } = linkJobOps('/private_equity/@northwind', company, null);
+    expect(vestedChanged).toBe(true);
+    expect(store().edit(ops).ok).toBe(true);
+    expect(store().report.errors).toEqual([]);
+    expect(store().profile!.private_equity[0]!.job).toBeNull();
+    expect(store().past).toHaveLength(1);
+    store().undo();
+    expect(store().profile!.private_equity[0]).toEqual(company);
+  });
+
+  it('"I only know the 409A value" writes both fields in one undo step', () => {
+    load(startup());
+    const path = '/private_equity/@northwind';
+    const before = store().profile!.private_equity[0]!;
+    const ratio = equityPreview({ stage: before.stage, preferred_price: 1 }).fmv_409a;
+    // Typed digit by digit: the edits coalesce like any field's.
+    for (const v of [4, 4.2, 4.25]) store().edit(from409aOps(path, v, ratio), { coalesce: `${path}#from-409a` });
+    const after = store().profile!.private_equity[0]!;
+    expect(after.fmv_409a).toBe(4.25);
+    expect(after.preferred_price).toBe(Math.round((4.25 / ratio) * 100) / 100);
+    expect(store().report.errors).toEqual([]);
+    expect(store().past).toHaveLength(1);
+    store().undo();
+    expect(store().profile!.private_equity[0]).toEqual(before);
   });
 });
 

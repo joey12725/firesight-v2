@@ -62,6 +62,8 @@ try {
   const delivered = Number(/(\d+)%/.exec(spendingFigure)?.[1]);
   expect(delivered <= 100 && /Spending delivered/.test(spendingFigure), `the delivered share is headlined capped at 100%: ${spendingFigure}`);
   ok(`success is headlined with the home sale beside it, and delivered spending as a capped share (${delivered}%)`);
+  expect((await page.getByRole('tab', { name: 'Equity', exact: true }).count()) === 0, 'a plan without a private company has no Equity tab');
+  expect((await page.getByTestId('headline-equity').count()) === 0 && (await page.getByTestId('overview-equity').count()) === 0, 'a plan without a private company says nothing about equity');
 
   // ---- an edit refines every view ----
   const before = await state(page);
@@ -234,6 +236,105 @@ try {
     await page.getByRole('heading', { name: /When can work become optional/ }).waitFor();
   }
   ok('the three version 1 example plans import, convert and simulate');
+
+  // ---- startup equity: the tab, the zero comparison, the what-if in Scenarios ----
+  await page.getByTestId('demo-startup-employee').click();
+  await settled(page);
+  const equityNote = await page.getByTestId('headline-equity').innerText();
+  expect(/^and in \d+ of 100 of the lives where Northwind Robotics fails$/.test(equityNote), `the pinned success figure should say what happens if the company fails: ${equityNote}`);
+  const card = await page.getByTestId('overview-equity').innerText();
+  // "No cash" is the gross count, with the lives that end out of pocket named beside it.
+  expect(/If Northwind Robotics fails the plan holds in \d+ of 100 of those lives; if it is sold or listed, in \d+\. The equity pays out no cash in \d+ of 100 lives, and in \d+ it costs more than it returns\./.test(card), `the Overview card: ${card}`);
+  await page.getByTestId('overview-equity').click();
+  await page.getByTestId('equity-lead').waitFor();
+  expect(new URL(page.url()).pathname === '/equity', 'the Overview card opens the Equity view');
+  // The standing comparison runs by itself, on the same lives, once the plan's own run is done.
+  await page.getByTestId('equity-with-without').filter({ hasText: 'of the same lives' }).waitFor({ timeout: 120_000 });
+  const withWithout = await page.getByTestId('equity-with-without').innerText();
+  // The figure gets a decimal when the two sides would otherwise read the same; it is still the pinned strip's figure.
+  const holds = Math.round(Number(/holds in ([\d.]+) of 100 lives with the equity as modelled/.exec(withWithout)?.[1]));
+  const headlineHolds = Number(/(\d+)\s*of 100/.exec(await page.getByTestId('headline-success').innerText())?.[1]);
+  expect(holds === headlineHolds, `the Equity view and the pinned strip give one answer: ${holds} against ${headlineHolds}`);
+  expect(/with it left out \(difference /.test(withWithout) && !/The equity is the difference between holding and not/.test(withWithout), `the comparison should not credit the payout: ${withWithout}`);
+  const pays = await page.getByTestId('equity-pays').innerText();
+  expect(/^No cash ever comes back in \d+ of 100 lives\. After the cost of exercising and the tax it caused, the household /.test(pays) && !/comes to nothing/.test(pays), `"nothing" should mean one thing on the page: ${pays}`);
+  expect(/judgements anchored to published figures/.test(await page.getByTestId('equity-odds-note').innerText()), 'the page should say the default odds are judgement, not a measured rate');
+  // Exercising now is capped by what the household can pay: the row says how much of it the plan really makes.
+  await page.getByTestId('exercise-shortfall').waitFor({ timeout: 60_000 });
+  expect(/^The plan can pay for [\d,]+ of the 58,000 vested options: /.test(await page.getByTestId('exercise-shortfall').innerText()), 'the exercise-now row should state what is really exercised');
+  expect((await page.getByTestId('decision-sentence').count()) === 0, 'no decision is compared until asked');
+  await page.getByTestId('compare-equity_exercise_now').click();
+  await page.getByTestId('decision-sentence').first().waitFor({ timeout: 120_000 });
+  expect(/^Exercising now /.test(await page.getByTestId('decision-sentence').first().innerText()), 'the decision reads as a sentence by outcome');
+  ok(`the startup demo shows the Equity tab, the note under the success figure and the comparison with the equity at zero (${holds} of 100 as modelled)`);
+
+  await tab(page, 'Scenarios');
+  await page.getByTestId('quick-equity_zero').click();
+  await settled(page);
+  const zero = (await state(page)).ran.find((s) => s.name === 'Equity left out');
+  expect(zero?.paired, 'counting the equity at zero should run as a paired scenario');
+  await page.getByTestId('flip-sentence').waitFor();
+  await page.getByTestId('scenario-by-outcome').waitFor();
+  expect(/Northwind Robotics/.test(await page.getByTestId('scenario-by-outcome').innerText()), 'the paired difference is broken down by what happens to the company');
+  ok('“Count the equity at zero” in Scenarios gives a paired difference, by what happens to the company');
+
+  // The household's own odds: a count the remainder cannot cover is refused whole, never cut down to its first digit.
+  {
+    const equity = page.locator('[data-section="equity"]');
+    if ((await equity.getByRole('button', { name: 'Use my own odds' }).count()) === 0) {
+      await equity.locator('h3 > button').click();
+      await equity.locator('li[data-path^="/private_equity/"]').first().locator('button[aria-expanded]').first().click();
+    }
+    await equity.getByRole('button', { name: 'Use my own odds', exact: true }).click();
+    const stored = () => page.evaluate(() => window.__firesight.plan.getState().profile.private_equity[0].outcomes.find((r) => r.kind === 'fails').probability);
+    const seeded = await page.evaluate(() => window.__firesight.plan.getState().profile.private_equity[0].outcomes.map((r) => [r.multiple_low, r.multiple_high]));
+    expect(seeded.flat().every((m) => m === Number(m.toPrecision(2))), `seeded price multiples should have two significant figures: ${JSON.stringify(seeded)}`);
+    expect((await stored()) === 0.3, 'the demo company seeds "shuts down" at 30 of 100');
+    const fails = equity.getByRole('textbox', { name: 'Shuts down, futures of 100', exact: true });
+    await fails.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('7', { delay: 50 });
+    expect((await stored()) === 0.3, 'a digit typed on the way to a value must not be written');
+    await page.keyboard.type('0', { delay: 50 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(300);
+    expect((await stored()) === 0.3, `typing 70 where 61 fit must leave the odds as they were, got ${await stored()}`);
+    expect((await fails.inputValue()) === '30', `the field should show what the row still holds, got ${await fails.inputValue()}`);
+    await equity.getByText('You typed 70; only 61 fit, so this stays at 30. Lower another row first.').waitFor();
+    await fails.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('45', { delay: 50 });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    expect((await stored()) === 0.45, 'an entry that fits is written when the field is left');
+    // A low price raised above the high one moves the high one with it, in one edit.
+    const low = equity.getByRole('textbox', { name: 'Is acquired: low price', exact: true });
+    await low.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('30', { delay: 50 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(300);
+    const acquired = await page.evaluate(() => window.__firesight.plan.getState().profile.private_equity[0].outcomes.find((r) => r.kind === 'acquired'));
+    expect(acquired.multiple_low === 30 && acquired.multiple_high === 30, `the price range should stay in order: ${JSON.stringify(acquired)}`);
+    expect((await page.evaluate(() => window.__firesight.plan.getState().report.errors.length)) === 0, 'an ordered pair is a valid plan');
+    await equity.getByRole('button', { name: 'Back to typical odds', exact: true }).click();
+    await settled(page);
+    ok('a typed count that does not fit is refused whole with a message, and a price range stays in order');
+  }
+
+  // Leaving the equity out of the plan itself: the view says so and offers to count it again.
+  await page.evaluate(() => window.__firesight.plan.getState().edit([{ op: 'set', path: '/private_equity/0/included', value: false }], { label: 'Leave the equity out', target: 'base' }));
+  await settled(page);
+  await tab(page, 'Equity');
+  await page.getByText('The equity is not counted in this plan.').first().waitFor();
+  expect((await page.getByTestId('headline-equity').count()) === 0 && (await page.getByTestId('equity-pays').count()) === 0, 'zeros are not shown as results when the equity is left out');
+  await page.getByTestId('equity-count').click();
+  await settled(page);
+  await page.getByTestId('equity-pays').waitFor();
+  ok('a plan that leaves the equity out says so, hides the dollar panels and can count it again');
+  await page.locator('header').getByRole('button').filter({ hasText: /\S/ }).first().click();
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('heading', { name: /When can work become optional/ }).waitFor();
 
   // ---- the landing hand-off ----
   await page.getByLabel('Describe your situation').fill('We are 38 and 41 in Denver with two kids and about $210k between us.');

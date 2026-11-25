@@ -2,11 +2,13 @@
 // ordinary scenario once created: it can be renamed, edited, duplicated or promoted like
 // any other. A what-if is only offered when the plan has something for it to change.
 import type { Summary } from '@/engine/output-types';
-import type { Allocation, PatchOp, Profile } from '@/engine/types';
+import { exerciseCostVested } from '@/engine/equity-math';
+import type { Allocation, CompanyStage, PatchOp, PrivateCompany, Profile } from '@/engine/types';
 import { append, remove, set } from '@/state/patches';
 import { at, join, uniqueId } from '@/state/pointer';
+import { moneyCompact } from '@/ui/format';
 
-export type QuickGroup = 'Retirement' | 'Spending and saving' | 'Income' | 'Investing' | 'Stress tests';
+export type QuickGroup = 'Retirement' | 'Spending and saving' | 'Income' | 'Startup equity' | 'Investing' | 'Stress tests';
 
 export interface QuickScenario {
   key: string;
@@ -20,7 +22,7 @@ export interface QuickScenario {
   patch: PatchOp[];
 }
 
-export const QUICK_GROUPS: QuickGroup[] = ['Retirement', 'Spending and saving', 'Income', 'Investing', 'Stress tests'];
+export const QUICK_GROUPS: QuickGroup[] = ['Retirement', 'Spending and saving', 'Income', 'Startup equity', 'Investing', 'Stress tests'];
 
 const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits;
 
@@ -238,6 +240,144 @@ function haircut(profile: Profile): QuickScenario | null {
   };
 }
 
+// ---- startup equity ---------------------------------------------------------------------
+
+interface Held {
+  company: PrivateCompany;
+  /** Path of the company, by id. */
+  path: string;
+}
+
+/** The companies a what-if can act on: counted in the plan and holding something. */
+function heldCompanies(profile: Profile): Held[] {
+  // A profile that has not been through the engine since the feature arrived has no key yet.
+  const companies = (profile as { private_equity?: PrivateCompany[] }).private_equity ?? [];
+  return companies.flatMap((company, i) => (company.included && company.holdings.length > 0 ? [{ company, path: join('/private_equity', at(company, i)) }] : []));
+}
+
+const isOption = (h: PrivateCompany['holdings'][number]) => h.kind.type === 'iso' || h.kind.type === 'nso';
+const hasOptions = (c: PrivateCompany) => c.holdings.some(isOption);
+const hasVestedOptions = (c: PrivateCompany) => c.holdings.some((h) => isOption(h) && h.vested > 0);
+/** A tender offer can happen: the yearly chance is not set to zero, or one is announced. */
+const tendersPossible = (c: PrivateCompany) => c.tenders.annual_probability !== 0 || c.tenders.next_in_months !== null;
+const companyName = (c: PrivateCompany) => c.name.trim() || 'the company';
+const nameList = (names: string[]) => (names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+const wholePercent = (v: number) => String(Math.round(v * 100));
+
+/** A stage as it reads inside a sentence: "a Series C company". */
+export const STAGE_WORDS: Record<CompanyStage, string> = { seed: 'seed-stage', series_a: 'Series A', series_b: 'Series B', series_c: 'Series C', late: 'late-stage', unicorn: 'unicorn' };
+
+/** The plan with every company's equity counted at zero. The Equity view's standing comparison. */
+export function equityZero(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile);
+  if (cs.length === 0) return null;
+  return {
+    key: 'equity_zero',
+    group: 'Startup equity',
+    label: 'Count the equity at zero',
+    name: 'Equity left out',
+    hint: `Plans as if the stock and options in ${nameList(cs.map((c) => companyName(c.company)))} were worth nothing: no exercises, no proceeds, no tax. The company can still fail and cost the job.`,
+    patch: cs.map((c) => set(join(c.path, 'included'), false)),
+  };
+}
+
+export function equityExerciseNow(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => hasVestedOptions(c.company) && c.company.policy.exercise === 'at_liquidity');
+  if (cs.length === 0) return null;
+  const cost = cs.reduce((t, c) => t + exerciseCostVested(c.company), 0);
+  return {
+    key: 'equity_exercise_now',
+    group: 'Startup equity',
+    label: 'Exercise vested options now',
+    name: 'Exercise now',
+    hint: `Exercises vested options this month and holds the shares. Every one of them would cost ${moneyCompact(cost)} before tax; the plan exercises only what savings above the emergency fund can pay, the strike and the tax it causes together (including AMT on incentive options). Options it cannot pay for are not exercised later.`,
+    patch: cs.map((c) => set(join(c.path, 'policy', 'exercise'), 'vested_now')),
+  };
+}
+
+export function equityTenderMax(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => tendersPossible(c.company) && c.company.policy.tender_sell_fraction < 1);
+  const first = cs[0]?.company;
+  if (!first) return null;
+  return {
+    key: 'equity_tender_max',
+    group: 'Startup equity',
+    label: 'Sell the maximum in tenders',
+    name: 'Sell all I can in tenders',
+    hint: `Sells everything each tender offer allows (up to ${wholePercent(first.tenders.max_fraction)}% of vested holdings each time) instead of ${wholePercent(first.policy.tender_sell_fraction)}% of that.`,
+    patch: cs.map((c) => set(join(c.path, 'policy', 'tender_sell_fraction'), 1)),
+  };
+}
+
+/** Not a quick button: a row of the Equity view's decisions panel. */
+export function equityTenderNone(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => tendersPossible(c.company) && c.company.policy.tender_sell_fraction > 0);
+  const first = cs[0]?.company;
+  if (!first) return null;
+  return {
+    key: 'equity_tender_none',
+    group: 'Startup equity',
+    label: 'Sell nothing in tenders',
+    name: 'Sell nothing in tenders',
+    hint: `Keeps every share through each tender offer instead of selling ${wholePercent(first.policy.tender_sell_fraction)}% of what the offer allows.`,
+    patch: cs.map((c) => set(join(c.path, 'policy', 'tender_sell_fraction'), 0)),
+  };
+}
+
+/** Not a quick button: a row of the Equity view's decisions panel. */
+export function equityLapse(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => hasOptions(c.company) && c.company.policy.at_deadline === 'exercise');
+  if (cs.length === 0) return null;
+  return {
+    key: 'equity_lapse',
+    group: 'Startup equity',
+    label: 'Let options lapse instead of exercising',
+    name: 'Let options lapse',
+    hint: 'When vested options are about to expire (after leaving, or ten years after the grant) lets them go instead of paying the strike and the tax to keep them.',
+    patch: cs.map((c) => set(join(c.path, 'policy', 'at_deadline'), 'forfeit')),
+  };
+}
+
+export function equityLeave(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => c.company.job !== null && c.company.policy.leave_after_months === null);
+  const first = cs[0]?.company;
+  if (!first) return null;
+  const names = nameList(cs.map((c) => companyName(c.company)));
+  return {
+    key: 'equity_leave',
+    group: 'Startup equity',
+    label: 'Leave the company in a year',
+    name: `Leave ${names} in a year`,
+    hint: `Ends vesting at ${names} twelve months from now and starts the ${first.exercise_window_months}-month exercise window. Salary is unchanged, as if moving to a similar job.`,
+    patch: cs.map((c) => set(join(c.path, 'policy', 'leave_after_months'), 12)),
+  };
+}
+
+export function equityTypicalOdds(profile: Profile): QuickScenario | null {
+  const cs = heldCompanies(profile).filter((c) => c.company.outcomes.length > 0);
+  const first = cs[0]?.company;
+  if (!first) return null;
+  const names = nameList(cs.map((c) => companyName(c.company)));
+  const one = cs.length === 1;
+  return {
+    key: 'equity_typical_odds',
+    group: 'Startup equity',
+    label: 'Use typical odds',
+    name: `Typical odds for ${names}`,
+    hint: one ? `Replaces your own odds for ${names} with the typical ones for a ${STAGE_WORDS[first.stage]} company.` : `Replaces your own odds for ${names} with the typical ones for each company's stage.`,
+    patch: cs.map((c) => remove(join(c.path, 'outcomes'))),
+  };
+}
+
+/**
+ * The decisions about the equity that would change something in this plan, for the
+ * Equity view's decisions panel: each is a patch to the policy of every company it
+ * applies to. The first two are also quick what-ifs.
+ */
+export function equityDecisions(profile: Profile): QuickScenario[] {
+  return [equityExerciseNow(profile), equityTenderMax(profile), equityTenderNone(profile), equityLapse(profile)].filter((q): q is QuickScenario => q !== null);
+}
+
 /**
  * The what-ifs this plan can try. `summary` is the baseline result: retiring earlier or
  * later in a plan that retires "when funded" needs to know when the middle life retires.
@@ -252,6 +392,11 @@ export function quickScenarios(profile: Profile, summary: Summary | null): Quick
     saveMore(profile, 0.05),
     partTime(profile, 5),
     delaySocialSecurity(profile, 70),
+    equityZero(profile),
+    equityExerciseNow(profile),
+    equityTenderMax(profile),
+    equityLeave(profile),
+    equityTypicalOdds(profile),
     mix(profile, 1),
     mix(profile, 0.6),
     crash(profile),

@@ -1,4 +1,4 @@
-// The Cash flow transforms, checked against real engine output for the three demo
+// The Cash flow transforms, checked against real engine output for the five demo
 // households (the same wasm the app runs), plus the layout of the flow diagram.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -6,8 +6,8 @@ import type { Summary } from '@/engine/output-types';
 import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { ExampleProfile } from '@/engine/types';
 import { layoutFlow, type FlowNode } from '@/ui/charts/ext/cashflow-FlowDiagram';
-import { MIN_ALIVE, cashFlowModel, handoverIndex, livesAbroad, sharesOfUses, yearNodes } from './model';
-import { accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, lower, plain, ratesTakeaway, taxTakeaway, yearTakeaway } from './text';
+import { MIN_ALIVE, cashFlowModel, handoverIndex, hasEquityBand, livesAbroad, sharesOfUses, yearNodes } from './model';
+import { EQUITY_CAPTION, accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, lower, plain, ratesTakeaway, taxTakeaway, yearTakeaway } from './text';
 
 const summaries = new Map<string, Summary>();
 
@@ -25,7 +25,7 @@ beforeAll(() => {
   // The engine is slow to warm up when the machine is busy.
 }, 120_000);
 
-const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord', 'full-life'];
+const SLUGS = ['dual-income-family', 'early-career-saver', 'side-hustle-landlord', 'startup-employee', 'full-life'];
 
 describe('cashFlowModel on real engine output', () => {
   for (const slug of SLUGS) {
@@ -183,5 +183,52 @@ describe('foreign income tax', () => {
     expect(abroad.taxes.find((g) => g.key === 'tax_state')?.label).toBe('State and foreign income tax');
     expect(yearNodes(abroad, { abroad: true }).uses.find((n) => n.key === 'out:tax_state')?.label).toBe('State and foreign tax');
     expect(cashFlowModel(summaries.get('dual-income-family') as Summary).taxes.every((g) => g.label !== 'State and foreign income tax')).toBe(true);
+  });
+});
+
+describe('startup equity', () => {
+  it('is its own band of money in, exercising is money out, and the year still balances', () => {
+    const summary = summaries.get('startup-employee') as Summary;
+    const m = cashFlowModel(summary);
+    const series = (key: string) => summary.composition.find((c) => c.series === key)?.values ?? [];
+    expect(hasEquityBand(m)).toBe(true);
+    const band = m.moneyIn.find((g) => g.key === 'equity');
+    expect(band?.label).toBe('Startup equity');
+    expect(band?.parts.map((p) => p.key)).toEqual(['income_equity']);
+    // Straight after wages in the stack, in a colour no other source uses.
+    expect(m.moneyIn.map((g) => g.key).indexOf('equity')).toBe(m.moneyIn.map((g) => g.key).indexOf('wages') + 1);
+    expect(m.moneyIn.filter((g) => g.color === band?.color)).toHaveLength(1);
+    const exercise = m.moneyOut.find((g) => g.key === 'other_out')?.parts.find((p) => p.key === 'equity_exercise');
+    expect(exercise?.label).toBe('Exercising options');
+    let proceeds = 0;
+    let paid = 0;
+    for (let i = m.flowStart; i <= m.end; i++) {
+      expect(band?.values[i]).toBe(Math.max(0, series('income_equity')[i] ?? 0));
+      expect(exercise?.values[i]).toBe(Math.max(0, series('equity_exercise')[i] ?? 0));
+      proceeds += band?.values[i] ?? 0;
+      paid += exercise?.values[i] ?? 0;
+      // The identity the view rests on, with the two new series in it.
+      expect(Math.abs((m.totalIn[i] as number) - (m.totalOut[i] as number))).toBeLessThan(40);
+    }
+    expect(proceeds).toBeGreaterThan(100_000);
+    expect(paid).toBeGreaterThan(1_000);
+    // Paper value is a memo: it is in neither side and not on the balance sheet.
+    expect([...m.moneyIn, ...m.moneyOut, ...m.assets].flatMap((g) => g.parts.map((p) => p.key))).not.toContain('equity_paper_value');
+    // Equity proceeds are income for the saving rate.
+    const i = m.flowStart + 2;
+    const gross = ['income_wages', 'income_equity', 'income_self_employment', 'income_social_security', 'income_pensions', 'income_rental', 'income_other', 'save_employer'].reduce((t, k) => t + Math.max(0, series(k)[i] ?? 0), 0);
+    const saved = m.moneyOut.find((g) => g.key === 'saving')?.values[i] ?? 0;
+    expect(m.savingRate[i]).toBeCloseTo(saved / gross, 9);
+    const nodes = yearNodes(m);
+    expect(nodes.sources.find((n) => n.key === 'in:income_equity')?.label).toBe('Startup equity');
+    expect(EQUITY_CAPTION).toMatch(/^Startup equity is an average over lives in which it paid and lives in which it did not; the Equity view shows how likely each is\.$/);
+  });
+
+  it('is absent from a plan without a private company', () => {
+    for (const slug of ['dual-income-family', 'early-career-saver', 'side-hustle-landlord']) {
+      const m = cashFlowModel(summaries.get(slug) as Summary);
+      expect(hasEquityBand(m), slug).toBe(false);
+      expect(yearNodes(m).uses.some((n) => n.key === 'out:equity_exercise'), slug).toBe(false);
+    }
   });
 });

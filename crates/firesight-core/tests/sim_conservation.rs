@@ -1,7 +1,8 @@
-//! Money is conserved: every month, on every path, in every market model, the three
+//! Money is conserved: every month, on every path, in every market model, the four
 //! identities of `sim/record.rs` hold (cash sources equal uses; invested buckets
 //! change by contributions, withdrawals and returns; property, mortgages and debts
-//! change by the flows reported). `Workspace::set_check(true)` asserts them inside
+//! change by the flows reported; private-company share lots change by the basis
+//! reported in and out). `Workspace::set_check(true)` asserts them inside
 //! the loop; these tests drive it over the demo households and over a household
 //! built to exercise every event kind, income kind and policy at once.
 
@@ -440,6 +441,114 @@ pub fn kitchen_sink() -> Profile {
             )
         },
     ];
+    // Private companies: the partner's employer (non-qualified options exercised as
+    // they vest, RSUs, shares bought earlier) and the first person's (incentive
+    // options exercised at once, shares kept as single stock after a listing).
+    let holding =
+        |id: &str, kind: HoldingKind, shares: f64, vested: f64, months: u32| EquityHolding {
+            id: id.into(),
+            name: id.into(),
+            kind,
+            shares,
+            vested,
+            vest_months_left: months,
+            cliff_months: 0,
+        };
+    p.private_equity = vec![
+        PrivateCompany {
+            id: "b_startup".into(),
+            name: "Partner's startup".into(),
+            owner: 1,
+            job: Some("job_b".into()),
+            stage: CompanyStage::SeriesA,
+            preferred_price: 6.0,
+            tenders: TenderOffers {
+                annual_probability: Some(0.5),
+                ..TenderOffers::default()
+            },
+            holdings: vec![
+                holding(
+                    "b_nso",
+                    HoldingKind::Nso {
+                        strike: 1.0,
+                        granted_months_ago: 12,
+                    },
+                    12_000.0,
+                    3_000.0,
+                    36,
+                ),
+                holding(
+                    "b_rsu",
+                    HoldingKind::Rsu {
+                        must_be_employed_at_event: true,
+                    },
+                    2_000.0,
+                    500.0,
+                    24,
+                ),
+                holding(
+                    "b_shares",
+                    HoldingKind::Shares {
+                        basis_per_share: 0.5,
+                        months_held: 20,
+                        from_iso: false,
+                        fmv_at_exercise: 0.0,
+                    },
+                    4_000.0,
+                    0.0,
+                    0,
+                ),
+            ],
+            policy: EquityPolicy {
+                exercise: ExerciseTiming::AsTheyVest,
+                tender_sell_fraction: 1.0,
+                sell_down: SellDown::OverYears { years: 3 },
+                ..EquityPolicy::default()
+            },
+            ..PrivateCompany::default()
+        },
+        PrivateCompany {
+            id: "a_startup".into(),
+            name: "First startup".into(),
+            owner: 0,
+            job: Some("job_a".into()),
+            stage: CompanyStage::Late,
+            preferred_price: 20.0,
+            qsbs: true,
+            amt_credit_carryforward: 4_000.0,
+            lockup_months: 0,
+            holdings: vec![
+                holding(
+                    "a_iso",
+                    HoldingKind::Iso {
+                        strike: 3.0,
+                        granted_months_ago: 30,
+                    },
+                    6_000.0,
+                    4_000.0,
+                    18,
+                ),
+                holding(
+                    "a_iso_shares",
+                    HoldingKind::Shares {
+                        basis_per_share: 2.0,
+                        months_held: 5,
+                        from_iso: true,
+                        fmv_at_exercise: 9.0,
+                    },
+                    1_500.0,
+                    0.0,
+                    0,
+                ),
+            ],
+            policy: EquityPolicy {
+                exercise: ExerciseTiming::VestedNow,
+                sell_down: SellDown::Hold,
+                ..EquityPolicy::default()
+            },
+            ..PrivateCompany::default()
+        },
+    ];
     p.assumptions.market.stress = vec![
         Stress::CrashAtRetirement {
             drawdown: 0.35,
@@ -571,6 +680,7 @@ fn traces_conserve_money_and_show_the_events() {
             let sign = match s {
                 YearSeries::PropertySale => 1.0,
                 YearSeries::PropertyPurchase => -1.0,
+                YearSeries::EquityExercise => -1.0,
                 YearSeries::SaveEmployer => 0.0,
                 _ => sign,
             };
@@ -597,6 +707,11 @@ fn traces_conserve_money_and_show_the_events() {
         "debt_paid_off",
         "laid_off",
         "life_event",
+        // The older private grant on the partner's job, and the two companies.
+        "equity_event",
+        "options_exercised",
+        "equity_forfeited",
+        "company_failed",
     ] {
         assert!(
             seen.contains(kind),
@@ -673,4 +788,142 @@ fn household_dynamics_conserve_money() {
         let acc = run_checked(&plan, 9, 0..paths());
         assert_eq!(acc.paths, paths(), "{kind:?}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private-company equity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_startup_employee_conserves_money_in_every_market_model() {
+    for kind in MARKETS {
+        let plan = compile(&with_market(startup_employee(), kind));
+        let acc = run_checked(&plan, 11, 0..paths());
+        assert_eq!(acc.paths, paths(), "{kind:?}");
+    }
+}
+
+/// Every outcome a company can have, forced with certainty.
+fn forced_outcomes() -> Vec<(&'static str, Vec<OutcomeRow>, f64)> {
+    vec![
+        ("fails", certain(OutcomeKind::Fails, 1.0, 2.0, 1.0), 0.0),
+        (
+            "acquired below the preferences",
+            certain(OutcomeKind::Acquired, 1.0, 4.0, 0.2),
+            0.0,
+        ),
+        (
+            "acquired at three times",
+            certain(OutcomeKind::Acquired, 1.0, 4.0, 3.0),
+            0.0,
+        ),
+        ("lists", certain(OutcomeKind::Ipo, 1.0, 5.0, 2.5), 0.0),
+        (
+            "stays private with tenders",
+            certain(OutcomeKind::StillPrivate, 0.0, 0.0, 1.0),
+            0.9,
+        ),
+    ]
+}
+
+#[test]
+fn every_equity_outcome_conserves_money() {
+    let timings = [
+        ExerciseTiming::AtLiquidity,
+        ExerciseTiming::VestedNow,
+        ExerciseTiming::AsTheyVest,
+    ];
+    let sell_downs = [
+        SellDown::AllAtLockupEnd,
+        SellDown::OverYears { years: 3 },
+        SellDown::Hold,
+    ];
+    for (name, outcomes, tenders) in forced_outcomes() {
+        for exercise in timings {
+            for sell_down in sell_downs {
+                let mut p = startup_employee();
+                {
+                    let co = &mut p.private_equity[0];
+                    co.outcomes = outcomes.clone();
+                    co.tenders.annual_probability = Some(tenders);
+                    co.policy.exercise = exercise;
+                    co.policy.sell_down = sell_down;
+                    co.qsbs = true;
+                }
+                for kind in MARKETS {
+                    let plan = compile(&with_market(p.clone(), kind));
+                    let acc = run_checked(&plan, 7, 0..200);
+                    assert_eq!(
+                        acc.paths, 200,
+                        "{name}, {exercise:?}, {sell_down:?}, {kind:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn equity_outside_the_usual_cases_conserves_money() {
+    // A company owned by a partner who joins in year 3, failing in year 2: its
+    // flows are discarded, and the lot-basis identity must hold all the same.
+    let mut p = startup_employee();
+    let mut partner = person("partner", 33, Sex::Male);
+    partner.joins = Some(START + 36);
+    p.household.people.push(partner);
+    let mut theirs = p.private_equity[0].clone();
+    theirs.id = "theirs".into();
+    theirs.name = "Partner's company".into();
+    theirs.owner = 1;
+    theirs.job = None;
+    theirs.outcomes = certain(OutcomeKind::Fails, 1.5, 2.0, 1.0);
+    theirs.holdings.retain(|h| h.kind.is_shares());
+    p.private_equity.push(theirs);
+    // And one that pays out before they join, and one that lists after.
+    for (id, outcomes) in [
+        ("early", certain(OutcomeKind::Acquired, 1.0, 2.0, 2.0)),
+        ("late", certain(OutcomeKind::Ipo, 4.0, 6.0, 2.0)),
+    ] {
+        let mut more = p.private_equity[1].clone();
+        more.id = id.into();
+        more.outcomes = outcomes;
+        more.policy.sell_down = SellDown::Hold;
+        p.private_equity.push(more);
+    }
+    let plan = compile(&p);
+    let acc = run_checked(&plan, 3, 0..300);
+    assert_eq!(acc.paths, 300);
+
+    // A flat tax, a household with no tax at all, and one living abroad: no payroll
+    // tax and no withholding at the event, the same identities.
+    for kind in [TaxKind::Flat { rate: 0.3 }, TaxKind::None] {
+        let mut p = startup_employee();
+        p.assumptions.taxes.kind = kind;
+        p.private_equity[0].policy.exercise = ExerciseTiming::VestedNow;
+        let acc = run_checked(&compile(&p), 3, 0..200);
+        assert_eq!(acc.paths, 200);
+    }
+    let mut abroad = startup_employee();
+    abroad.household.location = Location {
+        country: "PT".into(),
+        state: None,
+        city: None,
+        foreign_tax_rate: Some(0.25),
+    };
+    abroad.private_equity[0].policy.exercise = ExerciseTiming::AsTheyVest;
+    let acc = run_checked(&compile(&abroad), 3, 0..200);
+    assert_eq!(acc.paths, 200);
+
+    // A couple: the owner's death passes the holdings to the survivor at a
+    // stepped-up basis, or drops them when nobody is left.
+    let mut couple = startup_employee();
+    couple
+        .household
+        .people
+        .push(person("spouse", 30, Sex::Male));
+    couple.private_equity[0].policy.exercise = ExerciseTiming::VestedNow;
+    couple.private_equity[0].outcomes = certain(OutcomeKind::StillPrivate, 0.0, 0.0, 1.0);
+    couple.household.people[0].health = HealthStatus::Poor;
+    let acc = run_checked(&compile(&couple), 3, 0..400);
+    assert_eq!(acc.paths, 400);
 }

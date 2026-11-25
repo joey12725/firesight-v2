@@ -182,6 +182,9 @@ pub enum Stream {
     /// Local housing factors for one property or one local market (index into the
     /// plan's property or market table): local house-price cycles.
     LocalMarket(usize),
+    /// Fate and tender offers of one private company (index into
+    /// `profile.private_equity`).
+    PrivateCompany(usize),
 }
 
 impl Stream {
@@ -238,6 +241,7 @@ impl Stream {
             Stream::SpendingPath => 72,
             Stream::Policy => 80,
             Stream::LocalMarket(i) => 0x2E00_0000 + i as u64,
+            Stream::PrivateCompany(i) => 0x0500_0000 + i as u64,
         }
     }
 }
@@ -614,14 +618,51 @@ mod tests {
         let mut again = Rng::stream(1, 0, Stream::Market);
         assert_eq!(first, [again.next_u64(), again.next_u64()]);
         assert_eq!(first, GOLDEN_STREAM_1_0_MARKET);
+        // The private-company streams: every stored fate depends on them.
+        for (index, golden) in [
+            (0, GOLDEN_STREAM_1_0_COMPANY_0),
+            (3, GOLDEN_STREAM_1_0_COMPANY_3),
+        ] {
+            let mut r = Rng::stream(1, 0, Stream::PrivateCompany(index));
+            assert_eq!([r.next_u64(), r.next_u64()], golden, "company {index}");
+        }
     }
 
     const GOLDEN_STREAM_1_0_MARKET: [u64; 2] =
         [13_782_392_658_221_407_413, 12_316_620_447_257_498_702];
+    const GOLDEN_STREAM_1_0_COMPANY_0: [u64; 2] =
+        [18_035_812_154_191_333_663, 12_953_161_216_265_865_844];
+    const GOLDEN_STREAM_1_0_COMPANY_3: [u64; 2] =
+        [7_822_913_739_963_532_540, 15_934_662_990_601_319_813];
+
+    #[test]
+    fn stream_ids_are_distinct() {
+        let mut ids = vec![
+            Stream::Market.id(),
+            Stream::Inflation.id(),
+            Stream::EquityComp.id(),
+            Stream::Shocks.id(),
+            Stream::Events.id(),
+        ];
+        for i in 0..16 {
+            ids.extend([
+                Stream::Career(i).id(),
+                Stream::Health(i).id(),
+                Stream::Longevity(i).id(),
+                Stream::Housing(i).id(),
+                Stream::PrivateCompany(i).id(),
+            ]);
+        }
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total);
+        assert_eq!(Stream::PrivateCompany(2).id(), 0x0500_0002);
+    }
 
     /// Every stream with the id it must keep for ever. Indexed streams appear at two
     /// indices, one of them large, to show their ranges do not run into each other.
-    const ALL_STREAMS: [(Stream, u64); 71] = [
+    const ALL_STREAMS: [(Stream, u64); 74] = [
         (Stream::Market, 1),
         (Stream::Inflation, 2),
         (Stream::EquityComp, 3),
@@ -656,6 +697,10 @@ mod tests {
         (Stream::LocalMarket(1), 0x2E00_0001),
         (Stream::LocalMarket(0xF_FFFF), 0x2E0F_FFFF),
         (Stream::Housing(0xF_FFFF), 0x040F_FFFF),
+        // Private-company equity.
+        (Stream::PrivateCompany(0), 0x0500_0000),
+        (Stream::PrivateCompany(1), 0x0500_0001),
+        (Stream::PrivateCompany(0xF_FFFF), 0x050F_FFFF),
         // The household-realism streams.
         (Stream::Vehicle(0), 0x1100_0000),
         (Stream::Vehicle(1), 0x1100_0001),

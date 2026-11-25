@@ -52,6 +52,12 @@
 //! The requirement is recomputed when something material changes (each January, a
 //! life event, a death, a job lost or found) and compared with wealth every month.
 //!
+//! With private-company equity in the plan (`private_equity`), wealth is also net
+//! of the tax owed on it that is still sitting in cash: the net proceeds of an
+//! equity event in the month it happens, the instalments set for the rest of that
+//! year, and that year's balance due in April. Paper value (vested, unvested or
+//! locked up) never counts.
+//!
 //! # FI age and retirement age
 //!
 //! The FI age is the first month the funded test is met. For `when_funded` the
@@ -153,6 +159,10 @@ impl State {
         if basis == WealthBasis::NetWorth {
             let (value, mortgage) = self.property_totals();
             w += value - mortgage;
+        }
+        if self.has_equity {
+            // Money owed in tax on an equity payout is not wealth.
+            w -= self.equity_tax_owed();
         }
         w / price
     }
@@ -452,6 +462,10 @@ impl State {
         if rule.basis == WealthBasis::NetWorth {
             let (value, mortgage) = self.property_totals();
             wealth += value - mortgage;
+        }
+        if self.has_equity {
+            // Money owed in tax on an equity payout does not count toward retiring.
+            wealth -= self.equity_tax_owed();
         }
         let wealth = wealth / price;
         let funded = match plan.trigger {

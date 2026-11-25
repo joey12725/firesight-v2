@@ -19,6 +19,7 @@ import {
   type SelectOption,
 } from '@/ui';
 import { useEdit, useHelp, useIssues, usePeople, useValue } from './hooks';
+import { percentIssues } from './issue-words';
 
 interface Common {
   path: string;
@@ -50,8 +51,10 @@ interface NumProps extends Common {
 
 export function NumField({ path, label, help, hint, className, kind = 'number', ...rest }: NumProps) {
   const b = useBinding<number | null>(path, help);
+  // A percent field is typed in percent, so its range errors are said in percent.
+  const issues = kind === 'percent' ? percentIssues(b.issues) : b.issues;
   return (
-    <Field label={label} help={b.help} hint={hint} issues={b.issues} className={className}>
+    <Field label={label} help={b.help} hint={hint} issues={issues} className={className}>
       {({ id, describedBy, invalid }) => (
         <span data-path={path} className="block">
           <NumberInput id={id} aria-describedby={describedBy} invalid={invalid} kind={kind} value={b.value ?? null} onChange={(v) => b.write(v)} {...rest} />
@@ -74,8 +77,9 @@ interface SliderFieldProps extends Common {
 
 export function SliderField({ path, label, help, hint, className, ...rest }: SliderFieldProps) {
   const b = useBinding<number>(path, help);
+  const issues = rest.kind === 'percent' ? percentIssues(b.issues) : b.issues;
   return (
-    <Field label={label} help={b.help} hint={hint} issues={b.issues} className={className}>
+    <Field label={label} help={b.help} hint={hint} issues={issues} className={className}>
       {({ id, invalid }) => (
         <span data-path={path} className="block">
           <Slider id={id} aria-label={label} invalid={invalid} value={b.value ?? 0} onChange={(v) => b.write(v)} {...rest} />

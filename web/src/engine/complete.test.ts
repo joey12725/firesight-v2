@@ -26,7 +26,7 @@ describe('completing a profile', () => {
   });
 
   it('fills the omitted fields of every demo household with values the engine reads as defaults', () => {
-    expect(raw.length).toBe(4);
+    expect(raw.length).toBe(5);
     for (const { slug, profile } of raw) {
       const completed = completeProfile(schema, clone(profile)) as unknown as Profile;
       // Every field the editor reads is there...

@@ -90,6 +90,19 @@ describe('levers and paired effects on real engine output', () => {
     }
   });
 
+  it('puts the startup outcome with the world and the three equity decisions with what you control', () => {
+    const startup = exampleProfiles().find((e) => e.slug === 'startup-employee');
+    const profile = applyPatch(startup?.profile as Profile, []).profile;
+    const defs = buildLevers(profile, levers(profile));
+    expect(defs.find((l) => l.id === 'equity_outlook')?.group).toBe('world');
+    expect(defs.find((l) => l.id === 'equity_outlook')?.label).toBe('Startup outcome');
+    for (const id of ['equity_exercise', 'equity_tender', 'equity_sell_down']) expect(defs.find((l) => l.id === id)?.group, id).toBe('control');
+    for (const id of ['equity_outlook', 'equity_exercise', 'equity_tender', 'equity_sell_down']) expect(defs.find((l) => l.id === id)?.sides.length, id).toBeGreaterThan(0);
+    // A plan without a private company has none of them.
+    for (const other of profiles.filter((p) => p.private_equity.length === 0)) expect(buildLevers(other, levers(other)).some((l) => l.id.startsWith('equity_'))).toBe(false);
+    expect(profiles.filter((p) => p.private_equity.length === 0)).toHaveLength(4);
+  });
+
   it('moves the target mix by the stated amount and keeps it summing to 100', () => {
     const profile = profiles[0] as Profile;
     const g = equityShare(profile) as number;

@@ -14,8 +14,15 @@ use super::num::{
     censored_quantile, moments, nan, nan_vec, nan_vec2, quantile_sorted, round_dp, sorted_finite,
     Estimate, Spread,
 };
-use super::{FailureCause, HistSeries, PathScalar, ScalarUnit, SeriesKind, Status, YearSeries};
+use super::{
+    EquityOutcome, FailureCause, HistSeries, PathScalar, ScalarUnit, SeriesKind, Status, YearSeries,
+};
 use crate::model::YearMonth;
+
+/// Fewest paths an equity outcome class needs before results conditioned on it are
+/// reported as reliable. Mirrored in `params.json` under
+/// `equity_compensation.startup_equity.policy_defaults`.
+pub const MIN_PATHS_PER_OUTCOME: usize = 30;
 
 /// The quantile levels of every curve and distribution.
 pub const QUANTILE_LEVELS: [f64; 9] = [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99];
@@ -61,7 +68,7 @@ pub(crate) fn unit_decimals(unit: ScalarUnit) -> u32 {
 }
 
 /// Run facts the summary needs that the accumulator does not hold.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SummaryContext {
     /// `profile.start`.
     pub start: YearMonth,
@@ -69,6 +76,9 @@ pub struct SummaryContext {
     pub first_birth: YearMonth,
     /// Birth month of the second person, if there is one.
     pub second_birth: Option<YearMonth>,
+    /// Name of the private company the equity outcome describes (its `id` when the
+    /// name is empty); `None` for a plan without private-company equity.
+    pub equity_company: Option<String>,
 }
 
 /// The x axis shared by every per-year array.
@@ -468,7 +478,10 @@ pub struct FailureAttribution {
 pub struct PathPick {
     /// `p10`, `median`, `p90` (by terminal net worth), `median_fi` (median FI age
     /// among paths that reach it) or `failing` (the median depletion age among
-    /// failed paths, or the first failed path if none depletes).
+    /// failed paths, or the first failed path if none depletes). With private-company
+    /// equity also `equity_failed` (median terminal net worth among paths on which
+    /// the company failed), `equity_paid_median` and `equity_paid_p90` (by proceeds
+    /// after cost and tax among paths on which the equity paid something).
     pub label: String,
     /// The scalar the path was ranked by.
     pub scalar: PathScalar,
@@ -528,6 +541,94 @@ pub struct Summary {
     /// When the milestones of the plan fall.
     #[serde(default)]
     pub plan_moments: PlanMoments,
+    /// Outcomes of the household's private-company equity; absent for a plan
+    /// without any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equity: Option<EquitySummary>,
+}
+
+/// Outcomes of the household's private-company equity. Money in today's dollars.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct EquitySummary {
+    /// Name of the company the outcome shares describe.
+    pub company: String,
+    /// Paths with an outcome (all paths of a plan with private equity).
+    pub paths: u64,
+    /// Share of paths with each outcome, in `EquityOutcome` order.
+    pub outcomes: Vec<EquityOutcomeShare>,
+    /// Share of paths on which the equity paid nothing at all (gross proceeds 0).
+    pub nothing_rate: Estimate,
+    /// Share of paths on which more went in (exercise cost and tax) than came
+    /// back (net proceeds below 0).
+    pub loss_rate: Estimate,
+    /// Share of paths on which options were exercised for cash.
+    pub exercised_rate: Estimate,
+    /// Share of paths with proceeds from a tender offer.
+    pub tender_rate: Estimate,
+    /// Gross proceeds over all paths, zeros included.
+    pub gross_proceeds: Spread,
+    /// Net proceeds (after exercise cost and tax) over all paths.
+    pub net_proceeds: Spread,
+    /// Mean net proceeds over all paths with its standard error and 95% interval.
+    /// Carried by the few best outcomes, so the interval is wide, and at small
+    /// path counts it is too narrow and sits low: a run that happens to draw no
+    /// large outcome reports a small mean with a small standard error. Read it
+    /// with `net_proceeds_mean_half_from`.
+    pub net_proceeds_mean: Estimate,
+    /// Fewest paths whose net proceeds add up to half of all the positive net
+    /// proceeds: how few lives carry the mean. When this is small (under about
+    /// 100) the mean and its interval move a lot from run to run and the interval
+    /// should not be read as a 95% bound. 0 when no path has positive proceeds.
+    pub net_proceeds_mean_half_from: u64,
+    /// Net proceeds among paths that received something.
+    pub net_proceeds_if_paid: Spread,
+    /// Exercise cost among paths that paid any.
+    pub exercise_cost: Spread,
+    /// Tender proceeds among paths that had any.
+    pub tender_proceeds: Spread,
+    /// Share of paths on which the company had been acquired or gone public by
+    /// each age (first person's).
+    pub liquidity_by_age: AgeCurve,
+    /// Share of paths on which the company had failed by each age.
+    pub failed_by_age: AgeCurve,
+    /// The plan's headline results among the paths with each outcome, in
+    /// `EquityOutcome` order.
+    pub by_outcome: Vec<EquityConditional>,
+}
+
+/// One outcome's share of paths.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EquityOutcomeShare {
+    /// Which outcome.
+    pub outcome: EquityOutcome,
+    /// Paths with this outcome.
+    pub count: u64,
+    /// Wilson 95% interval, like the headline rates.
+    pub share: Estimate,
+}
+
+/// Headline results among the paths with one equity outcome.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EquityConditional {
+    /// Which outcome.
+    pub outcome: EquityOutcome,
+    /// Paths with this outcome.
+    pub paths: u64,
+    /// False when fewer than 30 paths have it (`MIN_PATHS_PER_OUTCOME`): the
+    /// spreads are then empty and the rates have very wide intervals.
+    pub enough: bool,
+    /// Share of these paths that succeed.
+    pub success_rate: Estimate,
+    /// Share of these paths that ever satisfy the retirement trigger.
+    pub fi_rate: Estimate,
+    /// FI age within the class, counting "never" as later than any age.
+    pub fi_age: Spread,
+    /// Retirement age within the class, censored the same way.
+    pub retirement_age: Spread,
+    /// Net worth at the end of the plan within the class.
+    pub terminal_net_worth: Spread,
+    /// Proceeds after exercise cost and tax within the class.
+    pub net_proceeds: Spread,
 }
 
 /// When the milestones of the plan fall, at the median over the paths on which
@@ -617,6 +718,19 @@ impl Table {
     fn failed(&self) -> std::iter::Copied<std::slice::Iter<'_, bool>> {
         self.failed.iter().copied()
     }
+
+    /// True when some path has a private-company outcome (the plan holds
+    /// private-company equity).
+    fn has_equity(&self) -> bool {
+        self.col(PathScalar::EquityOutcome).any(f32::is_finite)
+    }
+
+    /// The paths as rows of all their scalars, in path order. For the
+    /// private-company statistics, which read several scalars of one path together.
+    fn rows(&self) -> impl Iterator<Item = [f32; PathScalar::COUNT]> + '_ {
+        let n = self.paths.len();
+        (0..n).map(move |i| std::array::from_fn(|s| self.cols[s * n + i]))
+    }
 }
 
 /// The median of a slice, reordering it. NaN for an empty slice.
@@ -696,6 +810,7 @@ impl Summary {
             samples: acc.samples.clone(),
             pick_paths: Vec::new(),
             plan_moments: plan_moments(&sorted, &axis, ctx, n),
+            equity: equity(&table, ctx, first_age, last_age),
             axis,
         }
     }
@@ -1293,7 +1408,7 @@ fn failure(table: &Table, sorted: &[Vec<f32>]) -> FailureAttribution {
 
     let contrasts = PathScalar::ALL
         .iter()
-        .filter(|s| !matches!(s, PathScalar::Success | PathScalar::FailureCause))
+        .filter(|s| **s != PathScalar::Success && s.unit() != ScalarUnit::Index)
         .map(|s| {
             let dp = unit_decimals(s.unit());
             let (mut f, mut ok): (Vec<f32>, Vec<f32>) = (Vec::new(), Vec::new());
@@ -1387,7 +1502,193 @@ fn picks(table: &Table) -> Vec<PathPick> {
             .map(|(_, p)| (f32::NAN, *p))
     });
     push("failing", PathScalar::DepletionAge, failing);
+
+    // Private-company equity: the life to read when the company fails, and the
+    // typical and the good life among those it pays.
+    let rows_where = |s: PathScalar, keep: &dyn Fn(&[f32]) -> bool| -> Vec<(f32, u64)> {
+        if !table.has_equity() {
+            return Vec::new();
+        }
+        table
+            .rows()
+            .zip(&table.paths)
+            .filter(|(r, _)| keep(r))
+            .map(|(r, p)| (r[s.index()], *p))
+            .filter(|(v, _)| v.is_finite())
+            .collect()
+    };
+    let failed_index = EquityOutcome::Failed.index() as f32;
+    let mut failed = rows_where(PathScalar::TerminalNetWorth, &|r| {
+        r[PathScalar::EquityOutcome.index()] == failed_index
+    });
+    push(
+        "equity_failed",
+        PathScalar::TerminalNetWorth,
+        pick_at(&mut failed, 0.5),
+    );
+    let mut paid = rows_where(PathScalar::EquityNetProceeds, &|r| {
+        r[PathScalar::EquityOutcome.index()].is_finite()
+            && r[PathScalar::EquityGrossProceeds.index()] > 0.0
+    });
+    for (label, q) in [("equity_paid_median", 0.50), ("equity_paid_p90", 0.90)] {
+        push(label, PathScalar::EquityNetProceeds, pick_at(&mut paid, q));
+    }
     out
+}
+
+/// The outcome class of a row; `None` for a plan without private-company equity.
+pub(crate) fn equity_outcome_of(row: &[f32]) -> Option<EquityOutcome> {
+    let v = row[PathScalar::EquityOutcome.index()];
+    if v >= 0.0 {
+        EquityOutcome::from_index(v as usize)
+    } else {
+        None
+    }
+}
+
+fn equity(
+    table: &Table,
+    ctx: &SummaryContext,
+    first_age: i32,
+    last_age: i32,
+) -> Option<EquitySummary> {
+    if !table.has_equity() {
+        return None;
+    }
+    let all: Vec<[f32; PathScalar::COUNT]> = table.rows().collect();
+    let rows: Vec<(&[f32], EquityOutcome)> = all
+        .iter()
+        .filter_map(|r| equity_outcome_of(r).map(|o| (&r[..], o)))
+        .collect();
+    if rows.is_empty() {
+        return None;
+    }
+    let n = rows.len() as u64;
+    let get = |r: &[f32], s: PathScalar| r[s.index()];
+    let count = |keep: &dyn Fn(&[f32]) -> bool| rows.iter().filter(|(r, _)| keep(r)).count() as u64;
+    let rate = |keep: &dyn Fn(&[f32]) -> bool| Estimate::proportion(count(keep), n).rounded(5);
+    // Sorted finite values of one scalar among the rows that pass a test.
+    let values = |s: PathScalar, keep: &dyn Fn(&[f32], EquityOutcome) -> bool| -> Vec<f32> {
+        sorted_finite(
+            rows.iter()
+                .filter(|(r, o)| keep(r, *o))
+                .map(|(r, _)| get(r, s)),
+        )
+    };
+    let all = |_: &[f32], _: EquityOutcome| true;
+    let paid = |r: &[f32]| get(r, PathScalar::EquityGrossProceeds) > 0.0;
+
+    let net = values(PathScalar::EquityNetProceeds, &all);
+    let event_ages = |keep: &dyn Fn(EquityOutcome) -> bool| {
+        age_curve(
+            &values(PathScalar::EquityEventAge, &|_, o| keep(o)),
+            n,
+            first_age,
+            last_age,
+        )
+    };
+    let by_outcome: Vec<EquityConditional> = EquityOutcome::ALL
+        .iter()
+        .map(|outcome| {
+            let class = |_: &[f32], o: EquityOutcome| o == *outcome;
+            let paths = rows.iter().filter(|(_, o)| o == outcome).count() as u64;
+            let enough = paths >= MIN_PATHS_PER_OUTCOME as u64;
+            let in_class = |keep: &dyn Fn(&[f32]) -> bool| {
+                rows.iter().filter(|(r, o)| o == outcome && keep(r)).count() as u64
+            };
+            let censored = |s: PathScalar| {
+                if enough {
+                    Spread::censored(&values(s, &class), paths, 2)
+                } else {
+                    Spread::default()
+                }
+            };
+            let dollars = |s: PathScalar| {
+                if enough {
+                    Spread::of(&values(s, &class), 0)
+                } else {
+                    Spread::default()
+                }
+            };
+            EquityConditional {
+                outcome: *outcome,
+                paths,
+                enough,
+                success_rate: Estimate::proportion(
+                    in_class(&|r| get(r, PathScalar::Success) == 1.0),
+                    paths,
+                )
+                .rounded(5),
+                fi_rate: Estimate::proportion(
+                    in_class(&|r| get(r, PathScalar::FiAge).is_finite()),
+                    paths,
+                )
+                .rounded(5),
+                fi_age: censored(PathScalar::FiAge),
+                retirement_age: censored(PathScalar::RetirementAge),
+                terminal_net_worth: dollars(PathScalar::TerminalNetWorth),
+                net_proceeds: dollars(PathScalar::EquityNetProceeds),
+            }
+        })
+        .collect();
+
+    Some(EquitySummary {
+        company: ctx.equity_company.clone().unwrap_or_default(),
+        paths: n,
+        outcomes: by_outcome
+            .iter()
+            .map(|c| EquityOutcomeShare {
+                outcome: c.outcome,
+                count: c.paths,
+                share: Estimate::proportion(c.paths, n).rounded(5),
+            })
+            .collect(),
+        nothing_rate: rate(&|r| !paid(r)),
+        loss_rate: rate(&|r| get(r, PathScalar::EquityNetProceeds) < 0.0),
+        exercised_rate: rate(&|r| get(r, PathScalar::EquityExerciseCost) > 0.0),
+        tender_rate: rate(&|r| get(r, PathScalar::EquityTenderProceeds) > 0.0),
+        gross_proceeds: Spread::of(&values(PathScalar::EquityGrossProceeds, &all), 0),
+        net_proceeds: Spread::of(&net, 0),
+        net_proceeds_mean: Estimate::mean(net.iter().map(|v| f64::from(*v))).rounded(0),
+        net_proceeds_mean_half_from: {
+            // `net` is sorted ascending: count down from the best path.
+            let positive: f64 = net
+                .iter()
+                .filter(|v| **v > 0.0)
+                .map(|v| f64::from(*v))
+                .sum();
+            let (mut sum, mut paths) = (0.0, 0u64);
+            for v in net.iter().rev() {
+                if positive <= 0.0 || sum >= 0.5 * positive {
+                    break;
+                }
+                sum += f64::from(*v);
+                paths += 1;
+            }
+            paths
+        },
+        net_proceeds_if_paid: Spread::of(
+            &values(PathScalar::EquityNetProceeds, &|r, _| paid(r)),
+            0,
+        ),
+        exercise_cost: Spread::of(
+            &values(PathScalar::EquityExerciseCost, &|r, _| {
+                get(r, PathScalar::EquityExerciseCost) > 0.0
+            }),
+            0,
+        ),
+        tender_proceeds: Spread::of(
+            &values(PathScalar::EquityTenderProceeds, &|r, _| {
+                get(r, PathScalar::EquityTenderProceeds) > 0.0
+            }),
+            0,
+        ),
+        liquidity_by_age: event_ages(&|o| {
+            matches!(o, EquityOutcome::Acquired | EquityOutcome::Ipo)
+        }),
+        failed_by_age: event_ages(&|o| o == EquityOutcome::Failed),
+        by_outcome,
+    })
 }
 
 /// A probability with its 95% interval, for the digest.
@@ -1579,6 +1880,43 @@ pub struct SummaryDigest {
     pub failure_causes: Vec<DigestCause>,
     /// Paths to trace for a life story.
     pub trace_paths: DigestPicks,
+    /// Private-company equity outcomes; absent for a plan without any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equity: Option<DigestEquity>,
+}
+
+/// Private-company equity outcomes, for the digest.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct DigestEquity {
+    /// Company the outcome shares describe.
+    pub company: String,
+    /// Share of lives in which it fails.
+    pub failed: f64,
+    /// Share of lives in which it has no outcome within the life.
+    pub still_private: f64,
+    /// Share of lives in which it is acquired.
+    pub acquired: f64,
+    /// Share of lives in which it goes public.
+    pub ipo: f64,
+    /// Share of lives in which the equity pays nothing at all.
+    pub nothing: DigestRate,
+    /// Share of lives in which more went in than came back.
+    pub loss: f64,
+    /// Proceeds after exercise cost and tax over all lives, to the nearest $1,000.
+    pub net_proceeds: DigestSpread,
+    /// Their mean, carried by the best few lives, to the nearest $1,000.
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub net_proceeds_mean: f64,
+    /// Standard error of that mean, to the nearest $1,000.
+    #[serde(with = "nan")]
+    #[schemars(with = "Option<f64>")]
+    pub net_proceeds_mean_se: f64,
+    /// Probability of success among lives with each outcome, in the order
+    /// failed, still_private, acquired, ipo; null where fewer than 30 lives.
+    #[serde(with = "nan_vec")]
+    #[schemars(with = "Vec<Option<f64>>")]
+    pub success_by_outcome: Vec<f64>,
 }
 
 /// Explains the digest to a reader who has nothing else.
@@ -1716,6 +2054,41 @@ impl Summary {
                 p90: pick("p90"),
                 failing: pick("failing"),
             },
+            equity: self.equity.as_ref().map(|e| {
+                let share_of = |o: EquityOutcome| {
+                    e.outcomes
+                        .iter()
+                        .find(|s| s.outcome == o)
+                        .map_or(0.0, |s| round_dp(s.share.value, 3))
+                };
+                DigestEquity {
+                    company: e.company.clone(),
+                    failed: share_of(EquityOutcome::Failed),
+                    still_private: share_of(EquityOutcome::StillPrivate),
+                    acquired: share_of(EquityOutcome::Acquired),
+                    ipo: share_of(EquityOutcome::Ipo),
+                    nothing: rate(&e.nothing_rate),
+                    loss: round_dp(e.loss_rate.value, 3),
+                    net_proceeds: DigestSpread {
+                        p10: thousands(e.net_proceeds.p10),
+                        p50: thousands(e.net_proceeds.p50),
+                        p90: thousands(e.net_proceeds.p90),
+                    },
+                    net_proceeds_mean: thousands(e.net_proceeds_mean.value),
+                    net_proceeds_mean_se: thousands(e.net_proceeds_mean.std_error),
+                    success_by_outcome: e
+                        .by_outcome
+                        .iter()
+                        .map(|c| {
+                            if c.enough {
+                                round_dp(c.success_rate.value, 3)
+                            } else {
+                                f64::NAN
+                            }
+                        })
+                        .collect(),
+                }
+            }),
         }
     }
 }
@@ -1742,6 +2115,7 @@ mod tests {
             start: YearMonth::ym(2030, 1),
             first_birth: YearMonth::ym(1990, 1),
             second_birth: None,
+            equity_company: None,
         };
         let mut acc = Accumulator::new(3);
         // (FI age, death age, depletion age, terminal net worth in $k)
@@ -1926,7 +2300,7 @@ mod tests {
             .unwrap();
         assert_eq!(contrast.succeeded_median, 700_000.0);
         assert_eq!(contrast.failed_median, 100_000.0);
-        assert_eq!(f.contrasts.len(), PathScalar::COUNT - 2);
+        assert_eq!(f.contrasts.len(), PathScalar::COUNT - 3);
 
         // Picks and path lookup.
         assert_eq!(
@@ -2182,6 +2556,290 @@ mod tests {
         assert_eq!(serde_json::to_string(&back).unwrap(), json);
     }
 
+    fn equity_run(paths: u64) -> (Accumulator, SummaryContext) {
+        let kit = Synthetic {
+            equity: true,
+            ..Synthetic::default()
+        };
+        (run(&kit, paths), kit.context())
+    }
+
+    #[test]
+    fn equity_counts_add_up() {
+        use crate::stats::testkit::{
+            EQUITY_ACQUIRED_ZERO, EQUITY_COMPANY, EQUITY_EXERCISED, EQUITY_SHARES, EQUITY_TENDER,
+        };
+        const PATHS: u64 = 20_000;
+        let (acc, ctx) = equity_run(PATHS);
+        let s = Summary::from_accumulator(&acc, &ctx);
+        let e = s.equity.as_ref().expect("an equity block");
+        assert_eq!(e.company, EQUITY_COMPANY);
+        assert_eq!(e.paths, PATHS);
+        assert_eq!(e.outcomes.len(), EquityOutcome::COUNT);
+        assert_eq!(e.outcomes.iter().map(|o| o.count).sum::<u64>(), e.paths);
+
+        // Direct counts over the rows.
+        let get = |r: &[f32], sc: PathScalar| r[sc.index()];
+        let direct =
+            |keep: &dyn Fn(&[f32]) -> bool| acc.rows().filter(|(_, r)| keep(r)).count() as u64;
+        // A share is within 4 standard errors of the frequency the kit draws at.
+        let near = |what: &str, got: f64, p: f64| {
+            let se = (p * (1.0 - p) / PATHS as f64).sqrt();
+            assert!(
+                (got - p).abs() < 4.0 * se,
+                "{what}: {got} against {p} (se {se})"
+            );
+        };
+        for ((share, class), (outcome, p)) in e
+            .outcomes
+            .iter()
+            .zip(&e.by_outcome)
+            .zip(EquityOutcome::ALL.iter().zip(EQUITY_SHARES))
+        {
+            assert_eq!((share.outcome, class.outcome), (*outcome, *outcome));
+            let count = direct(&|r| get(r, PathScalar::EquityOutcome) == outcome.index() as f32);
+            assert_eq!(share.count, count);
+            assert_eq!(class.paths, count);
+            assert_eq!(share.share.value, round_dp(count as f64 / PATHS as f64, 5));
+            assert!(share.share.lo < share.share.value && share.share.value < share.share.hi);
+            near(outcome.key(), share.share.value, p);
+            assert!(class.enough);
+            let ok = direct(&|r| {
+                get(r, PathScalar::EquityOutcome) == outcome.index() as f32
+                    && get(r, PathScalar::Success) == 1.0
+            });
+            assert_eq!(
+                class.success_rate.value,
+                round_dp(ok as f64 / count as f64, 5)
+            );
+            assert_eq!(class.terminal_net_worth.count, count);
+            assert_eq!(class.net_proceeds.count, count);
+            assert!(class.fi_age.count <= count);
+            assert!(class.fi_rate.value >= class.success_rate.value);
+        }
+        let nothing = direct(&|r| get(r, PathScalar::EquityGrossProceeds) == 0.0);
+        assert_eq!(
+            e.nothing_rate.value,
+            round_dp(nothing as f64 / PATHS as f64, 5)
+        );
+        // Nothing: a failure, no outcome or an acquisition that pays common
+        // nothing, and no tender offer before it.
+        let p_nothing =
+            (EQUITY_SHARES[0] + EQUITY_SHARES[1] + EQUITY_SHARES[2] * EQUITY_ACQUIRED_ZERO)
+                * (1.0 - EQUITY_TENDER);
+        near("nothing", e.nothing_rate.value, p_nothing);
+        near("tender", e.tender_rate.value, EQUITY_TENDER);
+        near("exercised", e.exercised_rate.value, EQUITY_EXERCISED);
+        // A loss: an exercise and too little back. Nothing back and an exercise is
+        // always one, and no loss happens without an exercise.
+        let loss = direct(&|r| get(r, PathScalar::EquityNetProceeds) < 0.0);
+        assert_eq!(e.loss_rate.value, round_dp(loss as f64 / PATHS as f64, 5));
+        assert!(e.loss_rate.value >= 0.9 * p_nothing * EQUITY_EXERCISED);
+        assert!(e.loss_rate.value <= e.exercised_rate.value);
+
+        assert_eq!(e.gross_proceeds.count, PATHS);
+        assert_eq!(e.net_proceeds.count, PATHS);
+        assert_eq!(e.net_proceeds_if_paid.count, PATHS - nothing);
+        assert_eq!(
+            e.exercise_cost.count,
+            direct(&|r| get(r, PathScalar::EquityExerciseCost) > 0.0)
+        );
+        assert_eq!(
+            e.tender_proceeds.count,
+            direct(&|r| get(r, PathScalar::EquityTenderProceeds) > 0.0)
+        );
+        assert_eq!(e.gross_proceeds.p10, 0.0);
+        assert!(e.gross_proceeds.p90 > 0.0);
+        assert!(e.net_proceeds_if_paid.p50 > e.net_proceeds.p50);
+        assert!(e.exercise_cost.p10 > 0.0 && e.tender_proceeds.p10 > 0.0);
+        // The mean is the plain mean of the column, with its standard error.
+        let (count, mean, sd) = moments(
+            acc.rows()
+                .map(|(_, r)| f64::from(get(r, PathScalar::EquityNetProceeds))),
+        );
+        assert_eq!(count, PATHS);
+        assert_eq!(e.net_proceeds_mean.value, round_dp(mean, 0));
+        assert!((e.net_proceeds_mean.std_error - sd / (PATHS as f64).sqrt()).abs() < 1.0);
+        assert!(e.net_proceeds_mean.lo < mean && mean < e.net_proceeds_mean.hi);
+        assert!(
+            e.net_proceeds_mean.value > e.net_proceeds.p50,
+            "a long right tail"
+        );
+        // How few paths carry the mean: counted directly from the column.
+        let mut column: Vec<f64> = acc
+            .rows()
+            .map(|(_, r)| f64::from(get(r, PathScalar::EquityNetProceeds)))
+            .collect();
+        column.sort_by(|a, b| b.total_cmp(a));
+        let positive: f64 = column.iter().filter(|v| **v > 0.0).sum();
+        let mut sum = 0.0;
+        let half_from = column
+            .iter()
+            .take_while(|v| {
+                let more = sum < 0.5 * positive;
+                sum += **v;
+                more
+            })
+            .count() as u64;
+        assert_eq!(e.net_proceeds_mean_half_from, half_from);
+        assert!(half_from > 0 && half_from < PATHS / 2, "{half_from}");
+
+        // The two age curves cover every path: each ends at its class's share.
+        let end = |c: &AgeCurve| *c.cumulative.last().unwrap();
+        assert_eq!(
+            end(&e.liquidity_by_age),
+            round_dp(
+                (e.outcomes[2].count + e.outcomes[3].count) as f64 / PATHS as f64,
+                5
+            )
+        );
+        assert_eq!(end(&e.failed_by_age), e.outcomes[0].share.value);
+        assert!(e
+            .liquidity_by_age
+            .cumulative
+            .windows(2)
+            .all(|w| w[0] <= w[1]));
+        // The kit dates every event within ten years of the start.
+        let ten_years_on = e
+            .failed_by_age
+            .ages
+            .iter()
+            .position(|a| f64::from(*a) >= START_AGE + 10.0)
+            .unwrap();
+        assert_eq!(
+            e.failed_by_age.cumulative[ten_years_on],
+            end(&e.failed_by_age)
+        );
+        assert_eq!(e.failed_by_age.cumulative[0], 0.0);
+
+        // Picks: three more, each from the class it names.
+        let pick = |label: &str| s.picks.iter().find(|p| p.label == label).unwrap();
+        let row = |p: u64| acc.path_scalars(p).unwrap();
+        assert_eq!(
+            get(
+                row(pick("equity_failed").path_index),
+                PathScalar::EquityOutcome
+            ),
+            EquityOutcome::Failed.index() as f32
+        );
+        for label in ["equity_paid_median", "equity_paid_p90"] {
+            assert!(get(row(pick(label).path_index), PathScalar::EquityGrossProceeds) > 0.0);
+        }
+        assert!(pick("equity_paid_p90").value > pick("equity_paid_median").value);
+        assert_eq!(s.picks.len(), 8);
+        // The outcome index is in no contrast.
+        assert!(s
+            .failure
+            .contrasts
+            .iter()
+            .all(|c| c.scalar.unit() != ScalarUnit::Index && c.scalar != PathScalar::Success));
+        assert_eq!(s.failure.contrasts.len(), PathScalar::COUNT - 3);
+
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Summary = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    }
+
+    #[test]
+    fn small_equity_classes_are_flagged() {
+        // 60 paths: the IPO class (15%) has about nine paths, under the 30 needed.
+        let (acc, ctx) = equity_run(60);
+        let s = Summary::from_accumulator(&acc, &ctx);
+        let e = s.equity.as_ref().unwrap();
+        let mut small = 0;
+        for class in &e.by_outcome {
+            assert_eq!(class.enough, class.paths >= MIN_PATHS_PER_OUTCOME as u64);
+            if !class.enough {
+                small += 1;
+                for spread in [
+                    class.fi_age,
+                    class.retirement_age,
+                    class.terminal_net_worth,
+                    class.net_proceeds,
+                ] {
+                    assert!(spread.count == 0 && spread.p10.is_nan() && spread.p50.is_nan());
+                }
+                if class.paths > 0 {
+                    assert!(class.success_rate.hi - class.success_rate.lo > 0.2);
+                } else {
+                    assert!(class.success_rate.value.is_nan());
+                }
+            }
+        }
+        assert!(small >= 2, "{small}");
+        let d = s.digest().equity.unwrap();
+        for (class, p) in e.by_outcome.iter().zip(&d.success_by_outcome) {
+            assert_eq!(class.enough, p.is_finite());
+        }
+        let json = serde_json::to_string(&s.digest()).unwrap();
+        assert!(json.contains("null"), "{json}");
+        let back: SummaryDigest = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    }
+
+    #[test]
+    fn no_equity_block_without_equity() {
+        let kit = Synthetic::default();
+        let acc = run(&kit, 2_000);
+        let s = Summary::from_accumulator(&acc, &kit.context());
+        assert!(s.equity.is_none());
+        assert!(!serde_json::to_string(&s).unwrap().contains("\"equity\""));
+        let digest = serde_json::to_string(&s.digest()).unwrap();
+        assert!(!digest.contains("equity"), "{digest}");
+        assert!(s.picks.iter().all(|p| !p.label.starts_with("equity")));
+        // A company named in the context does not conjure a block: it takes paths
+        // with an outcome.
+        let mut ctx = kit.context();
+        ctx.equity_company = Some("Nobody Inc".into());
+        assert!(Summary::from_accumulator(&acc, &ctx).equity.is_none());
+        // And the equity scalars leave every other part of the summary alone.
+        let (with, with_ctx) = equity_run(2_000);
+        let mut t = Summary::from_accumulator(&with, &with_ctx);
+        assert!(t.equity.is_some());
+        t.equity = None;
+        t.picks.retain(|p| !p.label.starts_with("equity"));
+        let first = PathScalar::EquityOutcome.index();
+        t.distributions.truncate(first);
+        t.failure.contrasts.retain(|c| c.scalar.index() < first);
+        let mut plain = s.clone();
+        plain.distributions.truncate(first);
+        plain.failure.contrasts.retain(|c| c.scalar.index() < first);
+        // Compared as JSON: a missing number is NaN, which does not equal itself.
+        assert_eq!(
+            serde_json::to_string(&t).unwrap(),
+            serde_json::to_string(&plain).unwrap()
+        );
+        let mut d = Summary::from_accumulator(&with, &with_ctx).digest();
+        d.equity = None;
+        assert_eq!(serde_json::to_string(&d).unwrap(), digest);
+    }
+
+    #[test]
+    fn digest_with_equity_is_small() {
+        use crate::stats::testkit::EQUITY_COMPANY;
+        let (acc, ctx) = equity_run(3_000);
+        let s = Summary::from_accumulator(&acc, &ctx);
+        let d = s.digest();
+        let json = serde_json::to_string(&d).unwrap();
+        println!("digest with equity: {} bytes\n{json}", json.len());
+        assert!(json.len() < 2_400, "{} bytes", json.len());
+        let e = d.equity.as_ref().unwrap();
+        let full = s.equity.as_ref().unwrap();
+        assert_eq!(e.company, EQUITY_COMPANY);
+        let total = e.failed + e.still_private + e.acquired + e.ipo;
+        assert!((total - 1.0).abs() < 0.002, "{total}");
+        assert_eq!(e.failed, round_dp(full.outcomes[0].share.value, 3));
+        assert_eq!(e.nothing.p, round_dp(full.nothing_rate.value, 3));
+        assert!(e.nothing.lo < e.nothing.p && e.nothing.p < e.nothing.hi);
+        assert_eq!(e.loss, round_dp(full.loss_rate.value, 3));
+        assert_eq!(e.net_proceeds.p50 % 1_000.0, 0.0);
+        assert_eq!(e.net_proceeds_mean % 1_000.0, 0.0);
+        assert!(e.net_proceeds_mean_se > 0.0);
+        assert_eq!(e.success_by_outcome.len(), EquityOutcome::COUNT);
+        let back: SummaryDigest = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    }
+
     #[test]
     fn json_schemas_generate_for_every_output_type() {
         let schemas = [
@@ -2204,6 +2862,20 @@ mod tests {
         assert!(summary.contains("counting paths that"));
         assert!(summary.contains("\"null\""));
         assert!(summary.contains("retired_surplus"));
+        // The equity block and its parts are declared, with their field docs.
+        for name in ["EquitySummary", "EquityOutcomeShare", "EquityConditional"] {
+            assert!(summary.contains(name), "{name}");
+        }
+        assert!(summary.contains("still_private"));
+        assert!(summary.contains("more went in (exercise cost and tax) than came"));
+        let digest = serde_json::to_string(&schemars::schema_for!(SummaryDigest)).unwrap();
+        assert!(digest.contains("DigestEquity") && digest.contains("success_by_outcome"));
+        let comparison =
+            serde_json::to_string(&schemars::schema_for!(crate::stats::Comparison)).unwrap();
+        assert!(comparison.contains("PairedByOutcome") && comparison.contains("by_equity_outcome"));
+        let preview =
+            serde_json::to_string(&schemars::schema_for!(crate::equity::EquityPreview)).unwrap();
+        assert!(preview.contains("implied_multiple") && preview.contains("\"properties\""));
     }
 
     #[test]

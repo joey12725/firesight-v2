@@ -12,8 +12,8 @@ import type { ViewProps } from '../types';
 import { RatesChart, RatesLegend, ratesTable } from './RatesChart';
 import { YearControls, YearFlow, yearTable, type YearJump } from './YearFlow';
 import { AccountFlows, AccountsLegend, BalanceLegend, BalanceSheet, FlowsLegend, MoneyFlows, TaxChart, TaxLegend, accountsTable, balanceTable, flowsTable, taxTable } from './charts';
-import { cashFlowModel, handoverIndex, livesAbroad, sharesOfUses, yearNodes, type CashFlowModel } from './model';
-import { accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, ratesTakeaway, retirementIndex, taxTakeaway, yearTakeaway } from './text';
+import { cashFlowModel, handoverIndex, hasEquityBand, livesAbroad, sharesOfUses, yearNodes, type CashFlowModel } from './model';
+import { EQUITY_CAPTION, accountsTakeaway, balanceTakeaway, flowsTakeaway, leadSentence, ratesTakeaway, retirementIndex, taxTakeaway, yearTakeaway } from './text';
 
 function CashFlowSkeleton() {
   return (
@@ -151,7 +151,7 @@ export default function CashFlowView({ profile, summary, run }: ViewProps) {
           className="mt-6"
           title="Money in against money out"
           takeaway={flowsTakeaway(model)}
-          caption={`Money in is drawn above the line and money out below it on one scale, so the eye can read straight down from what arrives to what it pays for. The two outlines mirror each other because every dollar that comes in is spent, taxed or saved. Withdrawals count as money in; money that only passes through the cash account is netted out.${model.flowStart > 0 ? ` The plan’s first, part-year (${summary.axis.years[0]}) is left out.` : ''}`}
+          caption={`Money in is drawn above the line and money out below it on one scale, so the eye can read straight down from what arrives to what it pays for. The two outlines mirror each other because every dollar that comes in is spent, taxed or saved. Withdrawals count as money in; money that only passes through the cash account is netted out.${model.flowStart > 0 ? ` The plan’s first, part-year (${summary.axis.years[0]}) is left out.` : ''}${hasEquityBand(model) ? ` ${EQUITY_CAPTION}` : ''}`}
           table={() => flowsTable(model)}
           filename="money-in-and-out-by-age"
           explain={{ context: () => ({ ...context(), now: at(model.flowStart), in_retirement: r === null ? null : at(r), savings_take_over_at_age: handoverIndex(model) === null ? null : ageOf(handoverIndex(model) as number) }) }}

@@ -17,6 +17,8 @@ use std::collections::BTreeSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::data::Data;
+use crate::equity::{self, EquityParams};
 use crate::model::*;
 
 mod behavior;
@@ -107,7 +109,7 @@ impl Report {
         true
     }
 
-    /// Money must be finite and not negative.
+    /// Money must be finite, not negative and at most [`MONEY_MAX`].
     fn money(&mut self, path: &str, what: &str, v: f64) -> bool {
         if !v.is_finite() || v < 0.0 {
             self.error(
@@ -117,9 +119,85 @@ impl Report {
             );
             return false;
         }
+        if v > MONEY_MAX {
+            self.error(
+                "amount_too_large",
+                path,
+                format!("{what} is {v}; amounts must be at most {MONEY_MAX} dollars (a trillion)."),
+            );
+            return false;
+        }
+        true
+    }
+
+    /// A dollar amount per share: money, and at most [`PER_SHARE_MAX`].
+    fn per_share(&mut self, path: &str, what: &str, v: f64) -> bool {
+        if !self.money(path, what, v) {
+            return false;
+        }
+        if v > PER_SHARE_MAX {
+            self.error(
+                "out_of_range",
+                path,
+                format!("{what} is {v} a share; it must be at most {PER_SHARE_MAX}. Check the figure is per share, not a total."),
+            );
+            return false;
+        }
         true
     }
 }
+
+/// Largest dollar amount any field accepts. Totals over simulated lives are kept as
+/// whole dollars in 64 bits; nothing a household owns comes near this.
+const MONEY_MAX: f64 = 1e12;
+/// Largest price, strike or basis per share (the bound on the preferred price).
+const PER_SHARE_MAX: f64 = 1_000_000.0;
+/// Largest minimum tax credit carried into a plan.
+const AMT_CREDIT_MAX: f64 = 1e9;
+/// Lowest tender price as a fraction of the share price.
+const TENDER_PRICE_FRACTION_MIN: f64 = 0.05;
+
+/// Whole dollars with thousands separators ("$1,458,000"), for messages a person reads.
+fn dollars(x: f64) -> String {
+    let n = if x.is_finite() { x.round() } else { 0.0 };
+    let digits = format!("{:.0}", n.abs());
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3 + 2);
+    if n < 0.0 {
+        out.push('-');
+    }
+    out.push('$');
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Dollars and cents with thousands separators ("$1,234.50"), for a price per share.
+fn dollars_cents(x: f64) -> String {
+    let n = if x.is_finite() { x } else { 0.0 };
+    let cents = format!("{:.2}", n.abs());
+    let (whole, fraction) = cents.split_once('.').unwrap_or((&cents, "00"));
+    let mut out = String::with_capacity(cents.len() + whole.len() / 3 + 2);
+    if n < 0.0 {
+        out.push('-');
+    }
+    out.push('$');
+    for (i, ch) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out.push('.');
+    out.push_str(fraction);
+    out
+}
+
+/// A warning is raised when options reach their ten-year term within this many months.
+const OPTION_TERM_SOON_MONTHS: i64 = 24;
 
 /// Path segment for a list element: `@id` when it has a usable id, else its index.
 fn seg(id: &str, index: usize) -> String {
@@ -173,6 +251,342 @@ fn list_ids<'a>(ids: impl Iterator<Item = &'a str>) -> String {
     }
 }
 
+/// The checks on one private company that need nothing else from the profile:
+/// prices, fractions, months, holdings and the outcome table. `c` is the company's
+/// path. Shared by profile validation and the standalone preview.
+fn company_checks(r: &mut Report, c: &str, co: &PrivateCompany) {
+    if !co.holdings.is_empty() {
+        r.range(
+            &format!("{c}/preferred_price"),
+            "Preferred price per share",
+            co.preferred_price,
+            0.0001,
+            1_000_000.0,
+        );
+    }
+    if let Some(v) = co.fmv_409a {
+        r.range(
+            &format!("{c}/fmv_409a"),
+            "409A value per share",
+            v,
+            0.0001,
+            1_000_000.0,
+        );
+    }
+    if let Some(v) = co.preference_overhang {
+        r.range(
+            &format!("{c}/preference_overhang"),
+            "Money raised as a share of valuation",
+            v,
+            0.0,
+            equity::OVERHANG_MAX,
+        );
+    }
+    if co.lockup_months > 24 {
+        r.error(
+            "out_of_range",
+            &format!("{c}/lockup_months"),
+            format!(
+                "Lockup is {} months; it must be between 0 and 24.",
+                co.lockup_months
+            ),
+        );
+    }
+    if co.exercise_window_months > 120 {
+        r.error(
+            "out_of_range",
+            &format!("{c}/exercise_window_months"),
+            format!(
+                "Exercise window is {} months; it must be between 0 and 120.",
+                co.exercise_window_months
+            ),
+        );
+    }
+    if r.money(
+        &format!("{c}/amt_credit_carryforward"),
+        "Minimum tax credit carried forward",
+        co.amt_credit_carryforward,
+    ) && co.amt_credit_carryforward > AMT_CREDIT_MAX
+    {
+        r.error(
+            "out_of_range",
+            &format!("{c}/amt_credit_carryforward"),
+            format!(
+                "Minimum tax credit carried forward is {}; it must be at most {}.",
+                dollars(co.amt_credit_carryforward),
+                dollars(AMT_CREDIT_MAX)
+            ),
+        );
+    }
+    if let Some(v) = co.tenders.annual_probability {
+        r.range(
+            &format!("{c}/tenders/annual_probability"),
+            "Tender offer chance per year",
+            v,
+            0.0,
+            1.0,
+        );
+    }
+    r.range(
+        &format!("{c}/tenders/max_fraction"),
+        "Tender limit",
+        co.tenders.max_fraction,
+        0.0,
+        1.0,
+    );
+    // A tender at no price would give the shares away.
+    r.range(
+        &format!("{c}/tenders/price_fraction"),
+        "Tender price fraction",
+        co.tenders.price_fraction,
+        TENDER_PRICE_FRACTION_MIN,
+        2.0,
+    );
+    if let Some(v) = co.tenders.next_in_months.filter(|v| *v > 120) {
+        r.error(
+            "out_of_range",
+            &format!("{c}/tenders/next_in_months"),
+            format!("The planned tender is {v} months away; it must be between 0 and 120."),
+        );
+    }
+    r.range(
+        &format!("{c}/policy/tender_sell_fraction"),
+        "Share sold in tenders",
+        co.policy.tender_sell_fraction,
+        0.0,
+        1.0,
+    );
+    if let SellDown::OverYears { years } = co.policy.sell_down {
+        if !(1..=5).contains(&years) {
+            r.error(
+                "out_of_range",
+                &format!("{c}/policy/sell_down/years"),
+                format!("Yearly sales after the lockup is {years}; it must be between 1 and 5."),
+            );
+        }
+    }
+    if let Some(v) = co.policy.leave_after_months.filter(|v| *v > 600) {
+        r.error(
+            "out_of_range",
+            &format!("{c}/policy/leave_after_months"),
+            format!("leave_after_months is {v}; it must be between 0 and 600."),
+        );
+    }
+
+    if co.holdings.len() > equity::MAX_HOLDINGS {
+        r.error(
+            "too_many_holdings",
+            &format!("{c}/holdings"),
+            format!(
+                "A company can have at most {} holdings; this one has {}. Combine grants with the same type and a similar strike.",
+                equity::MAX_HOLDINGS,
+                co.holdings.len()
+            ),
+        );
+    }
+    check_ids(
+        r,
+        &format!("{c}/holdings"),
+        co.holdings.iter().map(|x| x.id.as_str()),
+    );
+    for (j, hd) in co.holdings.iter().enumerate() {
+        let h = format!("{c}/holdings/{}", seg(&hd.id, j));
+        let shares_ok = r.range(
+            &format!("{h}/shares"),
+            "Number of shares",
+            hd.shares,
+            0.0,
+            1e10,
+        );
+        let at_price = hd.shares * co.preferred_price;
+        if shares_ok && at_price.is_finite() && at_price > 1e12 {
+            r.error(
+                "equity_position_too_large",
+                &format!("{h}/shares"),
+                format!("This holding is worth {} at the preferred price. Check that the price is per share and the count is a number of shares.", dollars(at_price)),
+            );
+        }
+        let is_shares = hd.kind.is_shares();
+        let vested_ok = is_shares || (hd.vested >= 0.0 && hd.vested <= hd.shares + 1e-9);
+        if !vested_ok {
+            r.error(
+                "vested_exceeds_shares",
+                &format!("{h}/vested"),
+                format!(
+                    "Vested is {} but the holding has {} in total. Vested must be between 0 and the total.",
+                    hd.vested, hd.shares
+                ),
+            );
+        }
+        // A per-share figure times the count must stay a plausible amount: the cap
+        // on the position at the preferred price does not bound these.
+        let total_ok = |r: &mut Report, field: &str, what: &str, each: f64| {
+            let total = hd.shares * each;
+            if shares_ok && total.is_finite() && total > MONEY_MAX {
+                r.error(
+                    "equity_position_too_large",
+                    &format!("{h}/kind/{field}"),
+                    format!("{what} times the number of shares is {}. Check that the figure is per share and the count is a number of shares.", dollars(total)),
+                );
+            }
+        };
+        match hd.kind {
+            HoldingKind::Iso {
+                strike,
+                granted_months_ago,
+            }
+            | HoldingKind::Nso {
+                strike,
+                granted_months_ago,
+            } => {
+                if r.per_share(&format!("{h}/kind/strike"), "Strike", strike) {
+                    total_ok(r, "strike", "The strike", strike);
+                }
+                if i64::from(granted_months_ago) >= i64::from(equity::OPTION_TERM_MONTHS) {
+                    r.error(
+                        "option_term_passed",
+                        &format!("{h}/kind/granted_months_ago"),
+                        format!(
+                            "These options were granted {granted_months_ago} months ago, and options lapse ten years ({} months) after the grant. Remove the holding, or correct the months since the grant.",
+                            equity::OPTION_TERM_MONTHS
+                        ),
+                    );
+                }
+            }
+            HoldingKind::Rsu { .. } => {}
+            HoldingKind::Shares {
+                basis_per_share,
+                fmv_at_exercise,
+                months_held,
+                ..
+            } => {
+                if r.per_share(
+                    &format!("{h}/kind/basis_per_share"),
+                    "Basis per share",
+                    basis_per_share,
+                ) {
+                    total_ok(r, "basis_per_share", "The basis per share", basis_per_share);
+                }
+                if r.per_share(
+                    &format!("{h}/kind/fmv_at_exercise"),
+                    "409A value at exercise",
+                    fmv_at_exercise,
+                ) {
+                    total_ok(
+                        r,
+                        "fmv_at_exercise",
+                        "The 409A value at exercise",
+                        fmv_at_exercise,
+                    );
+                }
+                if months_held > 1_200 {
+                    r.error(
+                        "out_of_range",
+                        &format!("{h}/kind/months_held"),
+                        format!("Months held is {months_held}; it must be between 0 and 1200."),
+                    );
+                }
+            }
+        }
+        if hd.vest_months_left > 240 {
+            r.error(
+                "out_of_range",
+                &format!("{h}/vest_months_left"),
+                "Vesting must finish within 240 months.",
+            );
+        }
+        if hd.cliff_months > hd.vest_months_left {
+            r.error(
+                "out_of_range",
+                &format!("{h}/cliff_months"),
+                "The cliff cannot be later than the end of vesting.",
+            );
+        }
+        let unvested = hd.shares - hd.vested;
+        if !is_shares && shares_ok && vested_ok && unvested > 1e-9 {
+            if hd.vest_months_left == 0 {
+                r.error(
+                    "unvested_without_schedule",
+                    &format!("{h}/vest_months_left"),
+                    format!("{unvested} of this holding are unvested but vest_months_left is 0. Give the months until it is fully vested, or set vested to the total."),
+                );
+            }
+            if co.job.is_none() {
+                r.error(
+                    "equity_unvested_without_job",
+                    &format!("{h}/vested"),
+                    "This holding has unvested units, but the company is not linked to a job, and equity vests only while employed. Choose the linked job, or set vested to the total.",
+                );
+            }
+        }
+    }
+
+    if co.outcomes.len() > equity::MAX_OUTCOMES {
+        r.error(
+            "too_many_outcomes",
+            &format!("{c}/outcomes"),
+            format!(
+                "An outcome table can have at most {} rows; this one has {}.",
+                equity::MAX_OUTCOMES,
+                co.outcomes.len()
+            ),
+        );
+    }
+    check_ids(
+        r,
+        &format!("{c}/outcomes"),
+        co.outcomes.iter().map(|x| x.id.as_str()),
+    );
+    let mut sum = 0.0;
+    for (k, row) in co.outcomes.iter().enumerate() {
+        let o = format!("{c}/outcomes/{}", seg(&row.id, k));
+        r.range(
+            &format!("{o}/probability"),
+            "Probability",
+            row.probability,
+            0.0,
+            1.0,
+        );
+        sum += row.probability;
+        let (from, to) = (row.years_from, row.years_to);
+        if row.kind != OutcomeKind::StillPrivate && !(0.0 <= from && from <= to && to <= 30.0) {
+            r.error(
+                "outcome_years",
+                &format!("{o}/years_to"),
+                format!("The outcome is set between {from} and {to} years from now. Give an earliest and a latest year with 0 <= earliest <= latest <= 30."),
+            );
+        }
+        let (low, high) = (row.multiple_low, row.multiple_high);
+        if matches!(row.kind, OutcomeKind::Acquired | OutcomeKind::Ipo)
+            && !(0.001 <= low && low <= high && high <= 1000.0)
+        {
+            r.error(
+                "outcome_multiple",
+                &format!("{o}/multiple_high"),
+                format!("The price range is {low} to {high} times the last round. Give a low and a high multiple with 0.001 <= low <= high <= 1000."),
+            );
+        }
+    }
+    // Sums within 0.005 of 1 are normalised by the engine.
+    if !co.outcomes.is_empty() && ((sum - 1.0).abs() > 0.005 || sum.is_nan()) {
+        r.error(
+            "outcome_probabilities",
+            &format!("{c}/outcomes"),
+            format!("The outcome probabilities add up to {sum:.3}; they must add up to 1. Rows are mutually exclusive: every future is in exactly one of them."),
+        );
+    }
+}
+
+/// Validates one private company on its own (an element of `private_equity`), for
+/// the standalone preview: every check that does not need the rest of the profile
+/// (the linked job and the owner are not looked up). Paths are relative to the
+/// company, for example `/holdings/@grant/kind/strike`.
+pub fn validate_company(company: &PrivateCompany) -> Report {
+    let mut r = Report::default();
+    company_checks(&mut r, "", company);
+    r
+}
+
 /// The cost parameters shared by an owned property and a planned purchase.
 #[derive(Clone, Copy)]
 struct PropertyCosts<'a> {
@@ -203,6 +617,7 @@ pub fn validate(profile: &Profile) -> Report {
     c.root();
     c.household();
     c.incomes();
+    c.private_equity();
     c.spending();
     c.spending_realism();
     c.accounts_and_portfolio();
@@ -1636,6 +2051,341 @@ impl Checker<'_> {
         }
     }
 
+    fn private_equity(&mut self) {
+        let p = self.p;
+        let n = p.private_equity.len();
+        if n > equity::MAX_COMPANIES {
+            self.r.error(
+                "too_many_companies",
+                "/private_equity",
+                format!(
+                    "A plan can hold at most {} private companies; this one has {n}. Combine or remove the smallest positions.",
+                    equity::MAX_COMPANIES
+                ),
+            );
+        }
+        check_ids(
+            &mut self.r,
+            "/private_equity",
+            p.private_equity.iter().map(|x| x.id.as_str()),
+        );
+        for (i, co) in p.private_equity.iter().enumerate() {
+            let c = format!("/private_equity/{}", seg(&co.id, i));
+            self.person_ref(&format!("{c}/owner"), co.owner);
+            if let Some(job) = &co.job {
+                match p.incomes.iter().find(|inc| inc.id == *job) {
+                    None => self.income_ref(&format!("{c}/job"), job, false),
+                    Some(inc) if !matches!(inc.kind, IncomeKind::Job(_)) => {
+                        self.r.error(
+                            "ref_income",
+                            &format!("{c}/job"),
+                            format!("Income {job:?} is not a job. Link a company to the job that grants the equity, or leave job empty for a former employer or an investment."),
+                        );
+                    }
+                    Some(inc) if inc.owner != co.owner => {
+                        self.r.error(
+                            "equity_owner_mismatch",
+                            &format!("{c}/owner"),
+                            format!(
+                                "This company's equity belongs to person {} but the linked job {job:?} belongs to person {}. Set owner to {}.",
+                                co.owner, inc.owner, inc.owner
+                            ),
+                        );
+                    }
+                    Some(_) => {}
+                }
+            }
+            company_checks(&mut self.r, &c, co);
+        }
+    }
+
+    /// Lints on private-company equity. `liquid` is the sum of all account balances.
+    fn equity_plausibility(&mut self, liquid: f64, budget: f64) {
+        let p = self.p;
+        for (i, inc) in p.incomes.iter().enumerate() {
+            if let IncomeKind::Job(job) = &inc.kind {
+                if job
+                    .equity
+                    .iter()
+                    .any(|g| matches!(g.company, EquityCompany::Private { .. }))
+                {
+                    self.r.warn(
+                        "private_grant_legacy",
+                        &format!("/incomes/{}/kind/equity", seg(&inc.id, i)),
+                        "Private-company grants on a job use the older single-event model. Move this position to private_equity for tender offers, exercise decisions and capital-gains tax.",
+                    );
+                }
+            }
+        }
+        if p.private_equity.is_empty() {
+            return;
+        }
+        let spendable: f64 = p
+            .accounts
+            .iter()
+            .filter(|a| matches!(a.kind, AccountKind::Cash | AccountKind::Taxable))
+            .map(|a| a.balance)
+            .sum::<f64>()
+            - p.portfolio.emergency_months * budget / 12.0;
+        let ctx = p.when_context();
+        for (i, co) in p.private_equity.iter().enumerate() {
+            let c = format!("/private_equity/{}", seg(&co.id, i));
+            let p0 = co.preferred_price;
+            let (_, value) = equity::position_value(co);
+            if co.included && value > 0.0 && value > 2.0 * liquid {
+                self.r.warn(
+                    "equity_dominant",
+                    &format!("{c}/holdings"),
+                    format!("This position is worth about {} at the last round's price, more than twice the household's savings. The outcome is uncertain and often nothing: compare the results with this company not counted.", dollars(value)),
+                );
+            }
+            if co.fmv_409a.is_some_and(|v| v > p0) {
+                self.r.warn(
+                    "fmv_above_preferred",
+                    &format!("{c}/fmv_409a"),
+                    "The 409A value is above the preferred price, which is unusual. Check the two figures are per share and from the same date.",
+                );
+            }
+            let owner = p.household.people.get(co.owner);
+            if let (Some(person), Some(start)) = (owner, p.start) {
+                if person.joins.is_some_and(|j| j > start) {
+                    self.r.warn(
+                        "equity_owner_joins_later",
+                        &format!("{c}/owner"),
+                        format!(
+                            "Anything this company pays before {} joins the household is not counted, and options are not exercised before then. Vesting goes on meanwhile if the linked job has started.",
+                            display_name(&person.name, &person.id)
+                        ),
+                    );
+                }
+            }
+            let job = co
+                .job
+                .as_ref()
+                .and_then(|id| p.incomes.iter().find(|inc| inc.id == *id));
+            if let (Some(inc), Some(ctx)) = (job, ctx.as_ref()) {
+                // A start that cannot be dated yet (relative to retirement) is in
+                // the future too.
+                let later = inc
+                    .start
+                    .as_ref()
+                    .is_some_and(|w| !w.resolve(ctx).is_some_and(|at| at <= ctx.start));
+                if later {
+                    self.r.warn(
+                        "equity_job_not_started",
+                        &format!("{c}/job"),
+                        "The linked job has not started yet, so nothing vests until it does.",
+                    );
+                }
+            }
+            let mut strike_cost = 0.0;
+            for (j, hd) in co.holdings.iter().enumerate() {
+                let h = format!("{c}/holdings/{}", seg(&hd.id, j));
+                let yearly = equity::iso_yearly_amount(hd);
+                if yearly > equity::ISO_ANNUAL_LIMIT {
+                    self.r.warn(
+                        "iso_over_100k_limit",
+                        &format!("{h}/kind"),
+                        format!("Only $100,000 of incentive options (shares times strike) can first become exercisable in a calendar year; about {} a year does here. The excess is taxed as non-qualified options, which costs more to exercise. Your grant documents show the split: enter the two parts as an ISO holding and an NSO holding.", dollars(yearly)),
+                    );
+                }
+                if matches!(hd.kind, HoldingKind::Iso { .. })
+                    && co.job.is_none()
+                    && co.exercise_window_months > equity::ISO_POST_TERMINATION_MONTHS
+                {
+                    self.r.warn(
+                        "iso_former_employer",
+                        &format!("{h}/kind"),
+                        format!(
+                            "Incentive options exercised more than three months after leaving are taxed as non-qualified options. With {} months left to exercise, these are modelled that way.",
+                            co.exercise_window_months
+                        ),
+                    );
+                }
+                if let HoldingKind::Shares {
+                    basis_per_share,
+                    fmv_at_exercise,
+                    ..
+                } = hd.kind
+                {
+                    if p0 > 0.0 && basis_per_share > p0 {
+                        self.r.warn(
+                            "basis_above_price",
+                            &format!("{h}/kind/basis_per_share"),
+                            format!(
+                                "The basis is {} a share, above the latest preferred price of {}. Check the figure is what you paid per share, not the total paid: a basis this high turns every sale into a tax loss.",
+                                dollars_cents(basis_per_share),
+                                dollars_cents(p0)
+                            ),
+                        );
+                    }
+                    if p0 > 0.0 && fmv_at_exercise > p0 {
+                        self.r.warn(
+                            "fmv_at_exercise_above_price",
+                            &format!("{h}/kind/fmv_at_exercise"),
+                            format!(
+                                "The 409A value at exercise is {} a share, above the latest preferred price of {}. Check the figure is per share, not a total.",
+                                dollars_cents(fmv_at_exercise),
+                                dollars_cents(p0)
+                            ),
+                        );
+                    }
+                }
+                if let HoldingKind::Iso {
+                    strike,
+                    granted_months_ago,
+                }
+                | HoldingKind::Nso {
+                    strike,
+                    granted_months_ago,
+                } = hd.kind
+                {
+                    let left =
+                        i64::from(equity::OPTION_TERM_MONTHS) - i64::from(granted_months_ago);
+                    if left > 0 && left < i64::from(hd.vest_months_left) {
+                        self.r.warn(
+                            "option_term_before_vesting",
+                            &format!("{h}/kind/granted_months_ago"),
+                            format!(
+                                "These options reach their ten-year term in {left} {}, before they finish vesting in {}. What has not vested by then lapses. Check the months since the grant and the months of vesting left.",
+                                if left == 1 { "month" } else { "months" },
+                                hd.vest_months_left
+                            ),
+                        );
+                    }
+                    if left > 0 && left <= OPTION_TERM_SOON_MONTHS {
+                        let vested = hd.vested.clamp(0.0, hd.shares.max(0.0));
+                        let then = match co.policy.at_deadline {
+                            DeadlinePolicy::Exercise if p0 > 0.0 && strike < p0 => format!(
+                                "the plan exercises what it can afford then, about {} of strike for the options vested today plus the tax, and the rest lapse",
+                                dollars(vested * strike)
+                            ),
+                            _ => "the plan lets them lapse then".to_string(),
+                        };
+                        self.r.warn(
+                            "option_term_soon",
+                            &format!("{h}/kind/granted_months_ago"),
+                            format!(
+                                "These options reach their ten-year term in {left} {}: unless a sale, listing or tender offer comes first, {then}.",
+                                if left == 1 { "month" } else { "months" }
+                            ),
+                        );
+                    }
+                }
+                if let Some(strike) = hd.kind.strike() {
+                    if p0 > 0.0 && strike >= p0 {
+                        self.r.warn(
+                            "strike_above_price",
+                            &format!("{h}/kind/strike"),
+                            "The strike is at or above the latest preferred price, so these options pay only if the price rises.",
+                        );
+                    } else {
+                        strike_cost += hd.vested.clamp(0.0, hd.shares.max(0.0)) * strike;
+                    }
+                }
+            }
+            if co.included
+                && co.policy.exercise != ExerciseTiming::AtLiquidity
+                && strike_cost > spendable.max(0.0)
+            {
+                self.r.warn(
+                    "exercise_unaffordable",
+                    &format!("{c}/policy/exercise"),
+                    format!(
+                        "Exercising the vested options now costs {} before tax, more than the {} in cash and taxable accounts above the emergency fund. Only the affordable part is exercised.",
+                        dollars(strike_cost),
+                        dollars(spendable.max(0.0))
+                    ),
+                );
+            }
+            if co.included && co.qsbs && co.policy.sell_down == SellDown::Hold {
+                self.r.warn(
+                    "qsbs_hold",
+                    &format!("{c}/policy/sell_down"),
+                    "Shares kept as a single stock cannot carry the small-business-stock exclusion in this model. Shares that qualify are therefore held as they are until their gain is fully excluded (five years after you got them) and sold then; only the other shares are kept.",
+                );
+            }
+            if let Some(entered) = co.tenders.annual_probability {
+                // Only companies heading to or above their last round run tenders,
+                // so a chance entered as an average over every future can be too
+                // high to meet (`equity::tender_rate` stops at once a year).
+                let params = EquityParams::from_data(Data::embedded());
+                let table = equity::resolved_table(co, &params);
+                let [up, down] = equity::tender_exposure(&table, &params);
+                let most = if up > 0.0 { up / (up + down) } else { 1.0 };
+                if co.included && entered.is_finite() && entered > most + 0.005 {
+                    self.r.warn(
+                        "tender_chance_capped",
+                        &format!("{c}/tenders/annual_probability"),
+                        format!(
+                            "A tender offer chance of {:.0}% a year cannot be met. Tender offers happen only in futures where the company ends at or above its last round's price, at most once a year, and with these odds that allows about {:.0}% a year on average over every future. The plan runs at that. To count a tender you know is coming, give the months until it instead.",
+                            entered * 100.0,
+                            most * 100.0
+                        ),
+                    );
+                }
+            }
+            for (k, row) in co.outcomes.iter().enumerate() {
+                // The schema's defaults for a row are a price of exactly 1x in years 1
+                // to 5: a row written with only a probability gets them.
+                if matches!(row.kind, OutcomeKind::Acquired | OutcomeKind::Ipo)
+                    && row.probability > 0.0
+                    && row.multiple_low == row.multiple_high
+                {
+                    self.r.warn(
+                        "outcome_flat_price",
+                        &format!("{c}/outcomes/{}", seg(&row.id, k)),
+                        format!(
+                            "This row has one exact price, {} times the last round's, with no spread, in years {} to {}. A row given only a probability gets 1 times in years 1 to 5, not the stage's typical prices and timing. Give the low and high multiples and the years, or leave the table empty to use the typical odds.",
+                            row.multiple_low, row.years_from, row.years_to
+                        ),
+                    );
+                }
+            }
+            if !co.outcomes.is_empty() {
+                let params = EquityParams::from_data(Data::embedded());
+                let table = equity::resolved_table(co, &params);
+                let typical = equity::preset_table(
+                    co.stage,
+                    Outlook::Typical,
+                    params.overhang[co.stage.index()],
+                    &params,
+                );
+                let a = equity::implied_multiple(&table, table.overhang, &params);
+                let b = equity::implied_multiple(&typical, typical.overhang, &params);
+                let fails = table.probability_of(OutcomeKind::Fails);
+                let typical_fails = typical.probability_of(OutcomeKind::Fails);
+                if fails < 0.5 * typical_fails || a > 2.0 * b {
+                    self.r.warn(
+                        "outcomes_optimistic",
+                        &format!("{c}/outcomes"),
+                        format!(
+                            "Your odds put a share at about {a:.1} times the last round's price; typical odds for this stage put it at {b:.1}. Failure is {:.0}% in your table against about {:.0}% typically. Results rest on your view.",
+                            fails * 100.0,
+                            typical_fails * 100.0
+                        ),
+                    );
+                }
+            }
+        }
+        let counted = p
+            .private_equity
+            .iter()
+            .filter(|co| co.included && !co.holdings.is_empty())
+            .count();
+        if counted > 1 {
+            let main = &p.private_equity[equity::primary_company(&p.private_equity)];
+            self.r.warn(
+                "several_companies",
+                "/private_equity",
+                format!(
+                    "Outcome statistics describe {}, the largest position; proceeds and costs are totalled over all companies.",
+                    display_name(&main.name, &main.id)
+                ),
+            );
+        }
+    }
+
     fn income_ref(&mut self, path: &str, id: &str, needs_plan: bool) {
         let p = self.p;
         match p.incomes.iter().find(|inc| inc.id == id) {
@@ -2344,6 +3094,7 @@ impl Checker<'_> {
         if !p.household.location.is_us() && p.household.location.foreign_tax_rate.is_none() {
             self.r.warn("foreign_tax_missing", "/household/location/foreign_tax_rate", "The household lives outside the US and no foreign_tax_rate is set, so no income tax is applied.");
         }
+        self.equity_plausibility(liquid, budget);
     }
 }
 
@@ -2423,7 +3174,15 @@ mod tests {
         for ex in Profile::examples(crate::model::EXAMPLE_START) {
             let r = validate(&ex.profile);
             assert!(r.errors.is_empty(), "{}: {:#?}", ex.slug, r.errors);
-            assert!(r.warnings.is_empty(), "{}: {:#?}", ex.slug, r.warnings);
+            // The startup employee's option position is many times her savings:
+            // the one warning a demo is meant to show.
+            let expected: &[&str] = if ex.slug == "startup-employee" {
+                &["equity_dominant"]
+            } else {
+                &[]
+            };
+            let codes: Vec<&str> = r.warnings.iter().map(|w| w.code.as_str()).collect();
+            assert_eq!(codes, expected, "{}: {:#?}", ex.slug, r.warnings);
         }
     }
 
@@ -3096,5 +3855,872 @@ mod tests {
                 &format!("{c}/exit_timing/{at}"),
             );
         }
+    }
+
+    // ---- private-company equity ----
+
+    /// Appends a valid company `acme` for Priya, linked to her job, with one fully
+    /// vested option holding `g`. Every key is written out, so patches can reach it.
+    fn acme() -> PatchOp {
+        let company = PrivateCompany {
+            id: "acme".into(),
+            name: "Acme".into(),
+            job: Some("priya_job".into()),
+            preferred_price: 10.0,
+            holdings: vec![EquityHolding {
+                id: "g".into(),
+                kind: HoldingKind::Nso {
+                    strike: 2.0,
+                    granted_months_ago: 24,
+                },
+                shares: 100.0,
+                vested: 100.0,
+                ..EquityHolding::default()
+            }],
+            ..PrivateCompany::default()
+        };
+        PatchOp::append("/private_equity", serde_json::to_value(company).unwrap())
+    }
+
+    fn acme_with(path: &str, value: serde_json::Value) -> [PatchOp; 2] {
+        [
+            acme(),
+            PatchOp::set(format!("/private_equity/@acme{path}"), value),
+        ]
+    }
+
+    #[test]
+    fn a_plain_company_is_clean() {
+        let r = patched(&[acme()]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert!(r.warnings.is_empty(), "{:#?}", r.warnings);
+        // No company, or an empty list written out: nothing new is reported.
+        assert_eq!(
+            patched(&[PatchOp::set("/private_equity", json!([]))]),
+            patched(&[])
+        );
+    }
+
+    #[test]
+    fn company_lists_have_limits_and_ids() {
+        let many: Vec<_> = (0..5).map(|i| json!({"id": format!("c{i}")})).collect();
+        assert_error(
+            &[PatchOp::set("/private_equity", json!(many))],
+            "too_many_companies",
+            "/private_equity",
+        );
+        assert_error(
+            &[PatchOp::set(
+                "/private_equity",
+                json!([{"id": "acme"}, {"id": "acme"}]),
+            )],
+            "id_duplicate",
+            "/private_equity/1/id",
+        );
+        let holdings: Vec<_> = (0..9)
+            .map(|i| json!({"id": format!("h{i}"), "kind": {"type": "rsu"}, "shares": 1, "vested": 1}))
+            .collect();
+        assert_error(
+            &acme_with("/holdings", json!(holdings)),
+            "too_many_holdings",
+            "/private_equity/@acme/holdings",
+        );
+        assert_error(
+            &acme_with("/holdings", json!([{"kind": {"type": "rsu"}}])),
+            "id_missing",
+            "/private_equity/@acme/holdings/0/id",
+        );
+        let rows: Vec<_> = (0..9)
+            .map(|i| json!({"id": format!("r{i}"), "kind": "fails", "probability": 1.0 / 9.0}))
+            .collect();
+        assert_error(
+            &acme_with("/outcomes", json!(rows)),
+            "too_many_outcomes",
+            "/private_equity/@acme/outcomes",
+        );
+        assert_error(
+            &acme_with(
+                "/outcomes",
+                json!([
+                    {"id": "a", "kind": "fails", "probability": 0.5},
+                    {"id": "a", "kind": "still_private", "probability": 0.5}
+                ]),
+            ),
+            "id_duplicate",
+            "/private_equity/@acme/outcomes/1/id",
+        );
+    }
+
+    #[test]
+    fn company_references_must_resolve() {
+        assert_error(
+            &acme_with("/owner", json!(5)),
+            "ref_person",
+            "/private_equity/@acme/owner",
+        );
+        assert_error(
+            &acme_with("/job", json!("nope")),
+            "ref_income",
+            "/private_equity/@acme/job",
+        );
+        let r = patched(&[
+            PatchOp::append(
+                "/incomes",
+                json!({"id": "royalties", "kind": {"type": "other", "annual": 1000}}),
+            ),
+            acme(),
+            PatchOp::set("/private_equity/@acme/job", "royalties"),
+        ]);
+        let issue = r
+            .errors
+            .iter()
+            .find(|i| i.code == "ref_income" && i.path == "/private_equity/@acme/job")
+            .unwrap_or_else(|| panic!("{:#?}", r.errors));
+        assert!(issue.message.contains("is not a job"), "{}", issue.message);
+        // Daniel is person 1; the linked job is Priya's.
+        let r = patched(&acme_with("/owner", json!(1)));
+        let issue = r
+            .errors
+            .iter()
+            .find(|i| i.code == "equity_owner_mismatch")
+            .unwrap_or_else(|| panic!("{:#?}", r.errors));
+        assert_eq!(issue.path, "/private_equity/@acme/owner");
+        assert!(
+            issue.message.contains("Set owner to 0"),
+            "{}",
+            issue.message
+        );
+    }
+
+    #[test]
+    fn company_numbers_must_be_in_range() {
+        let c = "/private_equity/@acme";
+        for (path, value) in [
+            ("/preferred_price", json!(0)),
+            ("/preferred_price", json!(2_000_000)),
+            ("/fmv_409a", json!(0)),
+            ("/preference_overhang", json!(0.99)),
+            ("/lockup_months", json!(25)),
+            ("/exercise_window_months", json!(121)),
+            ("/tenders/annual_probability", json!(1.5)),
+            ("/tenders/max_fraction", json!(2)),
+            ("/tenders/price_fraction", json!(3)),
+            ("/tenders/next_in_months", json!(121)),
+            ("/policy/tender_sell_fraction", json!(-0.1)),
+            ("/policy/leave_after_months", json!(601)),
+        ] {
+            assert_error(
+                &acme_with(path, value),
+                "out_of_range",
+                &format!("{c}{path}"),
+            );
+        }
+        for years in [0, 6] {
+            assert_error(
+                &acme_with(
+                    "/policy/sell_down",
+                    json!({"type": "over_years", "years": years}),
+                ),
+                "out_of_range",
+                &format!("{c}/policy/sell_down/years"),
+            );
+        }
+        assert_error(
+            &acme_with("/amt_credit_carryforward", json!(-1)),
+            "negative_amount",
+            &format!("{c}/amt_credit_carryforward"),
+        );
+        // A price is needed only once there is something to price.
+        let r = patched(&[PatchOp::append("/private_equity", json!({"id": "empty"}))]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        // The limits themselves are accepted.
+        let r = patched(&[
+            acme(),
+            PatchOp::set(format!("{c}/lockup_months"), 24),
+            PatchOp::set(format!("{c}/exercise_window_months"), 120),
+            PatchOp::set(format!("{c}/preference_overhang"), 0.95),
+            PatchOp::set(format!("{c}/tenders/next_in_months"), 120),
+            PatchOp::set(format!("{c}/policy/leave_after_months"), 600),
+            PatchOp::set(
+                format!("{c}/policy/sell_down"),
+                json!({"type": "over_years", "years": 5}),
+            ),
+        ]);
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+    }
+
+    #[test]
+    fn holdings_must_be_consistent() {
+        let h = "/private_equity/@acme/holdings/@g";
+        let holding = |v: serde_json::Value| acme_with("/holdings", json!([v]));
+        assert_error(
+            &holding(json!({"id": "g", "kind": {"type": "rsu"}, "shares": -1})),
+            "out_of_range",
+            &format!("{h}/shares"),
+        );
+        assert_error(
+            &holding(json!({"id": "g", "kind": {"type": "rsu"}, "shares": 2e10, "vested": 2e10})),
+            "out_of_range",
+            &format!("{h}/shares"),
+        );
+        // 1e10 shares at $1,000 is 1e13.
+        assert_error(
+            &[
+                acme(),
+                PatchOp::set("/private_equity/@acme/preferred_price", 1000),
+                PatchOp::set(
+                    "/private_equity/@acme/holdings",
+                    json!([{"id": "g", "kind": {"type": "rsu"}, "shares": 1e10, "vested": 1e10}]),
+                ),
+            ],
+            "equity_position_too_large",
+            &format!("{h}/shares"),
+        );
+        for vested in [-1.0, 101.0] {
+            assert_error(
+                &holding(
+                    json!({"id": "g", "kind": {"type": "rsu"}, "shares": 100, "vested": vested}),
+                ),
+                "vested_exceeds_shares",
+                &format!("{h}/vested"),
+            );
+        }
+        // `vested` is ignored for shares already owned.
+        let r = patched(&holding(
+            json!({"id": "g", "kind": {"type": "shares", "basis_per_share": 1}, "shares": 100}),
+        ));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert_error(
+            &holding(
+                json!({"id": "g", "kind": {"type": "iso", "strike": -1}, "shares": 1, "vested": 1}),
+            ),
+            "negative_amount",
+            &format!("{h}/kind/strike"),
+        );
+        assert_error(
+            &holding(
+                json!({"id": "g", "kind": {"type": "shares", "basis_per_share": -1}, "shares": 1}),
+            ),
+            "negative_amount",
+            &format!("{h}/kind/basis_per_share"),
+        );
+        assert_error(
+            &holding(
+                json!({"id": "g", "kind": {"type": "shares", "basis_per_share": 1, "fmv_at_exercise": -2}, "shares": 1}),
+            ),
+            "negative_amount",
+            &format!("{h}/kind/fmv_at_exercise"),
+        );
+        assert_error(
+            &holding(
+                json!({"id": "g", "kind": {"type": "rsu"}, "shares": 100, "vest_months_left": 241}),
+            ),
+            "out_of_range",
+            &format!("{h}/vest_months_left"),
+        );
+        assert_error(
+            &holding(json!({"id": "g", "kind": {"type": "rsu"}, "shares": 100, "vested": 40})),
+            "unvested_without_schedule",
+            &format!("{h}/vest_months_left"),
+        );
+        assert_error(
+            &holding(
+                json!({"id": "g", "kind": {"type": "rsu"}, "shares": 100, "vest_months_left": 12, "cliff_months": 13}),
+            ),
+            "out_of_range",
+            &format!("{h}/cliff_months"),
+        );
+        assert_error(
+            &[
+                acme(),
+                PatchOp::remove("/private_equity/@acme/job"),
+                PatchOp::set(
+                    "/private_equity/@acme/holdings",
+                    json!([{"id": "g", "kind": {"type": "rsu"}, "shares": 100, "vest_months_left": 12}]),
+                ),
+            ],
+            "equity_unvested_without_job",
+            &format!("{h}/vested"),
+        );
+    }
+
+    #[test]
+    fn outcome_tables_must_be_consistent() {
+        let c = "/private_equity/@acme/outcomes";
+        let table = |rows: serde_json::Value| acme_with("/outcomes", rows);
+        assert_error(
+            &table(json!([{"id": "a", "kind": "fails", "probability": 1.5}])),
+            "out_of_range",
+            &format!("{c}/@a/probability"),
+        );
+        assert_error(
+            &table(json!([
+                {"id": "a", "kind": "fails", "probability": 0.5},
+                {"id": "b", "kind": "still_private", "probability": 0.4}
+            ])),
+            "outcome_probabilities",
+            c,
+        );
+        // A sum within 0.005 of 1 is accepted and normalised by the engine.
+        let r = patched(&table(json!([
+            {"id": "a", "kind": "fails", "probability": 0.6},
+            {"id": "b", "kind": "still_private", "probability": 0.396}
+        ])));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        for (from, to) in [(3.0, 2.0), (-1.0, 2.0), (1.0, 31.0)] {
+            assert_error(
+                &table(
+                    json!([{"id": "a", "kind": "fails", "probability": 1, "years_from": from, "years_to": to}]),
+                ),
+                "outcome_years",
+                &format!("{c}/@a/years_to"),
+            );
+        }
+        // Years are ignored for a "still_private" row.
+        let r = patched(&table(json!([
+            {"id": "a", "kind": "still_private", "probability": 1, "years_from": 9, "years_to": 2}
+        ])));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        for (low, high) in [(2.0, 1.0), (0.0, 1.0), (1.0, 2000.0)] {
+            assert_error(
+                &table(
+                    json!([{"id": "a", "kind": "ipo", "probability": 1, "multiple_low": low, "multiple_high": high}]),
+                ),
+                "outcome_multiple",
+                &format!("{c}/@a/multiple_high"),
+            );
+        }
+        // Multiples are ignored for a failure.
+        let r = patched(&table(json!([
+            {"id": "a", "kind": "fails", "probability": 1, "multiple_low": 5, "multiple_high": 0}
+        ])));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+    }
+
+    #[test]
+    fn equity_plausibility_warnings() {
+        let c = "/private_equity/@acme";
+        let holding = |v: serde_json::Value| acme_with("/holdings", json!([v]));
+        assert_warning(
+            &holding(
+                json!({"id": "g", "kind": {"type": "rsu"}, "shares": 10_000_000, "vested": 10_000_000}),
+            ),
+            "equity_dominant",
+            &format!("{c}/holdings"),
+        );
+        // Not counted: no warning about its size.
+        let r = patched(&[
+            acme(),
+            PatchOp::set(
+                format!("{c}/holdings"),
+                json!([{"id": "g", "kind": {"type": "rsu"}, "shares": 10_000_000, "vested": 10_000_000}]),
+            ),
+            PatchOp::set(format!("{c}/included"), false),
+        ]);
+        assert!(!r.warnings.iter().any(|i| i.code == "equity_dominant"));
+
+        // 400,000 options at $5, fully vested, granted four years ago: 500,000 a year.
+        let r = patched(&holding(json!({
+            "id": "g", "kind": {"type": "iso", "strike": 5, "granted_months_ago": 48},
+            "shares": 400_000, "vested": 400_000
+        })));
+        let issue = r
+            .warnings
+            .iter()
+            .find(|i| i.code == "iso_over_100k_limit")
+            .unwrap_or_else(|| panic!("{:#?}", r));
+        assert_eq!(issue.path, format!("{c}/holdings/@g/kind"));
+        assert!(
+            issue.message.contains("about $500,000 a year"),
+            "{}",
+            issue.message
+        );
+
+        assert_warning(
+            &[
+                acme(),
+                PatchOp::remove(format!("{c}/job")),
+                PatchOp::set(format!("{c}/exercise_window_months"), 12),
+                PatchOp::set(
+                    format!("{c}/holdings"),
+                    json!([{"id": "g", "kind": {"type": "iso", "strike": 2}, "shares": 100, "vested": 100}]),
+                ),
+            ],
+            "iso_former_employer",
+            &format!("{c}/holdings/@g/kind"),
+        );
+        assert_warning(
+            &[
+                PatchOp::set("/household/people/@daniel/joins", "2030-01"),
+                acme(),
+                PatchOp::set(format!("{c}/job"), "daniel_job"),
+                PatchOp::set(format!("{c}/owner"), 1),
+            ],
+            "equity_owner_joins_later",
+            &format!("{c}/owner"),
+        );
+        assert_warning(
+            &holding(
+                json!({"id": "g", "kind": {"type": "nso", "strike": 10}, "shares": 100, "vested": 100}),
+            ),
+            "strike_above_price",
+            &format!("{c}/holdings/@g/kind/strike"),
+        );
+        assert_warning(
+            &acme_with("/fmv_409a", json!(11)),
+            "fmv_above_preferred",
+            &format!("{c}/fmv_409a"),
+        );
+        assert_warning(
+            &[
+                PatchOp::set(
+                    "/incomes/@priya_job/start",
+                    json!({"type": "date", "at": "2030-01"}),
+                ),
+                acme(),
+            ],
+            "equity_job_not_started",
+            &format!("{c}/job"),
+        );
+        assert_warning(
+            &[
+                acme(),
+                PatchOp::set(format!("{c}/policy/exercise"), "vested_now"),
+                PatchOp::set(
+                    format!("{c}/holdings"),
+                    json!([{"id": "g", "kind": {"type": "nso", "strike": 9}, "shares": 1_000_000, "vested": 1_000_000}]),
+                ),
+            ],
+            "exercise_unaffordable",
+            &format!("{c}/policy/exercise"),
+        );
+        // The same options with the default policy are never exercised for cash.
+        let r = patched(&holding(
+            json!({"id": "g", "kind": {"type": "nso", "strike": 9}, "shares": 1_000_000, "vested": 1_000_000}),
+        ));
+        assert!(!r.warnings.iter().any(|i| i.code == "exercise_unaffordable"));
+
+        let r = patched(&[
+            acme(),
+            PatchOp::append(
+                "/private_equity",
+                json!({
+                    "id": "bigger", "name": "Bigger Co", "preferred_price": 50,
+                    "holdings": [{"id": "s", "kind": {"type": "shares", "basis_per_share": 1}, "shares": 100}]
+                }),
+            ),
+        ]);
+        let issue = r
+            .warnings
+            .iter()
+            .find(|i| i.code == "several_companies")
+            .unwrap_or_else(|| panic!("{:#?}", r));
+        assert_eq!(issue.path, "/private_equity");
+        assert!(issue.message.contains("Bigger Co"), "{}", issue.message);
+
+        assert_warning(
+            &[PatchOp::append(
+                "/incomes/@priya_job/kind/equity",
+                json!({"id": "old", "company": {"type": "private"}, "unvested_value": 1000}),
+            )],
+            "private_grant_legacy",
+            "/incomes/@priya_job/kind/equity",
+        );
+    }
+
+    #[test]
+    fn an_optimistic_outcome_table_is_flagged() {
+        let c = "/private_equity/@acme/outcomes";
+        // Series B fails 36% of the time in the preset: 10% is under half of that.
+        let r = patched(&acme_with(
+            "/outcomes",
+            json!([
+                {"id": "fails", "kind": "fails", "probability": 0.10},
+                {"id": "sale", "kind": "acquired", "probability": 0.60, "multiple_low": 0.5, "multiple_high": 2},
+                {"id": "private", "kind": "still_private", "probability": 0.30}
+            ]),
+        ));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        let issue = r
+            .warnings
+            .iter()
+            .find(|i| i.code == "outcomes_optimistic")
+            .unwrap_or_else(|| panic!("{:#?}", r.warnings));
+        assert_eq!(issue.path, c);
+        assert!(
+            issue
+                .message
+                .contains("Failure is 10% in your table against about 36% typically"),
+            "{}",
+            issue.message
+        );
+        // Typical failure odds but a very high price: flagged by the implied multiple.
+        assert_warning(
+            &acme_with(
+                "/outcomes",
+                json!([
+                    {"id": "fails", "kind": "fails", "probability": 0.40},
+                    {"id": "ipo", "kind": "ipo", "probability": 0.60, "multiple_low": 50, "multiple_high": 100}
+                ]),
+            ),
+            "outcomes_optimistic",
+            c,
+        );
+        // A table close to the preset is not.
+        let r = patched(&acme_with(
+            "/outcomes",
+            json!([
+                {"id": "fails", "kind": "fails", "probability": 0.40},
+                {"id": "sale", "kind": "acquired", "probability": 0.35, "multiple_low": 0.2, "multiple_high": 2},
+                {"id": "private", "kind": "still_private", "probability": 0.25}
+            ]),
+        ));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert!(
+            !r.warnings.iter().any(|i| i.code == "outcomes_optimistic"),
+            "{:#?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn per_share_figures_and_amounts_are_bounded() {
+        let c = "/private_equity/@acme";
+        let h = format!("{c}/holdings/@g");
+        let holding = |v: serde_json::Value| acme_with("/holdings", json!([v]));
+        // A total typed into a per-share field far beyond any price.
+        for (kind, field) in [
+            (json!({"type": "nso", "strike": 2_000_000}), "strike"),
+            (
+                json!({"type": "shares", "basis_per_share": 1e7}),
+                "basis_per_share",
+            ),
+            (
+                json!({"type": "shares", "basis_per_share": 1, "from_iso": true, "fmv_at_exercise": 1e9}),
+                "fmv_at_exercise",
+            ),
+        ] {
+            assert_error(
+                &holding(json!({"id": "g", "kind": kind, "shares": 100, "vested": 100})),
+                "out_of_range",
+                &format!("{h}/kind/{field}"),
+            );
+        }
+        // Each within its bound, but a trillion dollars in all.
+        for (kind, field) in [
+            (json!({"type": "nso", "strike": 900_000}), "strike"),
+            (
+                json!({"type": "shares", "basis_per_share": 900_000}),
+                "basis_per_share",
+            ),
+            (
+                json!({"type": "shares", "basis_per_share": 1, "from_iso": true, "fmv_at_exercise": 900_000}),
+                "fmv_at_exercise",
+            ),
+        ] {
+            assert_error(
+                &holding(json!({"id": "g", "kind": kind, "shares": 2e6, "vested": 2e6})),
+                "equity_position_too_large",
+                &format!("{h}/kind/{field}"),
+            );
+        }
+        assert_error(
+            &acme_with("/amt_credit_carryforward", json!(2e9)),
+            "out_of_range",
+            &format!("{c}/amt_credit_carryforward"),
+        );
+        assert_error(
+            &holding(json!({
+                "id": "g", "kind": {"type": "shares", "basis_per_share": 1, "months_held": 5000},
+                "shares": 1
+            })),
+            "out_of_range",
+            &format!("{h}/kind/months_held"),
+        );
+        // No dollar amount anywhere may pass a trillion: the profile that overflowed
+        // the yearly totals (a 409A value at exercise of 1e15) is refused.
+        assert_error(
+            &holding(json!({
+                "id": "g",
+                "kind": {"type": "shares", "basis_per_share": 1, "from_iso": true, "fmv_at_exercise": 1e15, "months_held": 3},
+                "shares": 10_000
+            })),
+            "amount_too_large",
+            &format!("{h}/kind/fmv_at_exercise"),
+        );
+        let r = patched(&[PatchOp::set("/accounts/0/balance", 1e13)]);
+        assert!(
+            r.errors
+                .iter()
+                .any(|i| i.code == "amount_too_large" && i.path.ends_with("/balance")),
+            "{:#?}",
+            r.errors
+        );
+        let r = patched(&[PatchOp::set("/accounts/0/balance", 1e12)]);
+        assert!(!r.errors.iter().any(|i| i.code == "amount_too_large"));
+    }
+
+    #[test]
+    fn a_basis_above_the_price_is_questioned() {
+        let c = "/private_equity/@acme";
+        let h = format!("{c}/holdings/@g");
+        let holding = |v: serde_json::Value| acme_with("/holdings", json!([v]));
+        // $15,000 paid for 10,000 shares, typed as the basis per share.
+        let r = patched(&holding(json!({
+            "id": "g", "kind": {"type": "shares", "basis_per_share": 15_000}, "shares": 10_000
+        })));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        let issue = r
+            .warnings
+            .iter()
+            .find(|i| i.code == "basis_above_price")
+            .unwrap_or_else(|| panic!("{:#?}", r.warnings));
+        assert_eq!(issue.path, format!("{h}/kind/basis_per_share"));
+        assert!(
+            issue.message.contains("$15,000.00 a share")
+                && issue.message.contains("$10.00")
+                && issue.message.contains("not the total paid"),
+            "{}",
+            issue.message
+        );
+        assert_warning(
+            &holding(json!({
+                "id": "g",
+                "kind": {"type": "shares", "basis_per_share": 1.5, "from_iso": true, "fmv_at_exercise": 5000},
+                "shares": 10_000
+            })),
+            "fmv_at_exercise_above_price",
+            &format!("{h}/kind/fmv_at_exercise"),
+        );
+        // At or below the price: nothing to say (a basis equal to it is a purchase
+        // in the round).
+        let r = patched(&holding(json!({
+            "id": "g",
+            "kind": {"type": "shares", "basis_per_share": 10, "from_iso": true, "fmv_at_exercise": 10},
+            "shares": 10_000
+        })));
+        assert!(
+            !r.warnings
+                .iter()
+                .any(|i| i.code == "basis_above_price" || i.code == "fmv_at_exercise_above_price"),
+            "{:#?}",
+            r.warnings
+        );
+        assert_eq!(dollars_cents(1_234.5), "$1,234.50");
+        assert_eq!(dollars_cents(0.05), "$0.05");
+        assert_eq!(dollars_cents(f64::NAN), "$0.00");
+    }
+
+    #[test]
+    fn options_past_or_near_their_term_are_reported() {
+        let c = "/private_equity/@acme";
+        let h = format!("{c}/holdings/@g");
+        let grant = |ago: u32, vested: u32, left: u32| {
+            acme_with(
+                "/holdings",
+                json!([{
+                    "id": "g", "kind": {"type": "iso", "strike": 2, "granted_months_ago": ago},
+                    "shares": 1000, "vested": vested, "vest_months_left": left
+                }]),
+            )
+        };
+        // Ten years or more after the grant: the options have lapsed.
+        for ago in [120, 125, 4_000_000_000] {
+            assert_error(
+                &grant(ago, 1000, 0),
+                "option_term_passed",
+                &format!("{h}/kind/granted_months_ago"),
+            );
+        }
+        let r = patched(&grant(119, 1000, 0));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        // Within two years of the term: when, and what the plan does then.
+        let soon = |ops: &[PatchOp]| {
+            let r = patched(ops);
+            assert!(r.errors.is_empty(), "{:#?}", r.errors);
+            r.warnings
+                .iter()
+                .find(|i| i.code == "option_term_soon")
+                .map(|i| i.message.clone())
+        };
+        let message = soon(&grant(100, 1000, 0)).expect("a warning");
+        assert!(
+            message.contains("in 20 months") && message.contains("about $2,000 of strike"),
+            "{message}"
+        );
+        let mut ops = grant(100, 1000, 0).to_vec();
+        ops.push(PatchOp::set(format!("{c}/policy/at_deadline"), "forfeit"));
+        let message = soon(&ops).expect("a warning");
+        assert!(message.contains("lets them lapse"), "{message}");
+        assert!(soon(&grant(96, 1000, 0)).is_some(), "24 months left");
+        assert!(soon(&grant(95, 1000, 0)).is_none(), "25 months left");
+        // The term falls inside the vesting that is left.
+        assert_warning(
+            &grant(100, 400, 36),
+            "option_term_before_vesting",
+            &format!("{h}/kind/granted_months_ago"),
+        );
+        let r = patched(&grant(60, 400, 36));
+        assert!(
+            !r.warnings.iter().any(|i| i.code.starts_with("option_term")),
+            "{:#?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn a_tender_cannot_be_priced_at_nothing() {
+        let c = "/private_equity/@acme";
+        for fraction in [0.0, 0.04, -1.0] {
+            assert_error(
+                &acme_with("/tenders/price_fraction", json!(fraction)),
+                "out_of_range",
+                &format!("{c}/tenders/price_fraction"),
+            );
+        }
+        for fraction in [0.05, 1.0, 2.0] {
+            let r = patched(&acme_with("/tenders/price_fraction", json!(fraction)));
+            assert!(r.errors.is_empty(), "{fraction}: {:#?}", r.errors);
+        }
+    }
+
+    #[test]
+    fn keeping_small_business_stock_is_explained() {
+        let c = "/private_equity/@acme";
+        let ops = [
+            acme(),
+            PatchOp::set(format!("{c}/qsbs"), true),
+            PatchOp::set(format!("{c}/policy/sell_down"), json!({"type": "hold"})),
+        ];
+        assert_warning(&ops, "qsbs_hold", &format!("{c}/policy/sell_down"));
+        let r = patched(&ops[..2]);
+        assert!(!r.warnings.iter().any(|i| i.code == "qsbs_hold"));
+    }
+
+    #[test]
+    fn a_row_with_only_a_probability_is_flagged() {
+        let c = "/private_equity/@acme";
+        // Written with probabilities alone, a row is a price of exactly 1x in years 1
+        // to 5, not the stage's typical price and timing.
+        let ops = acme_with(
+            "/outcomes",
+            json!([
+                {"id": "fails", "kind": "fails", "probability": 0.5},
+                {"id": "ipo", "kind": "ipo", "probability": 0.5}
+            ]),
+        );
+        assert_warning(&ops, "outcome_flat_price", &format!("{c}/outcomes/@ipo"));
+        let r = patched(&ops);
+        assert!(!has(
+            &r.warnings,
+            "outcome_flat_price",
+            &format!("{c}/outcomes/@fails")
+        ));
+        // A row with a spread is not flagged, nor is one with no chance.
+        let r = patched(&acme_with(
+            "/outcomes",
+            json!([
+                {"id": "fails", "kind": "fails", "probability": 0.5},
+                {"id": "ipo", "kind": "ipo", "probability": 0.5, "multiple_low": 1.2, "multiple_high": 7},
+                {"id": "sale", "kind": "acquired", "probability": 0.0}
+            ]),
+        ));
+        assert!(r.errors.is_empty(), "{:#?}", r.errors);
+        assert!(
+            !r.warnings.iter().any(|i| i.code == "outcome_flat_price"),
+            "{:#?}",
+            r.warnings
+        );
+    }
+
+    #[test]
+    fn a_tender_chance_too_high_to_meet_is_flagged() {
+        let c = "/private_equity/@acme";
+        let path = format!("{c}/tenders/annual_probability");
+        assert_warning(
+            &acme_with("/tenders/annual_probability", json!(1.0)),
+            "tender_chance_capped",
+            &path,
+        );
+        // A modest chance can be met in full, and the stage's own chance always can.
+        for ops in [
+            acme_with("/tenders/annual_probability", json!(0.05)).to_vec(),
+            vec![acme()],
+        ] {
+            let r = patched(&ops);
+            assert!(r.errors.is_empty(), "{:#?}", r.errors);
+            assert!(
+                !r.warnings.iter().any(|i| i.code == "tender_chance_capped"),
+                "{:#?}",
+                r.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn one_company_is_checked_on_its_own_like_in_a_profile() {
+        // The same checks, with paths relative to the company.
+        let mut company = PrivateCompany {
+            id: "acme".into(),
+            preferred_price: 10.0,
+            holdings: vec![EquityHolding {
+                id: "g".into(),
+                kind: HoldingKind::Nso {
+                    strike: 2.0,
+                    granted_months_ago: 24,
+                },
+                shares: 100.0,
+                vested: 100.0,
+                ..EquityHolding::default()
+            }],
+            ..PrivateCompany::default()
+        };
+        assert_eq!(validate_company(&company), Report::default());
+        // A bare company, as the editor previews a stage's typical odds.
+        let bare = PrivateCompany {
+            preferred_price: 1.0,
+            ..PrivateCompany::default()
+        };
+        assert!(validate_company(&bare).is_ok());
+        company.holdings[0].vested = 40.0;
+        company.lockup_months = 99;
+        let r = validate_company(&company);
+        assert!(has(&r.errors, "out_of_range", "/lockup_months"), "{r:#?}");
+        // Unvested units with no job to vest in.
+        assert!(
+            has(
+                &r.errors,
+                "unvested_without_schedule",
+                "/holdings/@g/vest_months_left"
+            ) && has(
+                &r.errors,
+                "equity_unvested_without_job",
+                "/holdings/@g/vested"
+            ),
+            "{r:#?}"
+        );
+    }
+
+    #[test]
+    fn a_table_with_no_failure_row_prints_zero_not_minus_zero() {
+        let c = "/private_equity/@acme";
+        let r = patched(&acme_with(
+            "/outcomes",
+            json!([{
+                "id": "a", "kind": "acquired", "probability": 1, "years_from": 1, "years_to": 2,
+                "multiple_low": 3, "multiple_high": 3
+            }]),
+        ));
+        let issue = r
+            .warnings
+            .iter()
+            .find(|i| i.code == "outcomes_optimistic")
+            .unwrap_or_else(|| panic!("{:#?}", r));
+        assert_eq!(issue.path, format!("{c}/outcomes"));
+        assert!(
+            issue.message.contains("Failure is 0% in your table"),
+            "{}",
+            issue.message
+        );
     }
 }

@@ -11,6 +11,7 @@ use crate::career::{CareerParams, JobModel, SelfEmploymentModel};
 use crate::data::Data;
 use crate::decumulation::SpendingPlanner;
 use crate::economy::EconomyModel;
+use crate::equity::{self, CompanyModel, EquityParams};
 use crate::health::{HealthModel, MortalityModel};
 use crate::housing::{amortized_payment, PropertyModel};
 use crate::math;
@@ -195,8 +196,24 @@ pub(crate) struct JobPlan {
     pub bonus_target: f64,
     pub commission_real: f64,
     pub start: Sched,
+    /// The job's own start month, before it is held back to the month its owner
+    /// joins the household; `i32::MAX` when it is not a fixed date. Private-company
+    /// equity vests from here.
+    pub own_start: i32,
     pub end: Sched,
     pub ends_at_retirement: bool,
+}
+
+/// A private company whose stock, options or RSUs the household holds.
+#[derive(Clone, Debug)]
+pub(crate) struct CompanyPlan {
+    pub name: String,
+    pub owner: usize,
+    /// Index into `Plan::jobs` of the job that grants the equity, if any.
+    pub job: Option<usize>,
+    /// The company's failure lays the owner off from the linked job.
+    pub fails_job: bool,
+    pub model: CompanyModel,
 }
 
 /// A self-employment income.
@@ -510,6 +527,17 @@ pub struct Plan {
     pub(crate) beh: super::behavior::BehaviorPlan,
     /// Household dynamics: divorce, parents, caregiving, life insurance.
     pub(crate) dynamics: super::dynamics::DynamicsPlan,
+    /// Private companies, in profile order (the order of their random streams).
+    pub(crate) companies: Vec<CompanyPlan>,
+    /// True when the profile lists any private company, included or not. Switches
+    /// on the equity step, the AMT and the tax reserve.
+    pub(crate) has_equity: bool,
+    /// The company the outcome statistics describe (`equity::primary_company`).
+    pub(crate) primary_company: usize,
+    /// Parameters of the private-company model.
+    pub(crate) equity_params: EquityParams,
+    /// Minimum tax credit brought into the plan: the sum over included companies.
+    pub(crate) amt_credit0: f64,
 }
 
 fn num(v: &serde_json::Value, path: &[&str]) -> f64 {
@@ -656,6 +684,10 @@ impl Plan {
             let age0 = person.birth.age_years_at(start);
             let joins = person.joins.map_or(i32::MIN, |j| j - start);
             let mut begin = Sched::start(income.start.as_ref(), &ctx);
+            let own_start = match begin {
+                Sched::At(m) => m,
+                _ => i32::MAX,
+            };
             if let Sched::At(m) = begin {
                 begin = Sched::At(m.max(joins));
             }
@@ -693,6 +725,7 @@ impl Plan {
                         bonus_target: job.bonus.map_or(0.0, |b| b.target_fraction),
                         commission_real: job.commission.map_or(0.0, |c| c.expected_annual),
                         start: begin,
+                        own_start,
                         end: finish,
                         ends_at_retirement: job.ends_at_retirement,
                     });
@@ -776,6 +809,51 @@ impl Plan {
                 }
             }
         }
+
+        // Private companies. The model is compiled whatever the settings: every
+        // company has a fate and a random stream of its own.
+        let equity_params = EquityParams::from_data(data);
+        let mut companies = Vec::new();
+        if !profile.private_equity.is_empty() {
+            let caps = {
+                let federal = law
+                    .for_year(crate::tax::Indexation::base(law.base_year), StateCode::NONE)
+                    .federal;
+                [federal.qsbs_cap, federal.qsbs_cap_old]
+            };
+            for company in &profile.private_equity {
+                let job = company.job.as_ref().and_then(|id| {
+                    income_refs.iter().find_map(|(key, r)| match r {
+                        IncomeRef::Job(j) if key == id => Some(*j),
+                        _ => None,
+                    })
+                });
+                // Without a job the company is a former employer or an investment.
+                let mut facts = company.clone();
+                if job.is_none() {
+                    facts.job = None;
+                }
+                companies.push(CompanyPlan {
+                    name: if company.name.is_empty() {
+                        company.id.clone()
+                    } else {
+                        company.name.clone()
+                    },
+                    owner: company.owner.min(profile.household.people.len() - 1),
+                    job,
+                    fails_job: company.company_failure_ends_job,
+                    model: CompanyModel::compile(&facts, &equity_params, caps, start),
+                });
+            }
+        }
+        let has_equity = !companies.is_empty();
+        let primary_company = equity::primary_company(&profile.private_equity);
+        let amt_credit0 = profile
+            .private_equity
+            .iter()
+            .filter(|c| c.included)
+            .map(|c| c.amt_credit_carryforward.max(0.0))
+            .sum();
 
         // People.
         let mut people = Vec::new();
@@ -1389,6 +1467,11 @@ impl Plan {
             care,
             beh,
             dynamics: super::dynamics::DynamicsPlan::compile(profile, data, start, n),
+            companies,
+            has_equity,
+            primary_company,
+            equity_params,
+            amt_credit0,
         })
     }
 
@@ -1435,6 +1518,17 @@ impl Plan {
             start: self.start,
             first_birth: self.people[0].birth,
             second_birth: self.people.get(1).map(|p| p.birth),
+            equity_company: self
+                .profile
+                .private_equity
+                .get(self.primary_company)
+                .map(|c| {
+                    if c.name.trim().is_empty() {
+                        c.id.clone()
+                    } else {
+                        c.name.clone()
+                    }
+                }),
         }
     }
 

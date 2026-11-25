@@ -2,7 +2,7 @@
 // the worker pool. Call `initEngineSync` first. Node simulates about 2,000 lives a
 // second on one thread, so tests ask for a few hundred lives where the number is not
 // the point; identical runs are served from a cache shared by the whole test file.
-import { applyPatch, compare, digest, levers, planPreview, schema } from '@/engine/api';
+import { applyPatch, compare, digest, equityPreview, levers, planPreview, schema } from '@/engine/api';
 import { EngineError, toEngineError } from '@/engine/errors';
 import type { PathTrace, Summary } from '@/engine/output-types';
 import { engineInput, type ManyJob, type ManyOptions, type RunResult } from '@/engine/pool';
@@ -76,6 +76,7 @@ export function nodeEngine(options: { fail?: () => Error | null } = {}): NodeEng
     levers,
     schema,
     planPreview,
+    equityPreview: (company) => equityPreview(company),
     digest: (run) => digest(run.acc, engineInput(run.profile, run.seed).json),
     async compare(a, b) {
       engine.compared += 1;

@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in the app or the CLI is broken or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If a *number* looks wrong rather than the app misbehaving, the **Model question** template is a better fit.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Dual-income family demo
+        2. Go to Scenarios
+        3. ...
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan file or share link (optional)
+      description: |
+        The same plan and seed give the same result everywhere, so an exported plan makes most bugs reproducible. Click the household name at the top left and choose **Export**, then attach the file or paste a share link. Change any personal numbers first if you like.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Web app (firesight-v2.vercel.app)
+        - Web app (self-hosted or local)
+        - Command line (firesight CLI)
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 140 on macOS 15

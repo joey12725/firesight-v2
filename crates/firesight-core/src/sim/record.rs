@@ -9,19 +9,30 @@
 //!
 //! # Conservation (check mode)
 //!
-//! Three identities are asserted every month, each to a tolerance of a cent plus
+//! Four identities are asserted every month, each to a tolerance of a cent plus
 //! one part in 10^9 of the amounts involved:
 //!
 //! 1. **Cash**: sources equal uses (`YearRecord::cash_flow_residual`), with the cash
 //!    bucket's own line taken from its actual change in balance. Any code that moved
 //!    cash without booking a flow, or booked a flow without moving cash, breaks it.
+//!    Private-company equity is inside it: proceeds are a source (`income_equity`),
+//!    the strike paid on an exercise a use (`equity_exercise`).
 //! 2. **Invested buckets**: their change in value equals contributions less
 //!    withdrawals plus the market return reported by `Accounts::apply_returns`.
 //! 3. **Property, mortgages and debts**: each changes by exactly the flows the
 //!    housing and debt steps reported (appreciation, purchases and sales, principal,
 //!    interest, new loans).
 //!
-//! Together they make the change in net worth equal to the sum of the recorded flows.
+//! 4. **Private-company share lots**: the regular-tax basis held in lots changes by
+//!    exactly the basis the equity steps reported coming in (an exercise, a step-up
+//!    at death) and going out (a sale, a move to the taxable account, a failure, a
+//!    write-off, holdings dropped when nobody inherits). Every lot has non-negative
+//!    shares, cost and AMT basis, and the paper value is finite and not negative.
+//!
+//! The first three make the change in net worth equal to the sum of the recorded
+//! flows. Private-company holdings are outside net worth until they turn into cash
+//! or into shares in the taxable account; their paper value is the memo series
+//! `equity_paper_value`.
 //!
 //! # Success and failure attribution
 //!
@@ -59,7 +70,8 @@ const CHECK_ABSOLUTE: f64 = 0.02;
 /// Relative tolerance of the conservation checks.
 const CHECK_RELATIVE: f64 = 1e-9;
 
-const BALANCES: [YearSeries; 8] = [
+/// Period-end stocks: zeroed and rewritten at each record.
+const BALANCES: [YearSeries; 9] = [
     YearSeries::BalanceCash,
     YearSeries::BalanceTaxable,
     YearSeries::BalanceTraditional,
@@ -68,6 +80,7 @@ const BALANCES: [YearSeries; 8] = [
     YearSeries::PropertyValue,
     YearSeries::Mortgage,
     YearSeries::Debt,
+    YearSeries::EquityPaperValue,
 ];
 
 impl State {
@@ -85,9 +98,20 @@ impl State {
         self.chk_prop_flow = 0.0;
         self.chk_mort_flow = 0.0;
         self.chk_debt_flow = 0.0;
+        self.chk_eq_start = self.lot_basis_total();
+        self.chk_eq_flow = 0.0;
     }
 
-    /// Asserts the three conservation identities for the month just simulated.
+    /// Regular-tax basis of every private-company share lot held.
+    fn lot_basis_total(&self) -> f64 {
+        let mut total = 0.0;
+        for rt in &self.companies {
+            total += rt.st.lot_basis();
+        }
+        total
+    }
+
+    /// Asserts the conservation identities for the month just simulated.
     #[cold]
     #[inline(never)]
     fn check_end(&self, t: usize) {
@@ -143,6 +167,26 @@ impl State {
             debt - self.chk_debt_start,
             self.chk_debt_flow
         );
+        let basis = self.lot_basis_total();
+        assert!(
+            (basis - self.chk_eq_start - self.chk_eq_flow).abs() <= tol(basis),
+            "month {t}: private-company lot basis changed by {:.4}, flows explain {:.4}",
+            basis - self.chk_eq_start,
+            self.chk_eq_flow
+        );
+        for (c, rt) in self.companies.iter().enumerate() {
+            for lot in rt.st.lots() {
+                assert!(
+                    lot.shares >= 0.0 && lot.cost >= 0.0 && lot.amt_extra >= 0.0,
+                    "month {t}: company {c} holds a negative lot ({lot:?})"
+                );
+            }
+        }
+        assert!(
+            self.eq_paper.is_finite() && self.eq_paper >= 0.0,
+            "month {t}: private-company paper value is {}",
+            self.eq_paper
+        );
         for (i, v) in led.iter().enumerate() {
             assert!(v.is_finite(), "month {t}: series {i} is {v}");
             assert!(
@@ -168,6 +212,8 @@ impl State {
             value * k,
             mortgage * k,
             (self.debt_total() + (-kinds[0]).max(0.0)) * k,
+            // Not a balance: vested private-company holdings at the company's price.
+            self.eq_paper * k,
         ]
     }
 
@@ -286,7 +332,7 @@ impl State {
         }
     }
 
-    /// Ends the path: the fourteen scalars the simulation supplies, and the outcome.
+    /// Ends the path: the scalars the simulation supplies, and the outcome.
     pub(crate) fn finish<R: Recorder>(&mut self, plan: &Plan, econ: &EconomyPath, rec: &mut R) {
         let months = self.months;
         let end_price = econ.price_level[months];
@@ -326,6 +372,21 @@ impl State {
             end.set(
                 PathScalar::MortgagePayoffAge,
                 age_at(self.mortgage_payoff_month),
+            );
+        }
+        if plan.has_equity {
+            // The outcome and its age describe the primary company; the four
+            // amounts total every included company.
+            end.set_equity_outcome(self.companies[plan.primary_company].st.outcome);
+            if self.eq_event_month != i32::MAX {
+                end.set(PathScalar::EquityEventAge, age_at(self.eq_event_month));
+            }
+            end.set(PathScalar::EquityGrossProceeds, self.eq_gross_real);
+            end.set(PathScalar::EquityExerciseCost, self.eq_cost_real);
+            end.set(PathScalar::EquityTenderProceeds, self.eq_tender_real);
+            end.set(
+                PathScalar::EquityNetProceeds,
+                self.eq_gross_real - self.eq_cost_real - self.eq_tax_real,
             );
         }
         let own_age = |i: usize, m: i32| (f64::from(plan.people[i].age0) + f64::from(m)) / 12.0;

@@ -1,8 +1,9 @@
 // Compact forms of engine output for tool results. A Summary is hundreds of kilobytes;
-// the model gets core's own digest of a run (about 1.7 KB) and a cut of core's paired
+// the model gets core's own digest of a run (about 1.7 KB, about 2.2 KB with its
+// `equity` block for a plan with private-company equity) and a cut of core's paired
 // comparison, with the ids to ask for more. Nothing here computes a statistic: the
 // engine does that, and this file chooses and rounds.
-import type { Comparison, ComparisonMetric, OutcomeComparison, PathScalar, Summary, SummaryDigest } from '@/engine/output-types';
+import type { Comparison, ComparisonMetric, EquityOutcome, OutcomeComparison, PathScalar, Summary, SummaryDigest } from '@/engine/output-types';
 import type { RunRecord } from './runs';
 import type { EngineBridge } from './types';
 
@@ -13,7 +14,12 @@ const round = (v: number | null | undefined, dp: number) => {
   return Math.round(v * f) / f;
 };
 
-/** Core's digest of a run, with what the tools add: the id to refer back to it, and its seed. */
+/**
+ * Core's digest of a run, with what the tools add: the id to refer back to it, and its
+ * seed. For a plan with private-company equity core's digest carries an `equity` block
+ * (outcome shares, the share paid nothing, net proceeds, success by outcome), which
+ * rides along untouched.
+ */
 export type RunDigest = {
   run_id: string;
   seed: number;
@@ -144,6 +150,24 @@ export interface ComparisonDigest {
   scalars: PairedScalar[];
   /** B minus A on the headline figures of the full runs. */
   headline: { metric: ComparisonMetric; a: number | null; b: number | null; delta: number | null }[];
+  /** The change among the lives with each equity outcome under A. Only when A has private-company equity. */
+  by_equity_outcome?: PairedByEquityOutcome[];
+}
+
+/** B minus A among the lives in which the company met one outcome (the outcome is the same life by life in both runs). */
+export interface PairedByEquityOutcome {
+  outcome: EquityOutcome;
+  /** Lives with this outcome. A small class has a wide interval. */
+  paths: number;
+  success_a: number | null;
+  success_b: number | null;
+  /** Change in the success rate within the class, with its 95% interval. */
+  delta: number | null;
+  lo: number | null;
+  hi: number | null;
+  within_noise: boolean;
+  /** Median of the per-life change in terminal net worth within the class. */
+  net_worth_median_change: number | null;
 }
 
 const SCALARS: PathScalar[] = ['fi_age', 'retirement_age', 'terminal_net_worth', 'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'extra_spending_ratio'];
@@ -213,6 +237,25 @@ export function digestComparison(c: Comparison, seed: number): ComparisonDigest 
         };
       }),
     headline: c.headline.map((h) => ({ metric: h.metric, a: fitHeadline(h.metric, h.a), b: fitHeadline(h.metric, h.b), delta: fitHeadline(h.metric, h.delta) })),
+    ...byEquityOutcome(c),
+  };
+}
+
+function byEquityOutcome(c: Comparison): Pick<ComparisonDigest, 'by_equity_outcome'> {
+  const classes = c.by_equity_outcome;
+  if (!classes || classes.length === 0) return {};
+  return {
+    by_equity_outcome: classes.map((k) => ({
+      outcome: k.outcome,
+      paths: k.paths,
+      success_a: round(k.success.a.value, 3),
+      success_b: round(k.success.b.value, 3),
+      delta: round(k.success.difference.value, 4),
+      lo: round(k.success.difference.lo, 4),
+      hi: round(k.success.difference.hi, 4),
+      within_noise: k.success.within_noise,
+      net_worth_median_change: dollars(at(c.quantile_levels, k.terminal_net_worth.quantiles, 0.5)),
+    })),
   };
 }
 

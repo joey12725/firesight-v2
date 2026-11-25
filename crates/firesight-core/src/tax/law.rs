@@ -460,6 +460,14 @@ fn parse_federal(root: &Node, base_year: i32) -> Result<FederalBase, DataError> 
     let credit = aca.get("premium_tax_credit")?;
     let poverty = aca.get("federal_poverty_guidelines")?;
     let irmaa = root.get("medicare")?.get("irmaa")?;
+    let amt = income.get("alternative_minimum_tax")?;
+    let amt_rates = amt.get("rates")?;
+    let amt_rate_rows = amt_rates.items()?;
+    if amt_rate_rows.len() != 2 {
+        return Err(amt_rates.err("expected two rates"));
+    }
+    let supplemental = root.get("supplemental_wage_withholding")?;
+    let qsbs = root.get("qualified_small_business_stock")?;
 
     // SALT cap schedule.
     let mut salt_schedule = Vec::new();
@@ -582,6 +590,16 @@ fn parse_federal(root: &Node, base_year: i32) -> Result<FederalBase, DataError> 
         aca: aca_year,
         irmaa: [irmaa_single, irmaa_joint, irmaa_single],
         limits: parse_limits(root)?,
+        amt_exemption: amt.get("exemption")?.by_status(true)?,
+        amt_phaseout_start: amt.get("exemption_phaseout_start")?.by_status(true)?,
+        amt_phaseout_rate: amt.get_rate("exemption_phaseout_rate")?,
+        amt_rate_break: amt.get_amount("rate_26_up_to_amti_excess")?,
+        amt_rates: [amt_rate_rows[0].rate()?, amt_rate_rows[1].rate()?],
+        supplemental_rate: supplemental.get_rate("rate")?,
+        supplemental_rate_high: supplemental.get_rate("rate_above_threshold")?,
+        supplemental_threshold: supplemental.get_amount("threshold")?,
+        qsbs_cap: qsbs.get_amount("per_issuer_cap")?,
+        qsbs_cap_old: qsbs.get_amount("per_issuer_cap_stock_acquired_before_2025_07_05")?,
     };
     for status in FilingStatus::ALL {
         let s = status.index();
@@ -1036,11 +1054,13 @@ impl TaxLaw {
     /// * Chained-CPI and CPI items (brackets, standard and additional deductions,
     ///   capital-gain thresholds, QBI thresholds, child credit amounts, contribution
     ///   limits, IRMAA tiers 1 to 4) scale with `index.cpi_factor` and are rounded to
-    ///   the statute's increment (see [`index_rounded`]).
+    ///   the statute's increment (see [`index_rounded`]). The AMT exemption, its
+    ///   phase-out threshold and the 28% rate break scale the same way without rounding.
     /// * The OASDI wage base scales with `index.wage_factor`.
     /// * Frozen items stay nominal: NIIT and additional Medicare thresholds, Social
     ///   Security taxation thresholds, child credit phase-out and other-dependant
-    ///   credit, the capital loss limit, the senior deduction, penalties.
+    ///   credit, the capital loss limit, the senior deduction, penalties, the
+    ///   supplemental withholding threshold and the section 1202 caps.
     /// * Calendar rules use `index.year`: the SALT cap schedule, the senior deduction
     ///   sunset, the IRMAA top-tier freeze, the ACA cliff flag.
     /// * The poverty guideline scales with `index.fpl_factor` and IRMAA surcharge
@@ -1109,6 +1129,9 @@ impl TaxLaw {
             CHILD_CREDIT_INCREMENT,
         );
         f.oasdi_wage_base = index_rounded(b.oasdi_wage_base, wage, WAGE_BASE_INCREMENT);
+        // The AMT amounts follow chained CPI like the brackets. The statutory
+        // rounding is not applied (`SOURCES-federal.md`); the difference is under $100.
+        f.amt_rate_break = b.amt_rate_break * cpi;
 
         f.limits.k401_employee = index_rounded(b.limits.k401_employee, cpi, K401_INCREMENT);
         f.limits.k401_catch_up = index_rounded(b.limits.k401_catch_up, cpi, K401_INCREMENT);
@@ -1210,6 +1233,8 @@ impl TaxLaw {
         f.standard_deduction[s] = bracket(b.standard_deduction[s]);
         f.additional_deduction_65[s] = bracket(b.additional_deduction_65[s]);
         f.qbi_threshold[s] = bracket(b.qbi_threshold[s]);
+        f.amt_exemption[s] = b.amt_exemption[s] * cpi;
+        f.amt_phaseout_start[s] = b.amt_phaseout_start[s] * cpi;
         f.limits.roth_ira_phaseout_start[s] = index_rounded(
             b.limits.roth_ira_phaseout_start[s],
             chained,

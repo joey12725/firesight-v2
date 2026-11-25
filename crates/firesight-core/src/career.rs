@@ -812,6 +812,11 @@ pub struct JobState {
     /// Months a private employer has waited for its outcome, recession months not
     /// counted (`exit_timing: lognormal`).
     pub exit_clock: u32,
+    /// Set by the simulation when the employer (a company under `private_equity`)
+    /// fails: the next step in which the person is employed lays them off, whatever
+    /// the layoff draw says. It waits through a career break and is cleared once the
+    /// layoff has happened, or when the job is already lost or has ended.
+    pub force_layoff: bool,
 }
 
 /// What one job paid in one month, nominal dollars.
@@ -835,6 +840,12 @@ pub struct JobMonth {
     pub laid_off: bool,
     /// True in the month a new job starts after unemployment.
     pub rehired: bool,
+    /// The part of `equity_income` paid by a private company's liquidity event this
+    /// month (the grants under the job's own `equity`).
+    pub private_payout: f64,
+    /// True in the month the job's private company fails (the grants under the
+    /// job's own `equity`).
+    pub company_failed: bool,
 }
 
 impl JobMonth {
@@ -1224,14 +1235,19 @@ impl JobModel {
         let slack = usize::from(s.months_since_recession <= SLACK_MONTHS_AFTER_RECESSION);
 
         // Layoff.
-        if s.employment == Employment::Employed && {
-            let hazard = self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)];
-            let u_layoff = uniform_from_bits(b_layoff);
-            match &self.equity.link {
-                None => u_layoff < hazard,
-                Some(link) => link.laid_off(s, hazard, u_layoff, uniform_from_bits(b_equity[0])),
-            }
-        } {
+        if s.employment == Employment::Employed
+            && ({
+                let hazard = self.hazard[usize::from(c.recession != 0)][hazard_age_band(c.age)];
+                let u_layoff = uniform_from_bits(b_layoff);
+                match &self.equity.link {
+                    None => u_layoff < hazard,
+                    Some(link) => {
+                        link.laid_off(s, hazard, u_layoff, uniform_from_bits(b_equity[0]))
+                    }
+                }
+            } || s.force_layoff)
+        {
+            s.force_layoff = false;
             let p = &self.params;
             let older = c.age >= SCAR_OLDER_AGE;
             let mut scar_mean = p.scar_mean[slack];
@@ -1266,6 +1282,14 @@ impl JobModel {
             s.employment = Employment::Unemployed { months: 0 };
             self.forfeit_unvested(s);
             out.laid_off = true;
+        }
+        // A forced layoff waits for a career break to end; it means nothing once the
+        // job is lost or over.
+        if matches!(
+            s.employment,
+            Employment::Unemployed { .. } | Employment::Ended
+        ) {
+            s.force_layoff = false;
         }
 
         // Share of a full month's pay earned this month.
@@ -1400,6 +1424,7 @@ impl JobModel {
                     if c.recession == 0 && u_liquidity < hazard {
                         if u_class < *fail_prob {
                             s.liquidity = Liquidity::Failed;
+                            out.company_failed = true;
                             s.stock_price = 0.0;
                             self.forfeit_unvested(s);
                             s.illiquid_vested = [0.0; MAX_GRANTS];
@@ -1429,6 +1454,7 @@ impl JobModel {
                                     gross
                                 };
                                 out.equity_income += value;
+                                out.private_payout += value;
                                 if !grant.sell_on_vest {
                                     out.equity_retained += value;
                                 }

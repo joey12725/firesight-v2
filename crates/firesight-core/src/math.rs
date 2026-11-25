@@ -123,6 +123,8 @@ mod tests {
         assert!((exp(ln(3.5)) - 3.5).abs() < 1e-12);
         assert!((pow(2.0, 0.5) - std::f64::consts::SQRT_2).abs() < 1e-15);
         assert!((log10(1000.0) - 3.0).abs() < 1e-12);
+        assert_eq!(normal_cdf(0.0), 0.5);
+        assert!((normal_cdf(1.0) - 0.841_344_746_068_543).abs() < 1e-12);
     }
 
     #[test]

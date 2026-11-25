@@ -22,13 +22,30 @@
 //!    deduction and the business-income deduction.
 //! 6. Tax: ordinary brackets on ordinary taxable income; long-term gains and
 //!    qualified dividends stacked on top through the 0/15/20% thresholds; NIIT.
+//!    When `TaxInputs.amt_applies` is set, the alternative minimum tax and the
+//!    minimum tax credit (after the credits of step 7, which limit the credit used).
 //! 7. Credits: child and other-dependant credit with phase-out and the refundable
 //!    limit. Penalties on early and non-medical HSA distributions.
 //! 8. ACA premium credit and the IRMAA tier, from their own MAGI definitions.
 //!
 //! Simplifications, all deliberate:
 //!
-//! * No AMT. No tax-exempt interest (so IRMAA MAGI equals AGI). No kiddie tax,
+//! * AMT is computed when `TaxInputs.amt_applies` is set (households with
+//!   private-company equity): the exemption and its phase-out, the 26% and 28% rates,
+//!   gains at their own rates, the incentive-option adjustment and the minimum tax
+//!   credit. State AMT is not modelled. For every other household no AMT is
+//!   computed, although a large long-term gain on moderate wages can owe some under
+//!   2026 law. Inside the AMT the standard deduction or the state and local tax
+//!   deduction is added back and the senior and business-income deductions are
+//!   allowed; no other preference or adjustment is modelled.
+//! * `marginal_ordinary_rate` and [`room_to_bracket_top`] describe the regular
+//!   schedule. In a year when the AMT binds, the Roth-conversion sizer therefore
+//!   fills a bracket that is not the binding one. [`effective_marginal_rate`] is a
+//!   finite difference on `total` and stays right.
+//! * Gain excluded as qualified small business stock is left out of federal income
+//!   and taxed by every state as ordinary income (right for the states that do not
+//!   follow section 1202, too high elsewhere).
+//! * No tax-exempt interest (so IRMAA MAGI equals AGI). No kiddie tax,
 //!   education, saver's, child-care, earned-income or foreign tax credits.
 //! * Married filing separately is not a status.
 //! * The business-income (QBI) deduction treats every self-employed person as a sole
@@ -178,6 +195,9 @@ pub(super) struct Work {
     pub qbi: f64,
     // Tax.
     pub taxable_income: f64,
+    /// Taxable income before the floor at zero (negative when the deductions exceed
+    /// income): line 1 of Form 6251, the start of AMT income.
+    pub taxable_unfloored: f64,
     pub ordinary_taxable: f64,
     pub pref_taxable: f64,
     pub tax_ordinary: f64,
@@ -202,6 +222,17 @@ pub(super) struct Work {
     pub flat_tax: f64,
     pub total: f64,
     pub marginal: f64,
+    // Alternative minimum tax (all zero unless `TaxInputs.amt_applies`, except
+    // `amt_credit_out`, which then passes the credit carried in straight through).
+    pub amti: f64,
+    pub amt_exemption: f64,
+    pub tmt: f64,
+    pub amt: f64,
+    pub amt_credit_generated: f64,
+    pub amt_credit_used: f64,
+    pub amt_credit_out: f64,
+    /// Incentive-option income inside `wages` that bears no payroll tax.
+    pub wages_no_fica: f64,
 }
 
 /// Payroll taxes (step 1).
@@ -246,7 +277,11 @@ fn income(p: &TaxYearParams, x: &TaxInputs, w: &mut Work, limit_rental: bool) {
     let f = &p.federal;
     let mut business = 0.0;
     for i in 0..MAX_PEOPLE {
-        let wages = x.wages[i].max(0.0);
+        // Income from a disqualifying sale of incentive-option shares is pay for
+        // income tax but not for payroll tax, so `payroll` never sees it.
+        let no_fica = x.wages_no_fica[i].max(0.0);
+        let wages = x.wages[i].max(0.0) + no_fica;
+        w.wages_no_fica += no_fica;
         let profit = x.self_employment[i];
         // Deferrals cannot exceed the pay they come out of.
         let deferral = (x.pretax_deferrals[i].max(0.0) + x.hsa_contributions[i].max(0.0))
@@ -421,6 +456,9 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
                 o.agi += d.max(0.0);
             }
         }
+        // The section 1202 exclusion is federal only: the excluded gain is state
+        // income, taxed as ordinary income without the state's own gain preferences.
+        o.agi += x.qsbs_excluded_gain.max(0.0);
 
         let mut standard = st.standard_deduction[s];
         let (start, end) = (
@@ -483,7 +521,9 @@ fn state_tax(p: &TaxYearParams, x: &TaxInputs, w: &Work) -> StateWork {
         } else if st.local_earned_only {
             let mut earned = 0.0;
             for p in 0..MAX_PEOPLE {
-                earned += x.wages[p].max(0.0) + x.self_employment[p].max(0.0);
+                earned += x.wages[p].max(0.0)
+                    + x.wages_no_fica[p].max(0.0)
+                    + x.self_employment[p].max(0.0);
             }
             st.local_rate * earned
         } else {
@@ -592,7 +632,8 @@ fn deductions(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     w.itemized = w.itemized_net > w.standard;
     w.deduction = w.standard.max(w.itemized_net);
 
-    let before_qbi = (w.agi - w.deduction - w.senior).max(0.0);
+    let unfloored = w.agi - w.deduction - w.senior;
+    let before_qbi = unfloored.max(0.0);
     let business = w.qbi - w.half_se;
     w.qbi = if business > 0.0 {
         let width = f.qbi_phase_in_width[s];
@@ -611,6 +652,7 @@ fn deductions(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
     };
 
     w.taxable_income = (before_qbi - w.qbi).max(0.0);
+    w.taxable_unfloored = unfloored - w.qbi;
     w.pref_taxable = w.pref_income.min(w.taxable_income);
     w.ordinary_taxable = w.taxable_income - w.pref_taxable;
 }
@@ -659,6 +701,82 @@ fn federal_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 
     w.penalty_early = f.early_withdrawal_penalty * x.early_distributions.max(0.0);
     w.penalty_hsa = f.hsa_penalty * x.hsa_nonqualified.max(0.0);
+
+    if x.amt_applies {
+        minimum_tax(p, x, w);
+    }
+}
+
+/// Tentative minimum tax, and the AMT income and exemption it rests on, for an
+/// incentive-option adjustment `adj` to ordinary income and an adjustment `gadj`
+/// (never positive) to long-term gains: `(tax, AMT income, exemption)`.
+///
+/// AMT income is regular taxable income with the standard deduction or the state
+/// and local tax deduction added back. It starts from taxable income before the
+/// floor at zero (Form 6251 line 1 may be negative), so a deduction that income did
+/// not use is not added back. Long-term gains and qualified dividends keep
+/// the regular 0/15/20% schedule, stacked on regular ordinary taxable income as
+/// Form 6251 Part III does, and the result is capped at the flat 26/28% computation
+/// (Form 6251 line 40). A negative gain adjustment comes off the gain taxed at those
+/// rates, not off income taxed at 26% or 28%: the regular gain was computed from the
+/// strike, the AMT gain from the value at exercise. It is therefore held to the
+/// long-term gain that is in taxable income: where losses or an exclusion have
+/// already removed the regular gain there is nothing left for it to come off (the
+/// $3,000 of net capital loss the AMT would allow against other income is left out).
+#[inline(always)]
+fn tentative_minimum_tax(
+    p: &TaxYearParams,
+    x: &TaxInputs,
+    w: &Work,
+    adj: f64,
+    gadj: f64,
+) -> (f64, f64, f64) {
+    let f = &p.federal;
+    let s = x.filing_status.index();
+    let addback = if w.itemized { w.salt } else { w.standard };
+    let gadj = gadj.max(-w.pref_gain.max(0.0).min(w.pref_taxable));
+    let amti = (w.taxable_unfloored + addback + adj + gadj).max(0.0);
+    let exemption = (f.amt_exemption[s]
+        - f.amt_phaseout_rate * (amti - f.amt_phaseout_start[s]).max(0.0))
+    .max(0.0);
+    let base = (amti - exemption).max(0.0);
+    let pref = (w.pref_taxable + gadj).max(0.0).min(base);
+    let ord = base - pref;
+    let flat = |v: f64| {
+        f.amt_rates[0] * v.min(f.amt_rate_break) + f.amt_rates[1] * (v - f.amt_rate_break).max(0.0)
+    };
+    let gains_tax = f.capital_gains[s].tax(w.ordinary_taxable + pref)
+        - f.capital_gains[s].tax(w.ordinary_taxable);
+    ((flat(ord) + gains_tax).min(flat(base)), amti, exemption)
+}
+
+/// Alternative minimum tax and the minimum tax credit (Form 6251, Form 8801). Runs
+/// only when `TaxInputs.amt_applies`, after the regular tax and the credits.
+///
+/// The credit a year generates is the AMT with the incentive-option adjustments
+/// less the AMT without them: AMT that large gains cause through the exemption
+/// phase-out is an exclusion item and creates no credit. The credit carried in is
+/// used up to the regular tax (after non-refundable credits) less the tentative
+/// minimum tax.
+#[inline(always)]
+fn minimum_tax(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
+    let regular = w.tax_ordinary + w.tax_pref;
+    let adj = x.amt_iso_adjustment;
+    let gadj = x.amt_gain_adjustment.min(0.0);
+    let (tmt, amti, exemption) = tentative_minimum_tax(p, x, w, adj, gadj);
+    w.tmt = tmt;
+    w.amti = amti;
+    w.amt_exemption = exemption;
+    w.amt = (tmt - regular).max(0.0);
+    let amt_without = if adj == 0.0 && gadj == 0.0 {
+        w.amt
+    } else {
+        (tentative_minimum_tax(p, x, w, 0.0, 0.0).0 - regular).max(0.0)
+    };
+    w.amt_credit_generated = (w.amt - amt_without).max(0.0);
+    let carried_in = x.amt_credit_carryforward.max(0.0);
+    w.amt_credit_used = carried_in.min((regular - tmt - w.credit_nonrefundable).max(0.0));
+    w.amt_credit_out = carried_in - w.amt_credit_used + w.amt_credit_generated;
 }
 
 /// Poverty line for the marketplace household.
@@ -710,6 +828,8 @@ fn health<const IRMAA: bool>(p: &TaxYearParams, x: &TaxInputs, w: &mut Work) {
 fn work_to_taxable(p: &TaxYearParams, x: &TaxInputs) -> Work {
     let mut w = Work {
         mode: mode(p),
+        // A stock, not a flow: it passes through untouched unless the AMT runs.
+        amt_credit_out: x.amt_credit_carryforward.max(0.0),
         ..Work::default()
     };
     if w.mode != Mode::Us {
@@ -760,7 +880,9 @@ fn work_with<const IRMAA: bool>(p: &TaxYearParams, x: &TaxInputs) -> Work {
         + payroll_total
         + w.state.total
         + w.penalty_early
-        + w.penalty_hsa;
+        + w.penalty_hsa
+        + w.amt
+        - w.amt_credit_used;
     w
 }
 
@@ -775,6 +897,7 @@ pub(super) fn result(w: &Work) -> TaxResult {
         magi_irmaa: w.agi,
         capital_loss_carryforward: w.loss_carry,
         rental_loss_suspended: w.rental_suspended,
+        amt_credit_carryforward: w.amt_credit_out,
         ..TaxResult::default()
     };
     match w.mode {
@@ -798,6 +921,9 @@ pub(super) fn result(w: &Work) -> TaxResult {
             r.taxable_social_security = w.taxable_ss;
             r.deduction = w.deduction;
             r.itemized = w.itemized;
+            r.tentative_minimum_tax = w.tmt;
+            r.amt = w.amt;
+            r.amt_credit_used = w.amt_credit_used;
         }
     }
     r

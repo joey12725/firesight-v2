@@ -37,16 +37,17 @@ mod summary;
 mod trace;
 
 pub use accumulator::{Accumulator, AccumulatorError, SamplePath, SampleRecorder, ScalarChunk};
-pub use compare::{compare, Comparison, MetricDelta, PairedOutcome, PairedScalar};
+pub use compare::{compare, Comparison, MetricDelta, PairedByOutcome, PairedOutcome, PairedScalar};
 pub use hist::{hist_bin, hist_bin_edges, hist_bin_value, HIST_BINS, HIST_MAX, HIST_SUB_BINS};
 pub use num::{Estimate, Spread};
 pub use summary::{
-    AgeCurve, Axis, DensityGrid, DigestBands, DigestCause, DigestCurve, DigestPicks, DigestRate,
-    DigestSpending, DigestSpread, FactorShare, FailureAttribution, FailureShare, Headline,
-    MeanSeries, PathPick, QuantileCurves, ScalarContrast, ScalarDistribution, Scatter,
-    ScatterColumn, SpendingByYear, SpendingDelivery, StatusStack, Summary, SummaryContext,
-    SummaryDigest, Survival, DENSITY_GROUP, DIGEST_CAUSES, DISTRIBUTION_BINS, DOTS,
-    QUANTILE_LEVELS, SCATTER_COLUMNS, SCATTER_MAX, SUMMARY_VERSION,
+    AgeCurve, Axis, DensityGrid, DigestBands, DigestCause, DigestCurve, DigestEquity, DigestPicks,
+    DigestRate, DigestSpending, DigestSpread, EquityConditional, EquityOutcomeShare, EquitySummary,
+    FactorShare, FailureAttribution, FailureShare, Headline, MeanSeries, PathPick, QuantileCurves,
+    ScalarContrast, ScalarDistribution, Scatter, ScatterColumn, SpendingByYear, SpendingDelivery,
+    StatusStack, Summary, SummaryContext, SummaryDigest, Survival, DENSITY_GROUP, DIGEST_CAUSES,
+    DISTRIBUTION_BINS, DOTS, MIN_PATHS_PER_OUTCOME, QUANTILE_LEVELS, SCATTER_COLUMNS, SCATTER_MAX,
+    SUMMARY_VERSION,
 };
 pub use trace::{
     PathTrace, TraceAnnual, TraceColumn, TraceRecorder, TraceScalar, TraceTaxLine, TraceTaxReturn,
@@ -250,7 +251,8 @@ keyed_enum! {
         Mortgage => "mortgage",
         /// Liability: non-mortgage debt outstanding.
         Debt => "debt",
-        /// Income: wages, bonuses, commission and vested equity compensation, gross.
+        /// Income: wages, bonuses, commission and vested equity compensation, gross
+        /// (private-company equity under `private_equity` is `income_equity`).
         IncomeWages => "income_wages",
         /// Income: self-employment net profit.
         IncomeSelfEmployment => "income_self_employment",
@@ -330,6 +332,18 @@ keyed_enum! {
         /// Memo: change in account balances not explained by contributions,
         /// withdrawals and conversions: market return net of fees. May be negative.
         InvestmentReturn => "investment_return",
+        /// Income: cash from private-company equity before tax: sales of shares in
+        /// tender offers, acquisitions and after an IPO, cash-outs of options (net
+        /// of the strike) and RSUs, and the value of shares moved to the taxable
+        /// account when a lockup ends.
+        IncomeEquity => "income_equity",
+        /// Transfer: cash paid to exercise options (the strike). The shares bought
+        /// are private-company equity, outside net worth until sold.
+        EquityExercise => "equity_exercise",
+        /// Memo: value at period end of vested private-company holdings at the
+        /// company's current share price, before tax and before any strike is
+        /// paid for options (in-the-money value). Not part of net worth.
+        EquityPaperValue => "equity_paper_value",
     }
 }
 
@@ -353,6 +367,13 @@ impl YearSeries {
     /// What the series measures.
     pub fn kind(self) -> SeriesKind {
         let i = self.index();
+        // The private-company series sit after the ranges below.
+        match self {
+            YearSeries::IncomeEquity => return SeriesKind::Income,
+            YearSeries::EquityExercise => return SeriesKind::Transfer,
+            YearSeries::EquityPaperValue => return SeriesKind::Memo,
+            _ => {}
+        }
         if ACCOUNTS.contains(&i) || self == YearSeries::PropertyValue {
             SeriesKind::Balance
         } else if matches!(self, YearSeries::Mortgage | YearSeries::Debt) {
@@ -377,9 +398,11 @@ impl YearSeries {
         }
     }
 
-    /// True for period-end stocks (balances and liabilities), false for flows.
+    /// True for period-end stocks (balances, liabilities and the paper value of
+    /// private-company holdings), false for flows.
     pub fn is_stock(self) -> bool {
         matches!(self.kind(), SeriesKind::Balance | SeriesKind::Liability)
+            || self == YearSeries::EquityPaperValue
     }
 }
 
@@ -409,7 +432,7 @@ pub fn spending_of(values: &SeriesValues) -> f64 {
 
 /// Gross outside income implied by a set of series values.
 pub fn gross_income_of(values: &SeriesValues) -> f64 {
-    sum(values, INCOME)
+    sum(values, INCOME) + values[YearSeries::IncomeEquity.index()]
 }
 
 /// Total tax implied by a set of series values.
@@ -420,13 +443,15 @@ pub fn total_tax_of(values: &SeriesValues) -> f64 {
 /// Sources of cash less uses of cash; zero when the period's flows balance.
 pub fn cash_flow_residual_of(values: &SeriesValues) -> f64 {
     let sources = sum(values, INCOME)
+        + values[YearSeries::IncomeEquity.index()]
         + sum(values, WITHDRAWALS)
         + values[YearSeries::PropertySale.index()]
         + values[YearSeries::SaveEmployer.index()];
     let uses = sum(values, TAXES)
         + sum(values, SPENDING)
         + sum(values, SAVING)
-        + values[YearSeries::PropertyPurchase.index()];
+        + values[YearSeries::PropertyPurchase.index()]
+        + values[YearSeries::EquityExercise.index()];
     sources - uses
 }
 
@@ -566,8 +591,29 @@ keyed_enum! {
         MortgagePayoffAge => "mortgage_payoff_age",
         /// Supplied: first person's age in the first month Medicaid paid for
         /// someone's long-term care after savings were spent down
-        /// (`spending.healthcare.medicaid`); NaN if it never did. Appended last.
+        /// (`spending.healthcare.medicaid`); NaN if it never did.
         MedicaidAge => "medicaid_age",
+        /// Supplied: what happened to the household's main private company
+        /// (`EquityOutcome` index); NaN if the plan has none. With several
+        /// companies this is the one with the largest position at the start.
+        EquityOutcome => "equity_outcome",
+        /// Supplied: first person's age when that company failed, was acquired or
+        /// went public; NaN if none of those happened within the life or there is
+        /// no company.
+        EquityEventAge => "equity_event_age",
+        /// Supplied: cash received from private-company equity over the life,
+        /// before tax, in today's dollars: every company's `income_equity`. 0 when
+        /// nothing was received; NaN if the plan has no private company.
+        EquityGrossProceeds => "equity_gross_proceeds",
+        /// Supplied: cash paid to exercise options over the life, today's dollars.
+        EquityExerciseCost => "equity_exercise_cost",
+        /// Supplied: the part of the gross proceeds that came from tender offers.
+        EquityTenderProceeds => "equity_tender_proceeds",
+        /// Supplied: gross proceeds less exercise cost less the tax the equity
+        /// caused (each year's tax with the equity amounts less the tax without
+        /// them, including AMT and the later use of its credit). Negative when
+        /// more was paid in than came back.
+        EquityNetProceeds => "equity_net_proceeds",
     }
 }
 
@@ -596,6 +642,7 @@ impl PathScalar {
             | PathScalar::PersonRetirementAge1
             | PathScalar::MortgagePayoffAge
             | PathScalar::MedicaidAge
+            | PathScalar::EquityEventAge
             | PathScalar::DeathAge1 => ScalarUnit::Age,
             PathScalar::InvestableAtRetirement
             | PathScalar::LongTermCareCost
@@ -603,7 +650,11 @@ impl PathScalar {
             | PathScalar::PeakNetWorth
             | PathScalar::MinInvestable
             | PathScalar::LifetimeTax
-            | PathScalar::LifetimeSpending => ScalarUnit::Dollars,
+            | PathScalar::LifetimeSpending
+            | PathScalar::EquityGrossProceeds
+            | PathScalar::EquityExerciseCost
+            | PathScalar::EquityTenderProceeds
+            | PathScalar::EquityNetProceeds => ScalarUnit::Dollars,
             PathScalar::EarlyRetirementReturn
             | PathScalar::Inflation
             | PathScalar::InitialWithdrawalRate => ScalarUnit::Rate,
@@ -614,7 +665,7 @@ impl PathScalar {
             | PathScalar::PlanDeliveredShare
             | PathScalar::WorstSpendingRatio => ScalarUnit::Ratio,
             PathScalar::MonthsUnemployed => ScalarUnit::Months,
-            PathScalar::FailureCause => ScalarUnit::Index,
+            PathScalar::FailureCause | PathScalar::EquityOutcome => ScalarUnit::Index,
             PathScalar::Success => ScalarUnit::Flag,
             PathScalar::YearsSimulated
             | PathScalar::YearsRetired
@@ -642,6 +693,21 @@ keyed_enum! {
         Inflation => "inflation",
         /// None of the above stands out.
         Other => "other",
+    }
+}
+
+keyed_enum! {
+    /// What happened to a private company on one path.
+    EquityOutcome {
+        /// It failed: shares and options became worthless.
+        Failed => "failed",
+        /// No sale, listing or failure within the life: the event was dated after
+        /// the life ended, or the company was written off after thirty years.
+        StillPrivate => "still_private",
+        /// It was acquired for cash.
+        Acquired => "acquired",
+        /// It went public.
+        Ipo => "ipo",
     }
 }
 
@@ -724,6 +790,22 @@ keyed_enum! {
         /// Long-term-care insurance: a premium increase, the first benefit, the pool
         /// used up, or a lapse (`person.ltc_insurance`).
         LtcInsurance => "ltc_insurance",
+        /// Options in a private company were exercised for cash.
+        OptionsExercised => "options_exercised",
+        /// A private company ran a tender offer.
+        TenderOffer => "tender_offer",
+        /// A private company was acquired.
+        CompanyAcquired => "company_acquired",
+        /// A private company went public.
+        CompanyIpo => "company_ipo",
+        /// A private company failed, or was written off after thirty years without
+        /// a sale or listing.
+        CompanyFailed => "company_failed",
+        /// Unvested equity was forfeited or vested options lapsed.
+        EquityForfeited => "equity_forfeited",
+        /// Shares were sold or kept when an IPO lockup ended or on the sale
+        /// schedule.
+        LockupSale => "lockup_sale",
     }
 }
 
@@ -859,6 +941,13 @@ impl PathEnd {
             }
         }
     }
+
+    /// Sets `EquityOutcome` for a plan with a private company: `None` is a company
+    /// with no sale, listing or failure within the life (`still_private`).
+    pub fn set_equity_outcome(&mut self, outcome: Option<EquityOutcome>) {
+        let outcome = outcome.unwrap_or(EquityOutcome::StillPrivate);
+        self.set(PathScalar::EquityOutcome, outcome.index() as f64);
+    }
 }
 
 /// One month of one path for tracing, in today's dollars. Net worth and investable
@@ -986,14 +1075,16 @@ mod tests {
         check(ScalarUnit::ALL, ScalarUnit::key, ScalarUnit::index);
         check(PathScalar::ALL, PathScalar::key, PathScalar::index);
         check(FailureCause::ALL, FailureCause::key, FailureCause::index);
+        check(EquityOutcome::ALL, EquityOutcome::key, EquityOutcome::index);
+        assert_eq!(EquityOutcome::COUNT, 4);
         check(
             TraceEventKind::ALL,
             TraceEventKind::key,
             TraceEventKind::index,
         );
         assert_eq!(Status::COUNT, 6);
-        assert_eq!(YearSeries::COUNT, 43);
-        assert_eq!(PathScalar::COUNT, 37);
+        assert_eq!(YearSeries::COUNT, 46);
+        assert_eq!(PathScalar::COUNT, 43);
         assert_eq!(YearSeries::from_key("mortgage"), Some(YearSeries::Mortgage));
         assert_eq!(PathScalar::from_index(0), Some(PathScalar::FiAge));
         assert_eq!(PathScalar::from_key("nope"), None);
@@ -1006,14 +1097,16 @@ mod tests {
         let count = |k: SeriesKind| YearSeries::ALL.iter().filter(|s| s.kind() == k).count();
         assert_eq!(count(SeriesKind::Balance), 6);
         assert_eq!(count(SeriesKind::Liability), 2);
-        assert_eq!(count(SeriesKind::Income), 6);
+        assert_eq!(count(SeriesKind::Income), 7);
         assert_eq!(count(SeriesKind::Withdrawal), 5);
         assert_eq!(count(SeriesKind::Tax), 4);
         assert_eq!(count(SeriesKind::Spending), 8);
         assert_eq!(count(SeriesKind::Saving), 6);
-        assert_eq!(count(SeriesKind::Transfer), 3);
-        assert_eq!(count(SeriesKind::Memo), 3);
+        assert_eq!(count(SeriesKind::Transfer), 4);
+        assert_eq!(count(SeriesKind::Memo), 4);
         assert!(YearSeries::Mortgage.is_stock());
+        assert!(YearSeries::EquityPaperValue.is_stock());
+        assert!(!YearSeries::IncomeEquity.is_stock());
         assert!(!YearSeries::SpendPlanned.is_stock());
         assert_eq!(
             PathScalar::ALL.iter().filter(|s| s.is_derived()).count(),
@@ -1065,6 +1158,16 @@ mod tests {
         assert_eq!(r.cash_flow_residual(), 0.0);
         r.set(YearSeries::PropertySale, 1.0);
         assert_eq!(r.cash_flow_residual(), 1.0);
+        // Private-company equity: proceeds are a source, the strike a use, and the
+        // paper value is in neither.
+        r.set(YearSeries::PropertySale, 0.0);
+        r.set(YearSeries::IncomeEquity, 50_000.0);
+        r.set(YearSeries::EquityExercise, 20_000.0);
+        r.set(YearSeries::SaveCash, 30_000.0);
+        r.set(YearSeries::EquityPaperValue, 1_000_000.0);
+        assert_eq!(r.cash_flow_residual(), 0.0);
+        assert_eq!(r.gross_income(), 170_000.0);
+        assert_eq!(r.net_worth(), 295_000.0 + 400_000.0 - 250_000.0 - 15_000.0);
     }
 
     #[test]

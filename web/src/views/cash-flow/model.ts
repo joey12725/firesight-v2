@@ -125,6 +125,8 @@ export function cashFlowModel(summary: Summary, options: { abroad?: boolean } = 
 
   const allIn = [
     group('wages', 'Wages', 'Wages', 0, [part('income_wages', 'Wages', s('income_wages'))]),
+    // Cash from private-company stock and options, before tax. Zero in every year for a plan without any.
+    group('equity', 'Startup equity', 'Startup equity', 1, [part('income_equity', 'Startup equity', s('income_equity'))]),
     group('self_employment', 'Self-employment', 'Self-employed', 6, [part('income_self_employment', 'Self-employment', s('income_self_employment'))]),
     group('rental', 'Rental income', 'Rental', 5, [part('income_rental', 'Rental income', s('income_rental'))]),
     group('pensions', 'Pensions and annuities', 'Pensions', 2, [part('income_pensions', 'Pensions and annuities', s('income_pensions'))]),
@@ -146,6 +148,8 @@ export function cashFlowModel(summary: Summary, options: { abroad?: boolean } = 
       part('spend_debt', 'Debt payments', s('spend_debt')),
       part('spend_one_off', 'One-off costs', s('spend_one_off')),
       part('property_purchase', 'Property purchases', s('property_purchase')),
+      // The strike paid for shares that sit outside net worth until they are sold.
+      part('equity_exercise', 'Exercising options', s('equity_exercise')),
     ]),
     group('taxes', 'Taxes', 'Taxes', 6, taxParts),
     group('saving', 'Saving', 'Saving', 0, savingParts),
@@ -217,7 +221,7 @@ export function cashFlowModel(summary: Summary, options: { abroad?: boolean } = 
   const taxTotal = add(...taxParts.map((p) => p.values));
   const savingTotal = add(...savingParts.map((p) => p.values));
   const withdrawTotal = add(...withdrawParts.map((p) => p.values));
-  const gross = add(s('income_wages'), s('income_self_employment'), s('income_social_security'), s('income_pensions'), s('income_rental'), s('income_other'), s('save_employer'));
+  const gross = add(s('income_wages'), s('income_equity'), s('income_self_employment'), s('income_social_security'), s('income_pensions'), s('income_rental'), s('income_other'), s('save_employer'));
 
   const inRange = (i: number) => i >= flowStart && i <= end;
   const taxShare = totalIn.map((t, i) => (inRange(i) && t > 0 ? (taxTotal[i] ?? 0) / t : null));
@@ -246,6 +250,8 @@ export interface YearNode {
 
 const NODE_LABEL: Record<string, string> = {
   income_wages: 'Wages',
+  income_equity: 'Startup equity',
+  equity_exercise: 'Exercising options',
   income_self_employment: 'Self-employment',
   income_rental: 'Rental income',
   income_pensions: 'Pensions',
@@ -292,6 +298,9 @@ export function yearNodes(model: CashFlowModel, options: { abroad?: boolean } = 
     );
   return { sources: side(model.moneyIn, model.totalIn, 'in'), uses: side(model.moneyOut, model.totalOut, 'out') };
 }
+
+/** True when startup equity is a visible band of money in: its averages need a word of caution. */
+export const hasEquityBand = (model: CashFlowModel): boolean => model.moneyIn.some((g) => g.key === 'equity');
 
 /** Totals of the three broad uses in a year, as shares of money out. */
 export function sharesOfUses(model: CashFlowModel, i: number): { spent: number; taxed: number; saved: number; total: number } {

@@ -1,6 +1,7 @@
 import type { EquityGrant, Income, Job, Person } from '@/engine/types';
 import { remove, set } from '@/state/patches';
 import { at, join } from '@/state/pointer';
+import { useUi } from '@/state/ui-store';
 import { Disclosure, Field, Switch, moneyCompact, percent } from '@/ui';
 import { ChoiceField, Group, MoneyField, NumField, Optional, OwnerField, PercentField, Realism, Row, SegmentField, SliderField, ToggleField } from '../fields';
 import { useEdit, useHelp, useProfile } from '../hooks';
@@ -36,6 +37,7 @@ const OFF_TYPICAL_HIGH = [...OFF_TYPICAL, { value: 'high', label: 'High' }] as c
 
 function EquityGrants({ path, grants }: { path: string; grants: EquityGrant[] }) {
   const add = useAdd(path);
+  const setFocusPath = useUi((u) => u.setFocusPath);
   return (
     <Group title="Equity grants">
       <ItemList empty="No stock or option grants.">
@@ -80,11 +82,18 @@ function EquityGrants({ path, grants }: { path: string; grants: EquityGrant[] })
                   <NumField path={`${p}/company/beta`} label="Beta" step={0.1} />
                 </Row>
               ) : (
-                <Row cols={3}>
-                  <PercentField path={`${p}/company/liquidity_hazard`} label="Exit chance / yr" />
-                  <PercentField path={`${p}/company/fail_prob`} label="Fails" />
-                  <PercentField path={`${p}/company/exit_volatility`} label="Exit volatility" />
-                </Row>
+                <>
+                  <Row>
+                    <PercentField path={`${p}/company/liquidity_hazard`} label="Exit chance / yr" />
+                    <PercentField path={`${p}/company/fail_prob`} label="Fails" />
+                  </Row>
+                  <p className="text-xs leading-relaxed text-ink-3">
+                    For options, tender offers or an exercise decision, enter this position under Startup equity instead.{' '}
+                    <button type="button" onClick={() => setFocusPath('/private_equity')} className="rounded-xs font-medium text-ink-2 underline decoration-line-strong underline-offset-2 hover:text-ink-1">
+                      Open Startup equity
+                    </button>
+                  </p>
+                </>
               )}
               <ToggleField path={`${p}/sell_on_vest`} label="Sell shares as they vest" />
             </Item>

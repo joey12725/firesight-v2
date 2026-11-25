@@ -67,11 +67,15 @@ export const YEAR_SERIES = [
   'spend_discretionary', 'spend_housing', 'spend_healthcare', 'spend_long_term_care', 'spend_children', 'spend_debt',
   'spend_one_off', 'save_cash', 'save_taxable', 'save_traditional', 'save_roth', 'save_hsa',
   'save_employer', 'roth_conversion', 'property_purchase', 'property_sale', 'spend_planned', 'investment_income',
-  'investment_return',
+  'investment_return', 'income_equity', 'equity_exercise', 'equity_paper_value',
 ] as const;
 export type YearSeries = (typeof YEAR_SERIES)[number];
 
-/** One number per path, in the engine's order. `coast_fi_age` was appended in accumulator version 3, nine more in version 5, `medicaid_age` with the optional realism features. */
+/**
+ * One number per path, in the engine's order. `coast_fi_age` was appended in accumulator
+ * version 3, the nine from `extra_spending_ratio` in version 5, `medicaid_age` and the six
+ * private-company scalars after it in version 7.
+ */
 // prettier-ignore
 export const PATH_SCALARS = [
   'fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement',
@@ -80,7 +84,8 @@ export const PATH_SCALARS = [
   'lifetime_tax', 'lifetime_spending', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_retired', 'years_below_90',
   'years_below_75', 'years_depleted', 'coast_fi_age', 'extra_spending_ratio', 'initial_withdrawal_rate', 'home_sale_age',
   'plan_delivered_share', 'social_security_claim_age_0', 'social_security_claim_age_1', 'person_retirement_age_0',
-  'person_retirement_age_1', 'mortgage_payoff_age', 'medicaid_age',
+  'person_retirement_age_1', 'mortgage_payoff_age', 'medicaid_age', 'equity_outcome', 'equity_event_age',
+  'equity_gross_proceeds', 'equity_exercise_cost', 'equity_tender_proceeds', 'equity_net_proceeds',
 ] as const;
 export type PathScalar = (typeof PATH_SCALARS)[number];
 
@@ -89,6 +94,14 @@ export type ScalarUnit = (typeof SCALAR_UNITS)[number];
 
 export const FAILURE_CAUSES = ['market_sequence', 'job_loss', 'health', 'longevity', 'overspending', 'inflation', 'other'] as const;
 export type FailureCause = (typeof FAILURE_CAUSES)[number];
+
+/**
+ * What happened to a private company on one path, in the engine's order (the value of
+ * the `equity_outcome` scalar is an index into this list). `still_private` is "no sale,
+ * listing or failure within the life", which includes a write-off after thirty years.
+ */
+export const EQUITY_OUTCOMES = ['failed', 'still_private', 'acquired', 'ipo'] as const;
+export type EquityOutcome = (typeof EQUITY_OUTCOMES)[number];
 
 export const FAILURE_FACTORS = ['poor_early_returns', 'deep_drawdown', 'job_loss', 'long_term_care', 'long_life', 'high_inflation'] as const;
 export type FailureFactor = (typeof FAILURE_FACTORS)[number];
@@ -255,7 +268,12 @@ export interface FailureAttribution {
 
 /** A representative life chosen by a stated rule. Trace it with `pool.trace(profile, path_index)`. */
 export interface PathPick {
-  /** 'p10' | 'median' | 'p90' (rank of terminal net worth), 'median_fi', 'failing'. */
+  /**
+   * 'p10' | 'median' | 'p90' (rank of terminal net worth), 'median_fi', 'failing', and for a
+   * plan with private-company equity 'equity_failed' (median terminal net worth among lives
+   * where the company fails), 'equity_paid_median' and 'equity_paid_p90' (those ranks of net
+   * proceeds among lives where the equity paid something).
+   */
   label: string;
   scalar: PathScalar;
   path_index: number;
@@ -293,6 +311,79 @@ export interface Summary {
   /** The same annual series for each distinct `picks[].path_index`, in the order of `picks`. May be empty. */
   pick_paths: SamplePath[];
   plan_moments: PlanMoments;
+  /** Outcomes of the household's private-company equity. Absent when the plan has no private company. */
+  equity?: EquitySummary;
+}
+
+/** One outcome's share of paths. */
+export interface EquityOutcomeShare {
+  outcome: EquityOutcome;
+  count: number;
+  /** Wilson 95% interval, like the headline rates. */
+  share: Estimate;
+}
+
+/** Headline results among the paths with one equity outcome. */
+export interface EquityConditional {
+  outcome: EquityOutcome;
+  /** Paths with this outcome. */
+  paths: number;
+  /** False when fewer than 30 paths have it: the spreads are then empty and the rates have very wide intervals. */
+  enough: boolean;
+  /** Null only when the class is empty. */
+  success_rate: NullableEstimate;
+  fi_rate: NullableEstimate;
+  /** FI age within the class, counting "never" as later than any age. */
+  fi_age: Spread;
+  retirement_age: Spread;
+  terminal_net_worth: Spread;
+  net_proceeds: Spread;
+}
+
+/**
+ * `Summary.equity`: what happens to the household's private-company equity. Money in
+ * today's dollars. With several companies the outcome shares describe the one with the
+ * largest position at the start (`company`); the dollar figures total every counted company.
+ */
+export interface EquitySummary {
+  /** Name of the company the outcome shares describe. */
+  company: string;
+  /** Paths with an outcome (all paths of a plan with private equity). */
+  paths: number;
+  /** Share of paths with each outcome, in `EQUITY_OUTCOMES` order. */
+  outcomes: EquityOutcomeShare[];
+  /** Share of paths on which the equity paid nothing at all (gross proceeds 0). */
+  nothing_rate: Estimate;
+  /** Share of paths on which more went in (exercise cost and tax) than came back (net proceeds below 0). */
+  loss_rate: Estimate;
+  /** Share of paths on which options were exercised for cash. */
+  exercised_rate: Estimate;
+  /** Share of paths with proceeds from a tender offer. */
+  tender_rate: Estimate;
+  /** Gross proceeds over all paths, zeros included. */
+  gross_proceeds: Spread;
+  /** Net proceeds (after exercise cost and tax) over all paths. */
+  net_proceeds: Spread;
+  /** Mean net proceeds over all paths. Carried by the few best outcomes, so the interval is wide. */
+  net_proceeds_mean: Estimate;
+  /**
+   * Fewest paths whose net proceeds add up to half of all the positive net proceeds: how
+   * few lives carry the mean. When small (under about 100) the mean's interval is not a
+   * 95% bound. 0 when no path has positive proceeds.
+   */
+  net_proceeds_mean_half_from: number;
+  /** Net proceeds among paths that received something. */
+  net_proceeds_if_paid: Spread;
+  /** Exercise cost among paths that paid any. */
+  exercise_cost: Spread;
+  /** Tender proceeds among paths that had any. */
+  tender_proceeds: Spread;
+  /** Share of paths on which the company had been acquired or gone public by each age (first person's). */
+  liquidity_by_age: AgeCurve;
+  /** Share of paths on which the company had failed by each age. */
+  failed_by_age: AgeCurve;
+  /** The plan's headline results among the paths with each outcome, in `EQUITY_OUTCOMES` order. */
+  by_outcome: EquityConditional[];
 }
 
 /**
@@ -365,6 +456,19 @@ export interface Comparison {
   /** The levels of `scalars[].quantiles`. */
   quantile_levels: number[];
   headline: { metric: ComparisonMetric; a: number | null; b: number | null; delta: number | null }[];
+  /** The comparison within each equity outcome of run A. Absent when A has no private company. */
+  by_equity_outcome?: PairedByOutcome[];
+}
+
+/** A paired comparison among the lives with one equity outcome in run A. */
+export interface PairedByOutcome {
+  outcome: EquityOutcome;
+  /** Pairs whose A row has this outcome. */
+  paths: number;
+  /** Success in A and in B, with flips. */
+  success: OutcomeComparison;
+  /** B minus A terminal net worth. */
+  terminal_net_worth: ScalarComparison;
 }
 
 // ---- PathTrace (one life in full) ---------------------------------------------------
@@ -376,7 +480,8 @@ export const TRACE_EVENT_KINDS = [
   'roth_conversion', 'spending_cut', 'spending_raise', 'depleted', 'recovered', 'claimed_social_security',
   'health_coverage', 'long_term_care', 'rmd_started', 'debt_paid_off', 'child', 'partner_joined',
   'died', 'tax_loss_harvest', 'qualified_charitable_distribution', 'policy_change', 'market', 'life_event', 'other',
-  'health_state', 'bereavement', 'medicaid', 'ltc_insurance',
+  'health_state', 'bereavement', 'medicaid', 'ltc_insurance', 'options_exercised', 'tender_offer',
+  'company_acquired', 'company_ipo', 'company_failed', 'equity_forfeited', 'lockup_sale',
 ] as const;
 export type TraceEventKind = (typeof TRACE_EVENT_KINDS)[number];
 
@@ -479,6 +584,30 @@ export interface SummaryDigest {
   /** Top three first causes, as a share of failed paths. */
   failure_causes: { cause: FailureCause; share: number }[];
   trace_paths: { p10: number | null; median: number | null; p90: number | null; failing: number | null };
+  /** Private-company equity outcomes. Absent when the plan has no private company. */
+  equity?: DigestEquity;
+}
+
+/** Private-company equity outcomes, for the digest. Shares to 3 dp, dollars to $1,000. */
+export interface DigestEquity {
+  /** Company the outcome shares describe. */
+  company: string;
+  /** Share of lives in which it fails / has no outcome within the life / is acquired / goes public. */
+  failed: number;
+  still_private: number;
+  acquired: number;
+  ipo: number;
+  /** Share of lives in which the equity pays nothing at all. */
+  nothing: DigestRate;
+  /** Share of lives in which more went in than came back. */
+  loss: number;
+  /** Proceeds after exercise cost and tax over all lives. */
+  net_proceeds: DigestSpread;
+  /** Their mean, carried by the best few lives, and its standard error. */
+  net_proceeds_mean: number | null;
+  net_proceeds_mean_se: number | null;
+  /** Probability of success among lives with each outcome, in `EQUITY_OUTCOMES` order; null where fewer than 30 lives. */
+  success_by_outcome: (number | null)[];
 }
 
 // ---- PlanPreview (deterministic, no simulation) --------------------------------------

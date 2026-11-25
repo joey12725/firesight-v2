@@ -8,6 +8,7 @@ import { toast } from '@/state/ui-store';
 
 /** The methodology: what the model does, with its evidence and its known limits. */
 export const METHODOLOGY_URL = 'https://github.com/joey12725/firesight-v2/blob/main/docs/methodology.md';
+export const PRIMER_URL = 'https://github.com/joey12725/firesight-v2/blob/main/docs/primer.md';
 
 export function openExample(slug: string) {
   const example = exampleProfiles().find((e) => e.slug === slug);

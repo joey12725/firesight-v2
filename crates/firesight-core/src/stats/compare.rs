@@ -14,8 +14,8 @@ use super::accumulator::Accumulator;
 use super::num::{
     censored_quantile, moments, nan, nan_vec, quantile_sorted, round_dp, sorted_finite, Estimate,
 };
-use super::summary::{unit_decimals, DOTS, QUANTILE_LEVELS};
-use super::{PathScalar, ScalarUnit};
+use super::summary::{equity_outcome_of, unit_decimals, DOTS, QUANTILE_LEVELS};
+use super::{EquityOutcome, PathScalar, ScalarUnit};
 
 /// A yes/no outcome compared path by path.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -136,6 +136,23 @@ pub struct Comparison {
     pub quantile_levels: Vec<f64>,
     /// Headline metrics side by side.
     pub headline: Vec<MetricDelta>,
+    /// The comparison among the lives with each private-company outcome in run A,
+    /// in `EquityOutcome` order; empty when run A has no private-company equity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub by_equity_outcome: Vec<PairedByOutcome>,
+}
+
+/// A paired comparison among the lives with one equity outcome in run A.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PairedByOutcome {
+    /// Which outcome.
+    pub outcome: EquityOutcome,
+    /// Pairs whose A row has this outcome.
+    pub paths: u64,
+    /// Success in A and in B, with flips.
+    pub success: PairedOutcome,
+    /// B minus A terminal net worth.
+    pub terminal_net_worth: PairedScalar,
 }
 
 fn paired_outcome(
@@ -371,6 +388,32 @@ pub fn compare(a: &Accumulator, b: &Accumulator) -> Comparison {
     };
     metric("delivered_spending_ratio", mean(false), mean(true), 4);
 
+    // The same comparison within each equity outcome of run A. The outcome is a
+    // fate, the same in both runs unless the change edits the outcome table, so
+    // conditioning on A is the definition.
+    let by_equity_outcome = if pairs.iter().any(|(ra, _)| equity_outcome_of(ra).is_some()) {
+        EquityOutcome::ALL
+            .iter()
+            .map(|outcome| {
+                let class: Vec<(&[f32], &[f32])> = pairs
+                    .iter()
+                    .filter(|(ra, _)| equity_outcome_of(ra) == Some(*outcome))
+                    .copied()
+                    .collect();
+                PairedByOutcome {
+                    outcome: *outcome,
+                    paths: class.len() as u64,
+                    success: paired_outcome("success", &class, |row| {
+                        row[PathScalar::Success.index()] == 1.0
+                    }),
+                    terminal_net_worth: paired_scalar(PathScalar::TerminalNetWorth, &class),
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     Comparison {
         paths: n,
         unpaired_a,
@@ -379,6 +422,7 @@ pub fn compare(a: &Accumulator, b: &Accumulator) -> Comparison {
         scalars,
         quantile_levels: QUANTILE_LEVELS.to_vec(),
         headline,
+        by_equity_outcome,
     }
 }
 
@@ -481,7 +525,7 @@ mod tests {
         assert_eq!((worth.mean_a, worth.mean_b), (550_000.0, 555_000.0));
         // Index and flag scalars are not differenced.
         assert!(c.scalars.iter().all(|x| x.scalar != PathScalar::Success));
-        assert_eq!(c.scalars.len(), PathScalar::COUNT - 2);
+        assert_eq!(c.scalars.len(), PathScalar::COUNT - 3);
 
         let metric = |name: &str| c.headline.iter().find(|m| m.metric == name).unwrap();
         assert_eq!(metric("success_rate").delta, 0.2);
@@ -495,6 +539,77 @@ mod tests {
         let json = serde_json::to_string(&c).unwrap();
         let back: Comparison = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&back).unwrap(), json);
+    }
+
+    #[test]
+    fn by_equity_outcome_partitions_the_pairs() {
+        let a_kit = Synthetic {
+            equity: true,
+            ..Synthetic::default()
+        };
+        let b_kit = Synthetic {
+            saving: a_kit.saving + 3_000.0,
+            ..a_kit
+        };
+        let run = |kit: &Synthetic| {
+            let mut acc = Accumulator::new(kit.years);
+            for p in 0..3_000 {
+                kit.run_path(p, &mut acc);
+            }
+            acc
+        };
+        let (a, b) = (run(&a_kit), run(&b_kit));
+        let c = compare(&a, &b);
+        assert_eq!(c.by_equity_outcome.len(), EquityOutcome::COUNT);
+        assert_eq!(
+            c.by_equity_outcome.iter().map(|o| o.paths).sum::<u64>(),
+            c.paths
+        );
+        let ok = |row: &[f32]| row[PathScalar::Success.index()] == 1.0;
+        let (mut total_a_only, mut total_b_only) = (0, 0);
+        for (class, outcome) in c.by_equity_outcome.iter().zip(EquityOutcome::ALL) {
+            assert_eq!(class.outcome, *outcome);
+            // A direct count over the rows of both runs.
+            let mut counts = [0u64; 4];
+            for ((_, ra), (_, rb)) in a.rows().zip(b.rows()) {
+                if ra[PathScalar::EquityOutcome.index()] == outcome.index() as f32 {
+                    counts[usize::from(!ok(ra)) * 2 + usize::from(!ok(rb))] += 1;
+                }
+            }
+            let s = &class.success;
+            assert_eq!(
+                [s.both, s.a_only, s.b_only, s.neither],
+                counts,
+                "{outcome:?}"
+            );
+            assert_eq!(class.paths, counts.iter().sum::<u64>());
+            assert_eq!(class.terminal_net_worth.both, class.paths);
+            total_a_only += s.a_only;
+            total_b_only += s.b_only;
+        }
+        assert_eq!(total_a_only, c.outcomes[0].a_only);
+        assert_eq!(total_b_only, c.outcomes[0].b_only);
+        // The five dollar and age scalars are differenced like any other; the
+        // outcome index is not.
+        assert!(c
+            .scalars
+            .iter()
+            .any(|x| x.scalar == PathScalar::EquityNetProceeds));
+        assert!(c
+            .scalars
+            .iter()
+            .all(|x| x.scalar != PathScalar::EquityOutcome));
+        let json = serde_json::to_string(&c).unwrap();
+        let back: Comparison = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&back).unwrap(), json);
+
+        // Without equity in run A the list is empty and absent from the JSON.
+        let plain = run(&Synthetic::default());
+        let c = compare(&plain, &b);
+        assert!(c.by_equity_outcome.is_empty());
+        assert!(!serde_json::to_string(&c)
+            .unwrap()
+            .contains("by_equity_outcome"));
     }
 
     #[test]

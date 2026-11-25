@@ -29,8 +29,9 @@ impl Profile {
 
     /// The demo households with `start` set to the given month. Birth dates and event
     /// dates are placed relative to `start`, so the demos never go stale. The first
-    /// three use the default model throughout; the fourth ("full-life") switches on a
-    /// selection of the optional realism features (`docs/methodology.md`, section 18).
+    /// three use the default model throughout; the fourth ("startup-employee") holds
+    /// private-company equity; the fifth ("full-life") switches on a selection of the
+    /// optional realism features (`docs/methodology.md`, section 18).
     pub fn examples(start: YearMonth) -> Vec<Example> {
         vec![
             Example {
@@ -53,6 +54,14 @@ impl Profile {
                 summary: "33, single, Tampa. A day job, a duplex, weekend gig work and a \
                           crypto sleeve, with a move to Lisbon in five years.",
                 profile: side_hustle_landlord(start),
+            },
+            Example {
+                slug: "startup-employee",
+                title: "Startup employee",
+                summary: "31, single, San Francisco. A Series C salary and a large option \
+                          position that may be worth a lot or nothing, with a decision to \
+                          make about when to exercise.",
+                profile: startup_employee(start),
             },
             Example {
                 slug: "full-life",
@@ -1238,6 +1247,226 @@ fn full_life(start: YearMonth) -> Profile {
     }
 }
 
+fn startup_employee(start: YearMonth) -> Profile {
+    let priya = Person {
+        id: "priya".into(),
+        name: "Priya".into(),
+        birth: start - (31 * 12 + 2),
+        sex: Sex::Female,
+        ..Person::default()
+    };
+    let job = Income {
+        id: "priya_job".into(),
+        name: "Staff engineer at Northwind Robotics".into(),
+        owner: 0,
+        kind: IncomeKind::Job(Job {
+            salary: 190_000.0,
+            growth: WageGrowth::Lifecycle {
+                profile: LifecycleProfile::Typical,
+                extra: 0.0,
+            },
+            risk: CareerRisk {
+                level: RiskLevel::Typical,
+                ..CareerRisk::default()
+            },
+            plan: Some(EmployerPlan {
+                employee_fraction: 0.08,
+                roth_fraction: 0.0,
+                match_rate: 0.5,
+                match_up_to: 0.04,
+                ..EmployerPlan::default()
+            }),
+            ..Job::default()
+        }),
+        ..Income::default()
+    };
+    let holding = |id: &str, name: &str, kind: HoldingKind, shares: f64, vested: f64, left: u32| {
+        EquityHolding {
+            id: id.into(),
+            name: name.into(),
+            kind,
+            shares,
+            vested,
+            vest_months_left: left,
+            cliff_months: 0,
+        }
+    };
+    // On paper, at the last round's price: 60,000 options at $12.50, 40,000 at
+    // $10, 12,000 RSUs and 10,000 shares at $14, about $1.46 million, against
+    // $110,000 of cash and taxable savings.
+    let northwind = PrivateCompany {
+        id: "northwind".into(),
+        name: "Northwind Robotics".into(),
+        owner: 0,
+        job: Some("priya_job".into()),
+        stage: CompanyStage::SeriesC,
+        preferred_price: 14.0,
+        fmv_409a: Some(5.0),
+        holdings: vec![
+            // Granted 40 months ago: under the $100,000 a year limit for incentive
+            // options, and ten years from the grant falls in month 80.
+            holding(
+                "new_hire_iso",
+                "New-hire grant",
+                HoldingKind::Iso {
+                    strike: 1.5,
+                    granted_months_ago: 40,
+                },
+                60_000.0,
+                50_000.0,
+                8,
+            ),
+            holding(
+                "refresh_nso",
+                "Refresh grant",
+                HoldingKind::Nso {
+                    strike: 4.0,
+                    granted_months_ago: 10,
+                },
+                40_000.0,
+                8_000.0,
+                38,
+            ),
+            EquityHolding {
+                cliff_months: 12,
+                ..holding(
+                    "retention_rsu",
+                    "Retention RSUs",
+                    HoldingKind::Rsu {
+                        must_be_employed_at_event: false,
+                    },
+                    12_000.0,
+                    0.0,
+                    48,
+                )
+            },
+            holding(
+                "exercised_2025",
+                "Shares exercised in 2025",
+                HoldingKind::Shares {
+                    basis_per_share: 1.5,
+                    months_held: 14,
+                    from_iso: true,
+                    fmv_at_exercise: 4.0,
+                },
+                10_000.0,
+                0.0,
+                0,
+            ),
+        ],
+        policy: EquityPolicy {
+            sell_down: SellDown::OverYears { years: 2 },
+            ..EquityPolicy::default()
+        },
+        ..PrivateCompany::default()
+    };
+    let mut travel = item("travel", "Travel", Category::Travel, 6_000.0);
+    travel.frequency = Frequency::Annual;
+
+    Profile {
+        name: "Startup employee".into(),
+        description: "Demo household: an engineer at a Series C startup in San Francisco \
+                      whose option position is worth far more on paper than her savings."
+            .into(),
+        start: Some(start),
+        household: Household {
+            people: vec![priya],
+            children: vec![],
+            location: Location {
+                state: Some("CA".into()),
+                city: Some("San Francisco".into()),
+                ..Location::default()
+            },
+            ..Household::default()
+        },
+        incomes: vec![job],
+        private_equity: vec![northwind],
+        spending: Spending {
+            items: vec![
+                item("rent", "Rent", Category::Rent, 3_400.0),
+                item(
+                    "utilities",
+                    "Utilities and internet",
+                    Category::Utilities,
+                    180.0,
+                ),
+                item("groceries", "Groceries", Category::Groceries, 600.0),
+                item("dining", "Restaurants", Category::Dining, 450.0),
+                item(
+                    "transport",
+                    "Transit and ride share",
+                    Category::Transport,
+                    200.0,
+                ),
+                item("insurance", "Renter's insurance", Category::Insurance, 30.0),
+                item(
+                    "entertainment",
+                    "Entertainment",
+                    Category::Entertainment,
+                    250.0,
+                ),
+                item(
+                    "personal",
+                    "Clothing and personal care",
+                    Category::Personal,
+                    200.0,
+                ),
+                travel,
+            ],
+            lifestyle_creep: 0.3,
+            ..Spending::default()
+        },
+        accounts: vec![
+            Account {
+                cash_yield: CashYield::Fixed { rate: 0.0 },
+                ..account("checking", "Checking", 0, AccountKind::Cash, 12_000.0)
+            },
+            account(
+                "savings",
+                "High-yield savings",
+                0,
+                AccountKind::Cash,
+                28_000.0,
+            ),
+            account("k401", "401(k)", 0, AccountKind::Traditional, 110_000.0),
+            Account {
+                roth_basis: Some(20_000.0),
+                ..account("roth_ira", "Roth IRA", 0, AccountKind::Roth, 24_000.0)
+            },
+            Account {
+                cost_basis: Some(58_000.0),
+                ..account("brokerage", "Brokerage", 0, AccountKind::Taxable, 70_000.0)
+            },
+        ],
+        portfolio: PortfolioPolicy {
+            target: Allocation::from_pairs(&[
+                (AssetClass::UsStocks, 70.0),
+                (AssetClass::IntlStocks, 20.0),
+                (AssetClass::Bonds, 10.0),
+            ]),
+            emergency_months: 4.0,
+            ..PortfolioPolicy::default()
+        },
+        retirement: RetirementPlan {
+            // Like the early-career saver she does not count on Social Security:
+            // the target is 3.5% of savings alone. The options are in no balance,
+            // so they count toward it only once they have paid.
+            trigger: RetirementTrigger::WhenFunded(WhenFunded {
+                withdrawal_rate: 0.035,
+                count_future_income: false,
+                max_age: 67.0,
+                ..WhenFunded::default()
+            }),
+            ..RetirementPlan::default()
+        },
+        debt_policy: DebtPolicy {
+            strategy: DebtStrategy::Avalanche,
+            ..DebtPolicy::default()
+        },
+        ..Profile::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1253,10 +1482,40 @@ mod tests {
 
     #[test]
     fn examples_validate_cleanly() {
-        for ex in Profile::examples(EXAMPLE_START) {
+        let examples = Profile::examples(EXAMPLE_START);
+        assert_eq!(examples.len(), 5);
+        for ex in &examples {
             let report = crate::validate::validate(&ex.profile);
             assert!(report.errors.is_empty(), "{}: {:?}", ex.slug, report.errors);
+            // The startup employee's position dwarfs her savings, which is the
+            // point of the demo: that one warning is expected, and no other.
+            let codes: Vec<&str> = report.warnings.iter().map(|w| w.code.as_str()).collect();
+            if ex.slug == "startup-employee" {
+                assert_eq!(codes, ["equity_dominant"], "{:?}", report.warnings);
+            } else {
+                assert!(codes.is_empty(), "{}: {:?}", ex.slug, report.warnings);
+            }
         }
+    }
+
+    #[test]
+    fn the_startup_employee_is_the_household_of_the_design() {
+        let ex = &Profile::examples(EXAMPLE_START)[3];
+        assert_eq!(ex.slug, "startup-employee");
+        let p = &ex.profile;
+        assert_eq!(p.household.people[0].birth, YearMonth::ym(1995, 9));
+        let c = &p.private_equity[0];
+        assert_eq!(c.job.as_deref(), Some(p.incomes[0].id.as_str()));
+        // All four kinds of holding, and a paper value of $1,458,000 at $14.
+        let (_, total) = crate::equity::position_value(c);
+        assert_eq!(total, 1_458_000.0);
+        assert_eq!(c.holdings.len(), 4);
+        // The incentive grant is within the $100,000 a year limit.
+        assert_eq!(crate::equity::iso_yearly_amount(&c.holdings[0]), 22_500.0);
+        // Dates follow the start: a later start moves the birth with it.
+        let later = &Profile::examples(EXAMPLE_START + 14)[3].profile;
+        assert_eq!(later.household.people[0].birth, YearMonth::ym(1996, 11));
+        assert_eq!(later.private_equity, p.private_equity);
     }
 
     /// The files in `examples/` are generated by `firesight examples examples`; this

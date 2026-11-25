@@ -811,3 +811,476 @@ fn the_summary_carries_the_additive_outputs() {
     assert_eq!(c.quantile_levels.len(), c.scalars[0].quantiles.len());
     assert_eq!(c.quantile_levels[4], 0.5);
 }
+
+// ---------------------------------------------------------------------------
+// Private-company equity: tax at the event, the instalments, the linked job
+// ---------------------------------------------------------------------------
+
+/// The startup employee with one fully vested RSU holding of `units` at a $10
+/// preferred price and the company acquired at three times that in month 6 (May
+/// 2027): a wage-type payout of `30 * units`, with everything else quiet.
+fn payout_in_month_six(units: f64) -> Profile {
+    let mut p = startup_with(certain(OutcomeKind::Acquired, 0.5, 0.5, 3.0));
+    let co = &mut p.private_equity[0];
+    co.preferred_price = 10.0;
+    co.fmv_409a = Some(4.0);
+    co.holdings = vec![EquityHolding {
+        id: "rsu".into(),
+        kind: HoldingKind::Rsu {
+            must_be_employed_at_event: false,
+        },
+        shares: units,
+        vested: units,
+        ..EquityHolding::default()
+    }];
+    p
+}
+
+/// The same household with the company counted at zero: the same job, the same
+/// fate, no money.
+fn without_equity(p: &Profile) -> Profile {
+    let mut zero = p.clone();
+    for co in &mut zero.private_equity {
+        co.included = false;
+    }
+    zero
+}
+
+/// A monthly column in nominal dollars (flows are deflated by the price level at
+/// the start of their month).
+fn nominal(t: &PathTrace, key: &str) -> Vec<f64> {
+    let price = t.column("price_level").unwrap();
+    column(t, key)
+        .iter()
+        .enumerate()
+        .map(|(i, v)| v * if i == 0 { 1.0 } else { price[i - 1] })
+        .collect()
+}
+
+/// All tax paid each month, nominal.
+fn tax_paid(t: &PathTrace) -> Vec<f64> {
+    let mut total = vec![0.0; t.months as usize];
+    for key in ["tax_federal", "tax_state", "tax_payroll", "tax_penalties"] {
+        for (sum, v) in total.iter_mut().zip(nominal(t, key)) {
+            *sum += v;
+        }
+    }
+    total
+}
+
+fn return_of(t: &PathTrace, year: i32) -> &serde_json::Value {
+    &t.tax_returns
+        .iter()
+        .find(|r| r.year == year)
+        .unwrap_or_else(|| panic!("no return for {year}"))
+        .result
+}
+
+fn amount(result: &Value, key: &str) -> f64 {
+    result[key]
+        .as_f64()
+        .unwrap_or_else(|| panic!("no {key} in the return"))
+}
+
+/// Supplemental wages are withheld at 22% up to $1,000,000 in the year and 37%
+/// above it, with payroll tax on top, in the month they are paid.
+#[test]
+fn supplemental_withholding_is_22_then_37_above_a_million() {
+    let p = payout_in_month_six(100_000.0);
+    let with = sim::trace_path(&compile(&p), SEED, 0);
+    let zero = sim::trace_path(&compile(&without_equity(&p)), SEED, 0);
+    let acquired: Vec<_> = with
+        .events
+        .iter()
+        .filter(|e| e.kind.key() == "company_acquired")
+        .collect();
+    assert_eq!(acquired.len(), 1);
+    assert_eq!(acquired[0].month - START, 6);
+    assert!(
+        acquired[0].label.contains("acquired at $30.00 a share"),
+        "{}",
+        acquired[0].label
+    );
+    let payout = nominal(&with, "income_equity")[6];
+    assert!((payout - 3_000_000.0).abs() < 40.0, "payout {payout}");
+    let federal = nominal(&with, "tax_federal")[6] - nominal(&zero, "tax_federal")[6];
+    let expected = 0.22 * 1_000_000.0 + 0.37 * 2_000_000.0;
+    assert!(
+        (federal - expected).abs() < 40.0,
+        "withheld {federal:.0}, expected {expected:.0}"
+    );
+    // Medicare on all of it, Social Security up to what is left of the wage base,
+    // and the 0.9% Additional Medicare tax on the pay that takes the year's wages
+    // over $200,000 (the salary so far has used part of that).
+    let payroll = nominal(&with, "tax_payroll")[6] - nominal(&zero, "tax_payroll")[6];
+    let additional = 0.009 * 2_800_000.0..=0.009 * 3_000_000.0;
+    assert!(
+        (43_500.0 + additional.start() - 40.0..43_500.0 + additional.end() + 0.062 * 200_000.0)
+            .contains(&payroll),
+        "payroll tax at the event {payroll:.0}"
+    );
+    // Nothing reaches the company counted at zero.
+    assert!(zero.column("income_equity").is_none());
+}
+
+/// A payout is taxed at the event and through level instalments over the rest of
+/// the year; the cash for them is neither invested nor sold back, and little is
+/// left for April. Two sizes: one whose remaining tax is small beside the pay still
+/// to come that year, and one many times larger.
+#[test]
+fn an_equity_payout_is_taxed_before_it_is_invested() {
+    for units in [5_000.0, 100_000.0] {
+        let p = payout_in_month_six(units);
+        let (plan, plan_zero) = (compile(&p), compile(&without_equity(&p)));
+        for path in 0..3 {
+            let with = sim::trace_path(&plan, SEED, path);
+            let zero = sim::trace_path(&plan_zero, SEED, path);
+            let wages = 30.0 * units;
+            let at_event = nominal(&with, "tax_federal")[6] - nominal(&zero, "tax_federal")[6];
+            assert!(
+                at_event >= 0.22 * wages - 40.0,
+                "{units}: {at_event:.0} withheld on {wages:.0}"
+            );
+            // The year's tax the equity caused, and what the event month paid of it.
+            let (ra, rz) = (return_of(&with, 2027), return_of(&zero, 2027));
+            let equity_tax = amount(ra, "total") - amount(rz, "total");
+            let (paid, paid_zero) = (tax_paid(&with), tax_paid(&zero));
+            let event_month = paid[6] - paid_zero[6];
+            // June to December: seven level instalments carry the rest.
+            let extra: Vec<f64> = (7..=13).map(|t| paid[t] - paid_zero[t]).collect();
+            let rest: f64 = extra.iter().sum();
+            assert!(
+                (rest - (equity_tax - event_month)).abs() <= 0.05 * equity_tax.abs() + 200.0,
+                "{units} path {path}: instalments {rest:.0}, equity tax {equity_tax:.0} less {event_month:.0} at the event"
+            );
+            let mean = rest / 7.0;
+            for (i, x) in extra.iter().enumerate() {
+                // (The $1,100 is the Social Security tax on a month's pay, which
+                // one of the two households stops paying once past the wage base.)
+                assert!(
+                    (x - mean).abs() <= 0.05 * mean.abs() + 1_100.0,
+                    "{units} path {path}: instalment {i} is {x:.0} against a mean of {mean:.0}"
+                );
+            }
+            // The money for them stays in cash: none of it is invested and sold
+            // back, and nothing is withdrawn before the next April.
+            let price = with.column("price_level").unwrap();
+            let cash = column(&with, "balance_cash");
+            for t in 7..=13 {
+                let still_owed: f64 = (t + 1..=13).map(|u| paid[u] - paid_zero[u]).sum();
+                assert!(
+                    cash[t] * price[t] >= 0.97 * still_owed - 200.0,
+                    "{units} path {path} month {t}: cash {:.0}, instalments to come {still_owed:.0}",
+                    cash[t] * price[t]
+                );
+            }
+            for key in ["withdraw_taxable", "withdraw_traditional", "withdraw_roth"] {
+                let drawn: f64 = column(&with, key)[6..=17].iter().sum();
+                assert!(drawn < 1.0, "{units} path {path}: {key} {drawn:.0}");
+            }
+            // The balance settled the next April is small beside the year's tax,
+            // once the 0.9% Additional Medicare Tax is set aside: the engine settles
+            // that with the return for every kind of pay.
+            let settled = |t: &PathTrace, paid: &[f64]| paid[17] - nominal(t, "income_other")[17];
+            let april = settled(&with, &paid) - settled(&zero, &paid_zero);
+            let total = amount(ra, "total");
+            let additional_medicare = 0.009 * (wages + 190_000.0 - 200_000.0).max(0.0);
+            assert!(
+                (april - additional_medicare).abs() <= 0.02 * total,
+                "{units} path {path}: {april:.0} settled in April ({additional_medicare:.0} of it Additional Medicare Tax) against a return of {total:.0}"
+            );
+        }
+    }
+}
+
+/// A one-off amount in a year that starts part-way through is taxed once, at the
+/// year's annual rate, not multiplied up with the regular income. Incentive options
+/// exercised in the first month of a plan that starts in November owe about the
+/// minimum tax they would owe in a plan that starts in January.
+#[test]
+fn a_partial_first_year_does_not_multiply_a_one_off() {
+    let mut p = startup_with(certain(OutcomeKind::StillPrivate, 0.0, 0.0, 1.0));
+    p.accounts
+        .push(account("more", 0, AccountKind::Cash, 1_500_000.0));
+    {
+        let co = &mut p.private_equity[0];
+        co.holdings.truncate(1);
+        co.holdings[0].vested = co.holdings[0].shares;
+        co.holdings[0].vest_months_left = 0;
+        co.policy.exercise = ExerciseTiming::VestedNow;
+    }
+    let mut january = p.clone();
+    january.start = Some(YearMonth::ym(2027, 1));
+    let november = sim::trace_path(&compile(&p), SEED, 0);
+    let january = sim::trace_path(&compile(&january), SEED, 0);
+    for t in [&november, &january] {
+        let exercised: Vec<_> = t
+            .events
+            .iter()
+            .filter(|e| e.kind.key() == "options_exercised")
+            .collect();
+        assert_eq!(exercised.len(), 1);
+        assert_eq!(exercised[0].month, t.start);
+        assert!(
+            exercised[0]
+                .label
+                .starts_with("Exercised 60,000 Northwind Robotics options for $90,000"),
+            "{}",
+            exercised[0].label
+        );
+    }
+    // 60,000 options, strike $1.50, 409A value $5: an adjustment of $210,000.
+    let (first, full) = (
+        amount(&november.tax_returns[0].result, "amt"),
+        amount(&january.tax_returns[0].result, "amt"),
+    );
+    assert_eq!(
+        (november.tax_returns[0].year, january.tax_returns[0].year),
+        (2026, 2027)
+    );
+    assert!(full > 20_000.0, "minimum tax in a full year: {full:.0}");
+    assert!(
+        (first / full - 1.0).abs() < 0.05,
+        "minimum tax {first:.0} in the two-month year against {full:.0} in a full one"
+    );
+    // And it is charged once and in full: against the same household without the
+    // options, the tax paid for 2026 (two months, then the balance in April) is
+    // higher by the minimum tax.
+    let zero = sim::trace_path(&compile(&without_equity(&p)), SEED, 0);
+    let net_paid = |t: &PathTrace| -> f64 {
+        tax_paid(t)[..=5].iter().sum::<f64>() - nominal(t, "income_other")[..=5].iter().sum::<f64>()
+    };
+    let charged = net_paid(&november) - net_paid(&zero);
+    assert!(
+        (charged / first - 1.0).abs() < 0.12,
+        "{charged:.0} more tax paid through April against a minimum tax of {first:.0}"
+    );
+}
+
+/// A company's failure lays its employee off in the same month (the trace shows
+/// the failure first), and the usual spell and re-hire follow. With
+/// `company_failure_ends_job` off the job carries on.
+#[test]
+fn a_company_failure_lays_off_the_linked_job() {
+    let p = startup_with(certain(OutcomeKind::Fails, 1.5, 1.5, 1.0));
+    let t = sim::trace_path(&compile(&p), SEED, 2);
+    assert_eq!(event_months(&t, "company_failed"), vec![18]);
+    assert_eq!(event_months(&t, "laid_off"), vec![18]);
+    let position = |kind: &str| t.events.iter().position(|e| e.kind.key() == kind).unwrap();
+    assert!(position("company_failed") < position("laid_off"));
+    let back = event_months(&t, "rehired");
+    assert!(back.first().is_some_and(|m| *m >= 18), "{back:?}");
+    // What was unvested is gone with the company, and no tax or cash moved.
+    assert!(t.events.iter().any(|e| e.label.contains("shuts down")));
+    assert_eq!(column(&t, "income_equity").iter().sum::<f64>(), 0.0);
+    let wages = column(&t, "income_wages");
+    assert!(wages[17] > 10_000.0 && wages[18] < wages[17]);
+
+    let mut stays = p.clone();
+    stays.private_equity[0].company_failure_ends_job = false;
+    let t = sim::trace_path(&compile(&stays), SEED, 2);
+    assert_eq!(event_months(&t, "company_failed"), vec![18]);
+    assert!(event_months(&t, "laid_off").is_empty());
+    let wages = column(&t, "income_wages");
+    assert!((wages[18] - wages[17]).abs() < 200.0);
+}
+
+/// The "AMT trap": incentive options exercised and held in a company that then
+/// fails. The minimum tax is paid in the year of exercise; the credit comes back
+/// only as fast as ordinary years allow, and most of it is still unused ten years
+/// on. The shares' cost is a capital loss.
+#[test]
+fn exercising_and_failing_leaves_the_amt_credit_stranded() {
+    let mut p = startup_with(certain(OutcomeKind::Fails, 3.0, 3.0, 1.0));
+    p.accounts
+        .push(account("more", 0, AccountKind::Cash, 2_000_000.0));
+    {
+        let co = &mut p.private_equity[0];
+        co.fmv_409a = Some(12.0);
+        co.holdings.truncate(1);
+        co.holdings[0].shares = 200_000.0;
+        co.holdings[0].vested = 200_000.0;
+        co.holdings[0].vest_months_left = 0;
+        co.policy.exercise = ExerciseTiming::VestedNow;
+    }
+    let t = sim::trace_path(&compile(&p), SEED, 1);
+    let first = &t.tax_returns[0].result;
+    let amt = amount(first, "amt");
+    // A spread of $2,100,000: roughly 28% of it.
+    assert!(
+        (480_000.0..700_000.0).contains(&amt),
+        "minimum tax in the year of exercise: {amt:.0}"
+    );
+    assert!((amount(first, "amt_credit_carryforward") - amt).abs() < 1.0);
+    let failed = t
+        .events
+        .iter()
+        .find(|e| e.kind.key() == "company_failed")
+        .expect("the company fails");
+    assert_eq!(failed.month - START, 36);
+    assert!(
+        failed.label.contains("paid for its shares is lost"),
+        "{}",
+        failed.label
+    );
+    let (mut used_total, mut years_used) = (0.0, 0);
+    for r in &t.tax_returns[1..11] {
+        let used = amount(&r.result, "amt_credit_used");
+        assert!(used >= 0.0 && used < 0.06 * amt, "{}: {used:.0}", r.year);
+        used_total += used;
+        years_used += u32::from(used > 0.0);
+    }
+    assert!(years_used >= 5, "credit used in {years_used} of ten years");
+    assert!(
+        used_total < 0.3 * amt,
+        "{used_total:.0} of {amt:.0} came back in ten years"
+    );
+    let left = amount(&t.tax_returns[10].result, "amt_credit_carryforward");
+    assert!(left > 0.7 * amt, "{left:.0} of {amt:.0} still unused");
+    // The strike paid is a loss in the year of the failure, used $3,000 a year.
+    let loss = amount(return_of(&t, 2029), "capital_loss_carryforward");
+    assert!(
+        (250_000.0..300_000.0).contains(&loss),
+        "loss carried out of 2029: {loss:.0}"
+    );
+}
+
+/// Exercising incentive options early and holding the shares past both holding
+/// periods turns ordinary income into long-term gain, and the minimum tax paid at
+/// exercise comes back when the shares are sold. On the same fate, less tax is
+/// paid over the life than by waiting and selling at the listing.
+#[test]
+fn a_qualifying_iso_sale_beats_a_disqualifying_one() {
+    let mut early = startup_with(certain(OutcomeKind::Ipo, 2.5, 2.5, 3.0));
+    early
+        .accounts
+        .push(account("more", 0, AccountKind::Cash, 600_000.0));
+    {
+        let co = &mut early.private_equity[0];
+        co.holdings.truncate(1);
+        co.holdings[0].vested = co.holdings[0].shares;
+        co.holdings[0].vest_months_left = 0;
+        co.policy.sell_down = SellDown::AllAtLockupEnd;
+        co.policy.exercise = ExerciseTiming::VestedNow;
+    }
+    let mut late = early.clone();
+    late.private_equity[0].policy.exercise = ExerciseTiming::AtLiquidity;
+    let (plan_early, plan_late) = (compile(&early), compile(&late));
+    for path in 0..5 {
+        let a = sim::trace_path(&plan_early, SEED, path);
+        let b = sim::trace_path(&plan_late, SEED, path);
+        // The same listing and the same price at the end of the lockup.
+        let sale = |t: &PathTrace| {
+            let e = t
+                .events
+                .iter()
+                .find(|e| e.kind.key() == "lockup_sale")
+                .expect("a sale when the lockup ends");
+            (e.month, e.label.split(" for ").next().unwrap().to_string())
+        };
+        assert_eq!(
+            event_months(&a, "company_ipo"),
+            event_months(&b, "company_ipo")
+        );
+        assert_eq!(sale(&a), sale(&b), "path {path}");
+        let year = sale(&a).0.year();
+        // Sold after more than a year: all long-term gain, no ordinary income, and
+        // the minimum tax of the exercise year is credited back.
+        let (ra, rb) = (return_of(&a, year), return_of(&b, year));
+        assert!(amount(&a.tax_returns[0].result, "amt") > 20_000.0);
+        assert!(amount(ra, "amt_credit_used") > 0.0, "path {path}");
+        assert_eq!(amount(rb, "amt_credit_used"), 0.0);
+        let window = |t: &PathTrace| -> f64 {
+            // Tax paid from the start to the April after the sale, today's dollars.
+            let end = ((sale(t).0 - START) as usize + 18).min(t.months as usize);
+            ["tax_federal", "tax_state", "tax_payroll"]
+                .iter()
+                .map(|k| column(t, k)[..end].iter().sum::<f64>())
+                .sum()
+        };
+        assert!(
+            window(&a) < window(&b),
+            "path {path}: early exercise paid {:.0}, waiting paid {:.0}",
+            window(&a),
+            window(&b)
+        );
+    }
+}
+
+/// Small exercises month after month are not re-plan events, yet their tax must
+/// not wait for April: the year is planned again each quarter, most of the year's
+/// minimum tax is paid in instalments, and the cash for them is kept.
+#[test]
+fn exercises_as_they_vest_reach_the_instalments() {
+    let mut p = startup_with(certain(OutcomeKind::StillPrivate, 0.0, 0.0, 1.0));
+    p.start = Some(YearMonth::ym(2027, 1));
+    p.accounts.push(Account {
+        cost_basis: Some(1_500_000.0),
+        ..account("more", 0, AccountKind::Taxable, 1_500_000.0)
+    });
+    {
+        let co = &mut p.private_equity[0];
+        co.holdings.truncate(1);
+        let h = &mut co.holdings[0];
+        h.kind = HoldingKind::Iso {
+            strike: 1.0,
+            granted_months_ago: 12,
+        };
+        h.shares = 120_000.0;
+        h.vested = 0.0;
+        h.vest_months_left = 12;
+        co.policy.exercise = ExerciseTiming::AsTheyVest;
+    }
+    let with = sim::trace_path(&compile(&p), SEED, 0);
+    let exercised = with
+        .events
+        .iter()
+        .filter(|e| e.kind.key() == "options_exercised")
+        .count();
+    assert_eq!(exercised, 12, "one exercise a month for a year");
+    // 10,000 options a month at a $4 spread: $480,000 of adjustment in the year.
+    let result = &with.tax_returns[0].result;
+    let amt = amount(result, "amt");
+    assert!(amt > 60_000.0, "minimum tax for the year: {amt:.0}");
+    let federal = nominal(&with, "tax_federal");
+    // Each quarter's plan sees more of the year's exercises and raises the
+    // instalment: April over March, July over June, October over September.
+    for month in [3, 6, 9] {
+        assert!(
+            federal[month] > federal[month - 1] + 500.0,
+            "no re-plan in month {month}: {:?}",
+            &federal[..12]
+        );
+    }
+    // What is left for April is the tax on the exercises after the last plan (two
+    // months of twelve, at the top of the exemption phase-out, about 28% of the
+    // year's minimum tax) and the usual error of a first year's estimate of
+    // investment income, not the year's minimum tax.
+    let during: f64 = tax_paid(&with)[..12].iter().sum();
+    let balance = amount(result, "total") - during;
+    assert!(
+        balance < 0.40 * amt,
+        "{balance:.0} left for April of a minimum tax of {amt:.0}"
+    );
+    // The cash for the instalments still to come under the plan in force (this
+    // month's instalment for each month left in the year) is there at each month
+    // end, and the strike was paid from taxable savings, never from a retirement
+    // account.
+    let price = with.column("price_level").unwrap();
+    let cash = column(&with, "balance_cash");
+    let state = nominal(&with, "tax_state");
+    let regular = federal[1] + state[1];
+    for t in 3..11 {
+        let instalment = (federal[t] + state[t] - regular).max(0.0);
+        let still_owed = instalment * (11 - t) as f64;
+        assert!(
+            cash[t] * price[t] >= 0.9 * still_owed - 500.0,
+            "month {t}: cash {:.0}, instalments to come {still_owed:.0}",
+            cash[t] * price[t]
+        );
+    }
+    assert!(column(&with, "withdraw_taxable")[..12].iter().sum::<f64>() > 100_000.0);
+    for key in ["withdraw_traditional", "withdraw_roth", "withdraw_hsa"] {
+        assert!(column(&with, key)[..16].iter().sum::<f64>() < 1.0, "{key}");
+    }
+}

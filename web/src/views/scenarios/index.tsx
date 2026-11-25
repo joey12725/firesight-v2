@@ -8,6 +8,9 @@ import { useProfileStore } from '@/state/profile-store';
 import type { RunState } from '@/state/run-store';
 import { SegmentedControl, Select, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, summaryTime, type TimeRangePreset } from '@/ui/charts';
+import { DecisionTable, decisionTableData } from '../equity/charts';
+import { decisionTable, fiAgeShift } from '../equity/model';
+import { DECISIONS_CAPTION, decisionSentence } from '../equity/text';
 import type { ScenarioComparison, ViewProps } from '../types';
 import { Bench } from './Bench';
 import { Board, BoardKey } from './Board';
@@ -107,6 +110,12 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
   const scalar = paired ? (scalarOf(paired, options.some((o) => o.value === scalarKey) ? scalarKey : (options[0]?.value ?? 'terminal_net_worth')) ?? null) : null;
   const headline = flips ? flipSentence(flips) : provisionalSentence(base, scenario.summary);
   const saleLine = homeSaleLine(paired, base, scenario.summary);
+  // A plan with a private company: the same change, among the lives with each outcome for it.
+  const byOutcome = useMemo(() => (paired?.by_equity_outcome?.length ? decisionTable(paired) : []), [paired]);
+  const company = base.equity?.company ?? '';
+  const overall = flips ? { value: flips.net.value, withinNoise: flips.withinNoise } : null;
+  // A change that costs cash also moves when work becomes optional, which by itself changes how often a plan holds.
+  const decisionContext = { fiShift: paired ? fiAgeShift(paired) : null, funded: profile.retirement.trigger.type === 'when_funded' || profile.retirement.trigger.type === 'fixed_number' };
   const fan = (series: PairedSeries) => (
     <ChartCard
       title={`${PAIRED_LABEL[series]} among the living: the plan against the change`}
@@ -211,6 +220,24 @@ function Detail({ base, scenario, run, profile, pool, many }: { base: Summary; s
         {fan('net_worth')}
         {fan('spending')}
       </div>
+
+      {paired && byOutcome.length > 0 && (
+        <ChartCard
+          className="mt-12"
+          title={`The change, by what happens to ${company || 'the company'}`}
+          takeaway={<span data-testid="scenario-by-outcome">{decisionSentence('This change', company, byOutcome, overall, decisionContext)}</span>}
+          takeawayText={decisionSentence('This change', company, byOutcome, overall, decisionContext)}
+          caption={`${DECISIONS_CAPTION} The outcome is the one the life has under the plan.`}
+          table={() => decisionTableData(byOutcome, name)}
+          filename="scenario-by-company-outcome"
+          explain={{ context: () => ({ scenario: name, company, by_outcome: byOutcome.map((r) => ({ outcome: r.outcome, paired_lives: r.paths, median_change_in_terminal_net_worth: r.wealth, change_in_plan_holds: r.holds })) }) }}
+          dimmed={pairedDimmed}
+        >
+          <div className="max-w-[44rem]">
+            <DecisionTable rows={byOutcome} label={`${name}: the change among the lives with each outcome for ${company || 'the company'}`} />
+          </div>
+        </ChartCard>
+      )}
 
       <ChartCard
         className="mt-12"

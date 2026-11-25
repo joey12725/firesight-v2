@@ -26,7 +26,7 @@ import {
   type Scale,
   type TableData,
 } from '@/ui/charts';
-import { StackLegend, StackedAreas, type StackSeries } from '@/ui/charts/ext/cashflow-StackedAreas';
+import { StackLegend, StackedAreas, type StackLine, type StackSeries } from '@/ui/charts/ext/cashflow-StackedAreas';
 import { ACCOUNT_COLOR } from '../cash-flow/model';
 import { yearEnds } from './Timeline';
 import { taxYears, type Life } from './life';
@@ -306,9 +306,35 @@ function useAccountSeries(life: Life): { series: StackSeries[]; ends: number[] }
   }, [life, theme]);
 }
 
+/**
+ * The paper value of vested private-company holdings, year by year, while the life has
+ * any: up to the year it first reads zero again (sold, or lost), then nothing. Null when
+ * this life never holds any.
+ */
+export function paperValueLine(life: Life): (number | null)[] | null {
+  const values = life.annual('equity_paper_value');
+  let last = -1;
+  values.forEach((v, y) => {
+    if (v > 0) last = y;
+  });
+  if (last < 0) return null;
+  return values.map((v, y) => (y <= last + 1 ? v : null));
+}
+
+export const PAPER_VALUE_LABEL = 'Startup equity on paper (not in net worth)';
+
+function useAccountLines(life: Life): StackLine[] {
+  const theme = useChartTheme();
+  return useMemo(() => {
+    const paper = paperValueLine(life);
+    return [{ key: 'net_worth', label: 'Net worth', color: theme.ink.primary, values: life.annual('net_worth'), strong: true }, ...(paper ? [{ key: 'equity_paper_value', label: PAPER_VALUE_LABEL, end: 'On paper', color: theme.ink.secondary, values: paper, dash: true }] : [])];
+  }, [life, theme]);
+}
+
 export function accountLaneTable(life: Life): TableData {
-  const keys = ['balance_cash', 'balance_taxable', 'balance_traditional', 'balance_roth', 'balance_hsa', 'property_value', 'mortgage', 'debt', 'net_worth'];
-  const labels = ['Cash', 'Taxable accounts', 'Pre-tax accounts', 'Roth accounts', 'HSA', 'Property', 'Mortgages', 'Other debt', 'Net worth'];
+  const paper = paperValueLine(life) !== null;
+  const keys = ['balance_cash', 'balance_taxable', 'balance_traditional', 'balance_roth', 'balance_hsa', 'property_value', 'mortgage', 'debt', 'net_worth', ...(paper ? ['equity_paper_value'] : [])];
+  const labels = ['Cash', 'Taxable accounts', 'Pre-tax accounts', 'Roth accounts', 'HSA', 'Property', 'Mortgages', 'Other debt', 'Net worth', ...(paper ? [PAPER_VALUE_LABEL] : [])];
   return {
     caption: `Life #${life.trace.path_index}: year-end balances by account kind, today's dollars`,
     columns: [{ key: 'age', label: life.hasAges ? 'Age' : 'Year' }, { key: 'year', label: 'Year', format: String }, ...keys.map((key, i) => ({ key, label: labels[i] as string, format: (v: number) => moneyCompact(v) }))],
@@ -318,13 +344,14 @@ export function accountLaneTable(life: Life): TableData {
 
 export function AccountLaneLegend({ life }: { life: Life }) {
   const { series } = useAccountSeries(life);
-  return <StackLegend className="mb-1" series={series} />;
+  const lines = useAccountLines(life);
+  // The dark line is named in the caption; the dashed one needs its own key.
+  return <StackLegend className="mb-1" series={series} lines={lines.filter((l) => l.dash)} />;
 }
 
 export function AccountLane({ life, selected, onSelect }: { life: Life; selected?: number | null; onSelect?: (year: number) => void }) {
-  const theme = useChartTheme();
   const { series } = useAccountSeries(life);
-  const lines = useMemo(() => [{ key: 'net_worth', label: 'Net worth', color: theme.ink.primary, values: life.annual('net_worth'), strong: true }], [life, theme]);
+  const lines = useAccountLines(life);
   return (
     <StackedAreas
       time={life.time}

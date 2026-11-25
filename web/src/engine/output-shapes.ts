@@ -5,6 +5,26 @@
 import * as T from './output-types';
 import { anything, arr, bool, nullable, num, obj, oneOf, record, str, type Infer, type Same, type Shape } from './shape';
 
+/**
+ * `base` plus keys that may be absent (the engine leaves a block out instead of writing
+ * null). A key that is present must match its shape; the rest of the object is checked
+ * strictly by `base`, so an unknown key is still reported.
+ */
+function withOptional<A, O extends Record<string, Shape<unknown>>>(base: Shape<A>, extra: O): Shape<A & { [K in keyof O]?: Infer<O[K]> }> {
+  return {
+    check(value, path, issues) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return void base.check(value, path, issues);
+      const rest: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) {
+        const shape = extra[k];
+        if (shape) shape.check(v, `${path}.${k}`, issues);
+        else rest[k] = v;
+      }
+      base.check(rest, path, issues);
+    },
+  };
+}
+
 const n = nullable(num);
 const nums = arr(num);
 const nnums = arr(n);
@@ -21,7 +41,32 @@ const samplePath = obj({ path_index: num, net_worth: nums, investable: nums, spe
 
 const ageCurve = obj({ ages: nums, counts: nums, cumulative: nums, lo: nums, hi: nums, never: num, dots: arr(n, 100) });
 
-export const summaryShape = obj({
+const equityOutcome = oneOf(T.EQUITY_OUTCOMES);
+
+export const equitySummaryShape = obj({
+  company: str,
+  paths: num,
+  outcomes: arr(obj({ outcome: equityOutcome, count: num, share: estimate }), 4),
+  nothing_rate: estimate,
+  loss_rate: estimate,
+  exercised_rate: estimate,
+  tender_rate: estimate,
+  gross_proceeds: spread,
+  net_proceeds: spread,
+  net_proceeds_mean: estimate,
+  net_proceeds_mean_half_from: num,
+  net_proceeds_if_paid: spread,
+  exercise_cost: spread,
+  tender_proceeds: spread,
+  liquidity_by_age: ageCurve,
+  failed_by_age: ageCurve,
+  by_outcome: arr(
+    obj({ outcome: equityOutcome, paths: num, enough: bool, success_rate: nullableEstimate, fi_rate: nullableEstimate, fi_age: spread, retirement_age: spread, terminal_net_worth: spread, net_proceeds: spread }),
+    4,
+  ),
+});
+
+const summaryBase = obj({
   version: num,
   paths: num,
   axis: obj({ start: str, start_age: num, first_year_months: num, years: nums, ages: nums, alive: nums }),
@@ -67,13 +112,13 @@ export const summaryShape = obj({
   density: arr(obj({ series: histSeries, edges: nums, starts: nums, counts: arr(nums), zeros: nums }), 6),
   status: obj({ statuses: arr(status, 6), shares: arr(nums, 6) }),
   survival: obj({ household: nums, people: arr(nums) }),
-  composition: arr(obj({ series: oneOf(T.YEAR_SERIES), kind: oneOf(T.YEAR_SERIES_KINDS), values: nnums }), 43),
+  composition: arr(obj({ series: oneOf(T.YEAR_SERIES), kind: oneOf(T.YEAR_SERIES_KINDS), values: nnums }), 46),
   fi: ageCurve,
   retirement: ageCurve,
   depletion: ageCurve,
   distributions: arr(
     obj({ scalar, unit, count: num, missing: num, mean: n, std_dev: n, min: n, max: n, quantiles: arr(n, 9), dots: arr(n), edges: nums, counts: nums }),
-    37,
+    43,
   ),
   scatter: obj({ paths: nums, columns: arr(obj({ scalar, values: nnums })) }),
   failure: obj({
@@ -100,46 +145,51 @@ export const summaryShape = obj({
   }),
 });
 
-export const comparisonShape = obj({
+export const summaryShape = withOptional(summaryBase, { equity: equitySummaryShape });
+
+const outcomeComparison = obj({
+  outcome: oneOf(['success', 'fi', 'retired', 'depleted'] as const),
+  a: estimate,
+  b: estimate,
+  both: num,
+  a_only: num,
+  b_only: num,
+  neither: num,
+  difference: estimate,
+  z: n,
+  within_noise: bool,
+});
+
+const scalarComparison = obj({
+  scalar,
+  unit,
+  both: num,
+  a_only: num,
+  b_only: num,
+  neither: num,
+  mean_a: n,
+  mean_b: n,
+  mean_delta: nullableEstimate,
+  quantiles: arr(n, 9),
+  dots: arr(n),
+  b_higher: n,
+  a_higher: n,
+  equal: n,
+  within_noise: bool,
+});
+
+const comparisonBase = obj({
   paths: num,
   unpaired_a: num,
   unpaired_b: num,
-  outcomes: arr(
-    obj({
-      outcome: oneOf(['success', 'fi', 'retired', 'depleted'] as const),
-      a: estimate,
-      b: estimate,
-      both: num,
-      a_only: num,
-      b_only: num,
-      neither: num,
-      difference: estimate,
-      z: n,
-      within_noise: bool,
-    }),
-    4,
-  ),
-  scalars: arr(
-    obj({
-      scalar,
-      unit,
-      both: num,
-      a_only: num,
-      b_only: num,
-      neither: num,
-      mean_a: n,
-      mean_b: n,
-      mean_delta: nullableEstimate,
-      quantiles: arr(n, 9),
-      dots: arr(n),
-      b_higher: n,
-      a_higher: n,
-      equal: n,
-      within_noise: bool,
-    }),
-  ),
+  outcomes: arr(outcomeComparison, 4),
+  scalars: arr(scalarComparison),
   quantile_levels: arr(num, 9),
   headline: arr(obj({ metric: oneOf(T.COMPARISON_METRICS), a: n, b: n, delta: n })),
+});
+
+export const comparisonShape = withOptional(comparisonBase, {
+  by_equity_outcome: arr(obj({ outcome: equityOutcome, paths: num, success: outcomeComparison, terminal_net_worth: scalarComparison }), 4),
 });
 
 const traceColumn = obj({ key: str, unit: str, values: nnums });
@@ -157,13 +207,13 @@ export const pathTraceShape = obj({
     obj({ year: num, price_level: num, result: record(anything), lines: arr(obj({ key: str, label: str, amount: num, note: nullable(str) })) }),
   ),
   events: arr(obj({ month: str, kind: oneOf(T.TRACE_EVENT_KINDS), label: str, amount: n })),
-  scalars: arr(obj({ scalar, value: n }), 37),
+  scalars: arr(obj({ scalar, value: n }), 43),
 });
 
 const digestRate = obj({ p: num, lo: num, hi: num });
 const digestSpread = obj({ p10: n, p50: n, p90: n });
 
-export const digestShape = obj({
+const digestBase = obj({
   notes: str,
   paths: num,
   start_year: num,
@@ -191,6 +241,22 @@ export const digestShape = obj({
   spending_delivery: obj({ delivered_ratio: n, extra_ratio: n, paths_below_90: n, paths_below_75: n, years_below_90: n, worst_cut_p90: n }),
   failure_causes: arr(obj({ cause: oneOf(T.FAILURE_CAUSES), share: num })),
   trace_paths: obj({ p10: n, median: n, p90: n, failing: n }),
+});
+
+export const digestShape = withOptional(digestBase, {
+  equity: obj({
+    company: str,
+    failed: num,
+    still_private: num,
+    acquired: num,
+    ipo: num,
+    nothing: digestRate,
+    loss: num,
+    net_proceeds: digestSpread,
+    net_proceeds_mean: n,
+    net_proceeds_mean_se: n,
+    success_by_outcome: arr(n, 4),
+  }),
 });
 
 export const planPreviewShape = obj({

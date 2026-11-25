@@ -1,0 +1,503 @@
+{
+  "schema_version": 2,
+  "name": "Startup employee",
+  "description": "Demo household: an engineer at a Series C startup in San Francisco whose option position is worth far more on paper than her savings.",
+  "start": "2026-11",
+  "household": {
+    "people": [
+      {
+        "id": "priya",
+        "name": "Priya",
+        "birth": "1995-09",
+        "sex": "female",
+        "health": "good",
+        "joins": null,
+        "social_security": {
+          "claim_age": 67.0,
+          "basis": {
+            "type": "from_earnings",
+            "career_start_age": 22.0
+          }
+        }
+      }
+    ],
+    "children": [],
+    "location": {
+      "country": "US",
+      "state": "CA",
+      "city": "San Francisco",
+      "foreign_tax_rate": null
+    }
+  },
+  "incomes": [
+    {
+      "id": "priya_job",
+      "name": "Staff engineer at Northwind Robotics",
+      "owner": 0,
+      "kind": {
+        "type": "job",
+        "salary": 190000.0,
+        "growth": {
+          "type": "lifecycle",
+          "profile": "typical",
+          "extra": 0.0
+        },
+        "risk": {
+          "level": "typical",
+          "wage_shocks": "normal",
+          "layoff_pay_cut": "normal",
+          "job_search": "drawn_at_layoff"
+        },
+        "bonus": null,
+        "commission": null,
+        "equity": [],
+        "plan": {
+          "employee_fraction": 0.08,
+          "employee_max": false,
+          "roth_fraction": 0.0,
+          "match_rate": 0.5,
+          "match_up_to": 0.04,
+          "after_tax_mega": false
+        },
+        "hsa_contribution": 0.0,
+        "hsa_employer": 0.0,
+        "ends_at_retirement": true
+      },
+      "start": null,
+      "end": null
+    }
+  ],
+  "private_equity": [
+    {
+      "id": "northwind",
+      "name": "Northwind Robotics",
+      "owner": 0,
+      "job": "priya_job",
+      "included": true,
+      "stage": "series_c",
+      "preferred_price": 14.0,
+      "fmv_409a": 5.0,
+      "preference_overhang": null,
+      "outlook": "typical",
+      "outcomes": [],
+      "tenders": {
+        "annual_probability": null,
+        "next_in_months": null,
+        "max_fraction": 0.2,
+        "price_fraction": 1.0,
+        "former_employees": false
+      },
+      "lockup_months": 6,
+      "exercise_window_months": 3,
+      "company_failure_ends_job": true,
+      "qsbs": false,
+      "amt_credit_carryforward": 0.0,
+      "holdings": [
+        {
+          "id": "new_hire_iso",
+          "name": "New-hire grant",
+          "kind": {
+            "type": "iso",
+            "strike": 1.5,
+            "granted_months_ago": 40
+          },
+          "shares": 60000.0,
+          "vested": 50000.0,
+          "vest_months_left": 8,
+          "cliff_months": 0
+        },
+        {
+          "id": "refresh_nso",
+          "name": "Refresh grant",
+          "kind": {
+            "type": "nso",
+            "strike": 4.0,
+            "granted_months_ago": 10
+          },
+          "shares": 40000.0,
+          "vested": 8000.0,
+          "vest_months_left": 38,
+          "cliff_months": 0
+        },
+        {
+          "id": "retention_rsu",
+          "name": "Retention RSUs",
+          "kind": {
+            "type": "rsu",
+            "must_be_employed_at_event": false
+          },
+          "shares": 12000.0,
+          "vested": 0.0,
+          "vest_months_left": 48,
+          "cliff_months": 12
+        },
+        {
+          "id": "exercised_2025",
+          "name": "Shares exercised in 2025",
+          "kind": {
+            "type": "shares",
+            "basis_per_share": 1.5,
+            "months_held": 14,
+            "from_iso": true,
+            "fmv_at_exercise": 4.0
+          },
+          "shares": 10000.0,
+          "vested": 0.0,
+          "vest_months_left": 0,
+          "cliff_months": 0
+        }
+      ],
+      "policy": {
+        "exercise": "at_liquidity",
+        "at_deadline": "exercise",
+        "tender_sell_fraction": 0.5,
+        "sell_down": {
+          "type": "over_years",
+          "years": 2
+        },
+        "leave_after_months": null
+      }
+    }
+  ],
+  "spending": {
+    "items": [
+      {
+        "id": "rent",
+        "name": "Rent",
+        "category": "rent",
+        "amount": 3400.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "utilities",
+        "name": "Utilities and internet",
+        "category": "utilities",
+        "amount": 180.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "groceries",
+        "name": "Groceries",
+        "category": "groceries",
+        "amount": 600.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "dining",
+        "name": "Restaurants",
+        "category": "dining",
+        "amount": 450.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "transport",
+        "name": "Transit and ride share",
+        "category": "transport",
+        "amount": 200.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "insurance",
+        "name": "Renter's insurance",
+        "category": "insurance",
+        "amount": 30.0,
+        "frequency": "monthly",
+        "essential": true,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "entertainment",
+        "name": "Entertainment",
+        "category": "entertainment",
+        "amount": 250.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "personal",
+        "name": "Clothing and personal care",
+        "category": "personal",
+        "amount": 200.0,
+        "frequency": "monthly",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      },
+      {
+        "id": "travel",
+        "name": "Travel",
+        "category": "travel",
+        "amount": 6000.0,
+        "frequency": "annual",
+        "essential": false,
+        "real_growth": null,
+        "start": null,
+        "end": null,
+        "in_retirement": {
+          "type": "same"
+        },
+        "owner": null
+      }
+    ],
+    "lifestyle_creep": 0.3,
+    "retirement_smile": true,
+    "shocks": "typical",
+    "healthcare": {
+      "mode": "modeled",
+      "early_retirement": {
+        "type": "aca"
+      },
+      "long_term_care": true,
+      "quality": "silver"
+    },
+    "survivor_factor": 0.7
+  },
+  "accounts": [
+    {
+      "id": "checking",
+      "name": "Checking",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 12000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "fixed",
+        "rate": 0.0
+      },
+      "holdings": null
+    },
+    {
+      "id": "savings",
+      "name": "High-yield savings",
+      "owner": 0,
+      "kind": "cash",
+      "balance": 28000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "k401",
+      "name": "401(k)",
+      "owner": 0,
+      "kind": "traditional",
+      "balance": 110000.0,
+      "cost_basis": null,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "roth_ira",
+      "name": "Roth IRA",
+      "owner": 0,
+      "kind": "roth",
+      "balance": 24000.0,
+      "cost_basis": null,
+      "roth_basis": 20000.0,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    },
+    {
+      "id": "brokerage",
+      "name": "Brokerage",
+      "owner": 0,
+      "kind": "taxable",
+      "balance": 70000.0,
+      "cost_basis": 58000.0,
+      "roth_basis": null,
+      "cash_yield": {
+        "type": "tracks_bills",
+        "spread": -0.005
+      },
+      "holdings": null
+    }
+  ],
+  "portfolio": {
+    "target": {
+      "us_stocks": 70.0,
+      "intl_stocks": 20.0,
+      "bonds": 10.0
+    },
+    "glide": {
+      "type": "none"
+    },
+    "rebalance": {
+      "type": "annual"
+    },
+    "location": "mirror",
+    "expense_ratio": 0.001,
+    "advisory_fee": 0.0,
+    "emergency_months": 4.0,
+    "retirement_cash_years": 0.0,
+    "custom_asset": null,
+    "single_stock": {
+      "volatility": 0.35,
+      "beta": 1.1,
+      "tails": "normal",
+      "ruin_hazard": null
+    },
+    "crypto": {
+      "outlook": "neutral",
+      "token": "bitcoin_or_ether",
+      "dynamics": {
+        "type": "steady"
+      }
+    }
+  },
+  "properties": [],
+  "debts": [],
+  "debt_policy": {
+    "strategy": "avalanche",
+    "extra_monthly": 0.0,
+    "refinance_mortgages": true
+  },
+  "events": [],
+  "retirement": {
+    "trigger": {
+      "type": "when_funded",
+      "withdrawal_rate": 0.035,
+      "basis": "investable",
+      "count_future_income": false,
+      "min_age": null,
+      "max_age": 67.0
+    },
+    "partner_offset_years": 0.0,
+    "spending_rule": {
+      "type": "constant_real"
+    },
+    "withdrawal_order": {
+      "type": "tax_aware",
+      "fill_to_bracket": 0.12,
+      "roth_conversions": true,
+      "mind_aca": true
+    },
+    "early_access": "auto",
+    "bequest_target": 0.0,
+    "home_equity": "last_resort"
+  },
+  "assumptions": {
+    "market": {
+      "kind": {
+        "type": "bootstrap",
+        "mean_block_months": 60,
+        "from_year": null,
+        "joins": "uniform"
+      },
+      "equity_premium_adjustment": -0.015,
+      "inflation_adjustment": 0.0,
+      "stress": [],
+      "equity_premium_uncertainty": null,
+      "inflation_uncertainty": null,
+      "disasters": {
+        "annual_probability": 0.0,
+        "depth": {
+          "type": "pert",
+          "low": 0.2,
+          "mode": 0.4,
+          "high": 0.75
+        },
+        "years": {
+          "type": "pert",
+          "low": 3.0,
+          "mode": 8.0,
+          "high": 20.0
+        },
+        "inflation_probability": 0.3,
+        "inflation": {
+          "type": "pert",
+          "low": 0.02,
+          "mode": 0.05,
+          "high": 0.12
+        }
+      }
+    },
+    "taxes": {
+      "kind": {
+        "type": "us_current_law"
+      },
+      "index_brackets": true,
+      "social_security_haircut": null
+    },
+    "longevity": {
+      "type": "stochastic",
+      "improvement": true
+    },
+    "career_risk": true,
+    "health_risk": true
+  },
+  "simulation": {
+    "paths": 25000,
+    "seed": 1,
+    "end_age": 100
+  }
+}

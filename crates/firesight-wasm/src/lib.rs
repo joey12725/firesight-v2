@@ -211,6 +211,14 @@ pub fn tax_detail(profile_json: &str, year: i32, inputs_json: &str) -> Result<St
     api::tax_detail(profile_json, year, inputs_json, today()).map_err(throw)
 }
 
+/// Previews one private company's outcome distribution without simulating the
+/// household. `company_json` is one element of `profile.private_equity`; `draws`
+/// 0 means the default. Returns an `EquityPreview` JSON.
+#[wasm_bindgen(js_name = equityPreview)]
+pub fn equity_preview(company_json: &str, draws: u32) -> Result<String, JsError> {
+    api::equity_preview(company_json, draws).map_err(throw)
+}
+
 /// The API as plain Rust, independent of wasm-bindgen.
 pub mod api {
     use firesight_core::data::Data;
@@ -426,6 +434,18 @@ pub mod api {
             start,
             first_birth: first.birth,
             second_birth: people.get(1).map(|p| p.birth),
+            equity_company: profile
+                .private_equity
+                .get(firesight_core::equity::primary_company(
+                    &profile.private_equity,
+                ))
+                .map(|c| {
+                    if c.name.trim().is_empty() {
+                        c.id.clone()
+                    } else {
+                        c.name.clone()
+                    }
+                }),
         };
         profile.start = Some(start);
         Ok((context, profile))
@@ -533,6 +553,13 @@ pub mod api {
         Ok(to_json(&scenario::levers(&profile)))
     }
 
+    /// See the wasm export. A company that does not parse is reported with the
+    /// path of the offending field, like a profile; `draws` other than 0 is held
+    /// between 100 and 50,000.
+    pub fn equity_preview(company_json: &str, draws: u32) -> Result<String, String> {
+        firesight_core::equity::preview_json(company_json, draws)
+    }
+
     /// See the wasm export.
     pub fn schema() -> String {
         to_json(&Profile::json_schema())
@@ -611,11 +638,138 @@ mod tests {
         let report = parse(&api::validate(&api::default_profile(TODAY), TODAY));
         assert_eq!(report["errors"].as_array().unwrap().len(), 0, "{report}");
         let examples = parse(&api::example_profiles(TODAY));
-        assert_eq!(examples.as_array().unwrap().len(), 4);
+        assert_eq!(examples.as_array().unwrap().len(), 5);
+        assert_eq!(examples[3]["slug"], "startup-employee");
         for ex in examples.as_array().unwrap() {
             let report = parse(&api::validate(&ex["profile"].to_string(), TODAY));
             assert_eq!(report["errors"].as_array().unwrap().len(), 0, "{report}");
         }
+    }
+
+    #[test]
+    fn equity_preview_round_trips() {
+        let examples = parse(&api::example_profiles(TODAY));
+        let company = examples[3]["profile"]["private_equity"][0].to_string();
+        let text = api::equity_preview(&company, 0).unwrap();
+        let preview = parse(&text);
+        // The default number of draws, and the figures the editor shows.
+        assert_eq!(preview["draws"], 4000);
+        assert_eq!(preview["paper_value_total"], 1_458_000.0);
+        assert_eq!(
+            preview["exercise_cost_vested"],
+            50_000.0 * 1.5 + 8_000.0 * 4.0
+        );
+        assert_eq!(preview["fmv_409a"], 5.0);
+        assert_eq!(preview["table"].as_array().unwrap().len(), 4);
+        assert_eq!(preview["dots"].as_array().unwrap().len(), 100);
+        let shares: f64 = preview["outcome_shares"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .sum();
+        assert!((shares - 1.0).abs() < 1e-9);
+        let nothing = preview["nothing_share"].as_f64().unwrap();
+        assert!(nothing > 0.4 && nothing < 0.8, "{nothing}");
+        // It parses back as the engine's type and is the same on every call.
+        let back: firesight_core::equity::EquityPreview = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.draws, 4000);
+        assert_eq!(api::equity_preview(&company, 0).unwrap(), text);
+        // The number of draws is held between 100 and 50,000.
+        assert_eq!(
+            parse(&api::equity_preview(&company, 7).unwrap())["draws"],
+            100
+        );
+        assert_eq!(
+            parse(&api::equity_preview(&company, 9_000_000).unwrap())["draws"],
+            50_000
+        );
+        assert_eq!(
+            parse(&api::equity_preview(&company, 250).unwrap())["draws"],
+            250
+        );
+        // A company with no holdings or price still previews (all zeros).
+        let empty = parse(&api::equity_preview("{}", 100).unwrap());
+        assert_eq!(empty["paper_value_total"], 0.0);
+        assert_eq!(empty["nothing_share"], 1.0);
+        assert!(empty["years_to_payout_p50"].is_null());
+        // Bad JSON names the path of the field, like a profile error.
+        let err =
+            api::equity_preview(r#"{"holdings": [{"kind": {"type": "warrant"}}]}"#, 0).unwrap_err();
+        assert!(
+            err.contains("holdings[0].kind") && err.contains("warrant"),
+            "{err}"
+        );
+        let err = api::equity_preview(r#"{"stagee": "seed"}"#, 0).unwrap_err();
+        assert!(err.contains("stagee"), "{err}");
+        assert!(api::equity_preview("not json", 0).is_err());
+    }
+
+    #[test]
+    fn the_startup_demo_runs_end_to_end() {
+        let examples = parse(&api::example_profiles(TODAY));
+        let profile = examples[3]["profile"].to_string();
+        let mut engine = api::Engine::new(&profile, TODAY).unwrap();
+        let warnings = parse(&engine.warnings_json());
+        assert_eq!(warnings.as_array().unwrap().len(), 1, "{warnings}");
+        assert_eq!(warnings[0]["code"], "equity_dominant");
+        let a = engine.run_chunk(0, 150).unwrap();
+        let b = engine.run_chunk(150, 150).unwrap();
+        let whole = api::merge_chunks(&a, &b).unwrap();
+        assert_eq!(whole, engine.run_chunk(0, 300).unwrap());
+        let summary = parse(&api::summarize(&whole, &profile, TODAY).unwrap());
+        let equity = &summary["equity"];
+        assert_eq!(equity["company"], "Northwind Robotics");
+        assert_eq!(equity["paths"], 300);
+        assert_eq!(equity["outcomes"].as_array().unwrap().len(), 4);
+        assert_eq!(equity["outcomes"][0]["outcome"], "failed");
+        assert_eq!(equity["by_outcome"][3]["outcome"], "ipo");
+        let digest = parse(&api::digest(&whole, &profile, TODAY).unwrap());
+        assert_eq!(digest["equity"]["company"], "Northwind Robotics");
+        assert_eq!(
+            digest["equity"]["success_by_outcome"]
+                .as_array()
+                .unwrap()
+                .len(),
+            4
+        );
+
+        // Four more levers, and the zero run pairs by outcome.
+        let levers = parse(&api::levers(&profile).unwrap());
+        let ids: Vec<&str> = levers
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|l| l["id"].as_str())
+            .filter(|id| id.starts_with("equity_"))
+            .collect();
+        assert_eq!(ids.len(), 4, "{ids:?}");
+        let patch = r#"[{"op": "set", "path": "/private_equity/0/included", "value": false}]"#;
+        let zero = parse(&api::apply_patch(&profile, patch, TODAY).unwrap())["profile"].to_string();
+        let other = api::Engine::new(&zero, TODAY)
+            .unwrap()
+            .run_chunk(0, 300)
+            .unwrap();
+        let cmp = parse(&api::compare(&whole, &other, &profile, TODAY).unwrap());
+        let classes = cmp["by_equity_outcome"].as_array().unwrap();
+        assert_eq!(classes.len(), 4);
+        let total: u64 = classes.iter().map(|c| c["paths"].as_u64().unwrap()).sum();
+        assert_eq!(total, 300);
+        // The other demos carry no equity key anywhere.
+        let plain = examples[0]["profile"].to_string();
+        let bytes = api::Engine::new(&plain, TODAY)
+            .unwrap()
+            .run_chunk(0, 40)
+            .unwrap();
+        let summary = parse(&api::summarize(&bytes, &plain, TODAY).unwrap());
+        assert!(summary.get("equity").is_none());
+        let cmp = parse(&api::compare(&bytes, &bytes, &plain, TODAY).unwrap());
+        assert!(cmp.get("by_equity_outcome").is_none());
+        // Bytes written before the equity scalars are refused, not misread.
+        let mut old = bytes.clone();
+        old[0] = 5;
+        let err = api::summarize(&old, &plain, TODAY).unwrap_err();
+        assert!(err.contains("version 5 is not supported"), "{err}");
     }
 
     #[test]

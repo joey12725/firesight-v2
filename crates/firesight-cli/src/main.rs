@@ -7,6 +7,7 @@
 //! firesight sweep <profile> --x-path <patch path> --x-values a,b,c [--y-path .. --y-values ..]
 //! firesight trace <profile> (--path I | --quantile Q [--by SCALAR]) [--json]
 //! firesight preview <profile>
+//! firesight equity-preview <profile> [--company ID] [--draws N] [--json]
 //! firesight bench [profile] [--paths N] [--repeat R] [--check BASELINE] [--write-baseline FILE]
 //! firesight schema | validate <profile> | migrate <v1> | examples <dir>
 //! ```
@@ -21,8 +22,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use firesight_core::data::Data;
+use firesight_core::equity::{self, EquityParams, EquityPreview};
 use firesight_core::legacy;
-use firesight_core::model::{Profile, YearMonth, EXAMPLE_START};
+use firesight_core::model::{OutcomeKind, Profile, YearMonth, EXAMPLE_START};
 use firesight_core::patch::{self, PatchOp};
 use firesight_core::scenario::{GridAxis, GridSweep, Metric, SolveOutcome, Solver};
 use firesight_core::sim::{self, Plan, Workspace};
@@ -199,6 +201,23 @@ enum Command {
     Preview {
         /// Profile JSON file.
         file: PathBuf,
+    },
+    /// Show what one private company's holdings could pay, before tax, without
+    /// simulating the household: the odds in force, the share of outcomes that pay
+    /// nothing and the spread of the rest.
+    EquityPreview {
+        /// Profile JSON file.
+        file: PathBuf,
+        /// Id of the company in `private_equity` (default: the one with the
+        /// largest position).
+        #[arg(long)]
+        company: Option<String>,
+        /// Number of draws, 100 to 50,000 (default: the engine's setting).
+        #[arg(long)]
+        draws: Option<u32>,
+        /// Print the `EquityPreview` as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Measure paths per second, single- and multi-threaded. The last line printed
     /// is a one-line JSON summary.
@@ -387,6 +406,9 @@ fn print_headline(summary: &Summary) {
         dollars(h.terminal_net_worth.p90)
     );
     println!("lifetime tax (median)  {}", dollars(h.median_lifetime_tax));
+    for line in equity_lines(summary) {
+        println!("{line}");
+    }
     if summary.failure.failed > 0 {
         let mut causes: Vec<_> = summary
             .failure
@@ -401,6 +423,196 @@ fn print_headline(summary: &Summary) {
             .map(|c| format!("{:?} {}", c.cause, pct(c.share_of_failed)))
             .collect();
         println!("failed paths, first cause: {}", text.join(", "));
+    }
+}
+
+/// A dollar amount in three significant figures for a one-line summary: "$950",
+/// "$61K", "$1.12M".
+fn short_dollars(v: f64) -> String {
+    if !v.is_finite() {
+        return "n/a".into();
+    }
+    let (sign, a) = (if v < 0.0 { "-" } else { "" }, v.abs());
+    // The unit is chosen after rounding, so $999,600 prints as $1.00M, not $1000K.
+    let scaled = |unit: f64, suffix: &str| -> Option<String> {
+        let x = a / unit;
+        let decimals = if x >= 99.95 {
+            0
+        } else if x >= 9.995 {
+            1
+        } else {
+            2
+        };
+        let text = format!("{x:.decimals$}");
+        (text.parse::<f64>().unwrap_or(x) < 1_000.0).then(|| format!("{sign}${text}{suffix}"))
+    };
+    if a < 999.5 {
+        return format!("{sign}${a:.0}");
+    }
+    if a < 999_500.0 {
+        return format!("{sign}${:.0}K", a / 1e3);
+    }
+    scaled(1e6, "M")
+        .or_else(|| scaled(1e9, "B"))
+        .unwrap_or_else(|| format!("{sign}${:.0}B", a / 1e9))
+}
+
+/// The four lines `run` adds for a plan with private-company equity; empty for a
+/// plan without.
+fn equity_lines(summary: &Summary) -> Vec<String> {
+    let Some(e) = &summary.equity else {
+        return Vec::new();
+    };
+    // The outcome classes in `EquityOutcome` order, in the words of the headline.
+    const NAMES: [&str; 4] = ["fails", "no outcome", "acquired", "IPO"];
+    let by_name = |values: Vec<String>| -> String {
+        NAMES
+            .iter()
+            .zip(values)
+            .map(|(name, v)| format!("{name} {v}"))
+            .collect::<Vec<_>>()
+            .join(" / ")
+    };
+    vec![
+        format!(
+            "startup equity         {}: {}",
+            e.company,
+            by_name(e.outcomes.iter().map(|o| pct(o.share.value)).collect())
+        ),
+        format!(
+            "equity proceeds        nothing in {} of paths; after cost and tax p10 {} / p50 {} / p90 {} (mean {} +/- {})",
+            pct(e.nothing_rate.value),
+            short_dollars(e.net_proceeds.p10),
+            short_dollars(e.net_proceeds.p50),
+            short_dollars(e.net_proceeds.p90),
+            short_dollars(e.net_proceeds_mean.value),
+            short_dollars(e.net_proceeds_mean.std_error)
+        ),
+        format!(
+            "options exercised      in {} of paths (median cost {}); more paid in than came back in {}",
+            pct(e.exercised_rate.value),
+            short_dollars(e.exercise_cost.p50),
+            pct(e.loss_rate.value)
+        ),
+        format!(
+            "success by outcome     {}",
+            by_name(
+                e.by_outcome
+                    .iter()
+                    .map(|c| if c.enough {
+                        pct(c.success_rate.value)
+                    } else {
+                        format!("n/a ({} paths)", c.paths)
+                    })
+                    .collect()
+            )
+        ),
+    ]
+}
+
+/// The text form of `equity-preview`.
+fn print_equity_preview(name: &str, p: &EquityPreview) {
+    let kind = |k: OutcomeKind| match k {
+        OutcomeKind::Fails => "fails",
+        OutcomeKind::Acquired => "acquired",
+        OutcomeKind::Ipo => "goes public",
+        OutcomeKind::StillPrivate => "still private",
+    };
+    println!("{name}: what the holdings could pay, before tax, in today's dollars");
+    println!("draws                  {}", p.draws);
+    println!("odds for the next ten years (typical for the stage in brackets)");
+    for row in &p.table {
+        let typical: f64 = p
+            .typical
+            .iter()
+            .filter(|t| t.kind == row.kind)
+            .map(|t| t.probability)
+            .sum();
+        let detail = match row.kind {
+            OutcomeKind::Fails => format!("in years {:.1} to {:.1}", row.years_from, row.years_to),
+            OutcomeKind::StillPrivate => "the same odds apply again for the next ten".into(),
+            OutcomeKind::Acquired | OutcomeKind::Ipo => format!(
+                "in years {:.1} to {:.1} at {:.2}x to {:.2}x the last round",
+                row.years_from, row.years_to, row.multiple_low, row.multiple_high
+            ),
+        };
+        println!(
+            "  {:<14} {:>6}  [{:>6}]  {detail}",
+            kind(row.kind),
+            pct(row.probability),
+            pct(typical)
+        );
+    }
+    println!(
+        "in the end             fails {} / written off after thirty years {} / acquired {} / IPO {}",
+        pct(p.outcome_shares[0]),
+        pct(p.outcome_shares[1]),
+        pct(p.outcome_shares[2]),
+        pct(p.outcome_shares[3])
+    );
+    println!(
+        "paper value today      {} vested, {} in all, at the last round's price",
+        dollars(p.paper_value_vested),
+        dollars(p.paper_value_total)
+    );
+    println!(
+        "cost to exercise       {} for the vested options, {} for all",
+        dollars(p.exercise_cost_vested),
+        dollars(p.exercise_cost_total)
+    );
+    println!(
+        "spread if exercised now {} on incentive options (counted for AMT), {} on non-qualified options (taxed as pay), at a 409A value of ${:.2}",
+        dollars(p.spread_iso_vested),
+        dollars(p.spread_nso_vested),
+        p.fmv_409a
+    );
+    println!(
+        "pays nothing           {} of draws ({} of acquisitions pay common stock nothing; {} of IPOs price below the last round)",
+        pct(p.nothing_share),
+        pct(p.acquisition_zero_share),
+        pct(p.ipo_below_last_round_share)
+    );
+    println!(
+        "payout, all draws      p10 {} / p25 {} / p50 {} / p75 {} / p90 {}",
+        dollars(p.quantiles[0]),
+        dollars(p.quantiles[1]),
+        dollars(p.quantiles[2]),
+        dollars(p.quantiles[3]),
+        dollars(p.quantiles[4])
+    );
+    if p.years_to_payout_p50.is_finite() {
+        println!(
+            "payout, when it pays   p10 {} / p50 {} / p90 {}; median wait {:.1} years",
+            dollars(p.if_paid[0]),
+            dollars(p.if_paid[1]),
+            dollars(p.if_paid[2]),
+            p.years_to_payout_p50
+        );
+    }
+    println!(
+        "a share is worth       {:.2}x the last round's price on average at the outcome ({:.2}x at typical odds); preference overhang {}",
+        p.implied_multiple,
+        p.typical_implied_multiple,
+        pct(p.preference_overhang)
+    );
+    println!(
+        "tender offers          {} a year on average over every future; at least one before the outcome in {} of draws",
+        pct(p.tender_annual_probability),
+        pct(p.tender_before_share)
+    );
+    if let Some(months) = p.option_deadline_months {
+        let then = if p.option_deadline_cost > 0.0 {
+            format!(
+                "exercising then costs {} before tax, or the options lapse",
+                dollars(p.option_deadline_cost)
+            )
+        } else {
+            "the options due then lapse".to_string()
+        };
+        println!(
+            "option deadline        in {months} months unless a sale or listing comes first; {then}; it comes first in {} of draws",
+            pct(p.deadline_before_outcome_share)
+        );
     }
 }
 
@@ -458,13 +670,26 @@ fn print_trace(trace: &PathTrace) {
         ("mortgage", "mortgage"),
         ("debt", "debt"),
     ];
+    // Private-company equity, shown only on a path where it moved.
+    let equity = [
+        ("equity in", "income_equity"),
+        ("exercise", "equity_exercise"),
+        ("on paper", "equity_paper_value"),
+    ];
+    let has_equity = equity
+        .iter()
+        .any(|(_, key)| column(key).iter().any(|v| *v != 0.0));
+    let shown: Vec<(&str, &str)> = shown
+        .into_iter()
+        .chain(equity.into_iter().filter(|_| has_equity))
+        .collect();
     let columns: Vec<Vec<f64>> = shown.iter().map(|(_, key)| column(key)).collect();
     println!(
         "path {} (seed {}), {} months, today's dollars",
         trace.path_index, trace.seed, trace.months
     );
     print!("year  status          ");
-    for (label, _) in shown {
+    for (label, _) in &shown {
         print!("{label:>12}");
     }
     println!();
@@ -875,6 +1100,69 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             );
             Ok(ExitCode::SUCCESS)
         }
+        Command::EquityPreview {
+            file,
+            company,
+            draws,
+            json,
+        } => {
+            let profile = load(&file)?;
+            let companies = &profile.private_equity;
+            let index = match &company {
+                Some(id) => companies.iter().position(|c| &c.id == id).ok_or_else(|| {
+                    let ids: Vec<&str> = companies.iter().map(|c| c.id.as_str()).collect();
+                    format!(
+                        "no company with id {id:?} in private_equity (there: {})",
+                        if ids.is_empty() {
+                            "none".to_string()
+                        } else {
+                            ids.join(", ")
+                        }
+                    )
+                })?,
+                None if companies.is_empty() => {
+                    return Err(format!(
+                        "{} has no private_equity company to preview",
+                        file.display()
+                    ))
+                }
+                None => equity::primary_company(companies),
+            };
+            let company = &companies[index];
+            // The same refusal as `equity::preview_json`: a company the simulation
+            // would reject gets no preview.
+            if let Some(issue) = firesight_core::validate::validate_company(company)
+                .errors
+                .first()
+            {
+                return Err(format!(
+                    "{}, company {:?}: {}: {}",
+                    file.display(),
+                    company.id,
+                    issue.path.trim_start_matches('/'),
+                    issue.message
+                ));
+            }
+            let draws = draws.map_or(0, |d| {
+                d.clamp(equity::PREVIEW_MIN_DRAWS, equity::PREVIEW_MAX_DRAWS)
+            });
+            let params = EquityParams::from_data(Data::embedded());
+            let preview = equity::preview(company, &params, draws);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&preview).map_err(|e| e.to_string())?
+                );
+            } else {
+                let name = if company.name.trim().is_empty() {
+                    &company.id
+                } else {
+                    &company.name
+                };
+                print_equity_preview(name, &preview);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Bench {
             file,
             paths,
@@ -979,5 +1267,179 @@ mod tests {
         assert_eq!(age(f64::NAN), "never");
         assert!(parse_metric("success_rate").is_ok());
         assert!(parse_metric("nope").is_err());
+        for (v, text) in [
+            (0.0, "$0"),
+            (949.6, "$950"),
+            (61_234.0, "$61K"),
+            (355_600.0, "$356K"),
+            (999_600.0, "$1.00M"),
+            (1_120_000.0, "$1.12M"),
+            (14_260_000.0, "$14.3M"),
+            (250_000_000.0, "$250M"),
+            (999_700_000.0, "$1.00B"),
+            (3_400_000_000.0, "$3.40B"),
+            (-38_400.0, "-$38K"),
+        ] {
+            assert_eq!(short_dollars(v), text);
+        }
+        assert_eq!(short_dollars(f64::NAN), "n/a");
+    }
+
+    #[test]
+    fn the_headline_gains_four_lines_for_a_plan_with_private_equity() {
+        let examples = Profile::examples(EXAMPLE_START);
+        let pool = pool(Some(2)).unwrap();
+        // The older demos print what they always printed.
+        let plan = compile(&examples[0].profile).unwrap();
+        let summary = plan.summarize(&simulate(&plan, 3, 200, &pool));
+        assert!(equity_lines(&summary).is_empty());
+
+        let plan = compile(&examples[3].profile).unwrap();
+        let summary = plan.summarize(&simulate(&plan, 3, 600, &pool));
+        let lines = equity_lines(&summary);
+        assert_eq!(lines.len(), 4);
+        for (line, start) in lines.iter().zip([
+            "startup equity         Northwind Robotics: fails ",
+            "equity proceeds        nothing in ",
+            "options exercised      in ",
+            "success by outcome     fails ",
+        ]) {
+            assert!(line.starts_with(start), "{line}");
+            assert!(!line.contains("NaN") && !line.contains("inf"), "{line}");
+        }
+        assert!(lines[0].contains(" / no outcome ") && lines[0].contains(" / IPO "));
+        // The shares on the first line are those of the summary and add up.
+        let e = summary.equity.as_ref().unwrap();
+        let total: f64 = e.outcomes.iter().map(|o| o.share.value).sum();
+        assert!((total - 1.0).abs() < 1e-4, "{total}");
+        assert!(lines[0].contains(&format!("fails {}", pct(e.outcomes[0].share.value))));
+        assert!(lines[1].contains(&format!("p50 {}", short_dollars(e.net_proceeds.p50))));
+        assert!(lines[1].contains(" +/- $"));
+
+        // A class too small to report says so instead of quoting a rate.
+        let small = plan.summarize(&simulate(&plan, 3, 40, &pool));
+        let line = &equity_lines(&small)[3];
+        assert!(line.contains("n/a ("), "{line}");
+    }
+
+    #[test]
+    fn the_equity_preview_command_parses_and_previews_the_demo() {
+        let cli = Cli::try_parse_from([
+            "firesight",
+            "equity-preview",
+            "p.json",
+            "--company",
+            "northwind",
+            "--draws",
+            "500",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::EquityPreview { ref company, draws: Some(500), json: true, .. }
+                if company.as_deref() == Some("northwind")
+        ));
+        // The demo file on disk, through the command itself.
+        let file = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/startup-employee.json"
+        ));
+        for json in [false, true] {
+            let code = run(Cli {
+                command: Command::EquityPreview {
+                    file: file.clone(),
+                    company: None,
+                    draws: Some(300),
+                    json,
+                },
+            })
+            .unwrap();
+            assert_eq!(code, ExitCode::SUCCESS);
+        }
+        let err = run(Cli {
+            command: Command::EquityPreview {
+                file: file.clone(),
+                company: Some("nope".into()),
+                draws: None,
+                json: true,
+            },
+        })
+        .unwrap_err();
+        assert!(err.contains("nope") && err.contains("northwind"), "{err}");
+        let plain = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/early-career-saver.json"
+        ));
+        let err = run(Cli {
+            command: Command::EquityPreview {
+                file: plain,
+                company: None,
+                draws: None,
+                json: false,
+            },
+        })
+        .unwrap_err();
+        assert!(err.contains("no private_equity company"), "{err}");
+    }
+
+    #[test]
+    fn the_examples_command_writes_five_files() {
+        let dir = std::env::temp_dir().join(format!("firesight-examples-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let code = run(Cli {
+            command: Command::Examples {
+                dir: dir.clone(),
+                start: None,
+            },
+        })
+        .unwrap();
+        assert_eq!(code, ExitCode::SUCCESS);
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "dual-income-family.json",
+                "early-career-saver.json",
+                "full-life.json",
+                "side-hustle-landlord.json",
+                "startup-employee.json"
+            ]
+        );
+        // What it writes is the checked-in file.
+        let written = std::fs::read_to_string(dir.join("startup-employee.json")).unwrap();
+        let checked_in = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/startup-employee.json"
+        ))
+        .unwrap();
+        assert_eq!(written, checked_in);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn trace_by_accepts_the_equity_scalars() {
+        for key in [
+            "equity_outcome",
+            "equity_event_age",
+            "equity_gross_proceeds",
+            "equity_exercise_cost",
+            "equity_tender_proceeds",
+            "equity_net_proceeds",
+        ] {
+            assert!(PathScalar::from_key(key).is_some(), "{key}");
+        }
+        let plan = compile(&Profile::examples(EXAMPLE_START)[3].profile).unwrap();
+        let acc = simulate(&plan, 1, 300, &pool(Some(2)).unwrap());
+        let best = Summary::path_at_quantile(&acc, PathScalar::EquityNetProceeds, 1.0).unwrap();
+        let trace = sim::trace_path(&plan, 1, best);
+        assert!(trace.events.iter().any(|e| matches!(
+            e.kind.key(),
+            "company_ipo" | "company_acquired" | "tender_offer"
+        )));
     }
 }

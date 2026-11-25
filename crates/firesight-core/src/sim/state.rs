@@ -8,6 +8,7 @@ use crate::benefits::{BenefitBasis, Claimant, EarningsRecord, MonthlyBenefits};
 use crate::career::{JobState, SelfEmploymentState};
 use crate::decumulation::{PlanInputs, SpendingState, WithdrawalPlan};
 use crate::economy::{EconomyPath, EconomyStreams, ResolvedStress};
+use crate::equity::{CompanyState, Link};
 use crate::health::{CoveragePhase, HealthState};
 use crate::housing::PropertyState;
 use crate::model::{EmployerPlan, YearMonth};
@@ -68,6 +69,21 @@ pub(crate) struct StreamRt {
     pub last: f64,
 }
 
+/// A private company on a path.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct CompanyRt {
+    pub st: CompanyState,
+    /// This month's word from the company's stream, as a uniform.
+    pub u_tender: f64,
+    /// The owner has been in the household at some point (so there is something to
+    /// inherit when they die).
+    pub joined: bool,
+    /// The owner has died and the holdings have passed to the survivor.
+    pub passed_on: bool,
+    /// The owner was laid off from the linked job since the last equity step.
+    pub sever_next: bool,
+}
+
 /// A debt on a path.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct DebtRt {
@@ -110,6 +126,8 @@ pub(crate) struct State {
     /// One per self-employment income (`Stream::Business`); read only when the
     /// income has a closure risk or monthly lumpiness.
     pub rng_business: Vec<Rng>,
+    /// One stream per private company: four words at path start, one a month.
+    pub rng_company: Vec<Rng>,
     // People.
     pub n: usize,
     pub death_month: [u32; MAX_PEOPLE],
@@ -146,6 +164,7 @@ pub(crate) struct State {
     pub streams: Vec<StreamRt>,
     pub props: Vec<PropertyState>,
     pub debts: Vec<DebtRt>,
+    pub companies: Vec<CompanyRt>,
     pub freed_payments: f64,
     /// False once every debt is repaid (a financed expense switches it back on).
     pub debts_active: bool,
@@ -291,7 +310,54 @@ pub(crate) struct State {
     pub last_spend: f64,
     pub wage_like: f64,
     pub port_return: f64,
+    // Private-company equity (all unused when the plan has none).
+    /// Copy of `Plan::has_equity`.
+    pub has_equity: bool,
+    /// The year's one-off equity amounts, which are also in `ty`: a partial first
+    /// year is annualised without them.
+    pub ty_once: TaxInputs,
+    /// Minimum tax credit carried into the current year, nominal.
+    pub amt_credit: f64,
+    /// Wage-type equity income so far this year per person (the supplemental
+    /// withholding threshold).
+    pub eq_supp_ytd: [f64; MAX_PEOPLE],
+    /// Federal tax withheld on equity income so far this year.
+    pub eq_wh_ytd: f64,
+    /// Additional Medicare tax withheld on equity income so far this year.
+    pub eq_addl_medicare_ytd: f64,
+    /// Untaxed gain of shares moved to the single-stock sleeve this year (value
+    /// less basis): the year's close charges the equity with the tax it would bear.
+    pub eq_kept_gain: f64,
+    /// The year as the last annual plan expected it, without the one-off equity
+    /// amounts and at the scale of the return (annualised in a part year): the base
+    /// on which the tax of an exercise is priced.
+    pub eq_base: TaxInputs,
+    /// Cash held out of this month's sweep: net proceeds of the month's events and
+    /// the estimated tax on incentive options exercised.
+    pub eq_hold: f64,
+    /// Instalments still to pay in a year with an equity event.
+    pub eq_reserve: f64,
+    /// An event this month warrants re-planning the year next month.
+    pub eq_replan: bool,
+    /// Small taxable amounts since the last plan (swept into a re-plan each quarter).
+    pub eq_unplanned: bool,
+    /// The year has had a taxable equity event.
+    pub eq_event_year: bool,
+    /// The balance due next April is for a year that had one.
+    pub eq_due: bool,
+    /// Paper value of vested holdings after this month's step, nominal.
+    pub eq_paper: f64,
+    /// Lifetime totals, today's dollars: cash and share value received, strike
+    /// paid, the part received in tenders, and the tax the equity caused.
+    pub eq_gross_real: f64,
+    pub eq_cost_real: f64,
+    pub eq_tender_real: f64,
+    pub eq_tax_real: f64,
+    /// Month of the primary company's failure, sale or listing; `i32::MAX` if none.
+    pub eq_event_month: i32,
     // Conservation checks (check mode).
+    pub chk_eq_start: f64,
+    pub chk_eq_flow: f64,
     pub chk_other_start: f64,
     pub chk_prop_start: f64,
     pub chk_mort_start: f64,
@@ -333,6 +399,7 @@ impl State {
             sx: super::spendx::SpendXState::new(plan),
             hx: super::housing_ext::HxState::new(plan),
             rng_business: vec![rng.clone(); plan.selfemp.len()],
+            rng_company: vec![rng.clone(); plan.companies.len()],
             n: plan.people.len(),
             death_month: [0; MAX_PEOPLE],
             alive: [false; MAX_PEOPLE],
@@ -376,6 +443,7 @@ impl State {
             ],
             props: vec![PropertyState::default(); plan.props.len()],
             debts: vec![DebtRt::default(); plan.debts.len()],
+            companies: vec![CompanyRt::default(); plan.companies.len()],
             freed_payments: 0.0,
             debts_active: true,
             item_scale: vec![1.0; plan.items.len()],
@@ -494,6 +562,28 @@ impl State {
             last_spend: 0.0,
             wage_like: 0.0,
             port_return: 0.0,
+            has_equity: plan.has_equity,
+            ty_once: TaxInputs::default(),
+            amt_credit: 0.0,
+            eq_supp_ytd: [0.0; MAX_PEOPLE],
+            eq_wh_ytd: 0.0,
+            eq_addl_medicare_ytd: 0.0,
+            eq_kept_gain: 0.0,
+            eq_base: TaxInputs::default(),
+            eq_hold: 0.0,
+            eq_reserve: 0.0,
+            eq_replan: false,
+            eq_unplanned: false,
+            eq_event_year: false,
+            eq_due: false,
+            eq_paper: 0.0,
+            eq_gross_real: 0.0,
+            eq_cost_real: 0.0,
+            eq_tender_real: 0.0,
+            eq_tax_real: 0.0,
+            eq_event_month: i32::MAX,
+            chk_eq_start: 0.0,
+            chk_eq_flow: 0.0,
             chk_other_start: 0.0,
             chk_prop_start: 0.0,
             chk_mort_start: 0.0,
@@ -851,6 +941,59 @@ impl State {
         self.hd.begin(plan, seed, path);
         if detail {
             self.plan_market_notes(plan, econ);
+        }
+
+        // Private companies: the fate of each is drawn here, four words from its own
+        // stream whatever its settings, after the economy path exists (an IPO month
+        // is placed in an open window of that path).
+        self.has_equity = plan.has_equity;
+        self.ty_once = TaxInputs::default();
+        self.amt_credit = plan.amt_credit0;
+        self.eq_supp_ytd = [0.0; MAX_PEOPLE];
+        self.eq_wh_ytd = 0.0;
+        self.eq_addl_medicare_ytd = 0.0;
+        self.eq_kept_gain = 0.0;
+        self.eq_base = TaxInputs::default();
+        self.eq_hold = 0.0;
+        self.eq_reserve = 0.0;
+        self.eq_replan = false;
+        self.eq_unplanned = false;
+        self.eq_event_year = false;
+        self.eq_due = false;
+        self.eq_paper = 0.0;
+        self.eq_gross_real = 0.0;
+        self.eq_cost_real = 0.0;
+        self.eq_tender_real = 0.0;
+        self.eq_tax_real = 0.0;
+        self.eq_event_month = i32::MAX;
+        self.chk_eq_start = 0.0;
+        self.chk_eq_flow = 0.0;
+        for (i, cp) in plan.companies.iter().enumerate() {
+            self.rng_company[i] = Rng::stream(seed, path, Stream::PrivateCompany(i));
+            // A job whose owner joins the household later has no runtime until then,
+            // but it is held on its own dates all the same: the equity vests meanwhile.
+            let link = match cp.job {
+                Some(j) if self.jobs[j].begun => Link::Active,
+                Some(j) if !self.present[cp.owner] && plan.jobs[j].own_start <= 0 => Link::Active,
+                _ => Link::Pending,
+            };
+            let st = cp.model.begin(link, &mut self.rng_company[i], Some(&*econ));
+            let joined = self.present[cp.owner];
+            self.companies[i] = CompanyRt {
+                st,
+                u_tender: 0.0,
+                joined,
+                passed_on: false,
+                sever_next: false,
+            };
+            if joined {
+                // Incentive options exercised earlier this calendar year count toward
+                // this year's minimum tax; a sale later in the year reverses them.
+                let spread = cp.model.start_amt_adjustment();
+                self.ty.amt_iso_adjustment += spread;
+                self.ty_once.amt_iso_adjustment += spread;
+                self.eq_event_year |= spread > 0.0;
+            }
         }
         // The law, filing status and year-end ages of the first year must exist
         // before month 0's calendar step: a household retired from the start runs

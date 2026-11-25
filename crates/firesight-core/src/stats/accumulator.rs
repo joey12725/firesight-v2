@@ -429,7 +429,7 @@ struct WireOwned {
 impl Accumulator {
     /// Layout version written by this build. Bump whenever a field, the histogram
     /// grid or one of the series / scalar enums changes.
-    pub const VERSION: u32 = 6;
+    pub const VERSION: u32 = 7;
 
     /// An empty accumulator for a horizon of `years` calendar years.
     pub fn new(years: u32) -> Accumulator {
@@ -783,14 +783,17 @@ impl Recorder for Accumulator {
         // iterator fixes needs no bounds check per series.
         for (column, v) in self.sums.chunks_exact_mut(years).zip(&record.values) {
             // `as` saturates and maps NaN to 0, identically on every platform.
-            column[year_index] += v.round() as i64;
+            // Saturating: inputs are bounded by validation, but a total must never
+            // wrap (or panic in a debug build) whatever reaches it.
+            column[year_index] = column[year_index].saturating_add(v.round() as i64);
         }
         if record.status == Status::Depleted {
             let short = (record.get(YearSeries::SpendPlanned)
                 - values[HistSeries::Spending.index()])
             .max(0.0)
                 * annualise;
-            self.shortfall[year_index] += short.round() as i64;
+            let slot = &mut self.shortfall[year_index];
+            *slot = slot.saturating_add(short.round() as i64);
         }
         let flags = self.current.tally.record(record, &values);
         let cuts = &mut self.cuts[year_index * CUT_COUNTS..(year_index + 1) * CUT_COUNTS];
@@ -1157,6 +1160,57 @@ mod tests {
     }
 
     #[test]
+    fn merged_chunks_carry_the_equity_scalars_exactly() {
+        // The same with private-company equity on every path: the six scalars
+        // ride in the rows, so the bytes and the equity summary are those of one
+        // run whatever the chunking.
+        use crate::stats::Summary;
+        let kit = Synthetic {
+            equity: true,
+            ..Synthetic::default()
+        };
+        let whole = run(&kit, 0..1_000);
+        let whole_bytes = whole.to_bytes();
+        let chunks: Vec<Vec<u8>> = (0..10)
+            .map(|i| run(&kit, i * 100..(i + 1) * 100).to_bytes())
+            .collect();
+        let expected = Summary::from_accumulator(&whole, &kit.context());
+        assert_eq!(expected.equity.as_ref().unwrap().paths, 1_000);
+        for order in [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+            [3, 7, 0, 9, 1, 5, 8, 2, 6, 4],
+        ] {
+            let mut acc = Accumulator::new(kit.years);
+            for i in order {
+                acc.merge(&Accumulator::from_bytes(&chunks[i]).unwrap())
+                    .unwrap();
+            }
+            assert_eq!(acc.to_bytes(), whole_bytes, "order {order:?}");
+            let merged = Summary::from_accumulator(&acc, &kit.context());
+            // Compared as JSON: a missing number is NaN, which does not equal itself.
+            assert_eq!(
+                serde_json::to_string(&merged.equity).unwrap(),
+                serde_json::to_string(&expected.equity).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_string(&merged).unwrap(),
+                serde_json::to_string(&expected).unwrap()
+            );
+        }
+        // The equity scalars are the only difference from the plain kit.
+        let plain = run(&Synthetic::default(), 0..1_000);
+        for ((_, with), (_, without)) in whole.rows().zip(plain.rows()) {
+            let first = PathScalar::EquityOutcome.index();
+            assert!(with[..first]
+                .iter()
+                .zip(&without[..first])
+                .all(|(a, b)| a.to_bits() == b.to_bits()));
+            assert!(with[first].is_finite() && without[first..].iter().all(|v| v.is_nan()));
+        }
+    }
+
+    #[test]
     fn merge_rejects_overlap_and_mismatch() {
         let kit = Synthetic::default();
         let mut a = run(&kit, 0..10);
@@ -1203,6 +1257,18 @@ mod tests {
             err.to_string().contains("version 1 is not supported"),
             "{err}"
         );
+        // The layouts before `medicaid_age` and the six equity scalars and three
+        // series were appended (two branches each called theirs version 6).
+        for v in [5u8, 6] {
+            let mut old = bytes.clone();
+            old[0] = v;
+            let err = Accumulator::from_bytes(&old).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains(&format!("version {v} is not supported (expected 7)")),
+                "{err}"
+            );
+        }
         assert!(Accumulator::from_bytes(&[]).is_err());
         assert!(Accumulator::from_bytes(&bytes[..10]).is_err());
         assert!(Accumulator::from_bytes(&bytes[..bytes.len() - 1]).is_err());
@@ -1234,8 +1300,8 @@ mod tests {
         println!("500-path chunk: first {first} bytes, later {later} bytes");
         let scalars = 500 * PathScalar::COUNT * 4;
         println!("  of which scalars {scalars} bytes");
-        assert!(first < 200_000, "{first}");
-        assert!(later < 160_000, "{later}");
+        assert!(first < 215_000, "{first}");
+        assert!(later < 175_000, "{later}");
         assert!(later < first);
     }
 

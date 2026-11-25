@@ -8,6 +8,7 @@ import { SECTION_TITLE } from './realism';
 import { Section } from './Section';
 import { AccountsSection } from './sections/Accounts';
 import { AssumptionsSection } from './sections/Assumptions';
+import { EquitySection } from './sections/Equity';
 import { EventsSection } from './sections/Events';
 import { HouseholdSection } from './sections/Household';
 import { IncomeSection } from './sections/Income';
@@ -29,6 +30,7 @@ interface SectionDef {
 export const SECTIONS: SectionDef[] = [
   { id: 'household', icon: 'users', title: SECTION_TITLE.household, paths: ['/household', '/name'], summary: summary.householdSummary, Body: HouseholdSection },
   { id: 'income', icon: 'briefcase', title: SECTION_TITLE.income, paths: ['/incomes'], summary: summary.incomeSummary, Body: IncomeSection },
+  { id: 'equity', icon: 'rocket', title: 'Startup equity', paths: ['/private_equity'], summary: summary.equitySummary, Body: EquitySection },
   { id: 'spending', icon: 'creditCard', title: SECTION_TITLE.spending, paths: ['/spending'], summary: summary.spendingSummary, Body: SpendingSection },
   { id: 'accounts', icon: 'landmark', title: SECTION_TITLE.accounts, paths: ['/accounts', '/portfolio'], summary: summary.accountsSummary, Body: AccountsSection },
   { id: 'property', icon: 'home', title: SECTION_TITLE.property, paths: ['/properties', '/debts', '/debt_policy'], summary: summary.propertySummary, Body: PropertySection },

@@ -40,7 +40,7 @@ pub mod children;
 use serde_json::Value;
 
 use crate::data::Data;
-use crate::math;
+use crate::math::{self, normal_cdf};
 use crate::model::{
     EarlyRetirementCoverage, HealthStatus, Healthcare, HealthcareMode, Longevity, PlanTier, Sex,
     YearMonth,
@@ -169,11 +169,6 @@ fn inverse_normal_cdf(p: f64) -> f64 {
     } else {
         -tail((-2.0 * math::ln(1.0 - p)).sqrt())
     }
-}
-
-/// Standard normal distribution function (pure-Rust `erfc`, deterministic).
-fn normal_cdf(x: f64) -> f64 {
-    0.5 * math::erfc(-x * std::f64::consts::FRAC_1_SQRT_2)
 }
 
 /// One uniform strictly inside `(0, 1)` from exactly one 64-bit draw.

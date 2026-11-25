@@ -2,7 +2,8 @@
 // numbers: dollars, decimal fractions for rates, years.
 import { format } from 'd3-format';
 
-export type NumberKind = 'money' | 'percent' | 'years' | 'months' | 'number' | 'integer';
+/** `count` is a whole number shown with thousands separators (shares, options); `integer` is shown bare (a year, a seed). */
+export type NumberKind = 'money' | 'percent' | 'years' | 'months' | 'number' | 'integer' | 'count';
 
 const SUFFIX: Record<string, number> = { k: 1e3, m: 1e6, mm: 1e6, b: 1e9, bn: 1e9 };
 
@@ -29,6 +30,7 @@ export function parseNumber(text: string, kind: NumberKind): number | null {
       return scale === undefined ? null : n * scale;
     }
     case 'integer':
+    case 'count':
       return unit === '' ? Math.round(n) : SUFFIX[unit] === undefined ? null : Math.round(n * (SUFFIX[unit] as number));
     case 'percent':
       return unit === '' || unit === '%' || unit === 'pct' ? round(n / 100, 8) : null;
@@ -55,9 +57,13 @@ const grouped2 = format(',.2f');
 export function formatForInput(value: number, kind: NumberKind): string {
   switch (kind) {
     case 'money':
+      // A price under ten cents (a strike of $0.0125) keeps its significant figures; two decimals would show 0.01.
+      if (value !== 0 && Math.abs(value) < 0.1) return `${value < 0 ? '-' : ''}${moneyPrice(Math.abs(value)).slice(1)}`;
       return Number.isInteger(value) || Math.abs(value) >= 1000 ? grouped(value) : grouped2(value);
     case 'percent':
       return String(round(value * 100, 4));
+    case 'count':
+      return grouped(Math.round(value));
     case 'integer':
     case 'months':
       return String(Math.round(value));
@@ -82,6 +88,24 @@ export function moneyCompact(value: number): string {
   if (a >= 1e4) return `${sign}$${trim(a / 1e3, 0)}k`;
   if (a >= 1e3) return `${sign}$${trim(a / 1e3, 1)}k`;
   return `${sign}$${grouped(a)}`;
+}
+
+/**
+ * A price per share, which `money` would round to whole dollars: "$1.20", "$30.25",
+ * "$1,250.00". Below ten cents it keeps four significant figures ("$0.0125"), so a
+ * fraction-of-a-cent strike does not read as nothing. Zero is "$0".
+ */
+export function moneyPrice(value: number): string {
+  if (value === 0) return '$0';
+  const sign = value < 0 ? '−' : '';
+  const a = Math.abs(value);
+  if (!(a < 0.1)) return `${sign}$${grouped2(a)}`;
+  const rounded = Number(a.toPrecision(4));
+  if (rounded >= 0.1) return `${sign}$${grouped2(rounded)}`;
+  // Fixed notation with just enough places for four significant figures, trailing zeros dropped.
+  const places = Math.min(20, 3 - Math.floor(Math.log10(rounded)));
+  const digits = rounded.toFixed(places).replace(/0+$/, '');
+  return /[1-9]/.test(digits) ? `${sign}$${digits}` : '$0';
 }
 
 function trim(n: number, digits: number): string {

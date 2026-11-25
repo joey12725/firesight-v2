@@ -122,12 +122,14 @@ fn flat_lines(p: &TaxYearParams, w: &Work, lines: &mut Lines) {
 }
 
 fn income_lines(x: &TaxInputs, w: &Work, lines: &mut Lines) {
-    lines.push_nonzero(
-        "wages",
-        "Wages",
-        w.wages,
-        "Gross pay including bonuses and vested equity".into(),
-    );
+    let mut wages_note = String::from("Gross pay including bonuses and vested equity");
+    if w.wages_no_fica > 0.0 {
+        wages_note.push_str(&format!(
+            "; includes {} of incentive-option income that bears no payroll tax",
+            usd(w.wages_no_fica)
+        ));
+    }
+    lines.push_nonzero("wages", "Wages", w.wages, wages_note);
     lines.push_nonzero(
         "self_employment",
         "Self-employment profit",
@@ -169,6 +171,13 @@ fn income_lines(x: &TaxInputs, w: &Work, lines: &mut Lines) {
         }
         lines.push("capital_gains", "Capital gains", gains, note);
     }
+    // For information: not part of income, so not in the sum to AGI.
+    lines.push_nonzero(
+        "qsbs_excluded_gain",
+        "Gain excluded as qualified small business stock",
+        x.qsbs_excluded_gain.max(0.0),
+        "Left out of federal income; state income tax still applies".into(),
+    );
     lines.push_nonzero(
         "retirement_income",
         "Retirement distributions and pensions",
@@ -337,6 +346,31 @@ fn federal_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) 
             ),
         );
     }
+    if x.amt_applies {
+        lines.push_nonzero(
+            "amt",
+            "Alternative minimum tax",
+            w.amt,
+            format!(
+                "Tentative minimum tax {} less regular tax {}; AMT income {} after an exemption of {}; incentive-option adjustment {}",
+                usd(w.tmt),
+                usd(w.tax_ordinary + w.tax_pref),
+                usd(w.amti),
+                usd(w.amt_exemption),
+                usd(x.amt_iso_adjustment)
+            ),
+        );
+        lines.push_nonzero(
+            "amt_credit",
+            "Minimum tax credit used",
+            -w.amt_credit_used,
+            format!(
+                "{} carried in, {} carried to next year",
+                usd(x.amt_credit_carryforward.max(0.0)),
+                usd(w.amt_credit_out)
+            ),
+        );
+    }
     if w.credit_gross > 0.0 {
         let mut note = format!(
             "{} children under 17 and {} other dependants: {}",
@@ -368,7 +402,12 @@ fn federal_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) 
         "federal_income_tax",
         "Federal income tax after credits",
         w.tax_ordinary + w.tax_pref - w.credit_nonrefundable - w.credit_refundable,
-        "Tax on ordinary income and gains less credits".into(),
+        if w.amt > 0.0 || w.amt_credit_used > 0.0 {
+            "Tax on ordinary income and gains less child and dependant credits; the alternative minimum tax and the minimum tax credit are on their own lines"
+                .into()
+        } else {
+            "Tax on ordinary income and gains less credits".into()
+        },
     );
     lines.push_nonzero(
         "niit",
@@ -462,6 +501,12 @@ fn state_lines(p: &TaxYearParams, x: &TaxInputs, w: &Work, lines: &mut Lines) {
             note.push_str(&format!(
                 ", less {} of excluded capital gains",
                 usd(o.gains_exclusion)
+            ));
+        }
+        if x.qsbs_excluded_gain > 0.0 {
+            note.push_str(&format!(
+                ", plus {} of gain excluded federally as qualified small business stock",
+                usd(x.qsbs_excluded_gain)
             ));
         }
         note.push_str(&format!(

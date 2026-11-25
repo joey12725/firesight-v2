@@ -104,6 +104,24 @@ fn annual_tax_functions_do_not_allocate() {
             checksum += effective_marginal_rate(&p, &x);
             checksum += irmaa_monthly_surcharge(&p, x.filing_status, r.magi_irmaa);
             checksum += rmd_divisor(60 + k, 1950 + k as i32).unwrap_or(0.0);
+
+            // The same household with private-company equity: AMT on, an
+            // incentive-option adjustment, a qualifying-sale adjustment, a credit
+            // carried in, option income without payroll tax and an excluded gain.
+            let equity = TaxInputs {
+                amt_applies: true,
+                amt_iso_adjustment: 9_000.0 * scale,
+                amt_gain_adjustment: -400.0 * scale,
+                amt_credit_carryforward: 1_200.0 * scale,
+                wages_no_fica: [800.0 * scale, 0.0],
+                qsbs_excluded_gain: 5_000.0 * scale,
+                ..x
+            };
+            let r = compute(&p, &equity);
+            checksum += r.total + r.amt + r.amt_credit_used + r.amt_credit_carryforward;
+            checksum += r.tentative_minimum_tax;
+            checksum += room_to_bracket_top(&p, &equity, 0.24).min(1e9);
+            checksum += effective_marginal_rate(&p, &equity);
         }
         // An indexation with nothing derived, and a household abroad.
         let abroad = law
@@ -114,4 +132,14 @@ fn annual_tax_functions_do_not_allocate() {
     let after = allocations();
     assert!(checksum.is_finite());
     assert_eq!(after - before, 0, "tax functions allocated on the heap");
+}
+
+/// The parameter and input types cross the simulation loop by value.
+#[test]
+fn tax_values_stay_copy() {
+    fn is_copy<T: Copy>() {}
+    is_copy::<TaxInputs>();
+    is_copy::<firesight_core::tax::TaxResult>();
+    is_copy::<firesight_core::tax::FederalYear>();
+    is_copy::<firesight_core::tax::TaxYearParams>();
 }

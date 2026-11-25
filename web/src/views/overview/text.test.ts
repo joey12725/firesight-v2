@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as wasm from '@/engine/pkg/firesight_wasm.js';
 import type { Summary } from '@/engine/output-types';
 import type { ExampleProfile } from '@/engine/types';
-import { failureTakeaway, fanTakeaway, fiTakeaway, homeSaleNote, homeSaleSentence, lives, outcomeSentence, plain, samplingNote, spendingTakeaway, statusTakeaway } from './text';
+import { equitySentence, failureTakeaway, fanTakeaway, fiTakeaway, homeSaleNote, homeSaleSentence, lives, outcomeSentence, plain, samplingNote, spendingTakeaway, statusTakeaway } from './text';
 
 let summaries: { slug: string; summary: Summary }[] = [];
 
@@ -18,7 +18,8 @@ beforeAll(() => {
   wasm.initSync({ module: readFileSync(new URL('../../engine/pkg/firesight_wasm_bg.wasm', import.meta.url)) });
   const examples = JSON.parse(wasm.exampleProfiles()) as ExampleProfile[];
   summaries = examples.map((e) => ({ slug: e.slug, summary: run(e.profile, 400) }));
-});
+  // Four households to simulate, on a machine that may be busy.
+}, 120_000);
 
 describe('overview sentences on real engine output', () => {
   it('counts add up and read as natural frequencies', () => {
@@ -54,6 +55,17 @@ describe('overview sentences on real engine output', () => {
       expect(summary.headline.plan_delivered_share.value ?? 0).toBeLessThanOrEqual(1);
       const delivered = /(\d+)% of planned retirement spending is delivered/.exec(spendingTakeaway(summary));
       if (delivered) expect(Number(delivered[1])).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('adds the equity card for a plan with a private company and for no other', () => {
+    for (const { slug, summary } of summaries) {
+      const card = equitySentence(summary, true);
+      if (slug === 'startup-employee') {
+        // "No cash" is the gross count; the lives that end out of pocket are named beside it.
+        expect(card).toMatch(/^If Northwind Robotics fails the plan holds in \d+ of 100 of those lives; if it is sold or listed, in \d+\. The equity pays out no cash in \d+ of 100 lives, and in \d+ it costs more than it returns\.$/);
+        expect(equitySentence(summary, false)).toBe('Startup equity is not counted in this plan.');
+      } else expect(card).toBeNull();
     }
   });
 

@@ -553,7 +553,11 @@ impl Migration<'_> {
                             let mut grant = grant;
                             grant.cliff_months = grant.cliff_months.min(grant.vest_months_remaining);
                             job.equity.push(grant);
-                            self.note(format!("{name}: {count:.0} options are attached to the first job as a grant worth {:.0} at {price} a share, assumed entirely unvested with the full vesting period remaining. v1's estimated IPO date, exercise strategy, ISO/NSO type and 83(b) election have no v2 equivalent; a private company's outcome is now random.", count * price));
+                            if pre_ipo {
+                                self.note(format!("{name}: {count:.0} options are attached to the first job as a grant worth {:.0} at {price} a share (v1's estimated IPO price), assumed entirely unvested with the full vesting period remaining, on the older single-event model. Re-enter the position under Startup equity (private_equity) with the strike, the number of options and the option type to model exercise, tender offers, AMT and capital-gains tax. v1's estimated IPO date and 83(b) election are not carried over; a private company's outcome is now random.", count * price));
+                            } else {
+                                self.note(format!("{name}: {count:.0} options are attached to the first job as a grant worth {:.0} at {price} a share, assumed entirely unvested with the full vesting period remaining. v1's exercise strategy, ISO/NSO type and 83(b) election have no equivalent for options in a listed company.", count * price));
+                            }
                         }
                         None => self.note(format!("{name}: stock options need a job to attach to and none exists; the grant was dropped.")),
                     }

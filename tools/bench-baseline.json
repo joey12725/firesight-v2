@@ -25,6 +25,14 @@
       "threads": 10,
       "calibration": 631.72,
       "machine": "Darwin arm64, 10 cores"
+    },
+    "startup-employee": {
+      "score": 9.62,
+      "paths_per_sec_1t": 5223.0,
+      "paths_per_sec_mt": 23609.0,
+      "threads": 10,
+      "calibration": 542.95,
+      "machine": "Darwin arm64, 10 cores"
     }
   }
 }

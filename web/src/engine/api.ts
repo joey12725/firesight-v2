@@ -3,8 +3,10 @@
 import init, * as wasm from './pkg/firesight_wasm.js';
 import { completeProfile } from './complete';
 import { toEngineError } from './errors';
+import type { EquityPreview } from './equity-types';
 import type { Comparison, PlanPreview, Summary, SummaryDigest } from './output-types';
 import type { Aggregator } from './pool';
+import type * as Gen from './profile';
 import type { ExampleProfile, Lever, PatchOp, Profile, Report } from './types';
 
 let loading: Promise<void> | null = null;
@@ -136,6 +138,20 @@ export function exampleProfiles(): ExampleProfile[] {
  */
 export function planPreview(profile: Profile | string): PlanPreview {
   return call(() => wasm.planPreview(text(profile)));
+}
+
+/**
+ * What one private company's holdings could pay, before tax, with no household
+ * simulated: well under a millisecond at the default number of draws, so it can run on
+ * every edit. `company` is one element of `profile.private_equity`, as an object or as
+ * JSON; fields left out take the engine's defaults, so `{ stage, preferred_price: 1 }`
+ * is enough to read a stage's typical odds and 409A fraction. `draws` of 0 means the
+ * default (4,000); any other number is held between 100 and 50,000. The draws are
+ * fixed, so the same company always gives the same preview. Throws an `EngineError`
+ * naming the offending field when the company does not match the schema.
+ */
+export function equityPreview(company: Gen.PrivateCompany | string, draws = 0): EquityPreview {
+  return call(() => wasm.equityPreview(typeof company === 'string' ? company : JSON.stringify(company), draws));
 }
 
 /** The small form of a run for an LLM tool result, from its serialised accumulator. */

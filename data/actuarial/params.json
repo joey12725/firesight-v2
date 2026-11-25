@@ -84,7 +84,17 @@
     "ssa_early_late": "https://www.ssa.gov/oact/quickcalc/early_late.html",
     "ssa_bendpoints": "https://www.ssa.gov/oact/cola/bendpoints.html",
     "ssa_rtea": "https://www.ssa.gov/oact/cola/rtea.html",
-    "ssa_tr_2026": "https://www.ssa.gov/oact/TR/2026/"
+    "ssa_tr_2026": "https://www.ssa.gov/oact/TR/2026/",
+    "newview_tender_2026": "https://www.nvc.vc/insights/inside-the-tender-offer-2026",
+    "carta_tender_h1_2026": "https://carta.com/data/tender-offer-update-h1-2026/",
+    "carta_ptep": "https://carta.com/learn/equity/leaving-company/post-termination-exercise-period/",
+    "stout_vc_q4_2025": "https://www.stout.com/en/insights/industry-update/venture-capital-industry-update-q4-2025",
+    "nvca_yearbook_2025": "https://nvca.org/wp-content/uploads/2025/03/2025-NVCA-Yearbook.pdf",
+    "pitchbook_nvca_q3_2026": "https://nvca.org/wp-content/uploads/2026/10/Q3-2026-PitchBook-NVCA-Venture-Monitor.pdf",
+    "ritter_ipo_stats": "https://site.warrington.ufl.edu/ritter/files/IPO-Statistics.pdf",
+    "ritter_ipo_age": "https://site.warrington.ufl.edu/ritter/files/IPOs-Age.pdf",
+    "collective_liquidity_series_c": "https://www.collectiveliquidity.com/articles/bets-on-pre-ipo-companies-are-binary-heres-what-smart-investors-do-instead",
+    "onlycfo_options": "https://www.onlycfo.io/p/state-of-private-company-stock-options"
   },
   "mortality": {
     "summary": "Stochastic longevity per person from the SSA 2023 period life table (as used in the 2026 Trustees Report), projected forward with the Trustees' intermediate mortality-improvement rates by age band and sex, times a user health multiplier.",
@@ -2579,6 +2589,7 @@
   "equity_compensation": {
     "summary": "Two different objects: (1) illiquid private-company equity, modelled as a lottery with a random liquidity date; (2) a concentrated position in one listed stock, modelled as market beta plus fat-tailed idiosyncratic risk.",
     "private_company": {
+      "applies_to": "Private-company grants entered on a job (the older single-event model, which is also where a version 1 plan's stock options land). Positions entered under private_equity use the startup_equity block below, not this one.",
       "evidence": {
         "correlation_ventures": {
           "sample": "More than 21,000 US venture financings, 2004-2013, gross multiple realised per financing",
@@ -2653,9 +2664,117 @@
           "series_b_to_c": 0.86,
           "late_stage_pre_ipo": 0.95
         },
-        "default_in_base_plan": "Count private equity at zero in the headline success rate and show the upside as a separate scenario. This is the single most useful honest default."
+        "default_in_base_plan": "A grant entered on a job is counted as modelled. For positions under private_equity the headline also counts the equity as modelled (PrivateCompany.included defaults to true), and every result is shown beside the same plan with the equity counted at zero. An earlier note here recommended counting it at zero in the headline; that is not what ships."
       },
       "confidence": "low-medium (class probabilities are judgement, anchored to the Correlation Ventures distribution and adjusted for common-stock subordination and stage)"
+    },
+    "startup_equity": {
+      "summary": "Outcome model for a holder of private-company stock and options. One fate per company per simulated life: fails, is acquired, goes public, or is still private after ten years, in which case the same odds apply again. Prices are multiples of the latest round, so an option's strike is subtracted afterwards.",
+      "confidence": "low-medium. One number is sourced from a document read directly: the tender cap. The tender price and the exercise window are sourced from summaries only. Everything else is judgement anchored to cohort data: the outcome probabilities, their timing, the price multiples and spreads, the tender rate and whether former employees may sell. Values marked derived are computed from those and are no firmer than their inputs (see derived_from beside each). Plus or minus 0.10 on any failure probability is reasonable (the outlook setting).",
+      "stages": ["seed", "series_a", "series_b", "series_c", "late", "unicorn"],
+      "horizon_years": { "value": 10, "basis": "judgement", "note": "The outcome probabilities describe the next ten years." },
+      "outcome_rounds": { "value": 3, "basis": "judgement", "note": "A company still private at the end of a ten-year round is drawn again from the same table for the next round. After this many rounds with no event it is written off. No source gives odds for companies ten or twenty years past a round; reusing the stage's odds is a judgement. It leaves 0.4% (seed) to 3% (Series C) of companies written off at thirty years." },
+      "outcome_probability": {
+        "basis": "judgement",
+        "anchors": "Series C exits total 0.39: PitchBook 2010-2015 Series C cohort, 38% exited within a decade (via Collective Liquidity, primary for the article). Unicorn still-private 0.30 and exit mix: Strebulaev (seven in ten of all unicorns ever created unexited, a count dominated by recent vintages and so an upper bound, not a ten-year rate; the 0.30 is a judgement well below it; IPO 54 / acquisition 34 / failed 4 among exits to 2022; summary), moved toward acquisition for the post-2022 mix. Seed and A failure: Carta seed-to-A graduation 15-31% within two years (summary), Hall and Woodward 2010 (three quarters of founders get nothing; carried over from the private_company block, not re-checked), Correlation Ventures (64.8% of financings below 1x; carried over, not re-checked).",
+        "fails":         [0.60, 0.48, 0.36, 0.30, 0.18, 0.10],
+        "acquired":      [0.22, 0.30, 0.34, 0.27, 0.30, 0.25],
+        "ipo":           [0.015, 0.03, 0.07, 0.12, 0.22, 0.35],
+        "still_private": [0.165, 0.19, 0.23, 0.31, 0.30, 0.30]
+      },
+      "outlook_shift": { "value": 0.10, "basis": "judgement", "note": "Pessimistic adds this to the failure probability, optimistic subtracts it; the other outcomes are rescaled to keep the total at 1." },
+      "outlook_failure_bounds": { "value": [0.01, 0.95], "basis": "judgement", "note": "The shifted failure probability is kept inside these bounds, so the optimistic unicorn table moves failure by 0.09, not 0.10." },
+      "years_to_outcome": {
+        "basis": "judgement",
+        "note": "Years from today to the outcome within a round: LogNormal(ln(median), sigma) cut off at the ten-year horizon (the draw is the quantile u * CDF(horizon), so the shape below the horizon is kept). The medians below are parameters of the curve before the cut, chosen stage by stage in research-outcomes 9.2 with the anchors below in view; no source gives them by stage. They are not the medians the engine draws: see as_drawn.",
+        "anchors": "NVCA 2025 Yearbook p. 24 and p. 88 (median 5-7 years first VC round to IPO, 3.7-5.3 to acquisition; primary). Ritter Table 4 (median age at IPO 11-12; primary). Stout Q4 2025 (median 0.9 years last round to IPO, range 0 to 3.3; primary for the Stout page).",
+        "fails_median":    [2.5, 2.5, 3.0, 3.0, 3.0, 3.5],
+        "acquired_median": [5.0, 4.0, 3.5, 3.0, 2.5, 2.5],
+        "ipo_median":      [9.0, 7.5, 6.0, 4.5, 3.0, 2.5],
+        "sigma":           [0.6, 0.6, 0.6, 0.55, 0.5, 0.5],
+        "sigma_basis": "judgement",
+        "as_drawn": {
+          "basis": "derived",
+          "derived_from": "judgement",
+          "step": "Median of the curve after the ten-year cut: median * exp(sigma * Phi_inv(0.5 * Phi(ln(10 / median) / sigma))), in years, within one round. beyond_cut is the share of the uncut curve past ten years, 1 - Phi(ln(10 / median) / sigma). A shut exit window then moves IPO months a little further. Pinned by a test against the engine's own draw.",
+          "fails_median":    [2.48, 2.48, 2.95, 2.97, 2.98, 3.46],
+          "acquired_median": [4.55, 3.81, 3.40, 2.97, 2.50, 2.50],
+          "ipo_median":      [6.40, 5.88, 5.16, 4.28, 2.98, 2.50],
+          "ipo_beyond_cut":  [0.430, 0.316, 0.197, 0.073, 0.008, 0.003]
+        }
+      },
+      "acquisition_multiple": {
+        "note": "What the whole company sells for, over its valuation at the latest round: LogNormal(ln(median), sigma). Common stock gets max(0, (m - overhang) / (1 - overhang)) of the preferred price when m is below 1. The rule treats investors as owning the overhang fraction of the company with a 1x non-participating preference.",
+        "basis": "judgement",
+        "anchors": "27.1% of sub-$1B exits were down exits in a 2019 PitchBook sample selected for disclosure (summary); 70% of 2024 exits below invested capital (PitchBook, trough year; summary); most VC-backed acquisitions under $100M (NVCA 2025 Yearbook; primary); Miro and Airtable acquired near 0.1 of peak valuation (PitchBook-NVCA Venture Monitor Q3 2026 p. 6; primary).",
+        "median": [0.70, 0.70, 0.65, 0.60, 0.55, 0.55],
+        "sigma":  [1.2, 1.2, 1.1, 1.0, 0.9, 0.8]
+      },
+      "ipo_multiple": {
+        "note": "IPO price per share over the latest preferred price: LogNormal(ln(median), sigma).",
+        "median": [40.0, 15.0, 6.0, 3.0, 1.6, 1.25],
+        "median_basis": "judgement",
+        "median_note": "Only the unicorn figure is derived from a sourced number (the 1.25x step-up below). The five earlier stages rest on judgement stage valuations and on one quarter's median IPO valuation, so they are judgement. They scale in proportion to the IPO valuation assumed: $1.9B is the top of the range on record. NVCA medians read directly (research-outcomes 2.3) were $684M in 2021, $79M in 2022, $123M in 2023 and $569M in 2024; those include small biotech listings and two trough years, so they are not a clean replacement either. With $569M to $684M in place of $1.9B the five medians fall to about 12-14, 4.5-5.4, 1.8-2.2, 0.9-1.1 and 0.5-0.6, and the mean price of a common share at the outcome over today's preferred price falls from 1.48 / 1.28 / 1.18 / 0.96 / 0.86 (seed to late) to about 0.7 / 0.7 / 0.7 / 0.5 / 0.5. The upper payouts shown (75th and 90th percentiles) move with it.",
+        "derived_from": "The unicorn median: one sourced figure read directly. The five earlier medians: judgement stage valuations, one quarter's IPO valuation and Carta dilution seen only in summary, hence median_basis judgement.",
+        "step": "Unicorn: median valuation step-up from last private round to IPO 1.25x, range 0.55-1.80 in one quarter (PitchBook via Stout Q4 2025; primary for the Stout page), taken as a per-share multiple with no allowance for the IPO's own dilution (about 12%, research-outcomes section 4). Earlier stages: median IPO valuation about $1.9B (same source) over a typical stage valuation (judgement: $15M, $50M, $180M, $450M, $1B), times the share of the company kept through later rounds from Carta median dilution per round (summary).",
+        "sigma": [1.0, 0.9, 0.8, 0.7, 0.6, 0.5],
+        "sigma_basis": "judgement"
+      },
+      "multiple_z_cap": { "value": 2.326, "basis": "judgement", "note": "The standard normal behind every price multiple and the lockup factor is held within plus or minus this (the 1st and 99th percentiles). At seed it removes IPO prices above about 410 times the last round (40 * exp(2.326)), far beyond anything sourced. It trims the far tail and leaves the concentration of value where it was: see effect.", "effect": { "basis": "derived", "derived_from": "judgement", "step": "From the seed table over all three rounds, lockup factor left out. seed_mean_over_uncapped: the mean price of a common share at the outcome with the cap over the same without it (1.48 against 1.54). seed_top_1_percent_share_of_mean: the share of that mean carried by the best 1% of futures, with the cap in force; without the cap it is the same to two places. An earlier note here said 74% without the cap; that figure could not be reproduced. Pinned by a test.", "seed_mean_over_uncapped": 0.96, "seed_top_1_percent_share_of_mean": 0.67 } },
+      "preference_overhang": {
+        "note": "Preferred capital raised over latest post-money valuation.",
+        "basis": "derived",
+        "derived_from": "summary and judgement",
+        "step": "Cumulative median dilution per round on Carta (seed 19-20%, A 18%, B 13-16%, C about 10%, D about 7.5%; summary) assuming rising rounds; 98% of deals carry a 1x preference and 95% are non-participating (Cooley Q2 2025; summary).",
+        "value": [0.20, 0.25, 0.28, 0.30, 0.32, 0.35]
+      },
+      "fmv_to_preferred": {
+        "note": "409A value of a common share as a fraction of the latest preferred price, today. On a path that ends in an IPO or a sale the fraction moves in a straight line to the common-to-preferred ratio at the event (1 at an IPO).",
+        "basis": "judgement",
+        "anchors": "About one third at a fundraise (OnlyCFO; primary for the post); 20% at Series A and 30% at B (Scalar; summary); 60-85% from Series D to pre-IPO, rising toward 100% near an IPO (summary); common at 30-57% of preferred in Carta secondaries (summary).",
+        "value": [0.20, 0.25, 0.30, 0.35, 0.45, 0.65]
+      },
+      "tender": {
+        "annual_probability": {
+          "basis": "judgement",
+          "note": "Chance per year of a tender, averaged over the company-years of every future except a write-off (research-outcomes 5.2 derives these as rates over all companies). Only a company heading to or above its last round runs tenders (research-outcomes 9.4: only companies doing well run them), so in those futures the yearly chance is this number divided by their share of the months companies spend private (equity::tender_rate), at most 1: 3.2%, 2.3%, 5.6%, 13.2%, 22.3% and 36.8% by stage. A company heading below its last round, or to a write-off, runs none.",
+          "anchors": "No source gives a per-company rate. Carta administered 14 Series C+ tenders in H1 2023 and 44 in H1 2026 (NewView Capital on Carta data, primary); about 70% of all tenders are at Series C or later (Carta H1 2026, summary); programmes at the largest companies are annual. The per-company rates are research-outcomes 5.2's own estimate from those counts and an assumed customer base.",
+          "value": [0.005, 0.005, 0.015, 0.04, 0.08, 0.15]
+        },
+        "min_gap_months": { "value": 12, "basis": "judgement", "note": "At most one tender in any twelve months: the most frequent programmes are annual." },
+        "max_fraction": { "value": 0.20, "basis": "sourced", "seen": "primary", "source": "newview_tender_2026", "note": "Median cap on employees' holdings; half of tenders between 15% and 40%. Mirrors the schema default." },
+        "price_fraction": { "value": 1.0, "basis": "sourced", "seen": "summary", "source": "carta_tender_h1_2026", "note": "Median discount to the last preferred price 0%; 75th percentile 10-15%. Mirrors the schema default." },
+        "former_employees": { "value": false, "basis": "judgement", "seen": "summary", "note": "NewView (primary): former employees were eligible in 53% of tenders. Carta (summary): in the median tender none were. Not eligible is the cautious choice. Mirrors the schema default." }
+      },
+      "fail_path_end_multiple": { "value": 0.25, "basis": "judgement", "note": "Where the share price of a company that will fail is heading just before it does, as a multiple of the latest preferred price; the path is a straight line in logs from 1. Also the floor of the path before a sale that pays common less than this. Half way there the price is 0.5, in line with Forge median discounts of 45-59% for companies whose last round was in 2021-2023 (PitchBook-NVCA Venture Monitor Q3 2026 p. 6; primary)." },
+      "ipo_window_drawdown": { "value": 0.20, "basis": "judgement", "note": "The exit window is shut while US stocks are more than this far below their previous high or a recession is flagged. Ritter Table 4 (primary): IPO counts fell 79-88% in 2001, 2008 and 2022; NewView (primary): Series C+ tenders 14 in H1 2023 against 44 in H1 2026." },
+      "ipo_window_search_months": { "value": 60, "basis": "judgement", "note": "An IPO drawn for a month with the window shut moves to the nearest open month within this many months either way." },
+      "window_open_share": { "value": 0.70, "basis": "derived", "derived_from": "engine", "step": "Share of months with the window open in the engine's own economy, first ten years: 0.71 bootstrap, 0.68 regime, 0.66 lognormal (4,000 paths each at the default equity premium adjustment). The monthly tender chance is divided by this so that the yearly chance entered is what happens on average. Pinned by a test.", "note": "One number for all three market models; the realised rate differs by a few percent between them." },
+      "lockup_log_sd": { "value": 0.45, "basis": "judgement", "note": "Spread of the share price when the lockup ends over the IPO price, in logs. Chosen in research-outcomes 6.3 from two inputs. One is sourced: 24% of IPOs close below the offer price on day one (Ritter IPO-Statistics, primary). The other is an assumption with no source: annualised idiosyncratic volatility of a recent IPO of about 60%, a little above this file's small_or_recent_ipo preset of 0.5; over six months that is about 0.42." },
+      "lockup_mean": { "value": 1.0, "basis": "judgement", "note": "Mean of that ratio. Ritter (primary) reports a mean return of +4.9% over the first six months from the first close and an average first-day rise above the offer price; neither is added, so the lockup spreads the price without raising it on average." },
+      "exercise_window_months": { "value": 3, "basis": "sourced", "seen": "summary", "source": "carta_ptep", "note": "80% of terminated option grants have 90 days or less (Q1 2024). Matches IRC 422(a)(2). Mirrors the schema default." },
+      "policy_defaults": {
+        "basis": "judgement",
+        "note": "Defaults and thresholds that drive results and have no source. Each mirrors a schema default or a constant in the code and is pinned by a test.",
+        "tender_sell_fraction": 0.5,
+        "granted_months_ago": 24,
+        "overhang_max": 0.95,
+        "range_quantiles": [0.10, 0.90],
+        "min_paths_per_outcome": 30,
+        "iso_amt_estimate_rate": 0.28
+      },
+      "preview_draws": { "value": 4000, "basis": "judgement", "note": "Draws in the editor's outcome preview." },
+      "preview_inflation": { "value": 0.029, "basis": "derived", "derived_from": "engine", "step": "The yearly rate that reproduces the median price level of the engine's own inflation path ten years out (1.33 to 1.34 over 4,000 paths of the default economy; 2.9% a year also fits the medians at five and twenty years). Pinned by a test against the simulated path.", "note": "Yearly inflation used to state the editor preview in today's dollars. The simulation uses its own inflation path." },
+      "left_out": [
+        "round-by-round valuation path, down rounds, repricing and dilution as separate inputs (inside the per-share multiples)",
+        "liquidation-preference waterfall by series, participating preferred, multiples above 1x (one overhang number)",
+        "escrow, holdbacks and earn-outs in acquisitions; stock-for-stock deals",
+        "effect of a closed exit window on acquisition prices and on failure rates",
+        "odds that change as a company ages past ten years without an exit (the stage's odds are reused)",
+        "secondary sales outside company tenders; exercise financing",
+        "RSU expiry (commonly seven years), early exercise of unvested options, 83(b) and 83(i)",
+        "link between the company's fate and the household's other investments"
+      ]
     },
     "single_public_stock": {
       "model": "r_stock(t) = rf + beta * (r_market(t) - rf) + e(t); e(t) is Student-t with 4 degrees of freedom scaled to annual volatility sigma_idio, mean adjusted so the stock has no alpha. Plus a ruin hazard: each year with probability h the position loses 100%.",
@@ -2692,11 +2811,11 @@
       "confidence": "medium (well-established magnitudes; the three presets are judgement)"
     },
     "knobs": [
-      "private equity: stage and paper value; include in base plan yes/no (default no)",
+      "private equity: stage, latest round price and holdings; counted in the plan yes/no (default yes, with the at-zero comparison shown beside every result)",
       "single stock: preset (large cap / growth / small) and a planned diversification schedule (% sold per year)"
     ],
     "left_out": [
-      "option exercise strategy, AMT, 83(b), QSBS (tax module)",
+      "83(b) and 83(i) elections (exercise strategy, the AMT and its credit, and the small-business stock exclusion are modelled: see startup_equity and the tax data)",
       "liquidation-preference waterfall",
       "company-specific forecasts"
     ]
@@ -3046,6 +3165,12 @@
     "spousal_care_hours_cut": {
       "note": "Share of full-time work given up by a partner who cuts their hours (model::SPOUSAL_CARE_HOURS_CUT): half time, a judgement.",
       "value": 0.5
+    },
+    "startup_equity": {
+      "note": "equity::DEFAULT_LOCKUP_MONTHS: the standard IPO lockup is 180 days (contract practice; not fetched). equity::OPTION_TERM_MONTHS: options lapse ten years after grant (IRC 422(b)(3) for ISOs was read from the statute; that NSO plans use the same term is recalled). equity::ISO_POST_TERMINATION_MONTHS is statute (IRC 422(a)(2), read) and is listed here only so the test pins it.",
+      "lockup_months": 6,
+      "option_term_months": 120,
+      "iso_post_termination_months": 3
     }
   },
   "long_run_assumptions": {

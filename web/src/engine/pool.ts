@@ -76,7 +76,7 @@ export interface RunOptions {
 
 export interface RunResult {
   summary: Summary;
-  /** The serialised accumulator (104 bytes per path): pass two of these to `comparison`. */
+  /** The serialised accumulator (168 bytes per path): pass two of these to `comparison`. */
   acc: Uint8Array;
   paths: number;
   seed: number;

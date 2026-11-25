@@ -2,8 +2,9 @@
 // through `ToolContext`, so each executor runs unchanged against the real engine and
 // store in the app and against fakes in tests.
 import type { EnginePool } from '@/engine/pool';
+import type { EquityPreview } from '@/engine/equity-types';
 import type { Comparison, PathTrace, PlanPreview, SummaryDigest } from '@/engine/output-types';
-import type { Lever, PatchOp, Profile, Report } from '@/engine/types';
+import type { Lever, PatchOp, PrivateCompany, Profile, Report } from '@/engine/types';
 import type { City } from '@/editor/cities';
 import type { EditResult, Scenario } from '@/state/profile-store';
 import type { JsonSchema } from '../agent/validate-input';
@@ -31,6 +32,8 @@ export interface EngineBridge {
   schema(): unknown;
   /** Core's deterministic plan facts. Throws an `EngineError` of kind `invalid_profile` when the plan cannot be compiled. */
   planPreview(profile: Profile): PlanPreview;
+  /** Core's preview of one private company: the odds in force and what the holdings could pay. Throws an `EngineError` when the company does not parse. */
+  equityPreview(company: PrivateCompany): EquityPreview;
   /** Core's compact form of a finished run, computed from its accumulator. */
   digest(run: RunRecord): SummaryDigest;
   /** Core's paired comparison, B minus A life by life. Both runs must share a seed and a number of lives. */

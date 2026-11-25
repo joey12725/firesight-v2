@@ -1,7 +1,10 @@
 // One-line summaries shown on collapsed editor sections.
+import { paperValue } from '@/engine/equity-math';
 import type { Profile } from '@/engine/types';
 import { moneyCompact, percent, yearsBetween, currentYearMonth } from '@/ui';
 import { equityShare, toPercents } from './allocation';
+import { holdingsNoun } from './equity/text';
+import { canShowPayoffs, previewOf } from './equity/usePreview';
 import { annualIncome, budgetTotals } from './labels';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -18,6 +21,22 @@ export function householdSummary(p: Profile): string {
 export function incomeSummary(p: Profile): string {
   if (p.incomes.length === 0) return 'No income';
   return `${moneyCompact(annualIncome(p))}/yr from ${plural(p.incomes.length, 'source')}`;
+}
+
+/**
+ * Leads with how often the position pays nothing whenever the engine can say; the paper
+ * value is the most flattering number available and is shown only without a preview.
+ */
+export function equitySummary(p: Profile): string {
+  const companies = p.private_equity ?? [];
+  if (companies.length === 0) return 'None';
+  const uncounted = companies.every((c) => !c.included) ? ' (not counted)' : '';
+  const [only] = companies;
+  if (companies.length > 1 || !only) return `${companies.length} companies${uncounted}`;
+  const name = only.name || 'Company';
+  const preview = canShowPayoffs(only) ? previewOf(only) : null;
+  if (preview) return `${name}: ${holdingsNoun(only)}, nothing in ${Math.round(preview.nothing_share * 100)} of 100 futures${uncounted}`;
+  return `${name}: ${moneyCompact(paperValue(only).total)} on paper at the last round's price${uncounted}`;
 }
 
 export function spendingSummary(p: Profile): string {

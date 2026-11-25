@@ -249,7 +249,7 @@ try {
 
   // Every editor section, on every demo: expand everything, add one of each kind of
   // thing, and require that the engine accepts each addition without errors.
-  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord', 'full-life']) {
+  for (const slug of ['early-career-saver', 'dual-income-family', 'side-hustle-landlord', 'startup-employee', 'full-life']) {
     // A fresh browser profile each time, so the landing state is shown.
     const tour = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const t = await open(tour, base);
@@ -293,6 +293,42 @@ try {
       await t.getByRole('dialog', { name: 'Add a stress test' }).getByRole('button', { name: new RegExp(`^${kind}`) }).click();
       await noErrors(`stress test "${kind}"`);
     }
+    // Startup equity: a company, a price, one holding of each kind, the household's own odds, and the main choices.
+    const equity = t.locator('[data-section="equity"]');
+    await equity.getByRole('button', { name: 'Add a company', exact: true }).click();
+    await noErrors('a company');
+    await equity.getByRole('textbox', { name: 'Latest price per share', exact: true }).last().fill('14');
+    await noErrors('a latest price per share');
+    for (const kind of ['Incentive options (ISO)', 'Non-qualified options (NSO)', 'RSUs', 'Shares I own']) {
+      await equity.getByRole('button', { name: 'Add a holding', exact: true }).last().click();
+      await t.getByRole('dialog', { name: 'Add a holding' }).getByRole('button', { name: new RegExp(`^${kind.replace(/[()]/g, '\\$&')}`) }).click();
+      await noErrors(`holding "${kind}"`);
+    }
+    await equity.getByTestId('equity-preview').last().waitFor();
+    expect(/^In (\d+|every one) of 100 futures this pays/.test(await equity.getByTestId('equity-preview').last().innerText()), `${slug}: the equity preview should lead with how often it pays nothing`);
+    await equity.getByRole('button', { name: 'Use my own odds', exact: true }).last().click();
+    await noErrors('my own odds');
+    await equity.getByRole('button', { name: 'Add an outcome', exact: true }).last().click();
+    await t.getByRole('dialog', { name: 'Add an outcome' }).getByRole('button', { name: /^Goes public/ }).click();
+    await noErrors('an outcome');
+    for (const [label, count] of [['Stage', 6], ['Exercise options', 3], ['After an IPO lockup', 3]]) {
+      const select = equity.getByRole('combobox', { name: label, exact: true }).last();
+      const values = await select.locator('option:not([disabled])').evaluateAll((os) => os.map((o) => o.value));
+      expect(values.length === count, `${slug}: ${label} should offer ${count} choices, has ${values.length}`);
+      for (const v of values) {
+        await select.selectOption(v);
+        await noErrors(`${label} = ${v}`);
+      }
+    }
+    if (slug === 'startup-employee') {
+      // The Equity results tab (W2's view) opens on the demo that has a company.
+      await t.getByRole('tab', { name: 'Equity', exact: true }).click();
+      expect(new URL(t.url()).pathname === '/equity', `the Equity tab should be reflected in the URL, got ${t.url()}`);
+      await t.getByTestId('equity-lead').waitFor();
+      expect(/of 100/.test(await t.getByTestId('equity-lead').innerText()), 'the Equity view should lead with a count of lives');
+      await t.getByRole('tab', { name: 'Overview', exact: true }).click();
+    }
+
     // Every choice of the main unions.
     for (const [label, count] of [['Retire', 5], ['Spending rule', 6], ['Withdrawal order', 3], ['How futures are generated', 5], ['Glide path', 4], ['Tax model', 3], ['Lifespans', 2]]) {
       const select = t.getByLabel(label, { exact: true });
