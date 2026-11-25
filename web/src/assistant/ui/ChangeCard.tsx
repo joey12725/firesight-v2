@@ -4,7 +4,7 @@ import { useProfileStore } from '@/state/profile-store';
 import { Button, Icon, Tag, TextInput, cx } from '@/ui';
 import type { ToolPart } from '../conversation';
 import { getSession } from '../session';
-import type { Assumption, ChangeEntry, ProposalState, ToolDisplay } from '../tools/types';
+import type { Assumption, ChangeEntry, Decision, ProposalState, ToolDisplay } from '../tools/types';
 import { describeObject, formatValue, lastSegment } from './values';
 
 type ChangeDisplay = Extract<ToolDisplay, { type: 'change' }>;
@@ -79,14 +79,24 @@ function parseDraft(text: string, original: unknown): { ok: true; value: unknown
   return { ok: true, value: text };
 }
 
+interface ChangeCardProps {
+  part: Pick<ToolPart, 'id'>;
+  display: ChangeDisplay;
+  /**
+   * Where the user's answer goes. Defaults to the assistant's session; a card shown
+   * outside a conversation (a browser agent's proposal) passes its own.
+   */
+  onDecide?: (decision: Decision) => void;
+}
+
 /** A proposed change to the plan: each edit as before and after, the assumptions behind it, and the decision. */
-export function ChangeCard({ part, display }: { part: ToolPart; display: ChangeDisplay }) {
+export function ChangeCard({ part, display, onDecide }: ChangeCardProps) {
   const { proposal, state } = display;
   const pending = state === 'pending';
   const [editing, setEditing] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const session = getSession();
+  const decide = onDecide ?? ((decision: Decision) => getSession().decide(part.id, decision));
 
   const startEditing = () => {
     setDrafts(Object.fromEntries(proposal.entries.flatMap((e, i) => (editable(e) ? [[i, String(e.after)]] : []))));
@@ -107,7 +117,7 @@ export function ChangeCard({ part, display }: { part: ToolPart; display: ChangeD
     }
     const preview = useProfileStore.getState().preview(ops);
     if ('error' in preview) return setError(preview.error);
-    session.decide(part.id, { type: 'accept_edited', ops });
+    decide({ type: 'accept_edited', ops });
   };
 
   const anyEditable = proposal.entries.some(editable);
@@ -182,7 +192,7 @@ export function ChangeCard({ part, display }: { part: ToolPart; display: ChangeD
               </>
             ) : (
               <>
-                <Button size="sm" variant="primary" icon="check" onClick={() => session.decide(part.id, { type: 'accept' })}>
+                <Button size="sm" variant="primary" icon="check" onClick={() => decide({ type: 'accept' })}>
                   Accept
                 </Button>
                 {anyEditable && (
@@ -190,7 +200,7 @@ export function ChangeCard({ part, display }: { part: ToolPart; display: ChangeD
                     Edit
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" onClick={() => session.decide(part.id, { type: 'decline' })}>
+                <Button size="sm" variant="ghost" onClick={() => decide({ type: 'decline' })}>
                   Decline
                 </Button>
               </>

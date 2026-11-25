@@ -125,6 +125,16 @@ The assistant has twelve tools, and every one of them calls the engine. It can r
 
 You can bring your own Anthropic API key, which stays in your browser and goes only to Anthropic. Alternatively, set `ANTHROPIC_API_KEY` on your own deployment to host the assistant for visitors. Everything else works without it. [docs/assistant.md](docs/assistant.md) has the details and covers exactly what leaves the browser.
 
+## AI agents, and optional accounts
+
+Two more ways for an AI to work with a plan, besides the built-in assistant. Both are new, and neither has met a real hosted client yet: read the status lines.
+
+**An agent in your browser (WebMCP).** Where the browser offers [WebMCP](https://github.com/webmachinelearning/webmcp), the page registers 24 tools with it: read the open plan, build one from a description, simulate, compare, propose changes, open a view and read its charts as rows. The page asks you before an agent reads anything, shows every proposed change as a card to accept or decline, and can switch the whole thing off in Settings. *Status: WebMCP is experimental and exists only in Chromium behind a flag or an origin trial. The tools pass an end-to-end run through the browser's own API in Chrome 157 and 158 and Chromium 159; no real agent has driven them.* [docs/webmcp.md](docs/webmcp.md)
+
+**An agent outside your browser (hosted MCP server).** With an account, Claude, Claude Code, ChatGPT, Cursor or any MCP client can connect to `/api/mcp` and read, create, change and simulate the plans in that account, with the same engine. Every result carries a link, and the plan opens on the website at that link, charts and all, for you and nobody else. If you have it open, the page updates when the agent writes. Sign the client in with OAuth, or give it an API key you create on the account page (read-only or read-write, revocable). *Status: runs and is tested locally end to end; not deployed, and the OAuth flow has not been tried with claude.ai or ChatGPT.* [docs/mcp.md](docs/mcp.md)
+
+**Accounts are optional, and off unless a deployment sets up a database.** Signed out, nothing changes: no plan is uploaded and the app makes no request about one. Signed in, a plan reaches the server only when you turn on "Sync to account" for it, or when an AI tool you authorised writes it there. Synced plans are encrypted where they are stored with a key the server holds, so **the server can read them**; it has to, to simulate them for your AI tools. That is encryption at rest, not end-to-end encryption. You can export or delete everything from the account page. There is no password reset yet, because the site sends no email. [docs/accounts.md](docs/accounts.md)
+
 ## Is the model any good?
 
 It was built to be checked. Some of what has been checked:
@@ -186,6 +196,13 @@ npm run dev
 
 Open <http://localhost:5173> and pick a demo household. If you change Rust code, run `npm run prepare-engine` again.
 
+That is the whole app, with no accounts. To run the accounts side too (sign-in, synced plans, the MCP server), start the local API beside it from the repository root; it needs no cloud resource and keeps an embedded database under `.local/`:
+
+```bash
+npm install
+npm run dev:api    # http://localhost:8787; the web dev server forwards /api to it
+```
+
 ### The command line
 
 The same engine runs natively, with all your cores:
@@ -237,6 +254,15 @@ flowchart LR
   end
   assistant <-. "your key, direct" .-> anthropic[Anthropic API]
   assistant <-. "or hosted" .-> proxy["/api/chat"]
+  webmcp[WebMCP tools] -- same tools --> pool
+  browseragent[AI agent in the browser] -. "document.modelContext" .-> webmcp
+  subgraph Server["Server, optional: accounts"]
+    plans["/api/plans"] --> db[(Postgres<br/>encrypted plans)]
+    mcp["/api/mcp<br/>wasm engine under Node"] --> db
+    auth["/api/auth"] --> db
+  end
+  store <-. "only plans you sync" .-> plans
+  outside[AI client outside the browser] -. "MCP, OAuth or API key" .-> mcp
   cli[firesight CLI<br/>rayon] --> core
   w1 --- core[firesight-core<br/>pure Rust]
 ```
@@ -247,7 +273,10 @@ crates/
   firesight-wasm/   browser bindings: workers simulate chunks, a coordinator merges them
   firesight-cli/    the same engine on native threads (rayon)
 web/                React + TypeScript app; charts hand-drawn on canvas and SVG
-api/chat.ts         the only server code: an optional streaming proxy to Claude
+                    (web/src/webmcp: the app's tools offered to an in-browser agent through WebMCP)
+api/chat.ts         an optional streaming proxy to Claude
+api/auth.ts, plans.ts, mcp.ts, wellknown.ts
+                    the optional accounts side: sign-in, API keys and OAuth, synced plans, the hosted MCP server
 data/               sourced parameters: 2026 tax law, market history, life tables, city costs
 tools/              scripts that rebuild data/ from public sources, benchmarks, figures
 examples/           five demo households as plan files
@@ -257,7 +286,7 @@ docs/               methodology, architecture, primer, assistant design
 - **`firesight-core`** holds the market generator, tax law, careers, housing, health, Social Security, accounts, withdrawal planning, the monthly loop, and mergeable statistics.
 - **No life's time series is ever stored.** Workers return compact accumulators (histograms, counts, per-life scalars) that merge in any order. Any single life can be re-simulated from its seed in a fraction of a millisecond when a view needs it.
 - **One source of truth for the plan format.** The TypeScript types and the assistant's tool schemas are generated from the Rust types.
-- **No backend, no database.** Plans live in your browser, export as JSON, and share as a link that encodes the plan in the URL fragment, the part of a link that browsers never send to a server.
+- **No backend or database out of the box.** Plans live in your browser, export as JSON, and share as a link that encodes the plan in the URL fragment, the part of a link that browsers never send to a server. A deployment that sets up accounts adds a database, and then only the plans you choose to sync are stored there.
 
 The design contract is in [docs/architecture.md](docs/architecture.md), and the engine's output format in [docs/engine-output.md](docs/engine-output.md).
 
@@ -273,6 +302,15 @@ npm run typecheck && npm run lint
 npm run test                              # 436 tests, most against the real wasm engine
 npm run build
 npm run smoke                             # Playwright against a running preview
+npm run journeys                          # longer user journeys, same way
+npm run webmcp                            # the in-page agent tools, in Chrome with WebMCP switched on
+npm run accounts                          # sign-up to account deletion in a browser; needs `npm run dev:api` running
+
+cd ..                                     # the optional server side (accounts, synced plans, hosted MCP)
+npm run typecheck && npm run lint
+npm test                                  # in-process on an embedded Postgres
+npm run e2e:api                           # the API over HTTP, on a throwaway server
+npm run mcp:smoke                         # an MCP client through the hosted endpoint
 
 tools/bench-check.sh                      # fails on a throughput regression over 25%
 ```
@@ -293,6 +331,8 @@ To host the assistant for your visitors, set these on the project:
 
 Put a spend limit on the key. The proxy's checks deter casual abuse but won't stop a determined attacker.
 
+To offer accounts, synced plans and the hosted MCP server, add a Postgres database (Neon from the Vercel Marketplace sets `DATABASE_URL`), set `BETTER_AUTH_SECRET` and `PLAN_KEK` (each `openssl rand -base64 32`), and run `npm run migrate` against the database once. Without them the site has no accounts and behaves as it always has. To offer the in-page tools to visitors who have not set a browser flag, set `VITE_WEBMCP_ORIGIN_TRIAL_TOKEN` at build time. Every variable is described in [`.env.example`](.env.example), and the steps, with what to check on a preview first, are in [docs/accounts.md](docs/accounts.md#self-hosting-on-vercel). None of this has been run on a real deployment yet.
+
 ## Documentation
 
 | Document | For |
@@ -302,6 +342,9 @@ Put a spend limit on the key. The proxy's checks deter casual abuse but won't st
 | [Architecture](docs/architecture.md) | Contributors: crates, the profile schema, one simulated life, the wasm API, the performance budget |
 | [Engine output](docs/engine-output.md) | Anyone consuming results: the summary and trace formats |
 | [Assistant](docs/assistant.md) | How the Claude integration works and what data it sends |
+| [WebMCP](docs/webmcp.md) | The tools the page offers an AI agent in the browser |
+| [Hosted MCP server](docs/mcp.md) | Connecting Claude, ChatGPT or another MCP client to the plans in an account |
+| [Accounts](docs/accounts.md) | What accounts store, how plans are encrypted, and how to self-host them |
 | [v1 review](docs/v1-review.md) | The audit of the first version that motivated this rewrite |
 | [Research](docs/research/) | Notes on other planners and on stochastic market models |
 

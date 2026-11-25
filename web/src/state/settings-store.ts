@@ -28,6 +28,13 @@ interface SettingsState {
   editorOpen: boolean;
   assistantOpen: boolean;
   lastHouseholdId: string | null;
+  /**
+   * Whether an AI agent in this browser may call FIRESight's in-page tools (WebMCP).
+   * `ask`: the page asks once per session. `allow`: no prompt. `off`: the tools refuse.
+   */
+  agentAccess: 'ask' | 'allow' | 'off';
+  /** Apply a browser agent's plan changes without a change card. Each one can still be undone. */
+  agentAutoApply: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -42,6 +49,8 @@ export const useSettings = create<SettingsState>()(
       editorOpen: true,
       assistantOpen: true,
       lastHouseholdId: null,
+      agentAccess: 'ask',
+      agentAutoApply: false,
       set: (patch) => set(patch),
     }),
     { name: 'firesight.settings', version: 1 },

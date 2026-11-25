@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { compactProfile } from '@/engine';
+import { useAccount } from '@/auth/account';
 import { useProfileStore } from '@/state/profile-store';
 import { ASSISTANT_MODELS, useSettings, type AssistantModel, type ThemeChoice } from '@/state/settings-store';
 import { shareUrl } from '@/state/share';
 import { toast, useUi } from '@/state/ui-store';
 import { Button, Dialog, Field, Icon, SegmentedControl, Select, TextInput, count, cx } from '@/ui';
+import { BrowserAgentsSettings } from '@/webmcp/host';
 import { METHODOLOGY_URL, importPlanFile, importPlanText } from './actions';
 
 export function SettingsDialog() {
@@ -12,6 +14,8 @@ export function SettingsDialog() {
   const close = () => useUi.getState().openDialog(null);
   const { theme, apiKey, model, set } = useSettings();
   const [reveal, setReveal] = useState(false);
+  // On a site with no accounts there is no server copy to describe.
+  const accounts = useAccount((s) => s.status === 'signed-in' || s.status === 'signed-out');
   return (
     <Dialog open={open} onClose={close} title="Settings">
       <div className="space-y-6">
@@ -51,11 +55,23 @@ export function SettingsDialog() {
           </Field>
         </div>
 
+        <BrowserAgentsSettings />
+
         <div className="border-t border-line pt-5 text-xs leading-relaxed text-ink-3">
           <p className="flex items-center gap-1.5 font-medium text-ink-2">
-            <Icon name="lock" size={12} /> Your plan stays in this browser
+            <Icon name="lock" size={12} /> {accounts ? 'Your plan stays in this browser unless you sync it' : 'Your plan stays in this browser'}
           </p>
-          <p className="mt-1">Simulation runs on your device. Plans are saved in this browser's storage and leave it only when you export a file or copy a share link.</p>
+          <p className="mt-1">
+            Simulation in this app runs on your device. Plans are saved in this browser's storage. A plan leaves it only when you export a file or copy a share link, in what the assistant or a browser agent reads
+            while you use them{accounts ? ', or when you sync it to an account.' : '.'}
+          </p>
+          {accounts && (
+            <p className="mt-2" data-testid="privacy-account">
+              With an account, the plans you turn on "Sync to account" for, and plans an AI tool you connected writes for you, are also stored on this site's server, where that tool's simulations run. They are encrypted
+              where they are stored with a key the server holds, so the server can read them. Everything else, including assistant conversations, stays in this browser. Without an account nothing changes: no plan is
+              uploaded.
+            </p>
+          )}
           <p className="mt-3">
             <a href={METHODOLOGY_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent-ink hover:underline">
               About the model

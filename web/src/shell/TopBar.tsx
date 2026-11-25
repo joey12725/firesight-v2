@@ -1,10 +1,16 @@
+import { Suspense, lazy } from 'react';
+import { AccountButton } from '@/auth/AccountButton';
+import { useAccount } from '@/auth/account';
 import { closeHousehold, deleteHousehold, openHousehold, useHouseholds } from '@/state/households';
 import { selectDirty, useProfileStore } from '@/state/profile-store';
+import { loginPath, navigate, usePage } from '@/state/route';
 import { rerun, useRunStore } from '@/state/run-store';
 import { useSettings } from '@/state/settings-store';
 import { useUi } from '@/state/ui-store';
+import { AgentPill } from '@/webmcp/host';
 import { Button, Icon, IconButton, NumberInput, Popover, SegmentedControl, Select, Tooltip, count, countCompact, cx, useMediaQuery } from '@/ui';
 import { exportCurrentPlan } from './actions';
+import { useCloudUi } from './cloud-prompts';
 
 const PATH_PRESETS = [2_000, 10_000, 25_000, 50_000, 100_000, 250_000];
 
@@ -20,18 +26,23 @@ function Wordmark() {
   );
 }
 
+// The sync switch and the account's plans: loaded with the sync code, for someone signed in.
+const SwitcherAccountSection = lazy(() => import('./cloud-ui').then((m) => ({ default: m.SwitcherAccountSection })));
+
 function HouseholdSwitcher() {
   const name = useProfileStore((s) => s.profile?.name);
   const currentId = useProfileStore((s) => s.meta?.id);
   const dirty = useProfileStore(selectDirty);
   const { list, storageAvailable } = useHouseholds();
   const openDialog = useUi((s) => s.openDialog);
+  const account = useAccount((s) => s.status);
+  const userId = useAccount((s) => s.user?.id);
   return (
     <Popover
       label="Households"
       className="w-80"
       trigger={
-        <button type="button" className="flex h-8 min-w-0 max-w-[16rem] items-center gap-1.5 rounded-sm px-2 text-sm font-medium hover:bg-surface-3">
+        <button type="button" data-testid="household-switcher" className="flex h-8 min-w-0 max-w-[16rem] items-center gap-1.5 rounded-sm px-2 text-sm font-medium hover:bg-surface-3">
           <span className="truncate">{name || 'Untitled household'}</span>
           <Icon name="chevronDown" size={13} className="text-ink-3" />
         </button>
@@ -40,7 +51,7 @@ function HouseholdSwitcher() {
       {(close) => (
         <div>
           <div className="flex items-center justify-between px-3 pt-3">
-            <span className="eyebrow">Saved in this browser</span>
+            <span className="eyebrow">In this browser</span>
             <span className="text-2xs text-ink-3">{!storageAvailable ? 'Storage unavailable' : dirty ? 'Saving…' : 'Saved'}</span>
           </div>
           <ul className="scroll-thin max-h-64 overflow-y-auto p-1.5">
@@ -58,6 +69,12 @@ function HouseholdSwitcher() {
                   <Icon name="check" size={13} className={h.id === currentId ? 'text-accent' : 'invisible'} />
                   <span className="min-w-0 flex-1 truncate">{h.name}</span>
                   {h.origin.startsWith('demo:') && <span className="text-2xs text-ink-3">demo</span>}
+                  {h.remote &&
+                    (h.remote.userId === userId ? (
+                      <Icon name="cloud" size={13} className="text-ink-3" aria-label="Synced to your account" />
+                    ) : (
+                      <Icon name="cloudOff" size={13} className="text-ink-3" aria-label={account === 'signed-in' ? 'Synced to another account' : 'Sync is paused while you are signed out'} />
+                    ))}
                 </button>
                 <IconButton
                   icon="trash"
@@ -66,13 +83,39 @@ function HouseholdSwitcher() {
                   label={`Delete ${h.name}`}
                   className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
                   onClick={() => {
-                    if (window.confirm(`Delete "${h.name}" from this browser? This cannot be undone.`)) void deleteHousehold(h.id);
+                    if (h.remote && h.remote.userId === userId) {
+                      // Also in the account: ask where it should be deleted from.
+                      close();
+                      useCloudUi.getState().ask({ kind: 'delete', localId: h.id, name: h.name });
+                    } else if (window.confirm(`Delete "${h.name}" from this browser? This cannot be undone.${h.remote ? ' The copy in the account it was synced to is not touched.' : ''}`)) {
+                      void deleteHousehold(h.id);
+                    }
                   }}
                 />
               </li>
             ))}
             {list.length === 0 && <li className="px-2 py-1.5 text-xs text-ink-3">Nothing saved yet.</li>}
           </ul>
+          {account === 'signed-in' && (
+            <Suspense fallback={null}>
+              <SwitcherAccountSection currentId={currentId} name={name || 'Untitled household'} close={close} />
+            </Suspense>
+          )}
+          {account === 'signed-out' && (
+            <div className="border-t border-line px-3 py-2.5 text-xs leading-snug text-ink-3">
+              <button
+                type="button"
+                className="font-medium text-accent-ink hover:underline"
+                onClick={() => {
+                  close();
+                  navigate(loginPath(window.location.pathname));
+                }}
+              >
+                Sign in
+              </button>{' '}
+              to sync a plan to an account, or to let an AI tool work on it.
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-1 border-t border-line p-1.5">
             <Button
               size="sm"
@@ -197,7 +240,9 @@ function PathControl({ inPopover }: { inPopover?: boolean }) {
 }
 
 export function TopBar({ compact }: { compact: boolean }) {
-  const hasPlan = useProfileStore((s) => s.profile !== null);
+  // On an account page the plan is still open underneath, but its controls have nothing to act on.
+  const inApp = usePage().kind === 'app';
+  const hasPlan = useProfileStore((s) => s.profile !== null) && inApp;
   const openDialog = useUi((s) => s.openDialog);
   const openSheet = useUi((s) => s.openSheet);
   const { editorOpen, assistantOpen, set } = useSettings();
@@ -209,7 +254,13 @@ export function TopBar({ compact }: { compact: boolean }) {
         ) : (
           <IconButton icon="panelLeft" label={editorOpen ? 'Hide the plan editor' : 'Show the plan editor'} pressed={editorOpen} onClick={() => set({ editorOpen: !editorOpen })} />
         ))}
-      <Wordmark />
+      {inApp ? (
+        <Wordmark />
+      ) : (
+        <button type="button" aria-label="Back to FIRESight" className="rounded-sm" onClick={() => navigate('/')}>
+          <Wordmark />
+        </button>
+      )}
       {hasPlan && (
         <>
           <span aria-hidden className="mx-1 h-4 w-px bg-line" />
@@ -217,6 +268,8 @@ export function TopBar({ compact }: { compact: boolean }) {
         </>
       )}
       <span className="flex-1" />
+      {/* WebMCP: shown only once a browser agent has called the page. */}
+      <AgentPill />
       {hasPlan && (
         <>
           <RunStatus />
@@ -227,6 +280,7 @@ export function TopBar({ compact }: { compact: boolean }) {
           <IconButton icon="share" label="Share this plan" onClick={() => openDialog('share')} />
         </>
       )}
+      <AccountButton />
       <IconButton icon="settings" label="Settings" onClick={() => openDialog('settings')} />
       {hasPlan && (
         <IconButton

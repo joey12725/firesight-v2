@@ -1,6 +1,7 @@
 // Turns whatever a request threw into something a person can act on. Classification
 // uses the SDK's typed error classes and the structured error body, never message text.
 import Anthropic from '@anthropic-ai/sdk';
+import { isAbortSignalError } from '../tools/abort';
 import type { AssistantError, TransportMode } from './types';
 
 /** `error.type` values the hosted proxy (api/chat.ts) uses in its Anthropic-shaped error bodies. */
@@ -15,7 +16,7 @@ export const PROXY_ERRORS = {
 
 export function isAbortError(error: unknown): boolean {
   if (error instanceof Anthropic.APIUserAbortError) return true;
-  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError';
+  return isAbortSignalError(error);
 }
 
 function bodyType(error: InstanceType<typeof Anthropic.APIError>): string | undefined {

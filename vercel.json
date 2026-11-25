@@ -1,12 +1,48 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "npm install --prefix web --no-audit --no-fund",
+  "installCommand": "npm install --no-audit --no-fund && npm install --prefix web --no-audit --no-fund",
   "buildCommand": "bash web/scripts/vercel-build.sh",
   "outputDirectory": "web/dist",
   "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [
+    {
+      "source": "/api/config",
+      "destination": "/api/wellknown?doc=config"
+    },
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth?fs_path=:path*"
+    },
+    {
+      "source": "/api/plans/:id",
+      "destination": "/api/plans?id=:id"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/wellknown?doc=oauth-protected-resource"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/:path*",
+      "destination": "/api/wellknown?doc=oauth-protected-resource&suffix=:path*"
+    },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "/api/wellknown?doc=oauth-authorization-server"
+    },
+    {
+      "source": "/.well-known/oauth-authorization-server/:path*",
+      "destination": "/api/wellknown?doc=oauth-authorization-server&suffix=:path*"
+    },
+    {
+      "source": "/.well-known/openid-configuration",
+      "destination": "/api/wellknown?doc=openid-configuration"
+    },
+    {
+      "source": "/.well-known/openid-configuration/:path*",
+      "destination": "/api/wellknown?doc=openid-configuration&suffix=:path*"
+    },
     {
       "source": "/((?!api/|assets/|data/)[^.]*)",
       "destination": "/index.html"
@@ -75,6 +111,21 @@
   "functions": {
     "api/chat.ts": {
       "maxDuration": 300
+    },
+    "api/auth.ts": {
+      "maxDuration": 30
+    },
+    "api/plans.ts": {
+      "maxDuration": 30
+    },
+    "api/wellknown.ts": {
+      "maxDuration": 15
+    },
+    "api/mcp.ts": {
+      "maxDuration": 180,
+      "supportsCancellation": true,
+      "installCommand": "npm install --no-audit --no-fund && npm run vercel-engine",
+      "includeFiles": "api/_engine/**"
     }
   }
 }

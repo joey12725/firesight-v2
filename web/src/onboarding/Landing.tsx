@@ -1,10 +1,15 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { exampleProfiles } from '@/engine';
+import { useAccount } from '@/auth/account';
 import { openHousehold, useHouseholds } from '@/state/households';
+import { loginPath, navigate } from '@/state/route';
 import { useUi } from '@/state/ui-store';
 import { Button, Icon, cx, type IconName } from '@/ui';
 import { METHODOLOGY_URL, PRIMER_URL, openBlank, openExample } from '@/shell/actions';
 import { askAssistant } from '@/assistant';
+
+// Plans in the signed-in person's account: loaded with the sync code, for them only.
+const LandingAccountPlans = lazy(() => import('@/shell/cloud-ui').then((m) => ({ default: m.LandingAccountPlans })));
 
 function Way({ icon, title, children, action }: { icon: IconName; title: string; children: React.ReactNode; action: React.ReactNode }) {
   return (
@@ -23,6 +28,7 @@ export function Landing() {
   const saved = useHouseholds((s) => s.list);
   const openDialog = useUi((s) => s.openDialog);
   const [describe, setDescribe] = useState('');
+  const account = useAccount((s) => s.status);
 
   const handOff = () => {
     // The assistant needs a plan to draft into: start from the engine's blank profile, then send the
@@ -41,7 +47,7 @@ export function Landing() {
         <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight text-balance">When can work become optional, and how sure is that?</h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-pretty text-ink-2">
           FIRESight lives your financial plan forward tens of thousands of times: through bull markets and crashes, layoffs, long lives and short ones. Then it shows you the whole range, not one hopeful
-          line. Everything runs on your device.
+          line. The simulation runs on your device.
         </p>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-pretty text-ink-3">
           New to early retirement planning?{' '}
@@ -50,6 +56,15 @@ export function Landing() {
           </a>{' '}
           explains the ideas and every term the app uses.
         </p>
+        {account === 'signed-out' && (
+          <p className="mt-3 text-sm text-ink-2" data-testid="landing-sign-in">
+            Have an account?{' '}
+            <button type="button" className="rounded-xs font-medium text-accent-ink hover:underline" onClick={() => navigate(loginPath())}>
+              Sign in
+            </button>{' '}
+            to open the plans in it, or to connect an AI tool that can build one for you.
+          </p>
+        )}
 
         {saved.length > 0 && (
           <section aria-labelledby="saved-title" className="mt-12">
@@ -68,6 +83,12 @@ export function Landing() {
               ))}
             </ul>
           </section>
+        )}
+
+        {account === 'signed-in' && (
+          <Suspense fallback={null}>
+            <LandingAccountPlans />
+          </Suspense>
         )}
 
         <section aria-labelledby="demo-title" className="mt-12">
@@ -151,7 +172,13 @@ export function Landing() {
 
         <p className="mt-16 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line pt-4 text-xs text-ink-3">
           <Icon name="lock" size={12} />
-          <span>No account. Your plan is stored in this browser and is never uploaded.</span>
+          <span>
+            {account === 'signed-in'
+              ? 'A plan is stored in this browser, and on this site only if you sync it to your account.'
+              : account === 'signed-out'
+                ? 'No account needed. Without one, your plan is stored in this browser and is never uploaded.'
+                : 'No account. Your plan is stored in this browser and is never uploaded.'}
+          </span>
           <a href={METHODOLOGY_URL} target="_blank" rel="noreferrer" className="ml-auto rounded-xs font-medium text-ink-2 hover:text-accent-ink hover:underline">
             About the model
           </a>

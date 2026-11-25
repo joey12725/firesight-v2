@@ -25,8 +25,17 @@ export interface ScenarioRun {
   profile: Profile;
   summary: Summary | null;
   done: number;
-  /** Paired statistics against the baseline (scenario minus baseline, life by life). Null until both runs finish. */
+  /**
+   * Paired statistics against the baseline (scenario minus baseline, life by life). Null until both runs
+   * finish. Like `summary`, it is kept from the previous run while a new one is under way, so the Scenarios
+   * view does not blank on every edit: `pairing` says whether it describes the current plan.
+   */
   paired: Comparison | null;
+  /**
+   * `current`: `paired` is the comparison of this run. `pending`: this run's comparison has not arrived, and
+   * `paired` (if any) is the previous run's. `failed`: the comparison could not be computed; `paired` is null.
+   */
+  pairing: 'pending' | 'current' | 'failed';
 }
 
 export interface RunState {
@@ -98,7 +107,7 @@ function start() {
   const scenarios: ScenarioRun[] = s.scenarios.flatMap((sc) => {
     const r = s.resolved[sc.id];
     if (!sc.enabled || !r?.profile || (r.report?.errors.length ?? 0) > 0) return [];
-    return [{ id: sc.id, name: sc.name, profile: r.profile, summary: null, done: 0, paired: null }];
+    return [{ id: sc.id, name: sc.name, profile: r.profile, summary: null, done: 0, paired: null, pairing: 'pending' as const }];
   });
   const { paths, seed } = s.run;
   // Progressive pictures are only worth their merge + summarise while something draws them: never in a
@@ -175,9 +184,13 @@ function start() {
           .comparison(a, b, base)
           .then((paired) => {
             if (mine.signal.aborted) return;
-            useRunStore.setState((prev) => ({ scenarios: prev.scenarios.map((x) => (x.id === sc.id ? { ...x, paired } : x)) }));
+            useRunStore.setState((prev) => ({ scenarios: prev.scenarios.map((x) => (x.id === sc.id ? { ...x, paired, pairing: 'current' as const } : x)) }));
           })
-          .catch(() => {});
+          .catch(() => {
+            if (mine.signal.aborted) return;
+            // Say so, and drop the previous run's comparison: nothing may read it as this run's, or wait for one that will not come.
+            useRunStore.setState((prev) => ({ scenarios: prev.scenarios.map((x) => (x.id === sc.id ? { ...x, paired: null, pairing: 'failed' as const } : x)) }));
+          });
       }
     })
     .catch((error: unknown) => {

@@ -2,9 +2,10 @@
 // quiet title, a one-sentence takeaway computed from the data, a caption with the
 // definitions) and its exits: the same data as an accessible table, a PNG, a CSV, and
 // "Explain this", which hands the chart's key numbers to the assistant.
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { askAssistant } from '@/assistant';
 import { toast } from '@/state/ui-store';
+import { registerChart } from '@/webmcp/chart-registry';
 import { IconButton } from '../Button';
 import { cx } from '../cx';
 import { Table, Td, Th } from '../misc';
@@ -57,16 +58,47 @@ export function ChartCard({ title, takeaway, takeawayText, caption, captionText,
     }
   };
 
+  // Listed for browser agents (WebMCP `list_charts`, `get_chart_data`) while on screen. The words are read from
+  // the page when asked for, so a takeaway written as markup is reported as the reader sees it.
+  const section = useRef<HTMLElement>(null);
+  const latest = useRef({ takeawayPlain, captionPlain, table });
+  useEffect(() => {
+    latest.current = { takeawayPlain, captionPlain, table };
+  });
+  const hasTable = table !== undefined;
+  useEffect(() => {
+    const words = (part: 'takeaway' | 'caption', plain: string | undefined) => plain ?? section.current?.querySelector(`[data-chart-${part}]`)?.textContent ?? null;
+    return registerChart({
+      stem,
+      title,
+      takeaway: () => words('takeaway', latest.current.takeawayPlain),
+      caption: () => words('caption', latest.current.captionPlain),
+      // A chart in an assistant message is not a chart of the view, and React keeps the previous view mounted
+      // but hidden while the next one loads.
+      place: () => {
+        const el = section.current;
+        if (!el || el.closest('[data-results-scroll]') === null) return 'elsewhere';
+        return el.getClientRects().length > 0 ? 'shown' : 'hidden';
+      },
+      table: hasTable
+        ? () => {
+            const rows = latest.current.table?.();
+            return rows ? { caption: rows.caption, columns: rows.columns.map((c) => ({ key: c.key, label: c.label })), rows: rows.rows } : { caption: '', columns: [], rows: [] };
+          }
+        : null,
+    });
+  }, [stem, title, hasTable]);
+
   const data = asTable && table ? table() : null;
 
   return (
-    <section aria-labelledby={`${id}-title`} className={cx('min-w-0', className)} data-chart-card={stem}>
+    <section ref={section} aria-labelledby={`${id}-title`} className={cx('min-w-0', className)} data-chart-card={stem}>
       <header className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h3 id={`${id}-title`} className={cx('font-medium text-ink-2', quiet ? 'text-xs' : 'text-sm')}>
             {title}
           </h3>
-          {takeaway && <p className={cx('mt-1 max-w-[44rem] text-pretty text-ink-1', quiet ? 'text-sm' : 'text-base leading-snug font-medium tracking-tight sm:text-lg sm:leading-snug')}>{takeaway}</p>}
+          {takeaway && <p data-chart-takeaway className={cx('mt-1 max-w-[44rem] text-pretty text-ink-1', quiet ? 'text-sm' : 'text-base leading-snug font-medium tracking-tight sm:text-lg sm:leading-snug')}>{takeaway}</p>}
         </div>
         {!quiet && (
           <div className="-mr-1.5 -mt-1 flex shrink-0 items-center">
@@ -95,7 +127,7 @@ export function ChartCard({ title, takeaway, takeawayText, caption, captionText,
       <div ref={body} className={cx('mt-3 transition-opacity duration-[var(--duration-slow)]', dimmed && 'opacity-60')}>
         {data ? <DataTable data={data} /> : children}
       </div>
-      {caption && <p className="mt-2 max-w-[48rem] text-xs leading-relaxed text-pretty text-ink-3">{caption}</p>}
+      {caption && <p data-chart-caption className="mt-2 max-w-[48rem] text-xs leading-relaxed text-pretty text-ink-3">{caption}</p>}
     </section>
   );
 }

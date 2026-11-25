@@ -1,8 +1,10 @@
 // The assistant's tools: definitions for the model, and the executor the agent loop calls.
+// Nothing here imports the model SDK: the in-page WebMCP tools (web/src/webmcp) reuse these
+// executors without it.
 import { isAbort } from '@/engine/errors';
-import { isAbortError } from '../agent/errors';
 import type { ApiTool, ToolCall, ToolReply } from '../agent/types';
 import { validateInput } from '../agent/validate-input';
+import { isAbortSignalError } from './abort';
 import { rankLevers, solve, sweep } from './explore';
 import { explainTax, inspectLife } from './inspect';
 import { lookupCostOfLiving, showChart } from './misc';
@@ -66,7 +68,7 @@ export async function executeTool(ctx: ToolContext, call: ToolCall, signal: Abor
     }
     return { reply: { content, isError: outcome.isError === true }, view: outcome.view };
   } catch (thrown) {
-    if (signal.aborted || isAbort(thrown) || isAbortError(thrown)) throw thrown;
+    if (signal.aborted || isAbort(thrown) || isAbortSignalError(thrown)) throw thrown;
     const error = thrown instanceof ToolError ? thrown : explainEngineError(thrown);
     return fail(error.title, error.message);
   }
