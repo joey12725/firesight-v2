@@ -72,6 +72,44 @@ fn a_warm_workspace_simulates_paths_without_allocating() {
         .map(|e| e.profile)
         .collect();
     profiles.push(kitchen_sink_lite());
+    // Private-company equity: the startup employee as she is, and with each outcome
+    // forced so that every branch of the equity step is taken on every path.
+    profiles.push(common::startup_employee());
+    {
+        use firesight_core::model::*;
+        let forced = [
+            ("fails", common::certain(OutcomeKind::Fails, 1.0, 2.0, 1.0)),
+            (
+                "acquired",
+                common::certain(OutcomeKind::Acquired, 1.0, 3.0, 3.0),
+            ),
+            ("lists", common::certain(OutcomeKind::Ipo, 1.0, 4.0, 2.5)),
+            (
+                "stays private",
+                common::certain(OutcomeKind::StillPrivate, 0.0, 0.0, 1.0),
+            ),
+        ];
+        for (i, (name, outcomes)) in forced.into_iter().enumerate() {
+            let mut p = common::startup_employee();
+            p.name = format!("startup employee, company {name}");
+            let co = &mut p.private_equity[0];
+            co.outcomes = outcomes;
+            co.tenders.annual_probability = Some(0.9);
+            co.policy.exercise = [
+                ExerciseTiming::VestedNow,
+                ExerciseTiming::AsTheyVest,
+                ExerciseTiming::AtLiquidity,
+                ExerciseTiming::AsTheyVest,
+            ][i];
+            co.policy.sell_down = [
+                SellDown::Hold,
+                SellDown::AllAtLockupEnd,
+                SellDown::OverYears { years: 3 },
+                SellDown::Hold,
+            ][i];
+            profiles.push(p);
+        }
+    }
     for profile in profiles {
         for kind in common::MARKETS {
             let plan = common::compile(&common::with_market(profile.clone(), kind));

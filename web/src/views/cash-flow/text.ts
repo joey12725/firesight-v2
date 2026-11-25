@@ -60,6 +60,9 @@ export function leadSentence(model: CashFlowModel): Segment[] {
   return out;
 }
 
+/** Added to the caption of the money-in chart when startup equity is one of its bands. */
+export const EQUITY_CAPTION = 'Startup equity is an average over lives in which it paid and lives in which it did not; the Equity view shows how likely each is.';
+
 export function flowsTakeaway(model: CashFlowModel): string {
   const i0 = model.flowStart;
   const now = sharesOfUses(model, i0);

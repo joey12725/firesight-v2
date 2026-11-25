@@ -3,7 +3,8 @@
 //! statuses and missing values so sizes, timings and summaries are representative.
 
 use super::{
-    FailureCause, PathEnd, PathScalar, Recorder, Status, SummaryContext, YearRecord, YearSeries,
+    EquityOutcome, FailureCause, PathEnd, PathScalar, Recorder, Status, SummaryContext, YearRecord,
+    YearSeries,
 };
 use crate::model::YearMonth;
 use crate::rng::{Rng, Stream};
@@ -22,7 +23,24 @@ pub(crate) struct Synthetic {
     pub spending: f64,
     /// Annual saving while working.
     pub saving: f64,
+    /// Whether the household holds private-company equity. Off by default, so the
+    /// plain kit writes no equity scalar; on, every path gets an outcome drawn at
+    /// the frequencies of [`EQUITY_SHARES`] from a stream of its own, which leaves
+    /// every other number of the path as it was.
+    pub equity: bool,
 }
+
+/// Probability of each equity outcome in the synthetic household, in
+/// `EquityOutcome` order.
+pub(crate) const EQUITY_SHARES: [f64; 4] = [0.40, 0.10, 0.35, 0.15];
+/// Share of synthetic acquisitions that pay common stock nothing.
+pub(crate) const EQUITY_ACQUIRED_ZERO: f64 = 0.20;
+/// Share of synthetic lives with a tender offer before the outcome.
+pub(crate) const EQUITY_TENDER: f64 = 0.25;
+/// Share of synthetic lives that exercise options for cash.
+pub(crate) const EQUITY_EXERCISED: f64 = 0.30;
+/// Name of the synthetic company.
+pub(crate) const EQUITY_COMPANY: &str = "Synthetic Robotics";
 
 impl Default for Synthetic {
     fn default() -> Self {
@@ -31,6 +49,7 @@ impl Default for Synthetic {
             seed: SEED,
             spending: 60_000.0,
             saving: 30_000.0,
+            equity: false,
         }
     }
 }
@@ -47,6 +66,7 @@ impl Synthetic {
             start: START,
             first_birth: YearMonth::ym(1991, 3),
             second_birth: Some(YearMonth::ym(1993, 6)),
+            equity_company: self.equity.then(|| EQUITY_COMPANY.to_string()),
         }
     }
 
@@ -210,6 +230,9 @@ impl Synthetic {
                 math_pow(growth_since_retirement, 1.0 / years) - 1.0,
             );
         }
+        if self.equity {
+            self.equity_scalars(path, &mut end);
+        }
         end.set_outcome(match (retired_at, depleted) {
             (Some(_), false) => None,
             (None, _) if months_unemployed > 8 => Some(FailureCause::JobLoss),
@@ -219,6 +242,55 @@ impl Synthetic {
             (Some(_), true) => Some(FailureCause::MarketSequence),
         });
         rec.end_path(&end);
+    }
+}
+
+impl Synthetic {
+    /// The six equity scalars of one synthetic life: an outcome at the stated
+    /// frequencies, a payout that is zero for a failure and for a fifth of the
+    /// acquisitions, sometimes a tender offer before it and sometimes an exercise.
+    fn equity_scalars(&self, path: u64, end: &mut PathEnd) {
+        let mut rng = Rng::stream(self.seed, path, Stream::PrivateCompany(0));
+        let u = rng.uniform();
+        let mut cumulative = 0.0;
+        let mut outcome = EquityOutcome::Ipo;
+        for (o, p) in EquityOutcome::ALL.iter().zip(EQUITY_SHARES) {
+            cumulative += p;
+            if u < cumulative {
+                outcome = *o;
+                break;
+            }
+        }
+        let event_age = START_AGE + 1.0 + 9.0 * rng.uniform();
+        let zero = rng.uniform() < EQUITY_ACQUIRED_ZERO;
+        let size = rng.lognormal(0.0, 1.0);
+        let tender = if rng.uniform() < EQUITY_TENDER {
+            40_000.0 * rng.lognormal(0.0, 0.5)
+        } else {
+            0.0
+        };
+        let cost = if rng.uniform() < EQUITY_EXERCISED {
+            25_000.0 * rng.lognormal(0.0, 0.5)
+        } else {
+            0.0
+        };
+        let payout = match outcome {
+            EquityOutcome::Failed | EquityOutcome::StillPrivate => 0.0,
+            EquityOutcome::Acquired if zero => 0.0,
+            EquityOutcome::Acquired => 300_000.0 * size,
+            EquityOutcome::Ipo => 1_500_000.0 * size,
+        };
+        let gross = payout + tender;
+        end.set_equity_outcome(Some(outcome));
+        if outcome != EquityOutcome::StillPrivate {
+            end.set(PathScalar::EquityEventAge, event_age);
+        }
+        end.set(PathScalar::EquityGrossProceeds, gross);
+        end.set(PathScalar::EquityExerciseCost, cost);
+        end.set(PathScalar::EquityTenderProceeds, tender);
+        // A flat 35% of the proceeds goes in tax; an exercise adds tax of 20% of
+        // its cost that never comes back.
+        end.set(PathScalar::EquityNetProceeds, 0.65 * gross - 1.2 * cost);
     }
 }
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button, Icon, Skeleton } from '@/ui';
+import { EQUITY_PROMPT } from '../prompts';
 
 const CONSOLE_KEYS_URL = 'https://console.anthropic.com/settings/keys';
 
@@ -61,7 +62,7 @@ interface WelcomeProps {
   onReview: () => void;
 }
 
-const QUESTIONS = ['How can we retire earlier?', 'What are the biggest risks to this plan?', 'How much could we spend and still be fine in 90 of 100 lives?'];
+const QUESTIONS = ['How can we retire earlier?', 'What are the biggest risks to this plan?', 'How much could we spend and still be fine in 90 of 100 lives?', EQUITY_PROMPT];
 
 /** Shown when connected and nothing has been said yet. */
 export function Welcome({ emptyPlan, onAsk, onReview }: WelcomeProps) {

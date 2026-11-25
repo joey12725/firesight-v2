@@ -2007,7 +2007,9 @@ fn compute_is_deterministic_and_matches_explain() {
         + a.se_tax[1]
         + a.state
         + a.penalties
-        + a.foreign;
+        + a.foreign
+        + a.amt
+        - a.amt_credit_used;
     close(parts, a.total);
     close(detail.amount("total").unwrap(), a.total);
     close(detail.amount("agi").unwrap(), a.agi);
@@ -2024,7 +2026,9 @@ fn compute_is_deterministic_and_matches_explain() {
         + line("state_capital_gains_excise")
         + line("local_income_tax")
         + line("early_withdrawal_penalty")
-        + line("hsa_penalty");
+        + line("hsa_penalty")
+        + line("amt")
+        + line("amt_credit");
     close(from_lines, a.total);
     // Income lines add up to AGI.
     let income = line("wages")
@@ -2119,14 +2123,627 @@ fn tax_inputs_round_trip_through_json() {
     );
     let back: TaxInputs = serde_json::from_str(&json).unwrap();
     assert_eq!(back, x);
+    // The equity fields round-trip too, and are off when absent.
+    x.wages_no_fica = [40_000.0, 0.0];
+    x.amt_applies = true;
+    x.amt_iso_adjustment = 250_000.0;
+    x.amt_gain_adjustment = -30_000.0;
+    x.amt_credit_carryforward = 12_000.0;
+    x.qsbs_excluded_gain = 500_000.0;
+    let back: TaxInputs = serde_json::from_str(&serde_json::to_string(&x).unwrap()).unwrap();
+    assert_eq!(back, x);
     // Missing fields default; "--" and lower case are accepted for the state.
     let sparse: TaxInputs =
         serde_json::from_str(r#"{"wages":[50000,0],"state":"ny","ages":[30,0]}"#).unwrap();
     assert_eq!(sparse.state, NY);
+    assert!(!sparse.amt_applies);
+    assert_eq!(sparse.amt_credit_carryforward, 0.0);
     assert_eq!(sparse.filing_status, FilingStatus::Single);
     let none: TaxInputs = serde_json::from_str(r#"{"state":"--"}"#).unwrap();
     assert_eq!(none.state, StateCode::NONE);
     assert!(serde_json::from_str::<TaxInputs>(r#"{"state":"California"}"#).is_err());
+}
+
+// ---------------------------------------------------------------- AMT and equity
+
+/// A single filer in Texas (no state tax, standard deduction 16,100) with the AMT on.
+fn amt_single(wages: f64) -> TaxInputs {
+    let mut x = single(TX, 40.0);
+    x.wages[0] = wages;
+    x.amt_applies = true;
+    x
+}
+
+#[test]
+fn amt_matches_a_hand_computed_form_6251() {
+    let p = params(TX);
+    let base = amt_single(250_000.0);
+    let mut x = base;
+    x.amt_iso_adjustment = 1_000_000.0;
+    let r = compute(&p, &x);
+    // Taxable income 250,000 - 16,100. Regular tax: 1,240 + 4,560 + 12,166 +
+    // 23,058 + 0.32 x 32,125 = 51,304.
+    close(r.taxable_income, 233_900.0);
+    close(r.federal_ordinary + r.federal_capital_gains, 51_304.0);
+    // AMT income 233,900 + 16,100 + 1,000,000 = 1,250,000; the exemption of 90,100
+    // is gone (half of the 750,000 above 500,000). 0.26 x 244,500 + 0.28 x 1,005,500.
+    close(r.tentative_minimum_tax, 345_110.0);
+    close(r.amt, 293_806.0);
+    close(r.amt_credit_used, 0.0);
+    // All of it comes from the option adjustment, so all of it is credit.
+    close(r.amt_credit_carryforward, 293_806.0);
+    let without = compute(&p, &base);
+    close(without.amt, 0.0);
+    close(r.total - without.total, 293_806.0);
+}
+
+#[test]
+fn amt_exemption_phases_out_at_fifty_cents() {
+    let mut x = amt_single(300_000.0);
+    x.amt_iso_adjustment = 300_000.0;
+    let p = params(TX);
+    let r = compute(&p, &x);
+    // AMT income 600,000: exemption 90,100 - 0.5 x 100,000 = 40,100; base 559,900:
+    // 0.26 x 244,500 + 0.28 x 315,400 = 151,882.
+    close(r.tentative_minimum_tax, 151_882.0);
+    // Regular: 58,448 at 256,225 plus 0.35 x 27,675.
+    close(r.federal_ordinary, 68_134.25);
+    close(r.amt, 83_747.75);
+    let detail = explain(&p, &x);
+    let amt = detail.lines.iter().find(|l| l.key == "amt").unwrap();
+    assert_eq!(
+        amt.note,
+        "Tentative minimum tax 151,882 less regular tax 68,134; AMT income 600,000 after an exemption of 40,100; incentive-option adjustment 300,000"
+    );
+}
+
+#[test]
+fn amt_keeps_capital_gains_rates_and_gains_alone_make_no_credit() {
+    let mut x = amt_single(150_000.0);
+    x.long_term_gains = 600_000.0;
+    x.amt_credit_carryforward = 5_000.0;
+    let r = compute(&params(TX), &x);
+    // AMT income 750,000 has no exemption left. The gain pays the same 15% and 20%
+    // in both computations; the 150,000 of ordinary AMT income pays 0.26 x 150,000 =
+    // 39,000 against a regular ordinary tax of 24,734 (on 133,900).
+    close(r.federal_ordinary, 24_734.0);
+    close(r.amt, 14_266.0);
+    close(r.tentative_minimum_tax, 39_000.0 + r.federal_capital_gains);
+    // AMT caused by the exemption phase-out is not creditable.
+    close(r.amt_credit_used, 0.0);
+    close(r.amt_credit_carryforward, 5_000.0);
+}
+
+#[test]
+fn amt_does_not_bind_on_wages_alone() {
+    let p = params(TX);
+    for status in [FilingStatus::Single, FilingStatus::MarriedJoint] {
+        let mut wages = 50_000.0;
+        while wages <= 2_000_000.0 {
+            let mut x = if status == FilingStatus::Single {
+                single(TX, 40.0)
+            } else {
+                joint(TX, [40.0, 40.0])
+            };
+            x.wages[0] = wages;
+            x.amt_applies = true;
+            let r = compute(&p, &x);
+            assert_eq!(r.amt, 0.0, "{status:?} wages {wages}");
+            assert!(r.tentative_minimum_tax > 0.0 || wages < 150_000.0);
+            let mut off = x;
+            off.amt_applies = false;
+            assert_eq!(compute(&p, &off).total, r.total);
+            wages += 25_000.0;
+        }
+    }
+}
+
+#[test]
+fn amt_is_off_without_the_flag() {
+    for state in [TX, CA, NY] {
+        let p = params(state);
+        let mut plain = joint(state, [45.0, 43.0]);
+        plain.wages = [260_000.0, 90_000.0];
+        plain.long_term_gains = 400_000.0;
+        plain.qualified_dividends = 12_000.0;
+        plain.mortgage_interest = 20_000.0;
+        plain.property_tax = 14_000.0;
+        plain.children_under_17 = 2;
+        let mut x = plain;
+        x.amt_iso_adjustment = 800_000.0;
+        x.amt_gain_adjustment = -50_000.0;
+        x.amt_credit_carryforward = 123_456.0;
+        let expected = TaxResult {
+            amt_credit_carryforward: 123_456.0,
+            ..compute(&p, &plain)
+        };
+        assert_eq!(compute(&p, &x), expected);
+        assert_eq!(expected.amt, 0.0);
+        assert_eq!(expected.tentative_minimum_tax, 0.0);
+        assert_eq!(explain(&p, &x).lines, explain(&p, &plain).lines);
+        // With the flag on the same inputs do owe AMT.
+        x.amt_applies = true;
+        assert!(compute(&p, &x).amt > 0.0);
+    }
+    // The credit is a stock: it passes through the flat, foreign and no-tax modes.
+    let mut x = single(TX, 40.0);
+    x.wages[0] = 100_000.0;
+    x.amt_applies = true;
+    x.amt_iso_adjustment = 500_000.0;
+    x.amt_credit_carryforward = 7_000.0;
+    let us = params(TX);
+    let flat = TaxYearParams {
+        kind: TaxKind::Flat { rate: 0.2 },
+        ..us
+    };
+    let none = TaxYearParams {
+        kind: TaxKind::None,
+        ..us
+    };
+    for p in [flat, none, us.with_foreign_rate(Some(0.25))] {
+        let r = compute(&p, &x);
+        assert_eq!(r.amt, 0.0);
+        assert_eq!(r.tentative_minimum_tax, 0.0);
+        assert_eq!(r.amt_credit_used, 0.0);
+        assert_eq!(r.amt_credit_carryforward, 7_000.0);
+    }
+    // A negative credit carried in is treated as none.
+    x.amt_credit_carryforward = -10.0;
+    x.amt_iso_adjustment = 0.0;
+    assert_eq!(compute(&us, &x).amt_credit_carryforward, 0.0);
+}
+
+#[test]
+fn minimum_tax_credit_is_used_up_to_regular_less_tentative() {
+    let p = params(TX);
+    let base = amt_single(250_000.0);
+    let mut x = base;
+    x.amt_credit_carryforward = 293_806.0;
+    let r = compute(&p, &x);
+    // AMT income 250,000 less the full exemption 90,100: 0.26 x 159,900 = 41,574.
+    close(r.tentative_minimum_tax, 41_574.0);
+    close(r.amt, 0.0);
+    // Regular tax 51,304 can come down to the tentative minimum tax.
+    close(r.amt_credit_used, 9_730.0);
+    close(r.amt_credit_carryforward, 284_076.0);
+    close(compute(&p, &base).total - r.total, 9_730.0);
+
+    // Non-refundable credits come first: two children take 1,900 of the room
+    // (4,400 less 50 per 1,000 of the 50,000 above 200,000).
+    x.children_under_17 = 2;
+    let r = compute(&p, &x);
+    close(r.credits, 1_900.0);
+    close(r.amt_credit_used, 9_730.0 - 1_900.0);
+    close(r.amt_credit_carryforward, 293_806.0 - 7_830.0);
+    // A small credit is used in full.
+    x.children_under_17 = 0;
+    x.amt_credit_carryforward = 1_000.0;
+    let r = compute(&p, &x);
+    close(r.amt_credit_used, 1_000.0);
+    close(r.amt_credit_carryforward, 0.0);
+}
+
+#[test]
+fn a_qualifying_sale_releases_the_credit_at_gains_rates() {
+    let mut x = amt_single(250_000.0);
+    x.long_term_gains = 1_000_000.0;
+    x.amt_gain_adjustment = -1_000_000.0;
+    x.amt_credit_carryforward = 293_806.0;
+    let p = params(TX);
+    let r = compute(&p, &x);
+    // The AMT gain is nil (the AMT basis is the value at exercise), so AMT income is
+    // 1,233,900 + 16,100 - 1,000,000 = 250,000, all ordinary.
+    close(r.tentative_minimum_tax, 41_574.0);
+    // Regular: 51,304 on 233,900 of ordinary income; the gain pays 15% on the
+    // 311,600 up to 545,500 and 20% on the other 688,400: 46,740 + 137,680.
+    close(r.federal_ordinary, 51_304.0);
+    close(r.federal_capital_gains, 184_420.0);
+    close(r.amt, 0.0);
+    // 235,724 of regular tax can come down to the tentative minimum tax.
+    close(r.amt_credit_used, 194_150.0);
+    close(r.amt_credit_carryforward, 99_656.0);
+    let line = explain(&p, &x);
+    close(line.amount("amt_credit").unwrap(), -r.amt_credit_used);
+    assert!(line.amount("amt").is_none());
+}
+
+#[test]
+fn a_gain_adjustment_comes_off_the_gain_not_the_ordinary_income() {
+    let mut x = amt_single(250_000.0);
+    x.long_term_gains = 3_000_000.0;
+    x.amt_gain_adjustment = -1_000_000.0;
+    x.amt_credit_carryforward = 293_806.0;
+    let p = params(TX);
+    let r = compute(&p, &x);
+    // AMT income 3,233,900 + 16,100 - 1,000,000 = 2,250,000 with no exemption: a
+    // gain of 2,000,000 at capital-gains rates (46,740 + 0.20 x 1,688,400 = 384,420)
+    // and 250,000 of ordinary income (0.26 x 244,500 + 0.28 x 5,500 = 65,110).
+    close(r.tentative_minimum_tax, 449_530.0);
+    // Had the adjustment come off ordinary income instead, all 2,250,000 would be
+    // gain at capital-gains rates and none of it ordinary: 46,740 + 0.20 x 1,938,400
+    // = 434,420, which is 15,110 too low.
+    let mut wrong = x;
+    wrong.amt_gain_adjustment = 0.0;
+    wrong.amt_iso_adjustment = -1_000_000.0;
+    close(compute(&p, &wrong).tentative_minimum_tax, 434_420.0);
+    // A positive gain adjustment is ignored.
+    let mut positive = x;
+    positive.amt_gain_adjustment = 1_000_000.0;
+    let mut none = x;
+    none.amt_gain_adjustment = 0.0;
+    assert_eq!(compute(&p, &positive), compute(&p, &none));
+}
+
+#[test]
+fn a_disqualifying_sale_adjustment_comes_off_ordinary_income() {
+    let p = params(TX);
+    let mut x = amt_single(250_000.0);
+    x.wages_no_fica[0] = 400_000.0;
+    x.amt_iso_adjustment = -400_000.0;
+    let r = compute(&p, &x);
+    // The spread was AMT income in the year of exercise; this year's ordinary
+    // income from the sale is not AMT income again.
+    close(r.tentative_minimum_tax, 41_574.0);
+    close(
+        r.tentative_minimum_tax,
+        compute(&p, &amt_single(250_000.0)).tentative_minimum_tax,
+    );
+    close(r.amt, 0.0);
+    close(r.agi, 650_000.0);
+}
+
+#[test]
+fn married_amt_uses_the_joint_amounts() {
+    let mut x = joint(TX, [40.0, 40.0]);
+    x.wages[0] = 400_000.0;
+    x.amt_applies = true;
+    x.amt_iso_adjustment = 900_000.0;
+    let r = compute(&params(TX), &x);
+    // Taxable income 400,000 - 32,200. Regular: 2,480 + 9,120 + 24,332 +
+    // 0.24 x 156,400 = 73,468.
+    close(r.taxable_income, 367_800.0);
+    close(r.federal_ordinary, 73_468.0);
+    // AMT income 1,300,000: exemption 140,200 less half of 300,000 is nothing.
+    // 0.26 x 244,500 + 0.28 x 1,055,500.
+    close(r.tentative_minimum_tax, 359_110.0);
+    close(r.amt, 285_642.0);
+    close(r.amt_credit_carryforward, 285_642.0);
+}
+
+#[test]
+fn iso_income_bears_no_payroll_tax() {
+    let p = params(CA);
+    let mut as_wages = single(CA, 40.0);
+    as_wages.wages[0] = 100_000.0;
+    let mut as_iso = single(CA, 40.0);
+    as_iso.wages_no_fica[0] = 100_000.0;
+    let (a, b) = (compute(&p, &as_wages), compute(&p, &as_iso));
+    close(b.agi, a.agi);
+    close(b.taxable_income, a.taxable_income);
+    close(b.federal_ordinary, a.federal_ordinary);
+    close(b.state, a.state);
+    // 7.65% of 100,000.
+    close(a.fica[0] - b.fica[0], 7_650.0);
+    close(b.fica[0], 0.0);
+    close(a.total - b.total, 7_650.0);
+    // It counts as earned income where a city taxes earnings, and in the flat mode.
+    let law = law();
+    let pa = StateCode(*b"PA");
+    let mut philadelphia = law.for_year(Indexation::base(2026), pa);
+    law.local_tax(pa, Some("Philadelphia"))
+        .apply(&mut philadelphia.state);
+    assert!(philadelphia.state.local_earned_only);
+    let mut x = single(pa, 40.0);
+    x.wages[0] = 100_000.0;
+    let on_wages = compute(&philadelphia, &x).local;
+    x.wages[0] = 0.0;
+    x.wages_no_fica[0] = 100_000.0;
+    assert!(on_wages > 0.0);
+    close(compute(&philadelphia, &x).local, on_wages);
+    let flat = TaxYearParams {
+        kind: TaxKind::Flat { rate: 0.2 },
+        ..p
+    };
+    close(compute(&flat, &as_iso).total, 20_000.0);
+    // The explanation says so, and the income lines still sum.
+    let detail = explain(&p, &as_iso);
+    let wages = detail.lines.iter().find(|l| l.key == "wages").unwrap();
+    assert_eq!(wages.amount, 100_000.0);
+    assert_eq!(
+        wages.note,
+        "Gross pay including bonuses and vested equity; includes 100,000 of incentive-option income that bears no payroll tax"
+    );
+}
+
+#[test]
+fn qsbs_gain_is_out_of_federal_income_and_in_state_income() {
+    let p = params(CA);
+    // Wages high enough that the state tax already fills the federal SALT cap, so
+    // the extra state tax cannot change the federal deduction.
+    let mut base = single(CA, 40.0);
+    base.wages[0] = 600_000.0;
+    base.amt_applies = true;
+    let mut x = base;
+    x.qsbs_excluded_gain = 500_000.0;
+    let (a, b) = (compute(&p, &base), compute(&p, &x));
+    assert_eq!(b.agi, a.agi);
+    assert_eq!(b.taxable_income, a.taxable_income);
+    assert_eq!(b.federal_ordinary, a.federal_ordinary);
+    assert_eq!(b.federal_capital_gains, a.federal_capital_gains);
+    assert_eq!(b.niit, a.niit);
+    assert_eq!(b.fica, a.fica);
+    assert_eq!(b.tentative_minimum_tax, a.tentative_minimum_tax);
+    assert_eq!(b.amt, a.amt);
+    assert_eq!(b.magi, a.magi);
+    assert_eq!(b.magi_irmaa, a.magi_irmaa);
+    // California taxes it like 500,000 more of ordinary income.
+    let mut ordinary = base;
+    ordinary.other_ordinary = 500_000.0;
+    let c = compute(&p, &ordinary);
+    assert!(c.state - a.state > 0.09 * 500_000.0);
+    close(b.state - a.state, c.state - a.state);
+    close(b.total - a.total, c.state - a.state);
+    // A state without an income tax charges nothing.
+    let mut tx = single(TX, 40.0);
+    tx.wages[0] = 600_000.0;
+    let plain = compute(&params(TX), &tx);
+    tx.qsbs_excluded_gain = 500_000.0;
+    assert_eq!(compute(&params(TX), &tx), plain);
+    // The line is informational: outside the sum to AGI.
+    let detail = explain(&p, &x);
+    assert_eq!(detail.amount("qsbs_excluded_gain"), Some(500_000.0));
+    close(detail.amount("wages").unwrap(), detail.result.agi);
+    let state = detail
+        .lines
+        .iter()
+        .find(|l| l.key == "state_taxable_income")
+        .unwrap();
+    assert!(
+        state
+            .note
+            .contains("plus 500,000 of gain excluded federally as qualified small business stock"),
+        "{}",
+        state.note
+    );
+}
+
+#[test]
+fn explain_lines_still_sum() {
+    let p = params(CA);
+    // One return that owes AMT and one that uses the credit; both with
+    // incentive-option income, an excluded gain and ordinary gains.
+    let mut owes = joint(CA, [44.0, 41.0]);
+    owes.wages = [240_000.0, 60_000.0];
+    owes.wages_no_fica = [35_000.0, 0.0];
+    owes.pretax_deferrals = [20_000.0, 5_000.0];
+    owes.interest = 3_000.0;
+    owes.qualified_dividends = 4_000.0;
+    owes.long_term_gains = 80_000.0;
+    owes.short_term_gains = 6_000.0;
+    owes.qsbs_excluded_gain = 200_000.0;
+    owes.children_under_17 = 1;
+    owes.amt_applies = true;
+    owes.amt_iso_adjustment = 700_000.0;
+    owes.amt_credit_carryforward = 15_000.0;
+    let mut uses = owes;
+    uses.amt_iso_adjustment = -35_000.0;
+    uses.long_term_gains = 900_000.0;
+    uses.amt_gain_adjustment = -600_000.0;
+    uses.amt_credit_carryforward = 150_000.0;
+    for (x, key) in [(owes, "amt"), (uses, "amt_credit")] {
+        let detail = explain(&p, &x);
+        let r = compute(&p, &x);
+        assert_eq!(detail.result, r);
+        let line = |key: &str| detail.amount(key).unwrap_or(0.0);
+        assert!(line(key) != 0.0, "no {key} line");
+        close(line("amt"), r.amt);
+        close(line("amt_credit"), -r.amt_credit_used);
+        let income = line("wages")
+            + line("self_employment")
+            + line("pretax_contributions")
+            + line("investment_income")
+            + line("capital_gains")
+            + line("retirement_income")
+            + line("rental_income")
+            + line("other_income")
+            + line("half_se_tax_deduction")
+            + line("taxable_social_security");
+        close(income, r.agi);
+        let tax = line("federal_income_tax")
+            + line("amt")
+            + line("amt_credit")
+            + line("niit")
+            + line("fica_0")
+            + line("fica_1")
+            + line("se_tax_0")
+            + line("se_tax_1")
+            + line("state_income_tax")
+            + line("state_capital_gains_excise")
+            + line("local_income_tax")
+            + line("early_withdrawal_penalty")
+            + line("hsa_penalty");
+        close(tax, r.total);
+        close(line("total"), r.total);
+        let parts = r.federal_ordinary + r.federal_capital_gains - r.credits + r.amt
+            - r.amt_credit_used
+            + r.niit
+            + r.fica[0]
+            + r.fica[1]
+            + r.state
+            + r.penalties;
+        close(parts, r.total);
+        // The AMT lines sit with the federal tax, before the credits and the subtotal.
+        let position = |key: &str| detail.lines.iter().position(|l| l.key == key).unwrap();
+        assert!(position("federal_capital_gains_tax") < position(key));
+        assert!(position(key) < position("federal_income_tax"));
+        assert!(position("capital_gains") < position("qsbs_excluded_gain"));
+        assert!(position("qsbs_excluded_gain") < position("agi"));
+        for (i, l) in detail.lines.iter().enumerate() {
+            assert!(!l.label.is_empty() && !l.note.is_empty(), "{}", l.key);
+            assert!(
+                detail.lines[..i].iter().all(|other| other.key != l.key),
+                "{}",
+                l.key
+            );
+        }
+    }
+    let detail = explain(&p, &uses);
+    let credit = detail.lines.iter().find(|l| l.key == "amt_credit").unwrap();
+    let r = detail.result;
+    assert_eq!(credit.label, "Minimum tax credit used");
+    assert!(
+        credit.note.starts_with("150,000 carried in, "),
+        "{}",
+        credit.note
+    );
+    assert!(
+        credit.note.ends_with(" carried to next year"),
+        "{}",
+        credit.note
+    );
+    close(r.amt_credit_carryforward, 150_000.0 - r.amt_credit_used);
+}
+
+#[test]
+fn amt_amounts_index_with_the_brackets() {
+    let law = law();
+    let base = law.for_year(Indexation::base(2026), TX).federal;
+    assert_eq!(base.amt_exemption, [90_100.0, 140_200.0, 90_100.0]);
+    assert_eq!(base.amt_phaseout_start, [500_000.0, 1_000_000.0, 500_000.0]);
+    assert_eq!(base.amt_phaseout_rate, 0.5);
+    assert_eq!(base.amt_rate_break, 244_500.0);
+    assert_eq!(base.amt_rates, [0.26, 0.28]);
+    assert_eq!(base.supplemental_rate, 0.22);
+    assert_eq!(base.supplemental_rate_high, 0.37);
+    assert_eq!(base.supplemental_threshold, 1_000_000.0);
+    assert_eq!(base.qsbs_cap, 15_000_000.0);
+    assert_eq!(base.qsbs_cap_old, 10_000_000.0);
+
+    let index = Indexation {
+        year: 2028,
+        cpi_factor: 1.05,
+        wage_factor: 1.07,
+        fpl_factor: 1.03,
+        health_factor: 1.1,
+    };
+    let later = law.for_year(index, TX).federal;
+    for s in 0..FilingStatus::COUNT {
+        assert_eq!(later.amt_exemption[s], base.amt_exemption[s] * 1.05);
+        assert_eq!(
+            later.amt_phaseout_start[s],
+            base.amt_phaseout_start[s] * 1.05
+        );
+    }
+    assert_eq!(later.amt_rate_break, 244_500.0 * 1.05);
+    assert_eq!(later.amt_rates, base.amt_rates);
+    assert_eq!(later.amt_phaseout_rate, base.amt_phaseout_rate);
+    assert_eq!(later.supplemental_rate, base.supplemental_rate);
+    assert_eq!(later.supplemental_rate_high, base.supplemental_rate_high);
+    assert_eq!(later.supplemental_threshold, base.supplemental_threshold);
+    assert_eq!(later.qsbs_cap, base.qsbs_cap);
+    assert_eq!(later.qsbs_cap_old, base.qsbs_cap_old);
+
+    // The simulation indexes one filing status at a time and refreshes the
+    // parameters in place; both routes give the same AMT amounts.
+    let mut lazy = law.for_year(Indexation::base(2026), TX);
+    law.for_year_statuses_into(
+        index,
+        TX,
+        &mut lazy,
+        1 << FilingStatus::Single.index(),
+        true,
+    );
+    law.index_status_into(index, TX, &mut lazy, FilingStatus::MarriedJoint.index());
+    law.index_status_into(index, TX, &mut lazy, FilingStatus::HeadOfHousehold.index());
+    assert_eq!(lazy.federal, later);
+
+    // With indexing off the amounts stay in base-year dollars.
+    let frozen = TaxLaw::from_data(
+        Data::embedded(),
+        &TaxModel {
+            index_brackets: false,
+            ..TaxModel::default()
+        },
+    )
+    .unwrap()
+    .for_year(index, TX)
+    .federal;
+    assert_eq!(frozen.amt_exemption, base.amt_exemption);
+    assert_eq!(frozen.amt_rate_break, base.amt_rate_break);
+}
+
+#[test]
+fn missing_amt_or_supplemental_data_fails_loudly() {
+    let model = TaxModel::default();
+    let cases: [(&[&str], &str); 10] = [
+        (&["income_tax", "alternative_minimum_tax"], "exemption"),
+        (
+            &["income_tax", "alternative_minimum_tax"],
+            "exemption_phaseout_start",
+        ),
+        (
+            &["income_tax", "alternative_minimum_tax"],
+            "exemption_phaseout_rate",
+        ),
+        (
+            &["income_tax", "alternative_minimum_tax"],
+            "rate_26_up_to_amti_excess",
+        ),
+        (&["income_tax", "alternative_minimum_tax"], "rates"),
+        (&["supplemental_wage_withholding"], "rate"),
+        (&["supplemental_wage_withholding"], "rate_above_threshold"),
+        (&["supplemental_wage_withholding"], "threshold"),
+        (&["qualified_small_business_stock"], "per_issuer_cap"),
+        (
+            &["qualified_small_business_stock"],
+            "per_issuer_cap_stock_acquired_before_2025_07_05",
+        ),
+    ];
+    for (path, key) in cases {
+        let mut data = Data::embedded().clone();
+        let mut node = &mut data.tax_federal;
+        for part in path {
+            node = &mut node[*part];
+        }
+        assert!(node.as_object_mut().unwrap().remove(key).is_some(), "{key}");
+        let err = TaxLaw::from_data(&data, &model).unwrap_err();
+        assert_eq!(err.file, "data/tax/us-federal-2026.json");
+        assert_eq!(err.message, format!("{}.{key}: missing", path.join(".")));
+    }
+    // Whole blocks, and a block of the wrong shape.
+    for block in [
+        "supplemental_wage_withholding",
+        "qualified_small_business_stock",
+    ] {
+        let mut data = Data::embedded().clone();
+        data.tax_federal.as_object_mut().unwrap().remove(block);
+        let err = TaxLaw::from_data(&data, &model).unwrap_err();
+        assert_eq!(err.message, format!("{block}: missing"));
+    }
+    let mut data = Data::embedded().clone();
+    data.tax_federal["income_tax"]
+        .as_object_mut()
+        .unwrap()
+        .remove("alternative_minimum_tax");
+    let err = TaxLaw::from_data(&data, &model).unwrap_err();
+    assert_eq!(err.message, "income_tax.alternative_minimum_tax: missing");
+    let mut data = Data::embedded().clone();
+    data.tax_federal["income_tax"]["alternative_minimum_tax"]["rates"] =
+        serde_json::json!([0.26, 0.28, 0.3]);
+    let err = TaxLaw::from_data(&data, &model).unwrap_err();
+    assert_eq!(
+        err.message,
+        "income_tax.alternative_minimum_tax.rates: expected two rates"
+    );
+    // Head of household may be left out of the AMT tables: it files as single.
+    let mut data = Data::embedded().clone();
+    data.tax_federal["income_tax"]["alternative_minimum_tax"]["exemption"]
+        .as_object_mut()
+        .unwrap()
+        .remove("head_of_household");
+    let law = TaxLaw::from_data(&data, &model).unwrap();
+    let f = law.for_year(Indexation::base(2026), TX).federal;
+    assert_eq!(f.amt_exemption[2], f.amt_exemption[0]);
 }
 
 // ---------------------------------------------------------------- RMD
@@ -2222,4 +2839,74 @@ fn bench_compute() {
     }
     let ns = start.elapsed().as_nanos() as f64 / f64::from(m);
     println!("for_year: {ns:.1} ns/call (checksum {sum:.0})");
+}
+
+#[test]
+fn amt_income_starts_from_taxable_income_before_the_floor() {
+    // No job in the exercise year: 1,429 of interest against a standard deduction
+    // of 16,100, and a 400,000 option adjustment. Form 6251 line 1 is 1,429 -
+    // 16,100 = -14,671, so only the deduction that was used comes back:
+    // AMT income -14,671 + 16,100 + 400,000 = 401,429. Exemption 90,100, base
+    // 311,329: 0.26 x 244,500 + 0.28 x 66,829 = 82,282.12. (Starting from zero
+    // instead gave 416,100 and 86,390: tax on a deduction that saved nothing.)
+    let p = params(TX);
+    let mut x = amt_single(0.0);
+    x.interest = 1_429.0;
+    x.amt_iso_adjustment = 400_000.0;
+    let r = compute(&p, &x);
+    close(r.taxable_income, 0.0);
+    close(r.tentative_minimum_tax, 82_282.12);
+    close(r.amt, 82_282.12);
+    close(r.amt_credit_carryforward, 82_282.12);
+    let detail = explain(&p, &x);
+    let line = detail.lines.iter().find(|l| l.key == "amt").unwrap();
+    assert!(line.note.contains("AMT income 401,429"), "{}", line.note);
+    // Wages of 10,000: AMT income 410,000, base 319,900, 63,570 + 0.28 x 75,400.
+    let mut x = amt_single(10_000.0);
+    x.amt_iso_adjustment = 400_000.0;
+    close(compute(&p, &x).tentative_minimum_tax, 84_682.0);
+    // With income above the deduction nothing changes (the hand-computed cases
+    // above), and without an adjustment a household below it owes no AMT.
+    let mut x = amt_single(0.0);
+    x.interest = 1_429.0;
+    let r = compute(&p, &x);
+    assert_eq!((r.amt, r.tentative_minimum_tax), (0.0, 0.0));
+}
+
+#[test]
+fn an_amt_gain_adjustment_comes_off_the_gain_and_nothing_else() {
+    // Incentive-option shares sold in a year whose regular gain is nearly gone
+    // (an exclusion, or other losses): 2,000 of long-term gain is in taxable
+    // income, and the sale carries a gain adjustment of -50,000. The AMT gain
+    // cannot fall below nil, so 2,000 comes off and ordinary AMT income stays.
+    let p = params(TX);
+    let mut x = amt_single(150_000.0);
+    x.long_term_gains = 2_000.0;
+    x.amt_credit_carryforward = 30_000.0;
+    let without = compute(&p, &x);
+    // Regular: 24,734 on 133,900 of ordinary income plus 15% of 2,000.
+    close(
+        without.federal_ordinary + without.federal_capital_gains,
+        25_034.0,
+    );
+    // AMT income 152,000, exemption 90,100: 0.26 x 59,900 + 15% of 2,000.
+    close(without.tentative_minimum_tax, 15_874.0);
+    close(without.amt_credit_used, 9_160.0);
+    x.amt_gain_adjustment = -50_000.0;
+    let with = compute(&p, &x);
+    // AMT income 150,000: 0.26 x 59,900, no gain left.
+    close(with.tentative_minimum_tax, 15_574.0);
+    // The adjustment releases the tax on the gain it removed, 300 of credit, and
+    // not 0.26 x 48,000 more off wages.
+    close(with.amt_credit_used, 9_460.0);
+    close(with.amt_credit_carryforward, 30_000.0 - 9_460.0);
+    // A gain as large as the adjustment takes all of it, as before.
+    x.long_term_gains = 600_000.0;
+    x.amt_gain_adjustment = -50_000.0;
+    let r = compute(&p, &x);
+    let mut plain = x;
+    plain.amt_gain_adjustment = 0.0;
+    let r0 = compute(&p, &plain);
+    // 50,000 less gain at 20% in the tentative tax (no exemption at this income).
+    close(r0.tentative_minimum_tax - r.tentative_minimum_tax, 10_000.0);
 }

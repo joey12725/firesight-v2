@@ -12,6 +12,8 @@ single-period returns. Measurements quoted with a path count come from the engin
 itself (20,000 paths of 720 months per market model, or the stated number), most of
 them made by seven independent reviewers who audited the engine in November 2026;
 figures marked "after the audit" were re-measured on the corrected code.
+Private-company equity (sections 5 and 6.1) was added after the audit; its
+measurements were made for this document and are marked where they appear.
 
 ## 1. Time
 
@@ -308,6 +310,185 @@ State and local rules corrected by the audit:
 Other tax modes: a flat rate, or none. A household abroad pays its flat foreign
 rate instead of US federal, state and payroll tax (a simplification).
 
+### Equity compensation and the alternative minimum tax
+
+Stock and options in a private company (section 6.1) reach the tax return as five
+kinds of amount. Each is found in the month it arises and added to that year's
+return.
+
+**Pay.** The spread on a non-qualified option at exercise (the 409A value of a share
+less the strike), the cash an acquirer pays for options and RSUs, and RSUs and
+non-qualified options sold after a listing or in a tender offer are wages: income
+tax, Social Security up to the wage base, and Medicare. An incentive option that an
+acquirer cashes out, or that is exercised more than three months after leaving the
+company (IRC 422(a)(2)), is taxed the same way.
+
+**Income without payroll tax.** Incentive-option shares sold before both holding
+periods are met (more than twelve months after exercise and more than twenty-four
+after the grant) give ordinary income equal to the smaller of the spread at exercise
+and the gain actually made, never below zero. It is income on the return but not
+wages for payroll tax, and nothing is withheld on it. An incentive option exercised
+and sold in one step, in a tender offer or after an IPO, is the same case.
+
+**Gains.** Shares are kept in lots, each with its cost, the month it was acquired
+and, for incentive-option shares, the grant month and the spread at exercise. A lot
+sold more than twelve months after it was acquired is a long-term gain; sooner, a
+short-term one, taxed as ordinary income. (Ordinary taxable accounts are pooled at
+average cost and always long-term; these lots are the engine's only short-term
+gains.) The cost is the strike for incentive-option shares and the value at exercise
+for non-qualified ones, whose spread was already taxed as pay. When a company fails
+or is written off, the cost of every lot is a capital loss, netted and carried
+forward under the $3,000 rule like any other. If incentive options were exercised
+earlier in the same calendar year, their AMT adjustment is undone as well: the
+household is taken to sell or abandon worthless shares before the year closes, and
+a disposition in the year of exercise limits the AMT income to the gain, which is
+nil (IRC 56(b)(3) and 422(c)(2)). Whether worthlessness alone counts as a
+disposition is not settled; an advised holder makes sure it does. In a later year
+the adjustment stands and only the credit is left. When the owner dies the lots pass to
+the survivor at that month's value (the 409A value while the company is private)
+and count as long-term.
+
+**The alternative minimum tax.** Exercising an incentive option and keeping the
+shares is not income for the regular tax, but the spread is income for the AMT in
+the year of exercise (if the shares are sold in the same calendar year the
+adjustment is undone). The engine computes Form 6251 in this form:
+
+```text
+AMT income = taxable income before the floor at zero
+             + the standard deduction, or state and local tax if itemising
+             + the incentive-option adjustment + the gain adjustment (never positive)
+exemption  = max(0, E - 0.5 x max(0, AMT income - T))
+base       = max(0, AMT income - exemption)
+flat(v)    = 26% of the first $244,500 of v + 28% of the rest
+tentative  = min(flat(base - gains) + tax on the gains at 0/15/20%, flat(base))
+AMT        = max(0, tentative - regular tax before credits)
+```
+
+The 2026 amounts are `E` = $90,100 single and $140,200 joint, and `T` = $500,000 and
+$1,000,000 (Rev. Proc. 2025-32; the 2025 act reset the thresholds and doubled the
+phase-out to 50 cents per dollar, so the exemption is gone at $680,200 and
+$1,280,400). Inside the phase-out band a dollar of income adds a dollar and a half
+to the base, so the marginal rate there is 39% or 42%. Long-term gains and qualified
+dividends keep their own rates inside the AMT, stacked on ordinary income as on the
+regular return. The amounts are indexed with the chained CPI. The senior and
+business-income deductions are allowed; no other preference or adjustment is
+modelled. AMT income starts from taxable income as Form 6251 line 1 does, which is
+negative when the deductions exceed income: a household that exercises in a year
+with no pay adds back only the deduction it used. (Single, $1,429 of interest and
+a $400,000 spread: AMT income is 1,429 - 16,100 + 16,100 + 400,000 = $401,429 and
+the AMT $82,282, not the $86,390 that starting from zero gives.)
+
+AMT caused by the option adjustment becomes a **minimum tax credit**. The credit
+made in a year is the AMT with the adjustment less the AMT without it: under 2026
+law a large capital gain can cause AMT by itself through the exemption phase-out,
+and that part is not creditable. The credit never expires. In a later year it is
+used against regular tax as far as regular tax, after the other non-refundable
+credits, exceeds that year's tentative minimum tax. When the shares are sold in a
+qualifying sale, the gain for the AMT is measured from the value at exercise and not
+from the strike, so the earlier spread comes off the gain taxed at capital-gains
+rates inside the AMT. That lowers the tentative tax and releases credit. The amount
+taken off is limited to the gain actually made, and to the long-term gain that is
+in taxable income that year: where other losses or an exclusion have already
+removed the regular gain, nothing comes off income taxed at 26% or 28%. So if the
+shares are sold for less than they were worth at exercise, or the company fails in
+a later year, the sale releases little or nothing, and the credit comes back only
+in small pieces in ordinary years.
+
+Hand-checked against the engine (single filer in Texas, standard deduction $16,100):
+wages of $250,000 and a $1,000,000 spread on incentive options held past the year
+end. Regular tax on $233,900 is $51,304. AMT income is $1,250,000, the exemption is
+gone, and the tentative minimum tax is 0.26 x 244,500 + 0.28 x 1,005,500 = $345,110,
+so the AMT is $293,806, all of it credit. What happens next depends on the year
+that follows, and the two cases below are alternatives, not a sequence. If it is a
+year with the same wages and nothing else, the tentative tax is $41,574 and $9,730
+of the credit is used: at that pace the credit takes about thirty years to come
+back. If instead it is the year the shares are sold for a $1,000,000 long-term
+gain, regular tax is $51,304 + $184,420 = $235,724, the gain for the AMT is nil,
+the tentative tax is again $41,574, and $194,150 of the credit is used, leaving
+$99,656 of the original $293,806.
+
+The AMT is computed only for plans that list a company under `private_equity`
+(counted or not, so that "count it at zero" compares like with like). A household
+with moderate wages and a large long-term gain can owe AMT under 2026 law with no
+options at all. Computing it for every plan would have changed the results of plans
+that have nothing to do with this feature, and keeping those results as they were
+took priority. Section 17 lists the omission. There is no state AMT.
+
+**Small-business stock.** A company flagged `qsbs` has its gains excluded from
+federal income under section 1202: for stock acquired after July 4, 2025, 50% after
+three years, 75% after four and 100% after five; for earlier stock, 100% after more
+than five years; up to $15,000,000 of gain per company ($10,000,000 for earlier
+stock). The flag is the user's statement that the stock qualifies. The excluded gain
+is outside federal income, the investment-income tax and the AMT. Two
+simplifications here are large, and they point in opposite directions.
+
+*State tax is too high outside four states.* Every state taxes the excluded gain as
+ordinary income, which is right for California, Alabama, Mississippi and
+Pennsylvania and too much elsewhere: a state that follows the federal exclusion
+does not tax it. The overcharge is the state's and city's rates on the whole
+excluded gain. (A New
+York City holder with a $2,500,000 gain excluded in full is charged $284,958 of
+state and city tax in the year of the sale, against $26,758 the year after.)
+
+*Federal tax is too low on a sale at three or four years.* The part of the gain
+that is not excluded at the 50% and 75% tiers is taxed by law at up to 28%, or the
+holder's ordinary rate if lower (IRC 1(h)(4) and (7)). The engine taxes it at the
+ordinary long-term rates of 0, 15 and 20%. That understates federal tax by 8 points
+on the part it taxes at 20% and by up to 13 points on the part it taxes at 15%:
+about 4% of the whole gain for a large sale at three years and 2% at four, so
+about $400,000 on a $10,000,000 gain sold at three years. (Single filer in Texas, a
+$2,500,000 gain at three and a half years, half excluded: the engine charges
+$231,768 on the $1,250,000 that is taxed, and at 28% it would be $350,000, about
+$118,000 more.) A plan that sells qualifying stock between three and five years
+after acquiring it is therefore shown too favourably; a sale after five years is
+not affected.
+
+For incentive-option shares the exclusion
+applies to each tax's own gain: the AMT gain is measured from the value at exercise,
+so with a fraction `f` excluded only `(1 - f)` of the spread comes off the AMT
+gain, and nothing when the gain is excluded in full. The AMT paid at exercise is
+then mostly not recovered through the sale. (1,000,000 options at $0.50 exercised
+at $5 and sold at $30 after three years, half excluded: the AMT gain taxed is half
+of $25 million, not $14.75 million less $4.5 million, and the sale releases about
+$468,000 of credit where the earlier rule released $919,000.)
+
+**Paying the tax.** At the event, pay-type equity income has FICA taken and federal
+income tax withheld at the supplemental rate: 22%, and 37% on the part of a year's
+equity pay above $1,000,000 (IRS Publication 15). FICA here includes the 0.9%
+Additional Medicare tax on the part that takes the person's wages for the year over
+$200,000, as an employer withholds it whatever the filing status (IRC 3102(f)); a
+joint return settles the difference. Nothing is withheld for the state.
+The month after, the year's tax is planned again from the actual year to date, and
+the rest of what the event costs (the federal shortfall, state tax, the
+investment-income tax, any AMT) is paid in level instalments over the remaining
+months, or in April after a December event. Salary withholding is sized as if the
+equity had not happened, so the equity's tax does not hide in the pay cheque. The
+cash for the tax is not invested and sold back: the event month's net proceeds, the
+estimated AMT on an exercise and the instalments still to come are held out of the
+savings sweep, and the funded test does not count them. (Before that rule a traced
+life that retired two months after a $6.3 million acquisition counted $0.8 million
+of tax still owed as savings.)
+
+**What "affordable" means for an exercise.** Options are exercised for cash only as
+far as cash and taxable savings above the emergency fund (the retirement cash
+reserve once retired) and above tax already owed can pay for it. The cost counted is
+the strike plus the tax the exercise causes. For a non-qualified option that is
+everything the spread adds to the year's return, not only what is withheld: the
+return as last planned is computed with and without the whole spread at stake
+(federal and state income tax, payroll tax, the Additional Medicare tax), and the
+average rate is used, never less than the withholding. Withholding is 22% and the
+tax is commonly 40 to 50%; the part beyond withholding is held in cash from the
+month of the exercise until the instalments take it. (Sized from the withholding
+alone, a household with $600,000 and 200,000 options at $1 against a $9 value
+exercised 167,000 of them, owed $771,000 in tax and was left in debt in every
+life; it now exercises about 111,000 and stays whole.) For an incentive option the
+cost is 28% of the spread, the top AMT rate. The 28% is an estimate held in cash;
+the actual AMT arrives through the instalments and can be less, or more inside the
+phase-out band. When savings cover only part, that part is exercised. The strike is paid by selling
+taxable investments. In a random test of the engine one low-strike incentive grant
+cost $10,800 of strike and $106,000 of tax and then paid nothing, so "more paid in
+than came back" is mostly tax, not strike, for such a grant.
+
 ## 6. Income and careers
 
 A job pays its entered salary (today's dollars) and follows either a flat real
@@ -332,13 +513,371 @@ at least one layoff.
 Bonuses vary with the stock market (correlation 0.5 with the trailing year);
 commissions and self-employment profit are lognormal around their entered means
 with the entered volatility. RSUs vest monthly after a cliff with refresh grants,
-are taxed as wages at vest, and are forfeited when the job ends. Private-company
-equity pays off through liquidity events: 44% of grants are worthless after 20
-years, 43% pay (0.76 times paper value on average).
+are taxed as wages at vest, and are forfeited when the job ends. Stock and options
+in a private company have their own model (section 6.1). A private-company grant
+entered on a job instead, which is also where a version 1 plan's stock options
+land, keeps the older single-event model: one liquidity event taxed as wages, with
+44% of grants worthless after 20 years and 43% paying (0.76 times paper value on
+average). Validation points such a grant to the newer section.
 
 Past earnings, needed for Social Security, are rebuilt backwards from today's pay
 along the same curve the job follows going forward, capped at each year's wage
 base.
+
+### 6.1 Private-company equity
+
+Stock, options and RSUs in a company that is not publicly traded are entered under
+`private_equity`, up to four companies. What follows was added after the audit and
+was not part of it; its measurements were made for this section with the
+command-line build.
+
+**Inputs.** For the company: how far along it is (seed, Series A, B, C, late stage,
+or valued above a billion dollars), the price per share in its latest funding round
+(the *preferred price*, written `P0` below), and optionally the 409A value of a
+common share, the money raised as a share of the valuation, a lean on the odds
+(pessimistic, typical, optimistic) or a table of the user's own, and tender-offer
+terms. For each holding: its kind (incentive options, non-qualified options, RSUs,
+or shares already owned), the number of units, the strike or the cost, how many are
+vested and how many months of vesting remain. And a policy: when to exercise, what
+to do when options would lapse, how much to sell in tender offers, how to sell
+after an IPO, and a planned departure. Nobody is asked for a volatility, a hazard
+rate or a value for their own stake.
+
+**Paper value is not money.** The position's value at the latest price is reported
+(the `equity_paper_value` series, vested holdings only, options at the price less
+the strike) and is in no balance, no net worth figure and no test. Results change
+only through cash: strike and tax going out, proceeds coming in.
+
+**One fate per company per life.** The outcome table lists mutually exclusive
+outcomes for the next ten years: the company fails, is acquired, goes public, or is
+still private. Unless the user gives their own table, it comes from the stage:
+
+| | Seed | Series A | Series B | Series C | Late | Above $1B | Basis |
+|---|---|---|---|---|---|---|---|
+| Fails within ten years | 60% | 48% | 36% | 30% | 18% | 10% | judgement |
+| Acquired | 22% | 30% | 34% | 27% | 30% | 25% | judgement |
+| Goes public | 1.5% | 3% | 7% | 12% | 22% | 35% | judgement |
+| Still private | 16.5% | 19% | 23% | 31% | 30% | 30% | judgement |
+| Years to failure: median of the timing curve before the ten-year cut | 2.5 | 2.5 | 3.0 | 3.0 | 3.0 | 3.5 | judgement |
+| Years to acquisition: the same | 5.0 | 4.0 | 3.5 | 3.0 | 2.5 | 2.5 | judgement |
+| Years to IPO: the same | 9.0 | 7.5 | 6.0 | 4.5 | 3.0 | 2.5 | judgement |
+| Spread of the timing (sigma of the log) | 0.6 | 0.6 | 0.6 | 0.55 | 0.5 | 0.5 | judgement |
+| Median years to acquisition as drawn, within a ten-year round | 4.6 | 3.8 | 3.4 | 3.0 | 2.5 | 2.5 | derived |
+| Median years to IPO as drawn, within a ten-year round | 6.4 | 5.9 | 5.2 | 4.3 | 3.0 | 2.5 | derived |
+| Acquisition price of the whole company over its last valuation, median | 0.70 | 0.70 | 0.65 | 0.60 | 0.55 | 0.55 | judgement |
+| Its spread (sigma of the log) | 1.2 | 1.2 | 1.1 | 1.0 | 0.9 | 0.8 | judgement |
+| IPO price per share over `P0`, median | 40 | 15 | 6 | 3 | 1.6 | 1.25 | judgement (above $1B: derived) |
+| Its spread (sigma of the log) | 1.0 | 0.9 | 0.8 | 0.7 | 0.6 | 0.5 | judgement |
+| Money raised over valuation (the overhang) | 0.20 | 0.25 | 0.28 | 0.30 | 0.32 | 0.35 | derived, from figures seen in summary |
+| 409A value over `P0` | 0.20 | 0.25 | 0.30 | 0.35 | 0.45 | 0.65 | judgement |
+| Chance of a tender offer per year, over all futures | 0.5% | 0.5% | 1.5% | 4% | 8% | 15% | judgement |
+| The same where the company ends at or above its last round | 3.2% | 2.3% | 5.6% | 13.2% | 22.3% | 36.8% | derived |
+
+"Judgement" means chosen, with an anchor; "derived" means computed by a stated
+step, and a row derived from judgements or from figures seen only in summary is no
+firmer than they are (the overhang row rests on Carta dilution figures seen in
+summary; the two "as drawn" rows and the second tender row follow from the
+judgement rows above them). `data/actuarial/params.json` (block `startup_equity`)
+gives the anchor or the step beside each row. The main anchors: 38% of the
+2010-2015 Series C cohort had exited within a decade (PitchBook), which sets Series
+C exits at 39%; among unicorns about seven in ten had not exited, and the exits to
+2022 split 54% IPO, 34% acquisition and 4% failure (Strebulaev), moved toward
+acquisition for the mix since 2022; 15 to 31% of seed companies raise a Series A
+within two years (Carta), and about 65% of venture financings return less than was
+invested (Correlation Ventures), behind the early-stage failure rates. The
+timing medians are chosen stage by stage with the NVCA Yearbook (5 to 7 years from
+first round to IPO, 3.7 to 5.3 to acquisition) and Stout's PitchBook figures (0.9
+years from the last private round to IPO) as anchors; no source gives them by
+stage. They are medians of a curve that is then cut off at ten years, so the
+median the engine actually draws is earlier: 43% of the seed IPO curve lies beyond
+the cut, and the median seed IPO within a round comes at 6.4 years, not 9. Failure
+timing is moved by less than 0.05 years. A shut exit window then moves IPO dates a
+little further. The unicorn IPO multiple is the median step-up from the last
+private round to the IPO, 1.25 (0.55 to 1.80 in one quarter); the earlier stages
+divide a median IPO valuation of about $1.9 billion by a typical valuation for the
+stage and multiply by the share of the company kept through later rounds. Those
+five medians are judgements, not derivations: the stage valuations are chosen, and
+$1.9 billion is one quarter's figure and the highest on record (see "How much rests
+on the IPO valuation" below). Plus or
+minus ten points on any failure probability is within what the sources support, and
+that is exactly what the pessimistic and optimistic settings do (the other outcomes
+are rescaled to keep the total at one).
+
+A fate is drawn once per company at the start of each life from four random words:
+
+```text
+which outcome:  the row k that a uniform u1 falls in
+when:           preset   T = 12 x median x exp(sigma x Phi_inv(u2 x Phi(ln(10 / median) / sigma)))
+                custom   T = uniform between the row's earliest and latest year
+at what price:  m = exp(mu_k + sigma_k x z),  z a standard normal held within +/- 2.326
+after an IPO:   L = exp(0.45 x zL) / (its mean),  zL held within +/- 2.326
+```
+
+The timing is a lognormal cut off at the ten-year horizon, so its shape below ten
+years is kept and its median is earlier than the `median` in the formula (the "as
+drawn" rows of the table above). A custom row's low and high multiples are read as the 10th and 90th
+percentiles of a lognormal.
+
+**Still private is not for ever.** A fate that lands on "still private" is drawn
+again from the same table for the following ten years (by rescaling `u1`, so no
+extra random number is used), up to three rounds. A company with no event after
+thirty years is written off: its shares and options are worth nothing and the cost
+of shares already bought is a capital loss, but the job is untouched. Treating the
+ten-year probability as "never" would have left every such life holding paper value
+until death. The sources describe companies unexited at ten years that mostly
+resolve later; none gives odds for them, so reusing the stage's odds is a
+judgement. With `q` the still-private probability, outcome `k` ends up happening
+with probability `p_k (1 - q^3) / (1 - q)` and the write-off with `q^3`:
+
+| Over all three rounds | Seed | Series A | Series B | Series C | Late | Above $1B |
+|---|---|---|---|---|---|---|
+| Fails | 71.5% | 58.9% | 46.2% | 42.2% | 25.0% | 13.9% |
+| Acquired | 26.2% | 36.8% | 43.6% | 38.0% | 41.7% | 34.8% |
+| Goes public | 1.8% | 3.7% | 9.0% | 16.9% | 30.6% | 48.6% |
+| Written off at thirty years | 0.4% | 0.7% | 1.2% | 3.0% | 2.7% | 2.7% |
+| Acquisitions that pay common stock nothing | 15% | 20% | 22% | 25% | 28% | 29% |
+| IPOs priced below the last round | none | none | 1% | 6% | 22% | 33% |
+| A share position pays nothing at all | 76% | 67% | 57% | 55% | 39% | 26% |
+| Mean price of a common share at the outcome over `P0` | 1.48 | 1.28 | 1.18 | 0.96 | 0.86 | 0.89 |
+| The same within the first ten years only | 1.24 | 1.04 | 0.92 | 0.68 | 0.62 | 0.64 |
+| Largest of 100 equally likely payoffs, as a share of their sum | 61% | 35% | 20% | 14% | 8% | 6% |
+
+The first four rows follow from the formula. The rest are from the engine's preview
+of a holding of plain shares at each stage (`firesight equity-preview`, 50,000
+draws; the mean price is by quadrature and does not depend on the draws). The last
+two rows show what the second and third rounds add to the average: 19% at seed and
+about 40% from Series C on, all of it resting on the judgement that a company still
+private after ten years faces its stage's odds again. The rounds also restart the
+timing clock, so failures and exits bunch again in years 11 to 14 and 21 to 24:
+the "when" curves show a second and a third step that no data describes.
+
+**How much rests on the IPO valuation.** The IPO medians for the five stages below
+$1 billion scale in proportion to the median IPO valuation assumed. $1.9 billion
+(Stout, fourth quarter of 2025) is at the top of what is on record. The NVCA
+medians were $684 million in 2021, $79 million in 2022, $123 million in 2023 and
+$569 million in 2024; they include small biotech listings and two trough years, so
+they are not a clean replacement either. The honest position is a range:
+
+| Mean price of a common share at the outcome over `P0` | Seed | Series A | Series B | Series C | Late |
+|---|---|---|---|---|---|
+| With a $1.9 billion median IPO (the engine's figures) | 1.48 | 1.28 | 1.18 | 0.96 | 0.86 |
+| With $569 to $684 million | 0.68 to 0.75 | 0.71 to 0.76 | 0.67 to 0.71 | 0.51 to 0.55 | 0.45 to 0.48 |
+
+The upper payouts shown for a position (its 75th and 90th percentiles) move with
+this choice as well as the mean. The share of futures that pay nothing does not.
+
+**The mean is carried by a few outcomes.** At the seed stage three futures in four
+pay nothing and the average share is still worth 1.48 times the last round's price,
+largely because of the 1.8% that go public at a median of 40 times it. The normal
+behind every price multiple is held between its 1st and 99th percentiles, which
+removes IPO prices above about 410 times the last round at seed, far beyond
+anything the sources describe. That trims the far tail and little else: it lowers
+the seed mean by about 4% (1.54 to 1.48) and leaves the concentration where it
+was. With the limit in force the top 1% of futures still carry about two thirds of
+a seed position's expected value (67%; 38% at Series A, 20% at B, 12% at C; an
+independent calculation from the parameters, 4 million draws, not a figure the
+engine prints). In the engine's own preview the single best of 100 equally likely
+payoffs is 61% of their total at seed and 14% at Series C. This is why the engine
+reports the mean of equity proceeds only with its standard error, offers no
+scenario metric for it, and why the app shows frequencies and never one value for a
+position.
+
+**Liquidation preference.** Acquisition multiples describe what the whole company
+sells for over its valuation at the latest round; an IPO multiple is per share. For
+an acquisition at multiple `m`, with `l` the overhang (money raised over the
+valuation, entered or the stage's):
+
+```text
+common price / P0 = m                           if m >= 1
+                    max(0, (m - l) / (1 - l))   if m < 1
+```
+
+This treats the investors as owning the fraction `l` of the company with a 1x
+non-participating preference (98% of recent deals carry a 1x preference and 95% are
+non-participating, Cooley): below `m = l` they take everything, and between `l` and
+1 the common stock gets what is left. It is one number in place of a cap table.
+Dilution by later rounds is not an input either: it is inside the per-share
+multiples.
+
+**The price between now and the outcome** is a straight line in logs from today's
+price to where the fate is heading:
+
+```text
+P(t)   = P0 x m_end ^ (t / T)                    for month t up to the event month T
+m_end  = the IPO multiple; max(common multiple, 0.25) for an acquisition;
+         0.25 for a failure; 1 for a company that is written off
+F(t)   = ratio(t) x P(t),   ratio(t) = r0 + (r_end - r0) x t / T
+r0     = 409A value / P0 today (entered, or the stage's)
+r_end  = 1 for an IPO; common price / P(T) for an acquisition; r0 otherwise
+```
+
+`P(t)` values the paper position and prices tender offers. `F(t)` is the value on
+which an exercise is taxed: the 409A discount closes as a good outcome nears. A
+line is used because a second random process for valuations between rounds would
+need parameters nobody has. Its two awkward consequences are handled directly:
+companies heading below their last round run no tender offers (nor does one that
+will be written off, which sits at its last round's price for thirty years), and
+the household's
+own exercise decisions never see `P(t)`. They compare the strike with `P0`, the last
+price the household has actually seen, so nobody exercises with foresight. Once a
+company is public and past its lockup, its price follows the engine's single-stock
+return.
+
+**Tender offers and the exit window.** The window is shut while US stocks are more
+than 20% below their previous high or a recession is flagged (IPO counts fell 79 to
+88% in 2001, 2008 and 2022, Ritter; Series C and later tenders on Carta went from 14
+in the first half of 2023 to 44 in the first half of 2026, NewView). Each month one
+random word per company decides a tender:
+
+```text
+tender in month t  if  the company is private, t < T, m_end >= 1, it will not be written off,
+                       the last tender was at least 12 months ago, the window is open,
+                       and u < (1 - (1 - p_up)^(1/12)) / 0.70
+p_up = min(1, p x (months companies spend private) / (those months on paths with m_end >= 1))
+```
+
+with `p` the yearly chance entered or the stage's. `p` is meant over all companies:
+the stage rates were estimated as tenders per company-year across everything
+venture-backed, and a user who enters a chance states the same kind of number. Only
+companies that end at or above their last round run tenders here, so in those
+futures the chance is raised by the share of company-months they account for (the
+second tender row of the table above; write-offs are left out of the count). The
+rate then averages `p` over all futures. Before this correction a 4% yearly chance
+at Series C was realised as 1.4% per company-year. A chance near 100% cannot be met
+in full: with a tender every year in every future that allows one, a company
+valued above $1 billion still has one in about four futures in ten. A chance that
+high is flagged in the plan check (`tender_chance_capped`) with the yearly average
+the model can deliver, about 30% for the typical Series C odds, and the preview
+reports that figure, not the one entered. The division by
+0.70, the share of months with the window open, keeps the chance the same whether
+or not the window opens and shuts. A tender the company has already announced can
+be entered with
+its month; it ignores the window and the direction the company is heading. The
+price is `P(t)` times a fixed fraction, for an announced tender too: it is the
+model's price in that month, which on a path to a good outcome is above the last
+round's price, not a figure the user sets
+(default 1: the reported median discount to the last preferred price is 0%, a Carta
+figure seen only in summary), each
+tender takes up to 20% of vested holdings (the median cap, read directly in
+NewView's study), former
+employees are not eligible by default, and the household sells the entered share of
+what it may (default half). An IPO whose drawn month falls in a shut window is moved
+at the start of the life to the nearest open month, earlier or later, within five
+years. Acquisitions and failures do not respond to the window.
+
+Measured over 2,000 traced lives per market model. The window is shut in month 60 in
+29% of lives under the bootstrap, 35% under the regime model and 36% under the
+lognormal model (`params.json` records open shares of 0.71, 0.68 and 0.66 over the
+first ten years; one figure, 0.70, is used for all three). An IPO dated to month 60
+is moved in those lives, by 10, 13 and 10 months on average when it moves (median 5,
+8 and 6; six moves in ten are to an earlier month), which is 2.9, 4.7 and 3.5 months
+averaged over all lives. For a company that stays private at its last round's price
+for ten years and is the only future there is, a 4% yearly chance gives 3.99, 3.74
+and 3.84 tenders per hundred company-years in the three models, and a 20% chance
+gives 18.0, 17.2 and 16.8: the twelve-month gap bites at high rates.
+
+**After an IPO** nothing is sold or taxed until the lockup ends (default six
+months). The price then is the IPO price times `L`, a lognormal factor with a log
+standard deviation of 0.45 (a judgement: 24% of IPOs close below the offer price
+on their first day, Ritter; a volatility near 60% a year for a recent IPO, which
+over six months gives about 0.42, is an assumption with no source) and a mean
+of exactly 1: the lockup spreads the price without raising it. At the lockup's end
+options in the money and RSUs are settled for cash, and shares already owned follow
+the policy: sell everything, sell in equal yearly parts over up to five years (the
+unsold shares stay paper value until each sale), or keep them, in which case each
+lot moves to the plan's single-stock holding once it is long-term and, for
+incentive-option shares, past both holding periods. The single-stock holding has a
+value and a basis and nothing else, so it cannot carry the small-business-stock
+exclusion: a kept lot that qualifies for it is not moved but waits, as paper value,
+until its gain is excluded in full (five years after it was acquired), and is sold
+then. Vested RSUs that the plan says are lost on leaving before the event are safe
+once the company has listed: leaving during the lockup forfeits only what is
+unvested.
+
+**Vesting, exercise and deadlines.** Unvested units vest in equal monthly parts
+after any cliff, only while the linked job lasts. Options can be exercised at three
+times: only at a sale or listing (the default, which costs no cash), all vested
+options in the first month, or as they vest. Exercise is always subject to the
+affordability rule of section 5, and never happens for cash while the strike is at
+or above `P0`. Options lapse ten years after their grant, or at the end of the
+exercise window after leaving (default three months, which 80% of terminated grants
+have or less, Carta). When they would lapse, the policy either exercises what is
+affordable (the default) or lets them go. What has not vested when the ten-year
+term comes lapses with the rest. A grant entered as already ten years old is
+refused, and one within two years of its term is flagged with what the plan will
+do then. RSUs wait for a sale or listing and are
+paid then.
+
+**At each outcome.** Failure and write-off: everything is worth nothing, the cost of
+shares held is a capital loss, unvested units are gone. Acquisition: shares are sold
+at the common price, options in the money and vested RSUs are paid in cash as
+wages, options under water are cancelled, and unvested units keep vesting and are
+paid in cash at the deal price while the job lasts. All of it is cash at closing.
+IPO: as above. A sale that pays common stock nothing ends the position.
+
+**The job.** A company can be linked to the job that grants the equity. A layoff,
+retirement, the end of the job or a planned departure (`leave_after_months`, which
+leaves the salary in place as if moving to a similar job) severs the link the same
+month or the next: unvested units are forfeited and the exercise window starts. A
+re-hire is taken to be at another employer. If the company fails, the person is
+laid off that month, with the usual unemployment spell and pay scar (this can be
+switched off). An acquisition or a listing does not touch the job. A household that
+retires when funded retires the month after a payout meets the test, and forfeits
+what is still unvested: the test sees cash, net of tax owed, and nothing else.
+
+**Measured on the fourth demo household.** An engineer of 31 in San Francisco on
+$190,000 with $244,000 in accounts and a Series C position worth $1,458,000 on
+paper ($845,000 vested): 60,000 incentive options at $1.50, 40,000 non-qualified
+options at $4.00, 12,000 RSUs and 10,000 shares exercised in 2025, a last round at
+$14.00 and a 409A value of $5.00. She retires when funded at a 3.5% withdrawal
+rate. Her policy is to exercise only at a sale or listing, to exercise what is
+affordable when options would otherwise lapse, to sell half of what a tender offer
+allows, and to sell over two years after a lockup. Over 20,000 lives (seed 1,
+bootstrap):
+
+* The company fails in 42.1% of lives, is acquired in 37.8%, goes public in 16.6%,
+  and has no outcome within the life in 3.5% (the table above gives 42.2, 38.0, 16.9
+  and 3.0; the difference is lives that end first).
+* The equity pays nothing at all in 54.7% of lives. Net of exercise cost and the tax
+  the equity caused, proceeds are -$194,000 at the 10th percentile, -$73,000 at the
+  25th, $1,000 at the median, $603,000 at the 75th and $1,699,000 at the 90th. The
+  mean is $509,000 (standard error $9,200), a figure no single life resembles: half
+  of all the positive proceeds come from the best 1,278 of the 20,000 lives.
+  Among the 45% of lives that are paid anything: $29,000, $715,000 and $2,921,000 at
+  the 10th, 50th and 90th percentiles. By outcome the medians are about $800 where
+  the company fails (the tax saved by the loss on the shares already held), -$197,000
+  with no outcome, $193,000 acquired and $1,567,000 after an IPO.
+* Options are exercised for cash in 49.6% of lives, at a median cost of $164,000,
+  nearly always because they would otherwise lapse at their ten-year term or after
+  she leaves. In 29.2% of lives more goes in through strike and tax than ever comes
+  back. Letting options lapse instead gives up more than it saves: per-life net
+  proceeds are higher in 30% of lives and lower in 20%, and $123,000 lower on
+  average (95% interval $114,000 to $131,000).
+* A tender offer pays something in 12.1% of lives (median $202,000).
+* The plan holds in 88.3% of lives as modelled and in 88.1% with the equity counted
+  at zero: a difference of -0.2 points (95% -0.6 to +0.2) that cannot be told from
+  zero. That is not an error. This household retires when funded, so the equity
+  changes when she retires and not whether the plan then holds: the median
+  retirement age is 45.8 as modelled and 47.0 at zero, and by outcome 48.3 where the
+  company fails, 44.5 where it is acquired and 39.6 where it lists, with success
+  flat across the three (89.2%, 86.3%, 90.0%). With retirement fixed at 45 the
+  equity carries the plan: 69.3% as modelled against 63.0% at zero (-6.3 points, 95%
+  -6.8 to -5.8), and by outcome 55.9% where the company fails, 74.6% acquired and
+  92.3% public. In the lives where it fails, counting the equity at zero *raises*
+  success from 55.9% to 60.7%, because nothing is spent on options that end
+  worthless.
+* Exercising the vested options now instead of waiting, on the same lives: savings
+  above the emergency fund cover about $52,000 of the $107,000 strike once the AMT
+  estimate is counted (section 5), and that part is exercised in the first month.
+  Per-life net
+  proceeds change by -$54,000 at the 10th percentile, -$6,000 at the median and
+  +$160,000 at the 90th (mean +$45,000, 95% interval $42,000 to $48,000): cash and
+  tax lost where the company fails, tax saved where it succeeds. Final net worth
+  moves by a median of -$75,000 in the lives where the company fails, nothing where
+  it is acquired and +$438,000 where it lists. Success rises 0.5 points (95% +0.3 to
+  +0.7; 268 lives rescued, 162 harmed) under the funded trigger, and falls 1.3
+  points with retirement fixed at 45 (-3.0 points where the company fails, +0.9
+  where it lists).
 
 ## 7. Spending
 
@@ -672,15 +1211,39 @@ A success rate alone hides most of what matters, so the engine also reports:
   later; a first-year withdrawal rate above 5%. It is a first-match label, not a
   decomposition: the long-term care flag is also true on 23% of successful paths.
 
+Private-company equity counts toward none of this until it is cash. Paper value,
+vested or not, is in no balance, no net worth figure and not in the funded test, and
+the tax still owed on a payout is taken off the wealth the test sees. For a plan
+with such equity every headline is therefore also shown with the equity counted at
+zero, on the same simulated lives, and split by what happened to the company. There
+is no equity cause among the failure labels: a life that fails because the company
+paid nothing keeps the label it would have had, and the split by outcome is where
+the difference shows (section 6.1).
+
 ## 14. Monte Carlo design
 
 **Random streams.** The generator is xoshiro256++, seeded through SplitMix64, with
 one independent stream per `(seed, path, subsystem)`: market, inflation, each
-person's career, equity compensation, each person's health, each person's
-longevity, expense shocks, each property, and life events. The number of draws from
+person's career, equity compensation, each private company, each person's health,
+each person's longevity, expense shocks, each property, and life events. The number
+of draws from
 a stream never depends on a decision. So two scenarios that differ only in a
 decision (rent or buy, claim at 62 or 70) see the same markets, the same layoffs,
 the same illnesses and the same lifespans.
+
+A private company's stream is read exactly four times at the start of a life (which
+outcome, when, at what price, and the lockup factor) and once a month after that
+(whether a tender offer arrives), for every company, whether or not it is counted,
+has holdings or its owner is alive. The IPO month is fixed at the start from the
+economy's path, which exists before any decision is taken. So a change of policy
+(exercise now or later, sell in tenders or not, leave the company, count the equity
+at zero) meets the same fate, the same prices and the same tender months on every
+life, and its effect is a paired difference like any other. A plan with no company
+reads no such stream and computes no AMT, and its results are bit for bit what they
+were before the feature existed: the three older demo households' golden digests
+did not change. Adding a company, even an empty one, moves no random number but
+does switch the AMT on, which can change the tax of a life that realises a large
+gain.
 
 **Common random numbers.** That makes every comparison a paired experiment. The
 difference in success between two scenarios is estimated from the paths that flip
@@ -756,7 +1319,16 @@ against Cocco, Gomes and Maenhout; federal parameters against Rev. Proc. 2025-32
 
 **Regression tests.** Each audit finding that was fixed has a test that states the
 defect (`crates/firesight-core/tests/sim_audit.rs` and the module tests). Golden
-digests of the three demo households change only deliberately.
+digests of the four demo households change only deliberately.
+
+**Private-company equity.** In check mode the conservation identities hold with two
+more terms (equity income in, exercise cost out), share counts are conserved through
+every exercise, sale and lapse, and a fixed-sequence random test runs one to four
+random companies on each demo household under every policy, holding kind and market
+model (240,000 lives passed when it was widened). The fate drawn in a simulated
+life is the one the editor's preview draws; the simulated outcome shares of the demo
+match the lifetime odds of section 6.1 within sampling error; the AMT, the credit
+and the sale that releases it match returns computed by hand (section 5).
 
 ## 16. Data sources
 
@@ -775,6 +1347,32 @@ digests of the three demo households change only deliberately.
   premiums; Genworth/CareScout care costs; HHS/ASPE long-term care incidence; USDA
   child costs; Cocco, Gomes and Maenhout wage profiles; BLS unemployment duration.
 * **Cost of living** (`data/col`): city indices for relocation.
+* **Private-company equity** (`data/actuarial/params.json`, block `startup_equity`).
+  Every number there is tagged sourced, derived or judgement, every source as read
+  directly or known only from a summary, and every derived number with what it was
+  derived from. Only the 20% tender cap is sourced from a document read directly;
+  the tender price and the exercise window are sourced from summaries, and the rest
+  is judgement with anchors. Read directly: NewView Capital's 2026
+  study of tender offers on Carta (the 20% median cap, eligibility of former
+  employees, tender counts by half-year); Stout's venture update for Q4 2025 with
+  PitchBook figures (the step-up from the last private round to the IPO and the time
+  between them); the NVCA 2025 Yearbook (years from first round to exit, deal
+  sizes); Jay Ritter's IPO statistics (IPO counts by year, age at IPO, first-day and
+  six-month returns); the PitchBook-NVCA Venture Monitor for Q3 2026 (secondary
+  discounts and two large sales far below peak valuation); Collective Liquidity's
+  article reporting PitchBook's 2010-2015 Series C cohort (38% exited within a
+  decade); OnlyCFO on the 409A discount at a fundraise. Known only from summaries:
+  Carta's tender update for the first half of 2026 (median price at the last
+  preferred price), Carta's figures on dilution per round, seed-to-A graduation and
+  post-termination exercise windows, Cooley's deal terms, Strebulaev on unicorn
+  exits, Correlation Ventures on returns per financing. Tax: IRC 53, 422 and 1202 at
+  Cornell LII and IRS Publication 15 (2026) were read directly; the AMT amounts are
+  from Rev. Proc. 2025-32; the 26% and 28% AMT rates, the treatment of gains inside
+  the AMT (IRC 55(b)(3)) and the rule that incentive-option income bears no payroll
+  tax (IRC 421(b), 3121(a)(22)) are recalled and agree with the Form 6251
+  instructions and practitioner sources, but the sections were not re-read. The
+  outcome probabilities, price spreads and per-company tender rates are judgements
+  anchored to these sources, not estimates from data.
 
 Constants that are judgements, not data, are named constants with a comment and
 are listed by a test (`tests/unverified_constants.rs`).
@@ -804,8 +1402,14 @@ Stated plainly, roughly in order of how much they could move an answer.
 
 * Not modelled: New York's recapture of lower brackets (understates state tax by
   $500 to $2,600 for high earners), Utah's Social Security credit, California SDI
-  (1.3% of wages), the alternative minimum tax, the chained-CPI wedge, state
-  itemised deductions beyond the basics, most state credits.
+  (1.3% of wages), the alternative minimum tax for households without
+  private-company equity, state AMT, the chained-CPI wedge, state itemised
+  deductions beyond the basics, most state credits.
+* The AMT is computed only for plans that list a private company (section 5). A
+  household without one that realises a very large long-term gain would owe some
+  AMT under 2026 law, and the engine charges none. In an AMT year the
+  Roth-conversion sizer still fills the regular bracket, which is not the one that
+  binds.
 * The first simulated year uses one inflation factor for 2027 rather than each
   published 2027 figure (tax effect under $20; contribution limits off by up to
   $250 to $1,000 at the cap).
@@ -815,6 +1419,125 @@ Stated plainly, roughly in order of how much they could move an answer.
 * In the first, partial year a full year's retirement contributions are made in
   the remaining months, which understates that year's tax; it comes back in April.
 * A household abroad is taxed at one flat rate for the whole calendar year.
+
+**Private-company equity**
+
+The model answers "what does this position do to the plan across the ways it could
+turn out". It does not value the company. In rough order of how much each could
+move an answer:
+
+* There is no view of this particular company. The odds are base rates for its
+  stage or the user's own table, and the stage rates are judgements anchored to
+  cohort data (section 6.1). Results are always shown with the equity counted at
+  zero as well.
+* No cap table and no preference waterfall: no series by series terms, no
+  participating preferred, no multiples above 1x, no ratchets. One overhang number
+  and a linear rule stand in for all of it.
+* No valuation path with rounds, down rounds or repricing, and dilution is not an
+  input. The price moves in a straight line in logs to the drawn outcome, the 409A
+  discount closes along it, and dilution is inside the per-share multiples.
+* No source gives odds for a company still private after ten years. The stage's
+  ten-year odds are applied again, up to thirty years; then the position is written
+  off.
+* Price multiples beyond the 1st and 99th percentiles of their spread are capped.
+  The mean of equity proceeds is still carried by a few lives, is reported with its
+  standard error, and is not a scenario metric.
+* Tender offers: none in companies heading below their last round or to a write-off
+  (the yearly chance entered is an average over all futures, so it is higher than
+  entered in the futures that have any), at most one a year, at the path price times
+  a fixed fraction with no random discount; an announced tender is priced the same
+  way, not at a price the user states. Secondary
+  sales outside company tenders, exercise financing, forward contracts and exchange
+  funds are not available to the household.
+* No state AMT (California's is 7%) and no state rules for incentive options:
+  exercising and holding in California is understated by up to 7% of the spread,
+  part of it recoverable later.
+* Small-business stock: the federal exclusion with the dollar cap only. Every state
+  taxes the excluded gain, which overstates tax everywhere but California, Alabama,
+  Mississippi and Pennsylvania by the state's rate on the whole gain. The part not
+  excluded at three and four years is taxed at 0, 15 and 20%, not at the 28% the law
+  sets, which understates federal tax by 8 to 13 points of that part (about 4% of
+  the whole gain at three years and 2% at four; section 5 has measured examples).
+  The ten-times-basis cap, the gross-assets test at each exercise, section 1045
+  rollovers and stacking are not modelled.
+* The $100,000 limit on incentive options first exercisable in a year is not applied.
+  A warning measures it over the whole grant and the editor offers an estimated
+  split into incentive and non-qualified parts; until a holding is split, exercising
+  a large incentive grant is taxed too lightly.
+* Tender or buyback proceeds above the 409A value can be pay; here all gain on
+  shares sold in a tender is capital gain.
+* Incentive-option shares kept after a lockup give up their AMT basis when they move
+  to the single-stock holding (they move only once long-term and qualifying). Kept
+  shares that qualify as small-business stock are not kept for ever: they are sold
+  once their gain is fully excluded, five years after they were acquired, because
+  the single-stock holding cannot carry the exclusion. Gain after that sale would
+  have been excluded too, up to the cap; here it is not.
+* Shares kept as single stock enter the equity's proceeds at their value on the day
+  they move, and the equity is charged, as an estimate, the tax their gain would
+  bear if sold that year. The household pays the actual tax when it sells the
+  single stock, and that later tax is not attributed to the equity.
+* Equity income is taxed by the state of residence in the year it is paid, with no
+  sourcing to the state where it was earned. No state supplemental withholding at
+  the event: state tax is paid through the instalments and the return. The 0.9%
+  Additional Medicare tax is withheld at the event on equity pay only; on salary
+  it is settled with the return, as before. California SDI is not charged.
+* An incentive option exercised in the same calendar year in which the company then
+  fails is treated as disposed of that year, so its AMT adjustment is undone. The
+  law on worthless shares is not settled; the harsher reading leaves AMT on income
+  that was never received.
+* A shut exit window moves IPO dates and delays tenders. It does not lower
+  acquisition prices or raise failure rates, and the company's fate is otherwise
+  independent of the stock market and of the household's other investments.
+* Equity of a partner who has not yet joined the household is outside it: nothing
+  is exercised and anything paid before the join date is not counted. It goes on
+  vesting meanwhile, on the linked job's own dates, with no layoff risk until the
+  partner joins.
+* The editor's preview of a position simulates no household. It applies the option
+  deadlines (the exercise window of a former employer or a planned departure, and
+  the ten-year term) as the simulation does, and takes a deadline exercise to be
+  affordable; it assumes the holder otherwise stays in the job until the outcome,
+  leaves tender offers and tax out, and deflates at 2.9% a year, the rate that
+  matches the simulation's median price level after ten years. The simulation's
+  results are lower where the job ends before the outcome or savings cannot pay
+  for an exercise.
+* Acquisitions pay cash at closing. No escrow, holdbacks or earn-outs, no
+  stock-for-stock deals, no acceleration, no assumption of unvested equity on new
+  terms: unvested units keep vesting and pay cash at the deal price while the job
+  lasts.
+* Only vested options can be exercised: no early exercise, no 83(b) or 83(i)
+  election. RSUs wait for the event indefinitely (plans commonly expire them after
+  seven years), and single-trigger private RSUs are not modelled.
+* After an IPO, options and RSUs still unsettled when the lockup ends are sold for
+  cash; only shares already owned follow the sell-down policy. Shares scheduled for
+  sale in later years are paper value until each sale and follow the generic
+  single-stock return, not one specific to the company.
+* No refresh grants and nothing granted by a later employer: enter expected grants
+  as holdings.
+* The retirement trigger sees cash only, net of tax owed. A household does not stay
+  for a vest or retire on paper wealth, and it forfeits what is unvested when the
+  trigger fires.
+* The exercise decision is a rule: exercise what savings above the emergency fund
+  can pay for, strike and tax, whenever the strike is under the last round's price.
+  It does not wait for news, exercise part of a grant by choice, or borrow. The AMT
+  counted in that test is a flat 28% of the spread; the tax counted on a
+  non-qualified option is the average rate on the whole spread at stake, taken from
+  the year as last planned, which overstates the rate when only part is exercised.
+* Failure causes have no equity label (section 13); the split by outcome shows it
+  instead. With several companies the outcome statistics describe the largest
+  position, and proceeds and costs are totals.
+* A failed company gives a capital loss only: no section 1244 ordinary loss, no wash
+  sales, no section 409A failures, no 280G.
+* Shares already owned are asked for their purchase date but not their grant date,
+  so the two-year incentive-option rule is taken as met once a year has passed since
+  exercise.
+* Version 1 stock options and private-company grants entered on a job keep the older
+  single-event model (section 6); a warning points to the newer section.
+* The web app has no "what exit do I need" control and no results by exit-price
+  band; the assistant can solve for a certain listing at a multiple of the last
+  round's price. There is no scenario metric for equity proceeds: the mean is too
+  noisy and the medians are often zero.
+* In a first, partial year the withdrawal planner does not see a one-off equity
+  amount; the year's return does.
 
 **Spending, health and care**
 

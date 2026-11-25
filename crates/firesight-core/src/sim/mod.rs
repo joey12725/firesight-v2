@@ -15,10 +15,13 @@
 //!    and `Inflation` streams, then stress overlays with fixed dates are applied.
 //! 3. **Events** are resolved on the `Events` stream: whether each happens and how
 //!    far its date shifts.
-//! 4. **The month loop** (`month.rs`) runs the steps of `docs/architecture.md`
+//! 4. **Private companies** (`private_equity`) each get their fate on their own
+//!    `PrivateCompany` stream: which outcome, when and at what price, four words,
+//!    drawn once the economy exists so that an IPO lands in an open window.
+//! 5. **The month loop** (`month.rs`) runs the steps of `docs/architecture.md`
 //!    section 3 in order; the annual cycle is in `year.rs`, the retirement trigger
-//!    in `trigger.rs`, events in `events.rs`, recording and the conservation checks
-//!    in `record.rs`.
+//!    in `trigger.rs`, events in `events.rs`, private-company equity in `equity.rs`,
+//!    recording and the conservation checks in `record.rs`.
 //!
 //! # Contract
 //!
@@ -55,6 +58,7 @@ use std::ops::Range;
 use crate::economy::EconomyPath;
 use crate::stats::{Accumulator, PathTrace, Recorder, TraceRecorder};
 
+mod equity;
 mod events;
 mod month;
 mod plan;

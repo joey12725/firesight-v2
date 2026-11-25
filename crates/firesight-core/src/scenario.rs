@@ -22,7 +22,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::model::{IncomeKind, Profile, RetirementTrigger};
+use crate::data::Data;
+use crate::equity::{self, EquityParams};
+use crate::model::{HoldingKind, IncomeKind, PrivateCompany, Profile, RetirementTrigger};
 use crate::patch::PatchOp;
 use crate::stats::Summary;
 
@@ -188,6 +190,100 @@ pub fn levers(profile: &Profile) -> Vec<Lever> {
         fees(0.0005),
         fees(0.01),
     ));
+
+    // Private-company equity: one lever about the world (the odds) and three about
+    // the household's own decisions. Each is built over the companies that count
+    // toward the plan and hold something, and is left out when it would change
+    // nothing.
+    let companies: Vec<(usize, &PrivateCompany)> = profile
+        .private_equity
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.included && !c.holdings.is_empty())
+        .collect();
+    if !companies.is_empty() {
+        let params = EquityParams::from_data(Data::embedded());
+        let ops = |applies: &dyn Fn(&PrivateCompany) -> bool,
+                   field: &str,
+                   value: serde_json::Value|
+         -> Vec<PatchOp> {
+            companies
+                .iter()
+                .filter(|(_, c)| applies(c))
+                .map(|(i, _)| PatchOp::set(format!("/private_equity/{i}/{field}"), value.clone()))
+                .collect()
+        };
+        let mut offer = |id: &str,
+                         label: &str,
+                         low_label: &str,
+                         high_label: &str,
+                         low: Vec<PatchOp>,
+                         high: Vec<PatchOp>| {
+            if !low.is_empty() || !high.is_empty() {
+                out.push(lever(id, label, low_label, high_label, low, high));
+            }
+        };
+
+        // The outlook moves a stage preset; a table of the user's own ignores it.
+        let preset = |c: &PrivateCompany| !equity::custom_in_force(c);
+        offer(
+            "equity_outlook",
+            "Startup outcome",
+            "failure 10 points more likely",
+            "failure up to 10 points less likely",
+            ops(&preset, "outlook", json!("pessimistic")),
+            ops(&preset, "outlook", json!("optimistic")),
+        );
+
+        let vested_options = |c: &PrivateCompany| {
+            c.holdings.iter().any(|h| {
+                matches!(h.kind, HoldingKind::Iso { .. } | HoldingKind::Nso { .. })
+                    && h.vested > 0.0
+            })
+        };
+        offer(
+            "equity_exercise",
+            "Exercising options",
+            "only at a sale or IPO",
+            "vested options now",
+            ops(&vested_options, "policy/exercise", json!("at_liquidity")),
+            ops(&vested_options, "policy/exercise", json!("vested_now")),
+        );
+
+        // A tender offer is open to employees, and to former ones only where the
+        // company says so.
+        let tenders = |c: &PrivateCompany| {
+            (equity::tender_probability_in_force(c, &params) > 0.0
+                || c.tenders.next_in_months.is_some())
+                && (c.job.is_some() || c.tenders.former_employees)
+        };
+        offer(
+            "equity_tender",
+            "Selling in tender offers",
+            "sell nothing",
+            "sell the maximum",
+            ops(&tenders, "policy/tender_sell_fraction", json!(0.0)),
+            ops(&tenders, "policy/tender_sell_fraction", json!(1.0)),
+        );
+
+        let sellable = |c: &PrivateCompany| {
+            c.holdings
+                .iter()
+                .any(|h| !matches!(h.kind, HoldingKind::Rsu { .. }))
+        };
+        offer(
+            "equity_sell_down",
+            "After an IPO",
+            "keep the shares",
+            "sell when the lockup ends",
+            ops(&sellable, "policy/sell_down", json!({"type": "hold"})),
+            ops(
+                &sellable,
+                "policy/sell_down",
+                json!({"type": "all_at_lockup_end"}),
+            ),
+        );
+    }
     out
 }
 
@@ -526,6 +622,106 @@ mod tests {
             // One side may coincide with the base (for example "paid in full").
             assert!(apply(&l.low) != apply(&l.high), "{} is a no-op", l.id);
         }
+    }
+
+    #[test]
+    fn equity_levers_are_offered_only_when_they_change_something() {
+        let start = crate::model::YearMonth::ym(2026, 11);
+        let examples = Profile::examples(start);
+        let is_equity = |l: &Lever| l.id.starts_with("equity_");
+        // The three households without a private company get none.
+        for e in &examples[..3] {
+            assert!(!levers(&e.profile).iter().any(is_equity), "{}", e.slug);
+        }
+        // The startup employee gets all four, after the existing levers.
+        let demo = &examples[3].profile;
+        let all = levers(demo);
+        let ids: Vec<&str> = all.iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(
+            &ids[ids.len() - 4..],
+            [
+                "equity_outlook",
+                "equity_exercise",
+                "equity_tender",
+                "equity_sell_down"
+            ]
+        );
+        assert!(!is_equity(&all[all.len() - 5]));
+        for l in all.iter().filter(|l| is_equity(l)) {
+            assert_eq!((l.low.len(), l.high.len()), (1, 1), "{}", l.id);
+            assert!(
+                l.low[0].path().starts_with("/private_equity/0/"),
+                "{}",
+                l.id
+            );
+            let apply = |patch: &Vec<PatchOp>| {
+                let p = apply_to_profile(demo, patch).unwrap_or_else(|e| panic!("{}: {e}", l.id));
+                let report = validate(&p);
+                assert!(report.is_ok(), "{}: {:?}", l.id, report.errors);
+                p
+            };
+            assert!(apply(&l.low) != apply(&l.high), "{} is a no-op", l.id);
+        }
+        let by_id = |all: &[Lever], id: &str| all.iter().any(|l| l.id == id);
+
+        // Counted at zero, or holding nothing: no lever at all.
+        let mut p = demo.clone();
+        p.private_equity[0].included = false;
+        assert!(!levers(&p).iter().any(is_equity));
+        let mut p = demo.clone();
+        p.private_equity[0].holdings.clear();
+        assert!(!levers(&p).iter().any(is_equity));
+
+        // A table of the user's own: the outlook does nothing, so no lever.
+        let mut p = demo.clone();
+        p.private_equity[0].outcomes = equity::typical_rows(
+            p.private_equity[0].stage,
+            &EquityParams::from_data(Data::embedded()),
+        );
+        let all = levers(&p);
+        assert!(!by_id(&all, "equity_outlook") && by_id(&all, "equity_exercise"));
+
+        // No vested option: nothing to exercise now.
+        let mut p = demo.clone();
+        for h in &mut p.private_equity[0].holdings {
+            h.vested = 0.0;
+        }
+        let all = levers(&p);
+        assert!(!by_id(&all, "equity_exercise") && by_id(&all, "equity_sell_down"));
+
+        // No tender offers expected, or a former employee who may not take part.
+        let mut p = demo.clone();
+        p.private_equity[0].tenders.annual_probability = Some(0.0);
+        assert!(!by_id(&levers(&p), "equity_tender"));
+        p.private_equity[0].tenders.next_in_months = Some(6);
+        assert!(by_id(&levers(&p), "equity_tender"));
+        let mut p = demo.clone();
+        p.private_equity[0].job = None;
+        assert!(!by_id(&levers(&p), "equity_tender"));
+        p.private_equity[0].tenders.former_employees = true;
+        assert!(by_id(&levers(&p), "equity_tender"));
+
+        // Only RSUs: nothing to keep or sell after a lockup (they settle in cash).
+        let mut p = demo.clone();
+        p.private_equity[0]
+            .holdings
+            .retain(|h| matches!(h.kind, HoldingKind::Rsu { .. }));
+        let all = levers(&p);
+        assert!(!by_id(&all, "equity_sell_down") && by_id(&all, "equity_outlook"));
+
+        // Two companies: one op each, on its own index.
+        let mut p = demo.clone();
+        let mut second = p.private_equity[0].clone();
+        second.id = "second".into();
+        second.name = "Second".into();
+        for h in &mut second.holdings {
+            h.id = format!("second_{}", h.id);
+        }
+        p.private_equity.push(second);
+        let all = levers(&p);
+        let outlook = all.iter().find(|l| l.id == "equity_outlook").unwrap();
+        assert_eq!(outlook.low.len(), 2);
+        assert_eq!(outlook.low[1].path(), "/private_equity/1/outlook");
     }
 
     #[test]

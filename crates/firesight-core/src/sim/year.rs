@@ -21,6 +21,23 @@
 //! on the simulated months scaled to a full year and the result scaled back, so a
 //! household that starts in November is not taxed as if two months of pay were its
 //! whole year's income.
+//!
+//! # Private-company equity
+//!
+//! An exercise, a sale or a payout is a one-off, not a rate of income. The year's
+//! equity amounts are kept twice: in the return (`State::ty`) and on their own
+//! (`State::ty_once`). That lets three things be done properly:
+//!
+//! * a part-year return annualises the regular income only and adds the one-offs
+//!   unscaled, so a November exercise is not taxed as six of them;
+//! * the salary withholding rate is sized from the return without the one-offs, so
+//!   the equity's tax beyond what was withheld at the event lands in the monthly
+//!   instalments, whose cash is held out of the savings sweep;
+//! * the tax the equity caused in the year is the return with the one-offs less the
+//!   return without them.
+//!
+//! The minimum tax credit is carried from year to year in `State::amt_credit`. The
+//! AMT itself is computed only for plans with `private_equity`.
 
 use crate::accounts::{self, Bucket, PersonSavings, SavingsContext};
 use crate::career::Employment;
@@ -101,6 +118,69 @@ fn scale_inputs(x: &mut TaxInputs, k: f64) {
     x.adjustments *= k;
     x.depreciation_recapture *= k;
     x.passive_loss_released *= k;
+    for p in 0..MAX_PEOPLE {
+        x.wages_no_fica[p] *= k;
+    }
+    x.amt_iso_adjustment *= k;
+    x.amt_gain_adjustment *= k;
+    x.qsbs_excluded_gain *= k;
+    // `amt_credit_carryforward` is a stock, not a flow of the year: not scaled.
+}
+
+/// Adds `sign` times the year's one-off equity amounts (`State::ty_once`) to a
+/// return: wage-type income, income without payroll tax, gains, the two AMT
+/// adjustments and the excluded gain. Nothing else in `once` is read.
+fn apply_once(x: &mut TaxInputs, once: &TaxInputs, sign: f64) {
+    for p in 0..MAX_PEOPLE {
+        x.wages[p] += sign * once.wages[p];
+        x.wages_no_fica[p] += sign * once.wages_no_fica[p];
+    }
+    x.short_term_gains += sign * once.short_term_gains;
+    x.long_term_gains += sign * once.long_term_gains;
+    x.amt_iso_adjustment += sign * once.amt_iso_adjustment;
+    x.amt_gain_adjustment += sign * once.amt_gain_adjustment;
+    x.qsbs_excluded_gain += sign * once.qsbs_excluded_gain;
+}
+
+/// Takes the year's one-off equity amounts out of a return.
+fn sub_once(x: &mut TaxInputs, once: &TaxInputs) {
+    apply_once(x, once, -1.0);
+}
+
+/// Puts the year's one-off equity amounts into a return.
+pub(super) fn add_once(x: &mut TaxInputs, once: &TaxInputs) {
+    apply_once(x, once, 1.0);
+}
+
+/// True when the year has any one-off equity amount.
+fn once_is_set(once: &TaxInputs) -> bool {
+    let mut any = once.short_term_gains != 0.0
+        || once.long_term_gains != 0.0
+        || once.amt_iso_adjustment != 0.0
+        || once.amt_gain_adjustment != 0.0
+        || once.qsbs_excluded_gain != 0.0;
+    for p in 0..MAX_PEOPLE {
+        any |= once.wages[p] != 0.0 || once.wages_no_fica[p] != 0.0;
+    }
+    any
+}
+
+/// A return's tax by category, as the simulation pays it: federal (income tax, the
+/// net investment income tax, the AMT less the minimum tax credit used), state and
+/// foreign, payroll (FICA and self-employment tax), penalties.
+fn categories(r: &tax::TaxResult) -> [f64; 4] {
+    let mut payroll = 0.0;
+    for i in 0..MAX_PEOPLE {
+        payroll += r.fica[i] + r.se_tax[i];
+    }
+    let state = r.state + r.foreign;
+    let federal = r.total - payroll - state - r.penalties;
+    let mut out = [0.0; 4];
+    out[TAX_FED] = federal;
+    out[TAX_STATE] = state;
+    out[TAX_PAYROLL] = payroll;
+    out[TAX_PENALTY] = r.penalties;
+    out
 }
 
 /// Expected spending outside the budget lines for one month, nominal dollars.
@@ -358,7 +438,7 @@ impl State {
     /// Closes the books on calendar `year`: computes the actual return and what is
     /// still owed (or refundable) by category, and rolls the carryforwards.
     /// `last` marks the final month of the path.
-    pub(crate) fn close_tax_year(&mut self, plan: &Plan, year: i32, last: bool) {
+    pub(crate) fn close_tax_year(&mut self, plan: &Plan, year: i32, last: bool, price: f64) {
         let (status, adults, young, other) = self.household_for_tax(plan, year);
         self.ensure_law(plan, status);
         let mut x = self.ty;
@@ -382,30 +462,125 @@ impl State {
         }
         x.short_term_gains -= self.loss_carry;
         x.rental_net -= self.rental_carry;
+        x.amt_applies = plan.has_equity;
         // A year that starts part-way through is taxed at its annual rate.
         let months = self.year_months.clamp(1, 12);
         let annualise = 12.0 / f64::from(months);
-        if months < 12 {
-            scale_inputs(&mut x, annualise);
-        }
-        let r = tax::compute(&self.params, &x);
         let back = 1.0 / annualise;
-        let mut payroll = 0.0;
-        for i in 0..MAX_PEOPLE {
-            payroll += r.fica[i] + r.se_tax[i];
+        let once_any = plan.has_equity && (once_is_set(&self.ty_once) || self.amt_credit > 0.0);
+        // The year's tax by category, the premium credit earned, the two loss
+        // carryforwards and the income for the Medicare surcharge, all at the scale
+        // of the months simulated.
+        let (cats, aca_credit, loss_carry, rental_carry, magi);
+        // The whole return's tax at the scale of `x` as it ends up: the base for
+        // the tax on shares kept as single stock.
+        let total_tax;
+        if !once_any {
+            if months < 12 {
+                scale_inputs(&mut x, annualise);
+            }
+            let r = tax::compute(&self.params, &x);
+            total_tax = r.total;
+            let c = categories(&r);
+            cats = [c[0] * back, c[1] * back, c[2] * back, c[3] * back];
+            aca_credit = r.aca_premium_credit * back;
+            loss_carry = r.capital_loss_carryforward * back;
+            rental_carry = r.rental_loss_suspended * back;
+            magi = r.magi_irmaa;
+        } else if months == 12 {
+            x.amt_credit_carryforward = self.amt_credit;
+            let r = tax::compute(&self.params, &x);
+            // The same return without the equity, for the tax the equity caused.
+            let mut x0 = x;
+            sub_once(&mut x0, &self.ty_once);
+            x0.amt_credit_carryforward = 0.0;
+            let r0 = tax::compute(&self.params, &x0);
+            cats = categories(&r);
+            aca_credit = r.aca_premium_credit;
+            loss_carry = r.capital_loss_carryforward;
+            rental_carry = r.rental_loss_suspended;
+            magi = r.magi_irmaa;
+            self.amt_credit = r.amt_credit_carryforward;
+            self.eq_tax_real += (r.total - r0.total) / price;
+            total_tax = r.total;
+        } else {
+            // A part year: the regular income at its annual rate, scaled back, plus
+            // what the one-off equity amounts add to a full year's return, unscaled.
+            let mut x0 = x;
+            sub_once(&mut x0, &self.ty_once);
+            let lump_adjustments = x0.adjustments;
+            scale_inputs(&mut x0, annualise);
+            let r0 = tax::compute(&self.params, &x0);
+            // The base the one-offs are added to. Annualising multiplied the
+            // contributions deducted in these months (an IRA or HSA contribution is
+            // a yearly lump, not a monthly rate) by twelve over the months; for the
+            // regular tax the scaling back undoes that, but the minimum tax of an
+            // exercise is taken whole, so it must stand on the amounts as they are.
+            let mut xl = x0;
+            xl.adjustments = lump_adjustments;
+            let rl = if lump_adjustments == x0.adjustments {
+                r0
+            } else {
+                tax::compute(&self.params, &xl)
+            };
+            x = xl;
+            add_once(&mut x, &self.ty_once);
+            x.amt_credit_carryforward = self.amt_credit;
+            let r1 = tax::compute(&self.params, &x);
+            let (c0, cl, c1) = (categories(&r0), categories(&rl), categories(&r1));
+            let blend = |a0: f64, al: f64, a1: f64| a0 * back + (a1 - al);
+            cats = [
+                blend(c0[0], cl[0], c1[0]),
+                blend(c0[1], cl[1], c1[1]),
+                blend(c0[2], cl[2], c1[2]),
+                blend(c0[3], cl[3], c1[3]),
+            ];
+            aca_credit = blend(
+                r0.aca_premium_credit,
+                rl.aca_premium_credit,
+                r1.aca_premium_credit,
+            )
+            .max(0.0);
+            // A one-off gain can use up more loss than the scaled-back year carried.
+            loss_carry = blend(
+                r0.capital_loss_carryforward,
+                rl.capital_loss_carryforward,
+                r1.capital_loss_carryforward,
+            )
+            .max(0.0);
+            rental_carry = blend(
+                r0.rental_loss_suspended,
+                rl.rental_loss_suspended,
+                r1.rental_loss_suspended,
+            )
+            .max(0.0);
+            magi = r1.magi_irmaa;
+            self.amt_credit = r1.amt_credit_carryforward;
+            self.eq_tax_real += (r1.total - rl.total) / price;
+            total_tax = r1.total;
         }
-        let state = r.state + r.foreign;
-        let federal = r.total - payroll - state - r.penalties;
+        if self.eq_kept_gain != 0.0 {
+            // Shares kept as single stock were counted in the equity's proceeds at
+            // their value and no tax was due. So that keeping does not look better
+            // than selling, the equity is charged the tax their gain would have
+            // borne if sold this year, as a long-term gain on top of this return.
+            // An estimate: the tax itself comes when the single stock is sold.
+            let mut kept = x;
+            kept.long_term_gains += self.eq_kept_gain;
+            let r = tax::compute(&self.params, &kept);
+            self.eq_tax_real += (r.total - total_tax) / price;
+            self.eq_kept_gain = 0.0;
+        }
         // The premium credit actually earned, against what was advanced.
-        let credit = (r.aca_premium_credit * back).min(self.aca_premium_ytd);
-        self.due[TAX_FED] += federal * back - self.paid[TAX_FED] + self.aca_advance_ytd - credit;
-        self.due[TAX_STATE] += state * back - self.paid[TAX_STATE];
-        self.due[TAX_PAYROLL] += payroll * back - self.paid[TAX_PAYROLL];
-        self.due[TAX_PENALTY] += r.penalties * back - self.paid[TAX_PENALTY];
+        let credit = aca_credit.min(self.aca_premium_ytd);
+        self.due[TAX_FED] += cats[TAX_FED] - self.paid[TAX_FED] + self.aca_advance_ytd - credit;
+        self.due[TAX_STATE] += cats[TAX_STATE] - self.paid[TAX_STATE];
+        self.due[TAX_PAYROLL] += cats[TAX_PAYROLL] - self.paid[TAX_PAYROLL];
+        self.due[TAX_PENALTY] += cats[TAX_PENALTY] - self.paid[TAX_PENALTY];
 
-        self.loss_carry = r.capital_loss_carryforward * back;
-        self.rental_carry = r.rental_loss_suspended * back;
-        self.magi_hist = [self.magi_hist[1], r.magi_irmaa];
+        self.loss_carry = loss_carry;
+        self.rental_carry = rental_carry;
+        self.magi_hist = [self.magi_hist[1], magi];
         self.magi_known = (self.magi_known + 1).min(2);
         self.prev_interest = self.ty.interest * annualise;
         self.prev_ordinary_div = self.ty.ordinary_dividends * annualise;
@@ -424,6 +599,14 @@ impl State {
         self.aca_premium_ytd = 0.0;
         self.aca_people = 0;
         self.year_months = 12;
+        self.ty_once = TaxInputs::default();
+        self.eq_supp_ytd = [0.0; MAX_PEOPLE];
+        self.eq_wh_ytd = 0.0;
+        self.eq_addl_medicare_ytd = 0.0;
+        // What is left of the year's equity tax is now in `due`, to be paid in April.
+        self.eq_due |= self.eq_event_year;
+        self.eq_event_year = false;
+        self.eq_reserve = 0.0;
     }
 
     /// The turn of the year, in January before anything else happens: Social
@@ -460,7 +643,7 @@ impl State {
             }
         }
         self.year_earned = [0.0; MAX_PEOPLE];
-        self.close_tax_year(plan, year - 1, false);
+        self.close_tax_year(plan, year - 1, false, price);
         self.acc.roll_year();
         self.prior_return_negative = self.year_port < 1.0;
         self.year_port = 1.0;
@@ -726,15 +909,68 @@ impl State {
         }
         let year_months = f64::from(self.year_months.clamp(1, 12));
         let annualise = 12.0 / year_months;
+        // Private-company equity: the AMT applies, the credit comes in, and in a
+        // part year the one-off amounts are kept out of what is annualised.
+        base.amt_applies = plan.has_equity;
+        let once_any = plan.has_equity && (once_is_set(&self.ty_once) || self.amt_credit > 0.0);
+        let lump_adjustments = base.adjustments;
         if annualise > 1.0 {
+            if once_any {
+                sub_once(&mut base, &self.ty_once);
+            }
             scale_inputs(&mut base, annualise);
+        } else {
+            base.amt_credit_carryforward = self.amt_credit;
         }
         let base_result = tax::compute(&self.params, &base);
+        if plan.has_equity {
+            // The year without its one-off equity amounts, kept for pricing the tax
+            // of an exercise (`State::pay_tax_rate`). In a part year the one-offs
+            // stand on the contributions deducted as they are, as at the close.
+            let mut regular = base;
+            if annualise > 1.0 {
+                regular.adjustments = lump_adjustments;
+            } else {
+                sub_once(&mut regular, &self.ty_once);
+            }
+            regular.amt_credit_carryforward = 0.0;
+            self.eq_base = regular;
+        }
         let mut fica_est = 0.0;
         let mut se_est = 0.0;
         for p in 0..MAX_PEOPLE {
             fica_est += base_result.fica[p];
             se_est += base_result.se_tax[p];
+        }
+        // What the one-offs add to a part year's tax (outside FICA, which was paid
+        // at the event). In a full year they are in `base` already.
+        let mut once_extra = 0.0;
+        let mut once_state_extra = 0.0;
+        if once_any && annualise > 1.0 {
+            // As at the close: the one-offs are added to a year whose deducted
+            // contributions are the amounts as they are, not annualised.
+            let mut lump = base;
+            lump.adjustments = lump_adjustments;
+            let (rl, fica_l) = if lump_adjustments == base.adjustments {
+                (base_result, fica_est)
+            } else {
+                let r = tax::compute(&self.params, &lump);
+                let mut fica = 0.0;
+                for p in 0..MAX_PEOPLE {
+                    fica += r.fica[p];
+                }
+                (r, fica)
+            };
+            let mut with = lump;
+            add_once(&mut with, &self.ty_once);
+            with.amt_credit_carryforward = self.amt_credit;
+            let r1 = tax::compute(&self.params, &with);
+            let mut fica1 = 0.0;
+            for p in 0..MAX_PEOPLE {
+                fica1 += r1.fica[p];
+            }
+            once_extra = (r1.total - fica1) - (rl.total - fica_l);
+            once_state_extra = (r1.state + r1.foreign) - (rl.state + rl.foreign);
         }
         let paid_nonfica = self.paid[TAX_FED]
             + self.paid[TAX_STATE]
@@ -965,18 +1201,63 @@ impl State {
 
         // Withholding and estimated payments for the months left.
         let nonfica_total = (est_total - fica_est / annualise).max(0.0);
-        let rest = (nonfica_total - paid_nonfica).max(0.0);
-        let base_rest = (base_nonfica - paid_nonfica).clamp(0.0, rest);
+        let (rest, base_rest) = if once_any {
+            // The salary withholding rate is sized from the return without the
+            // one-off equity amounts and from the payments without the equity
+            // withholding, so that pay is withheld as it would be without the equity
+            // and the equity's remaining tax goes into the instalments.
+            let rest = (nonfica_total + once_extra - paid_nonfica).max(0.0);
+            let salary_nonfica = if annualise > 1.0 {
+                base_nonfica
+            } else {
+                let mut salary = base;
+                sub_once(&mut salary, &self.ty_once);
+                salary.amt_credit_carryforward = 0.0;
+                let r = tax::compute(&self.params, &salary);
+                let mut fica = 0.0;
+                for p in 0..MAX_PEOPLE {
+                    fica += r.fica[p];
+                }
+                r.total - fica
+            };
+            (
+                rest,
+                (salary_nonfica - (paid_nonfica - self.eq_wh_ytd)).clamp(0.0, rest),
+            )
+        } else {
+            let rest = (nonfica_total - paid_nonfica).max(0.0);
+            (rest, (base_nonfica - paid_nonfica).clamp(0.0, rest))
+        };
         self.wh_rate = if wage_like_rest > 0.0 {
             (base_rest / wage_like_rest).min(MAX_WITHHOLDING_RATE)
         } else {
             0.0
         };
         self.installment = (rest - self.wh_rate * wage_like_rest).max(0.0) / m_left;
+        if plan.has_equity {
+            // The cash for the instalments of a year with an equity event stays out
+            // of the savings sweep until it is paid.
+            self.eq_reserve = if self.eq_event_year {
+                self.installment * m_left
+            } else {
+                0.0
+            };
+        }
         let nonfica_est = (base_result.total - fica_est).max(1e-9);
         self.share_state =
             ((base_result.state + base_result.foreign) / nonfica_est).clamp(0.0, 1.0);
         self.share_se = (se_est / nonfica_est).clamp(0.0, 1.0 - self.share_state);
+        if once_any && rest > 0.0 {
+            // With equity in the year the payments still to make are not split like
+            // the whole return: the event's withholding was federal only, so the
+            // state's share of what is left is larger, and an AMT instalment is all
+            // federal. Split what is left by what is left to pay in each category.
+            let state_year =
+                (base_result.state + base_result.foreign) / annualise + once_state_extra;
+            let state_rest = (state_year - self.paid[TAX_STATE]).max(0.0);
+            self.share_state = (state_rest / rest).clamp(0.0, 1.0);
+            self.share_se = self.share_se.min(1.0 - self.share_state);
+        }
 
         // Medicare surcharges.
         if new_year || first {
@@ -1084,7 +1365,8 @@ impl State {
             let wages = (self.ty.wages[p] - self.ty.hsa_contributions[p]).max(0.0);
             paid += f.oasdi_rate * wages.min(f.oasdi_wage_base) + f.medicare_rate * wages;
         }
-        paid
+        // The Additional Medicare tax is withheld only on equity pay, at the event.
+        paid + self.eq_addl_medicare_ytd
     }
 
     /// The household's earned-income rate in today's dollars per year: the pay of

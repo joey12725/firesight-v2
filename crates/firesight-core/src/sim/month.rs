@@ -67,6 +67,15 @@ impl State {
 
         // 1. Calendar: deaths, a partner joining, retirement dates, the annual plan.
         let mut replan = t == 0 || month == 1;
+        if self.has_equity {
+            // The month after an equity event the year is planned again from what
+            // has actually happened; small recurring amounts wait for the quarter.
+            replan |= self.eq_replan;
+            self.eq_replan = false;
+            if self.eq_unplanned && matches!(month, 4 | 7 | 10) {
+                replan = true;
+            }
+        }
         for i in 0..self.n {
             if self.alive[i] && t as u32 >= self.death_month[i] {
                 self.die(plan, i, t);
@@ -134,6 +143,7 @@ impl State {
         let price = econ.price_level[t];
         if replan {
             self.annual_plan(plan, econ, t, new_year);
+            self.eq_unplanned = false;
         }
         if self.budget_dirty || ti >= self.next_item_change {
             self.rebudget(plan, t);
@@ -142,6 +152,9 @@ impl State {
         // 3-5. Careers, pay, payroll deductions.
         let eq_return = econ.returns[AssetClass::UsStocks.index()][t];
         self.track_equity(eq_return, t, plan.eq12_months & (1 << month) != 0);
+        if plan.has_equity {
+            self.equity_month(plan, econ, t);
+        }
         let recession = econ.recession[t];
         let mut employer_coverage = false;
         for j in 0..self.jobs.len() {
@@ -267,21 +280,41 @@ impl State {
                 self.event(now, TraceEventKind::LaidOff, None, || {
                     format!("Laid off from {}", jp.name)
                 });
+                // Leaving the employer severs the link to its equity next month,
+                // however short the spell.
+                for (rt, cp) in self.companies.iter_mut().zip(&plan.companies) {
+                    if cp.job == Some(j) {
+                        rt.sever_next = true;
+                    }
+                }
             }
             if jm.rehired {
                 self.req_dirty = true;
                 let salary = self.jobs[j].st.real_salary;
+                // Leaving an employer severs the link to its equity for good, so a
+                // re-hire after it is at another employer: the income stands for
+                // whatever job is held, and its name may carry the old company's.
+                let elsewhere = plan.companies.iter().any(|cp| cp.job == Some(j));
                 self.event(now, TraceEventKind::Rehired, Some(salary), || {
-                    format!("Back at work ({})", jp.name)
+                    if elsewhere {
+                        format!("Back at work at a new employer (was {})", jp.name)
+                    } else {
+                        format!("Back at work ({})", jp.name)
+                    }
                 });
             }
-            if self.detail && jm.equity_income > 0.0 && jm.wages <= 0.0 && jm.bonus <= 0.0 {
+            if jm.private_payout > 0.0 {
                 self.event(
                     now,
                     TraceEventKind::EquityEvent,
-                    Some(jm.equity_income / price),
-                    || format!("Equity payout from {}", jp.name),
+                    Some(jm.private_payout / price),
+                    || format!("Liquidity event at {}: equity paid out", jp.name),
                 );
+            }
+            if jm.company_failed {
+                self.event(now, TraceEventKind::EquityEvent, None, || {
+                    format!("{}'s company failed: its equity is worth nothing", jp.name)
+                });
             }
         }
         for k in 0..self.selfemp.len() {
@@ -570,13 +603,17 @@ impl State {
             self.paid[TAX_STATE] += state;
             self.paid[TAX_PAYROLL] += se;
         }
+        if self.has_equity {
+            // One instalment fewer is owed.
+            self.eq_reserve = (self.eq_reserve - self.installment).max(0.0);
+        }
         if month == 4 {
             self.pay_tax_due();
         }
         // The last month of a life: the final return is settled before the estate
         // is counted.
         if t + 1 == self.months {
-            self.close_tax_year(plan, now.year(), true);
+            self.close_tax_year(plan, now.year(), true, price);
             self.pay_tax_due();
         }
 
@@ -745,7 +782,13 @@ impl State {
         }
         self.retired = true;
         self.retire_month = t as i32;
-        self.inv_at_ret = self.acc.investable() / price;
+        // Tax owed on an equity payout is still in the accounts on this day and is
+        // not the household's to retire on (0 for a plan with no private company).
+        self.inv_at_ret = if self.has_equity {
+            (self.acc.investable() - self.equity_tax_owed()).max(0.0) / price
+        } else {
+            self.acc.investable() / price
+        };
         self.ret_index = 1.0;
         self.ret_months = 0;
         self.req_dirty = true;
@@ -1219,7 +1262,7 @@ impl State {
     }
 
     /// Adds what a plan execution or shortfall cover did to the ledger.
-    fn ledger_withdrawals(&mut self, ex: &Executed) {
+    pub(crate) fn ledger_withdrawals(&mut self, ex: &Executed) {
         self.led[YearSeries::WithdrawTaxable.index()] += ex.from_taxable;
         self.led[YearSeries::WithdrawTraditional.index()] += ex.from_traditional;
         self.led[YearSeries::WithdrawRoth.index()] += ex.from_roth;
@@ -1369,17 +1412,48 @@ impl State {
         self.led[YearSeries::WithdrawCash.index()] = if up { withdrawn } else { -delta };
     }
 
-    /// Cash held back for tax already assessed and due next April.
-    fn tax_reserve(&self) -> f64 {
+    /// Cash held back for tax: what is already assessed and due next April and, for
+    /// a plan with private-company equity, the net proceeds of this month's events
+    /// (until next month's plan has sized the tax on them) and the instalments that
+    /// plan set for the rest of the year. Not swept into savings, not spent on
+    /// exercising options, and not counted toward retiring.
+    pub(crate) fn tax_reserve(&self) -> f64 {
         let mut due = 0.0;
         for d in &self.due {
             due += d;
         }
-        due.max(0.0)
+        let due = due.max(0.0);
+        if self.has_equity {
+            due + self.eq_hold + self.eq_reserve
+        } else {
+            due
+        }
+    }
+
+    /// The part of [`State::tax_reserve`] that is there because of private-company
+    /// equity: this month's hold, the instalments of a year with an equity event,
+    /// and the April balance of such a year. The funded test does not count it as
+    /// wealth. The April balance of an ordinary year is left in, as it is for a
+    /// plan with no private company, so that listing a company that pays nothing
+    /// changes nothing.
+    pub(crate) fn equity_tax_owed(&self) -> f64 {
+        if !self.has_equity {
+            return 0.0;
+        }
+        let mut owed = self.eq_hold + self.eq_reserve;
+        if self.eq_due {
+            let mut due = 0.0;
+            for d in &self.due {
+                due += d;
+            }
+            owed += due.max(0.0);
+        }
+        owed
     }
 
     /// Pays (or receives) the balance of the last return.
     pub(crate) fn pay_tax_due(&mut self) {
+        self.eq_due = false;
         for c in 0..4 {
             let due = self.due[c];
             self.due[c] = 0.0;

@@ -24,7 +24,7 @@ declare const process: { env: Record<string, string | undefined> };
 export type Env = Record<string, string | undefined>;
 
 /** Must equal PROMPT_MARKER in web/src/assistant/prompt.ts. */
-export const PROMPT_MARKER = '[FIRESight planning assistant, prompt v2]';
+export const PROMPT_MARKER = '[FIRESight planning assistant, prompt v3]';
 
 /** Must equal the app's tool names (web/src/assistant/tools/index.ts), sorted. */
 export const TOOL_NAMES = [

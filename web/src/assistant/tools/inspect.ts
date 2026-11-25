@@ -1,12 +1,12 @@
 // One simulated life, close up: the year-by-year ledger, the events along the way, and
 // the tax return of any year.
-import type { PathScalar, PathTrace, TraceColumn } from '@/engine/output-types';
+import { EQUITY_OUTCOMES, type PathScalar, type PathTrace, type TraceColumn } from '@/engine/output-types';
 import { pathAtQuantile } from './digest';
 import type { RunRecord } from './runs';
 import { explainEngineError } from './shared';
 import { ToolError, type ToolContext, type ToolSpec } from './types';
 
-const PICKS = ['p10', 'median', 'p90', 'median_fi', 'failing'] as const;
+const PICKS = ['p10', 'median', 'p90', 'median_fi', 'failing', 'equity_failed', 'equity_paid_median', 'equity_paid_p90'] as const;
 const BY = ['terminal_net_worth', 'fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'investable_at_retirement', 'early_retirement_return'] as const;
 
 const RUN_ID = {
@@ -57,12 +57,12 @@ interface InspectInput {
   path?: number;
 }
 
-const SCALARS_SHOWN: PathScalar[] = ['fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement', 'early_retirement_return', 'worst_drawdown', 'months_unemployed', 'long_term_care_cost', 'inflation', 'terminal_net_worth', 'lifetime_tax', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_depleted', 'success'];
+const SCALARS_SHOWN: PathScalar[] = ['fi_age', 'retirement_age', 'depletion_age', 'death_age_0', 'death_age_1', 'investable_at_retirement', 'early_retirement_return', 'worst_drawdown', 'months_unemployed', 'long_term_care_cost', 'inflation', 'terminal_net_worth', 'lifetime_tax', 'delivered_spending_ratio', 'worst_spending_ratio', 'years_depleted', 'success', 'equity_outcome', 'equity_event_age', 'equity_gross_proceeds', 'equity_exercise_cost', 'equity_tender_proceeds', 'equity_net_proceeds'];
 
 export const inspectLife: ToolSpec<InspectInput> = {
   name: 'inspect_life',
   description:
-    'Follow one simulated life year by year, to explain a result with a concrete story or to find out why a life went wrong. Choose the life by a named pick (p10, median or p90 by final net worth; median_fi; failing: a typical life that ran short), by a quantile of a per-life quantity, or by a path id from an earlier result. Returns a table of age, gross income, spending, tax, net worth (thousands of today\'s dollars) and status for every year, the dated event log (layoffs, market moves, retirement, home purchases, spending cuts, depletion, deaths), and the life\'s summary figures. It is one life out of thousands: say so when you tell its story.',
+    'Follow one simulated life year by year, to explain a result with a concrete story or to find out why a life went wrong. Choose the life by a named pick (p10, median or p90 by final net worth; median_fi; failing: a typical life that ran short; with private-company equity also equity_failed: a typical life in which the company fails, and equity_paid_median and equity_paid_p90: the lives at the middle and the 90th percentile of net proceeds among those the equity paid), by a quantile of a per-life quantity, or by a path id from an earlier result. Returns a table of age, gross income, spending, tax, net worth (thousands of today\'s dollars) and status for every year, the dated event log (layoffs, market moves, retirement, home purchases, spending cuts, depletion, deaths, and for private-company equity exercises, tender offers, IPOs, acquisitions and company failures), and the life\'s summary figures. It is one life out of thousands: say so when you tell its story.',
   input_schema: {
     type: 'object',
     properties: {
@@ -124,7 +124,12 @@ export const inspectLife: ToolSpec<InspectInput> = {
         },
         events: events.slice(0, MAX_EVENTS),
         ...(events.length > MAX_EVENTS ? { events_omitted: events.length - MAX_EVENTS } : {}),
-        scalars: Object.fromEntries(trace.scalars.filter((s) => SCALARS_SHOWN.includes(s.scalar) && s.value !== null).map((s) => [s.scalar, Number((s.value as number).toPrecision(6))])),
+        scalars: Object.fromEntries(
+          trace.scalars
+            .filter((s) => SCALARS_SHOWN.includes(s.scalar) && s.value !== null)
+            // The outcome is an index; the model reads its name.
+            .map((s) => [s.scalar, s.scalar === 'equity_outcome' ? (EQUITY_OUTCOMES[s.value as number] ?? null) : Number((s.value as number).toPrecision(6))]),
+        ),
         tax_years_available: trace.tax_returns.length > 0 ? [trace.tax_returns[0]?.year, trace.tax_returns[trace.tax_returns.length - 1]?.year] : null,
       },
       view: { title: `Traced one simulated life (path ${path}, ${chosenBy})`, meta: { paths: 1, seed: run.seed, runs: 1 } },

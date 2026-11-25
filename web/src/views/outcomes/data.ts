@@ -215,6 +215,8 @@ export const CIRCUMSTANCES: { scalar: PathScalar; label: string; higher: string;
   { scalar: 'investable_at_retirement', label: 'Savings at retirement', higher: 'more saved', lower: 'less saved' },
   { scalar: 'funded_ratio', label: 'Funded ratio at retirement', higher: 'a fuller pot', lower: 'a thinner pot' },
   { scalar: 'initial_withdrawal_rate', label: 'Withdrawal rate in the first retired year', higher: 'a higher starting withdrawal rate', lower: 'a lower starting withdrawal rate' },
+  // Only a plan with private-company equity has it: `contrasts` skips the row unless `summary.equity` exists.
+  { scalar: 'equity_net_proceeds', label: 'Equity proceeds, after cost and tax', higher: 'more from the equity', lower: 'less from the equity' },
 ];
 
 export interface Contrast {
@@ -241,6 +243,7 @@ export interface Contrast {
 export function contrasts(summary: Summary): Contrast[] {
   const out: Contrast[] = [];
   for (const c of CIRCUMSTANCES) {
+    if (c.scalar === 'equity_net_proceeds' && !summary.equity) continue;
     const row = summary.failure.contrasts.find((x) => x.scalar === c.scalar);
     const dist = distribution(summary, c.scalar);
     if (!row || !dist || row.failed_median === null || row.succeeded_median === null || row.failed_count < 5 || row.succeeded_count < 5) continue;

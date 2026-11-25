@@ -2,18 +2,19 @@
 // the real profile store. Runs use a few hundred lives where the number is not the point.
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { applyPatch, compare, digest, exampleProfiles, initEngineSync, planPreview, schema, validate } from '@/engine/api';
+import { applyPatch, compare, digest, equityPreview, exampleProfiles, initEngineSync, planPreview, schema, validate } from '@/engine/api';
 import { EngineError } from '@/engine/errors';
 import type { City } from '@/editor/cities';
-import { STATUSES, type PathTrace } from '@/engine/output-types';
+import { EQUITY_OUTCOMES, STATUSES, type DigestEquity, type PathTrace } from '@/engine/output-types';
 import { engineInput } from '@/engine/pool';
-import type { Profile } from '@/engine/types';
+import type { OutcomeRow, Profile } from '@/engine/types';
 import { useProfileStore } from '@/state/profile-store';
 import { EXAMPLE_INTAKE_PATCH, EXAMPLE_SCENARIO_PATCH } from '../prompt';
 import { nodeEngine, type NodeEngine } from '../testing/node-engine';
 import { executeTool, MAX_RESULT_CHARS, RunRegistry, TOOLS, TOOL_NAMES, toolDefinitions, type Decision, type PlanStore, type Proposal, type ToolContext, type ToolRun } from './index';
 import { SCHEMA_TYPES } from './plan';
-import { pruneDefaults, typeNames, type SchemaNode } from './plan-view';
+import { oddsOf100, pruneDefaults, typeNames, type OddsOf100, type SchemaNode } from './plan-view';
+import { dollarsPerShare, resolveVariable } from './variables';
 
 beforeAll(() => {
   initEngineSync(readFileSync(new URL('../../engine/pkg/firesight_wasm_bg.wasm', import.meta.url)));
@@ -117,7 +118,7 @@ describe('tool definitions', () => {
     }
     // Stable bytes: the definitions are part of the cached prompt prefix.
     expect(JSON.stringify(toolDefinitions())).toBe(JSON.stringify(defs));
-    expect(JSON.stringify(defs).length).toBeLessThan(24_000);
+    expect(JSON.stringify(defs).length).toBeLessThan(27_000);
   });
 
   it('keep the schema type list in step with the engine schema', () => {
@@ -621,6 +622,298 @@ describe('lookup_cost_of_living and show_chart', () => {
     // The other direction is a different comparison.
     expect((await ctx.runs.compare(engine, scenario, base)).outcomes[0]!.difference.value).toBeCloseTo(-again.outcomes[0]!.difference.value, 6);
     expect(engine.compared).toBe(2);
+  }, SLOW);
+});
+
+describe('private-company equity', () => {
+  const startup = (): Profile => exampleProfiles().find((e) => e.slug === 'startup-employee')!.profile;
+  const loadStartup = () => state().load({ meta: { id: 's', createdAt: 0, origin: 'test' }, profile: startup() });
+  const ZERO = [{ op: 'set', path: '/private_equity/@northwind/included', value: false }] as const;
+  /** Median final net worth is about $4.2 million when the company lists at its last price and $11 million at five times it (200 lives). */
+  const SOLVE_TARGET = 8_000_000;
+  type CompanyView = {
+    id: string;
+    included: boolean;
+    paper_value_vested: number;
+    paper_value_total: number;
+    exercise_cost_vested: number;
+    share_of_net_worth: number;
+    odds_in_force: OddsOf100;
+    typical_odds: OddsOf100;
+    typical_rows: OutcomeRow[];
+    implied_multiple: number;
+    typical_implied_multiple: number;
+    nothing_share: number;
+    fmv_409a: number;
+    fmv_fraction: number;
+    fmv_409a_basis: string;
+    tender_annual_probability: number;
+  };
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  const total = (odds: OddsOf100) => odds.fails + odds.acquired + odds.ipo + odds.still_private;
+
+  it('shows each company with its paper value and the odds in force, from the engine preview', async () => {
+    loadStartup();
+    const r = await call('get_plan', {});
+    expect(r.reply.isError).toBe(false);
+    const derived = r.json.derived as { private_equity: CompanyView[]; private_equity_note: string };
+    expect(derived.private_equity).toHaveLength(1);
+    const view = derived.private_equity[0]!;
+    const company = startup().private_equity[0]!;
+    const core = equityPreview(company);
+    expect(view).toMatchObject({ id: 'northwind', included: true, paper_value_vested: core.paper_value_vested, paper_value_total: core.paper_value_total, exercise_cost_vested: core.exercise_cost_vested });
+    // Every figure the prompt asks the assistant to state about odds is here, and is the engine's.
+    expect(total(view.odds_in_force)).toBeCloseTo(100, 9);
+    expect(total(view.typical_odds)).toBeCloseTo(100, 9);
+    expect(view.odds_in_force).toEqual({ fails: 30, acquired: 27, ipo: 12, still_private: 31 });
+    expect(view.typical_odds).toEqual(view.odds_in_force);
+    // The stage's rows with their timing and prices: a custom table inherits nothing, so this is what it is built from.
+    expect(view.typical_rows.map((r) => r.kind)).toEqual(['fails', 'acquired', 'ipo', 'still_private']);
+    expect(view.typical_rows.map((r) => r.probability)).toEqual([0.3, 0.27, 0.12, 0.31]);
+    for (const row of view.typical_rows.filter((r) => r.kind === 'acquired' || r.kind === 'ipo')) {
+      expect(row.years_to).toBeGreaterThan(row.years_from);
+      expect(row.multiple_high).toBeGreaterThan(row.multiple_low);
+    }
+    // Copied into the plan as it stands, it is the typical table: valid, and the same picture as leaving outcomes empty.
+    const copied = applyPatch(startup(), [{ op: 'set', path: '/private_equity/@northwind/outcomes', value: view.typical_rows }]);
+    expect(copied.errors).toEqual([]);
+    const fromRows = equityPreview(copied.profile.private_equity[0]!);
+    expect(Math.abs(fromRows.implied_multiple / core.implied_multiple - 1)).toBeLessThan(0.03);
+    expect(Math.abs(fromRows.nothing_share - core.nothing_share)).toBeLessThan(0.03);
+    expect(fromRows.acquisition_zero_share).toBeGreaterThan(0.1);
+    // A table with the same odds and nothing else is what the prompt warns against: every sale and listing at exactly the last round's price.
+    const bare = applyPatch(startup(), [{ op: 'set', path: '/private_equity/@northwind/outcomes', value: view.typical_rows.map((r) => ({ id: r.id, kind: r.kind, probability: r.probability })) }]);
+    expect(bare.errors).toEqual([]);
+    const flat = equityPreview(bare.profile.private_equity[0]!);
+    expect(flat.acquisition_zero_share).toBe(0);
+    expect(flat.quantiles[2]).toBeGreaterThan(fromRows.quantiles[2] + 100_000);
+    expect(derived.private_equity_note).toMatch(/typical_rows is the stage's typical table with each row's timing/);
+    expect(view.implied_multiple).toBe(r3(core.implied_multiple));
+    expect(view.typical_implied_multiple).toBe(r3(core.typical_implied_multiple));
+    expect(view.nothing_share).toBe(r3(core.nothing_share));
+    expect(view.tender_annual_probability).toBe(r3(core.tender_annual_probability));
+    expect(view).toMatchObject({ fmv_409a: 5, fmv_fraction: r3(5 / 14), fmv_409a_basis: 'stated in the plan' });
+    // The position against everything else the household owns, paper value included in the total.
+    const p = startup();
+    const other = p.accounts.reduce((n, a) => n + a.balance, 0) + p.properties.reduce((n, x) => n + x.value - (x.mortgage?.balance ?? 0), 0) - p.debts.reduce((n, d) => n + d.balance, 0);
+    expect(view.share_of_net_worth).toBe(r3(core.paper_value_total / (other + core.paper_value_total)));
+    expect(view.share_of_net_worth).toBeGreaterThan(0.5);
+    expect(derived.private_equity_note).toMatch(/in no balance/);
+    expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+
+    // A custom table shows beside the typical one, and a stage's own 409A fraction when none is stated.
+    state().edit(
+      [
+        { op: 'set', path: '/private_equity/@northwind/outlook', value: 'pessimistic' },
+        { op: 'set', path: '/private_equity/@northwind/fmv_409a', value: null },
+      ],
+      { label: 'Lean the odds', target: 'base' },
+    );
+    const leaned = ((await call('get_plan', {})).json.derived as { private_equity: CompanyView[] }).private_equity[0]!;
+    expect(leaned.odds_in_force.fails).toBe(40);
+    expect(leaned.typical_odds.fails).toBe(30);
+    expect(total(leaned.odds_in_force)).toBeCloseTo(100, 9);
+    expect(leaned.implied_multiple).toBeLessThan(leaned.typical_implied_multiple);
+    expect(leaned).toMatchObject({ fmv_fraction: 0.35, fmv_409a_basis: 'typical for the stage' });
+
+    // A company with no price yet has no entry, and a plan without companies no key.
+    state().edit([{ op: 'set', path: '/private_equity/@northwind/holdings', value: [] }, { op: 'set', path: '/private_equity/@northwind/preferred_price', value: 0 }], { label: 'No price', target: 'base' });
+    expect((await call('get_plan', {})).json.derived).not.toHaveProperty('private_equity');
+    state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
+    expect((await call('get_plan', {})).json.derived).not.toHaveProperty('private_equity');
+  });
+
+  it('states odds in futures of 100 that add up, whatever the rounding', () => {
+    const row = (kind: string, probability: number) => ({ id: kind, kind, probability, years_from: 1, years_to: 5, multiple_low: 1, multiple_high: 1 }) as never;
+    expect(oddsOf100(equityPreview({ stage: 'seed', preferred_price: 1 }).typical)).toEqual({ fails: 60, acquired: 22, ipo: 1.5, still_private: 16.5 });
+    const thirds = oddsOf100([row('fails', 1 / 3), row('acquired', 1 / 3), row('ipo', 1 / 3)]);
+    expect(thirds).toEqual({ fails: 33.4, acquired: 33.3, ipo: 33.3, still_private: 0 });
+    // Several rows of one kind are summed, and a table that is slightly off 1 is normalised as the engine does.
+    const split = oddsOf100([row('fails', 0.2), row('ipo', 0.05), row('ipo', 0.151), row('still_private', 0.6)]);
+    expect(split.ipo).toBeCloseTo(20.1, 1);
+    expect(split.fails + split.acquired + split.ipo + split.still_private).toBeCloseTo(100, 9);
+    expect(oddsOf100([])).toEqual({ fails: 0, acquired: 0, ipo: 0, still_private: 0 });
+  });
+
+  it('looks up the company schema, leaving what does not fit to be asked for separately', async () => {
+    const r = await call('get_schema', { section: 'PrivateCompany', with_nested: true });
+    expect(r.reply.isError).toBe(false);
+    expect((r.json.fields as { name: string }[]).map((f) => f.name)).toEqual(expect.arrayContaining(['stage', 'preferred_price', 'fmv_409a', 'outcomes', 'holdings', 'policy', 'included']));
+    const nested = ((r.json.nested ?? []) as { name: string }[]).map((x) => x.name);
+    const omitted = (r.json.not_included_ask_separately ?? []) as string[];
+    expect([...nested, ...omitted].sort()).toEqual(['CompanyStage', 'EquityHolding', 'EquityPolicy', 'OutcomeRow', 'Outlook', 'TenderOffers']);
+    expect(r.reply.content.length).toBeLessThan(8_000);
+    for (const section of omitted) expect((await call('get_schema', { section })).reply.isError, section).toBe(false);
+    const kind = await call('get_schema', { section: 'HoldingKind' });
+    expect((kind.json.variants as { type: string }[]).map((v) => v.type)).toEqual(['iso', 'nso', 'rsu', 'shares']);
+  });
+
+  it("carries the engine's equity block in the digest of a run", async () => {
+    loadStartup();
+    const r = await call('run_simulation', { paths: 1000 });
+    expect(r.reply.isError).toBe(false);
+    const run = record(r.json.run_id);
+    const core = digest(run.acc, engineInput(run.profile, 7).json);
+    const equity = r.json.equity as DigestEquity;
+    expect(equity).toEqual(core.equity);
+    expect(equity.company).toBe('Northwind Robotics');
+    expect(equity.failed + equity.still_private + equity.acquired + equity.ipo).toBeCloseTo(1, 2);
+    expect(equity.nothing.p).toBeGreaterThan(0.3);
+    expect(equity.nothing.lo).toBeLessThan(equity.nothing.p);
+    // The mean is carried by the best lives: far above the median, and uncertain.
+    expect(equity.net_proceeds_mean!).toBeGreaterThan(equity.net_proceeds.p50!);
+    expect(equity.net_proceeds_mean_se!).toBeGreaterThan(0);
+    expect(equity.success_by_outcome).toHaveLength(EQUITY_OUTCOMES.length);
+    expect(r.reply.content.length).toBeLessThan(3_400);
+    // A plan without private equity has no such block.
+    state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
+    expect((await call('run_simulation', { paths: 400 })).json).not.toHaveProperty('equity');
+  }, SLOW);
+
+  it('reports the plan both ways: as modelled and with the equity counted at zero, split by outcome', async () => {
+    loadStartup();
+    const r = await call('try_scenario', { name: 'Equity pays nothing', ops: ZERO, paths: 1000 });
+    expect(r.reply.isError).toBe(false);
+    type Class = { outcome: string; paths: number; success_a: number; success_b: number; delta: number; lo: number; hi: number; within_noise: boolean; net_worth_median_change: number };
+    const c = r.json.comparison as { paired_paths: number; success: { a: number; b: number; delta: number }; by_equity_outcome: Class[] };
+    expect(c.by_equity_outcome.map((k) => k.outcome)).toEqual([...EQUITY_OUTCOMES]);
+    expect(c.by_equity_outcome.reduce((n, k) => n + k.paths, 0)).toBe(c.paired_paths);
+    // Every figure is core's.
+    const base = record(r.json.base_run_id);
+    const scenario = record(r.json.scenario_run_id);
+    const core = compare(base.acc, scenario.acc, engineInput(base.profile, 7).json);
+    c.by_equity_outcome.forEach((k, i) => {
+      const from = core.by_equity_outcome![i]!;
+      expect(k).toMatchObject({ outcome: from.outcome, paths: from.paths, within_noise: from.success.within_noise });
+      expect(k.success_a).toBeCloseTo(from.success.a.value, 3);
+      expect(k.delta).toBe(Math.round(from.success.difference.value * 10_000) / 10_000);
+      expect(k.lo).toBeLessThanOrEqual(k.delta);
+      expect(k.hi).toBeGreaterThanOrEqual(k.delta);
+    });
+    // The class changes add up to the whole change.
+    expect(c.by_equity_outcome.reduce((n, k) => n + k.delta * k.paths, 0) / c.paired_paths).toBeCloseTo(c.success.delta, 3);
+    // Where the company lists, losing the proceeds costs the household money.
+    expect(c.by_equity_outcome.find((k) => k.outcome === 'ipo')!.net_worth_median_change).toBeLessThan(0);
+    // Each side's own equity block: as modelled it sometimes pays, at zero it never does.
+    const detail = (key: string) => (r.json[key] as { equity: { nothing: { p: number }; net_proceeds: { p90: number } } }).equity;
+    expect(detail('base_detail').nothing.p).toBeLessThan(0.9);
+    expect(detail('base_detail').net_proceeds.p90).toBeGreaterThan(0);
+    expect(detail('scenario_detail').nothing.p).toBe(1);
+    expect(detail('scenario_detail').net_proceeds.p90).toBe(0);
+    expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+
+    // A plan without private equity has no split.
+    state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
+    const plain = await call('try_scenario', { name: 'Retire at 55', ops: RETIRE_AT_55, paths: 400 });
+    expect(plain.json.comparison).not.toHaveProperty('by_equity_outcome');
+    expect(plain.json.base_detail).not.toHaveProperty('equity');
+  }, SLOW);
+
+  it('turns an exit price into a patch the engine accepts, and solves for the exit a goal needs', async () => {
+    loadStartup();
+    const profile = startup();
+    const variable = resolveVariable(profile, { variable: 'exit_price_multiple' }, null, equityPreview);
+    expect(variable).toMatchObject({ unit: 'factor', current: null, bounds: [0.25, 20], tolerance: 0.05 });
+    // The time is the middle of the stage's typical years to a listing, and the price is stated in dollars.
+    const ipo = equityPreview(profile.private_equity[0]!).typical.find((row) => row.kind === 'ipo')!;
+    const years = (ipo.years_from + ipo.years_to) / 2;
+    expect(variable.note).toContain('$14.00 a share');
+    // The dollar price of a value is in the result, so the model never multiplies.
+    expect(variable.per_share_dollars).toBe(14);
+    expect(dollarsPerShare(variable, 3.3)).toBe(46.2);
+    expect(dollarsPerShare(resolveVariable(profile, { variable: 'tender_sell_fraction' }), 0.5)).toBeNull();
+    expect(variable.note).toContain(`${years} years from now`);
+    for (const m of [0.25, 1, 3.3, 20]) {
+      const ops = variable.ops(m);
+      expect(ops).toEqual([{ op: 'set', path: '/private_equity/@northwind/outcomes', value: [{ id: 'ipo', kind: 'ipo', probability: 1, years_from: years, years_to: years, multiple_low: m, multiple_high: m }] }]);
+      expect(applyPatch(profile, ops).errors, String(m)).toEqual([]);
+    }
+    // In the engine's own preview of the patched company, every future is a listing.
+    const certain = equityPreview(applyPatch(profile, variable.ops(2)).profile.private_equity[0]!);
+    expect(certain.outcome_shares).toEqual([0, 0, 0, 1]);
+
+    const r = await call('solve', { variable: 'exit_price_multiple', target_metric: 'median_terminal_net_worth', target_value: SOLVE_TARGET, paths: 200 });
+    expect(r.reply.isError).toBe(false);
+    expect(r.json.status).toBe('converged');
+    expect(r.json).toMatchObject({ unit: 'factor', current_value: null, metric_direction: 'rises as the quantity grows' });
+    expect(String(r.json.variable_note)).toMatch(/certain listing/);
+    const bracket = r.json.bracket as { below: { value: number; metric: number }; above: { value: number; metric: number } };
+    expect(bracket.below.metric).toBeLessThanOrEqual(SOLVE_TARGET);
+    expect(bracket.above.metric).toBeGreaterThanOrEqual(SOLVE_TARGET);
+    expect(r.json.value as number).toBeGreaterThan(0.25);
+    expect(r.json.value as number).toBeLessThan(20);
+    expect(bracket.above.value - bracket.below.value).toBeLessThan(0.2);
+    // The exit price in dollars per share is stated in the result itself, for the value and for each side of the bracket.
+    expect(r.json.value_dollars_per_share).toBe(Math.round((r.json.value as number) * 14 * 100) / 100);
+    const sides = r.json.bracket as { below: { value: number; dollars_per_share: number }; above: { value: number; dollars_per_share: number } };
+    expect(sides.below.dollars_per_share).toBe(Math.round(sides.below.value * 14 * 100) / 100);
+    expect(sides.above.dollars_per_share).toBe(Math.round(sides.above.value * 14 * 100) / 100);
+    expect(String(r.json.variable_note)).toMatch(/quote that, do not multiply/);
+    const swept = await call('sweep', { x: { variable: 'exit_price_multiple', values: [1, 3] }, metric: 'median_terminal_net_worth', paths: 200 });
+    expect((swept.json.x as { values_dollars_per_share: number[] }).values_dollars_per_share).toEqual([14, 42]);
+  }, SLOW);
+
+  it('varies the share sold in tender offers, and refuses equity variables on a plan without a company', async () => {
+    loadStartup();
+    const variable = resolveVariable(startup(), { variable: 'tender_sell_fraction' });
+    expect(variable).toMatchObject({ unit: 'rate', current: 0.5, bounds: [0, 1] });
+    expect(variable.ops(1)).toEqual([{ op: 'set', path: '/private_equity/@northwind/policy/tender_sell_fraction', value: 1 }]);
+    const r = await call('sweep', { x: { variable: 'tender_sell_fraction', values: [0, 0.5, 1] }, metric: 'median_terminal_net_worth', paths: 200 });
+    expect(r.reply.isError).toBe(false);
+    expect((r.json.cells as number[][])[0]).toHaveLength(3);
+    expect((r.json.x as { current: number }).current).toBe(0.5);
+
+    // Counted at zero, there is no company for the variables to act on.
+    state().edit([...ZERO], { label: 'Zero', target: 'base' });
+    const none = await call('solve', { variable: 'exit_price_multiple', target_metric: 'success_rate', target_value: 0.9, paths: 200 });
+    expect(none.reply.isError).toBe(true);
+    expect(none.reply.content).toMatch(/needs a private company with holdings that is counted/);
+    state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
+    expect((await call('sweep', { x: { variable: 'tender_sell_fraction', values: [0, 1] }, metric: 'success_rate' })).reply.isError).toBe(true);
+    expect(engine.simulated).toBe(3);
+  }, SLOW);
+
+  it('ranks the equity levers with the others', async () => {
+    loadStartup();
+    const r = await call('rank_levers', { metric: 'median_terminal_net_worth', paths: 200 });
+    expect(r.reply.isError).toBe(false);
+    const ids = (r.json.levers as { id: string }[]).map((l) => l.id);
+    expect(ids).toEqual(expect.arrayContaining(['spending', 'equity_outlook', 'equity_exercise', 'equity_tender', 'equity_sell_down']));
+    expect(r.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+  }, SLOW);
+
+  it('traces the lives the equity picks name, with the outcome in words and the equity events', async () => {
+    loadStartup();
+    const run = await call('run_simulation', { paths: 1000 });
+    const picks = record(run.json.run_id).summary.picks;
+    const failed = await call('inspect_life', { pick: 'equity_failed' });
+    expect(failed.reply.isError).toBe(false);
+    expect(failed.json.path).toBe(picks.find((p) => p.label === 'equity_failed')!.path_index);
+    expect((failed.json.scalars as { equity_outcome: string }).equity_outcome).toBe('failed');
+    expect((failed.json.events as { kind: string }[]).map((e) => e.kind)).toContain('company_failed');
+
+    const paid = await call('inspect_life', { pick: 'equity_paid_p90' });
+    const scalars = paid.json.scalars as { equity_outcome: string; equity_gross_proceeds: number; equity_net_proceeds: number; equity_event_age: number };
+    expect(['acquired', 'ipo']).toContain(scalars.equity_outcome);
+    expect(scalars.equity_gross_proceeds).toBeGreaterThan(0);
+    expect(scalars.equity_net_proceeds).toBeLessThan(scalars.equity_gross_proceeds);
+    expect(scalars.equity_event_age).toBeGreaterThan(30);
+    const kinds = (paid.json.events as { kind: string }[]).map((e) => e.kind);
+    expect(kinds.some((k) => k === 'company_acquired' || k === 'company_ipo')).toBe(true);
+    expect(paid.reply.content.length).toBeLessThan(MAX_RESULT_CHARS);
+
+    // The middle of the lives that were paid did worse than the 90th percentile of them.
+    const middle = await call('inspect_life', { pick: 'equity_paid_median' });
+    expect((middle.json.scalars as { equity_net_proceeds: number }).equity_net_proceeds).toBeLessThan(scalars.equity_net_proceeds);
+    expect((middle.json.scalars as { equity_gross_proceeds: number }).equity_gross_proceeds).toBeGreaterThan(0);
+
+    // A plan without a company has no such picks, and says which exist.
+    state().load({ meta: { id: 't', createdAt: 0, origin: 'test' }, profile: demo() });
+    await call('run_simulation', { paths: 400 });
+    const none = await call('inspect_life', { pick: 'equity_failed' });
+    expect(none.reply.isError).toBe(true);
+    expect(none.reply.content).toMatch(/no "equity_failed" pick/);
+    expect((await call('inspect_life', { pick: 'median' })).json.scalars).not.toHaveProperty('equity_outcome');
   }, SLOW);
 });
 

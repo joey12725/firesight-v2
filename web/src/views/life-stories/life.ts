@@ -143,6 +143,9 @@ export function fallAt(life: Life, month: number): number {
 
 const wholeAge = (age: number) => String(Math.floor(age + 1e-6));
 
+/** Longest marker title that names a company ("Northwind Robotics goes public"); other titles keep to 26 characters. */
+export const COMPANY_TITLE_MAX = 32;
+
 /** Replaces "Person 2" with that person's name. */
 function named(text: string, names: string[]): string {
   return text.replace(/Person (\d)/g, (_, n: string) => names[Number(n) - 1] ?? `Person ${n}`);
@@ -203,6 +206,32 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
     push(s.a, 'spending_raise', 'Spending raised', `The spending rule raises spending ${group.length === 1 ? 'once' : `in ${group.length} years`} ${s.text}${Number.isFinite(biggest) && biggest > 0 ? `; the largest single step is ${biggest.toFixed(1)}%` : ''}.`, g === 0 ? 1 : 0);
   });
 
+  // Private-company equity. The company's name is the start of the engine's label.
+  const companyOf = (label: string) => {
+    const cut = [' tender', ' acquired', ' goes public', ' shuts down', ' is written off', ' lockup', ':'].map((mark) => label.indexOf(mark)).filter((i) => i > 0);
+    return (cut.length ? label.slice(0, Math.min(...cut)) : label).trim() || 'The company';
+  };
+  /** A marker title must fit beside its dot: fall back to the generic words for a long company name. */
+  const short = (title: string, fallback: string) => (title.length <= COMPANY_TITLE_MAX ? title : fallback);
+  // Yearly sales after a lockup are one decision carried out over several years.
+  for (const group of runs('lockup_sale', 13)) {
+    const s = span(group);
+    const total = group.reduce((t, x) => t + (x.e.amount ?? 0), 0);
+    const first = (group[0] as { e: TraceEvent }).e;
+    const name = companyOf(first.label);
+    const kept = group.every((x) => /kept .* as single stock/.test(x.e.label));
+    const n = group.length;
+    if (kept) push(s.a, 'lockup_sale', short(`Keeps ${name} shares`, 'Keeps the shares'), `When the lockup ends at ${who} ${ageOf(s.a)}, ${moneyCompact(total)} of ${name} shares are kept as a single stock in the taxable account.`, 4);
+    else push(s.a, 'lockup_sale', `Sells shares: ${moneyCompact(total)}`, n === 1 ? `Sells ${name} shares for ${moneyCompact(total)} before tax ${s.text}, once the lockup has ended.` : `Sells ${name} shares for ${moneyCompact(total)} before tax in ${n} sales ${s.text}, starting when the lockup ends.`, 4);
+  }
+  // Exercising as options vest logs a line a month: one entry for the run.
+  for (const group of runs('options_exercised', 2)) {
+    const s = span(group);
+    const total = group.reduce((t, x) => t + (x.e.amount ?? 0), 0);
+    if (group.length === 1) push(s.a, 'options_exercised', `Exercises options: ${moneyCompact(total)}`, `Exercises options at ${who} ${ageOf(s.a)}, paying ${moneyCompact(total)} for the shares; any tax on the exercise comes on top.`, 4);
+    else push(s.a, 'options_exercised', 'Exercises as options vest', `Exercises options as they vest ${s.text}, paying ${moneyCompact(total)} in all for the shares; any tax on the exercises comes on top.`, 4);
+  }
+
   // Running short and recovering can alternate month by month near the end: the first time is the event, the rest are repeats.
   const shortfalls = raw.filter((e) => e.kind === 'depleted');
   const lastShort = shortfalls.length ? at(shortfalls[shortfalls.length - 1] as TraceEvent) : -1;
@@ -212,6 +241,16 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
     const again = shortfalls.length > 1 ? ` Essentials are covered again for a time and then not, ${shortfalls.length - 1} more ${shortfalls.length === 2 ? 'time' : 'times'}, the last at ${who} ${ageOf(lastShort)}.` : '';
     push(m, 'depleted', 'Savings run out', `Savings are exhausted at ${who} ${ageOf(m)}: spending is cut to what income covers.${again}`, 5, true);
   });
+
+  // A job's name as it reads after "as": only the first letter is lowered, so a company's name inside it keeps its capitals.
+  const asJob = (job: string) => job.charAt(0).toLowerCase() + job.slice(1);
+  // Jobs whose employer has changed: the engine keeps the income's label after a re-hire
+  // elsewhere ("Back at work at a new employer (was X)"), so a later layoff "from X" is from that later employer.
+  const movedOn = new Set<string>();
+  const newEmployer = (label: string) => /^Back at work at a new employer \(was (.*)\)$/.exec(label)?.[1] ?? null;
+  // Whether any option was exercised in this life, and in which months: the words about a later loss or lapse depend on it.
+  const exerciseMonths = new Set(raw.filter((e) => e.kind === 'options_exercised').map(at));
+  const firstExercise = exerciseMonths.size ? Math.min(...exerciseMonths) : Infinity;
 
   raw.forEach((e, i) => {
     if (used.has(i)) return;
@@ -245,17 +284,32 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
         const back = raw.findIndex((o, j) => j > i && !used.has(j) && o.kind === 'rehired' && (!job || o.label.includes(job)));
         const fall = fallAt(life, m);
         const during = fall >= 0.1 ? ` during a market fall of ${Math.round(fall * 100)}%` : '';
+        // The company behind this job shut down this very month: the job went with it.
+        const failed = job ? raw.find((o) => o.kind === 'company_failed' && at(o) === m && job.includes(companyOf(o.label))) : undefined;
+        const later = job !== undefined && movedOn.has(job);
+        const lost = failed
+          ? `Loses the job${job ? ` as ${asJob(job)}` : ''} at ${who} ${ageOf(m)}, when the company shuts down`
+          : later
+            ? `Laid off from the job that followed at ${who} ${ageOf(m)}${during}`
+            : `Laid off${job ? ` as ${asJob(job)}` : ''} at ${who} ${ageOf(m)}${during}`;
         if (back >= 0) {
           used.add(back);
           const rehired = raw[back] as TraceEvent;
           const months = Math.max(1, at(rehired) - m);
           const pay = rehired.amount ? ` at ${moneyCompact(rehired.amount)} a year` : '';
-          return void push(m, e.kind, `Laid off, ${months} mo`, `Laid off${job ? ` as ${job.toLowerCase()}` : ''} at ${who} ${ageOf(m)}${during}; back at work after ${months} ${months === 1 ? 'month' : 'months'}${pay}.`, 4, true);
+          const elsewhere = newEmployer(rehired.label);
+          if (elsewhere !== null) movedOn.add(elsewhere);
+          // Said once, the first time the employer changes; after that every job is "the job that followed".
+          const where = elsewhere !== null && !later ? ' at a new employer' : '';
+          return void push(m, e.kind, `Laid off, ${months} mo`, `${lost}; back at work${where} after ${months} ${months === 1 ? 'month' : 'months'}${pay}.`, 4, true);
         }
-        return void push(m, e.kind, 'Laid off', `Laid off${job ? ` as ${job.toLowerCase()}` : ''} at ${who} ${ageOf(m)}${during}, and not rehired.`, 4, true);
+        return void push(m, e.kind, 'Laid off', `${lost}, and not rehired.`, 4, true);
       }
-      case 'rehired':
-        return void push(m, e.kind, 'Back at work', `${label} at ${who} ${ageOf(m)}${amount ? `, at ${amount} a year` : ''}.`, 2);
+      case 'rehired': {
+        const elsewhere = newEmployer(e.label);
+        if (elsewhere !== null) movedOn.add(elsewhere);
+        return void push(m, e.kind, 'Back at work', `${elsewhere !== null ? 'Back at work at a new employer' : label} at ${who} ${ageOf(m)}${amount ? `, at ${amount} a year` : ''}.`, 2);
+      }
       case 'financially_independent': {
         const retired = raw.findIndex((o, j) => j !== i && !used.has(j) && o.kind === 'retired' && Math.abs(at(o) - m) <= 1);
         if (retired >= 0) used.add(retired);
@@ -305,6 +359,55 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
       }
       case 'debt_paid_off':
         return void push(m, e.kind, label.length <= 24 ? label : 'Debt paid off', `${label} at ${who} ${ageOf(m)}.`, 1);
+      case 'options_exercised':
+      case 'lockup_sale':
+        // Folded into runs above.
+        return;
+      case 'company_ipo': {
+        const price = /at (\$[\d,.]+) a share/.exec(e.label)?.[1];
+        const lockup = /locked up for (\d+) months/.exec(e.label)?.[1];
+        return void push(m, e.kind, short(`${companyOf(e.label)} goes public`, 'Company goes public'), `${companyOf(e.label)} goes public at ${who} ${ageOf(m)}${price ? `, at ${price} a share` : ''}${lockup ? `; the shares cannot be sold for ${lockup} months` : ''}.`, 5);
+      }
+      case 'company_acquired': {
+        const price = /at (\$[\d,.]+) a share/.exec(e.label)?.[1];
+        const nothing = /common stock gets nothing/.test(e.label);
+        const paid = nothing ? ': common stock gets nothing' : `${price ? ` at ${price} a share` : ''}${amount ? `, paying out ${amount} before tax` : ''}`;
+        return void push(m, e.kind, short(`${companyOf(e.label)} is acquired`, 'Company is acquired'), `${companyOf(e.label)} is acquired at ${who} ${ageOf(m)}${paid}.`, 5, nothing);
+      }
+      case 'company_failed': {
+        const written = /is written off/.test(e.label);
+        // Every figure is in today's dollars at its own date, so what was paid at an exercise years
+        // earlier and what is lost now are the same money and different figures: say why.
+        const lost = !amount
+          ? ''
+          : firstExercise < m - 12
+            ? ` What was paid for its shares is lost: ${amount} in today's dollars at this date, a smaller figure than when it was paid because of the inflation since.`
+            : ` The ${amount} paid for its shares is lost.`;
+        const what = written ? `${companyOf(e.label)} is written off at ${who} ${ageOf(m)}, after years without a sale or listing: its shares and options are worth nothing.` : `${companyOf(e.label)} shuts down at ${who} ${ageOf(m)}: its shares and options are worth nothing.`;
+        return void push(m, e.kind, short(`${companyOf(e.label)} ${written ? 'is written off' : 'fails'}`, written ? 'Company written off' : 'Company fails'), `${what}${lost}`, 5, true);
+      }
+      case 'tender_offer': {
+        // A tender in which nothing was sold (not allowed to take part, or chose not to) is not an event of this life.
+        if (!amount) return;
+        const price = /at (\$[\d,.]+) a share/.exec(e.label)?.[1];
+        return void push(m, e.kind, `Tender offer: ${amount}`, `${companyOf(e.label)} runs a tender offer at ${who} ${ageOf(m)}${price ? ` at ${price} a share` : ''}: shares are sold for ${amount} before tax.`, 4);
+      }
+      case 'equity_forfeited': {
+        const f = forfeiture(e.label);
+        const worth = amount ? `, worth ${amount} on paper` : '';
+        if (f.kind === 'lapsed') {
+          const what = f.unvested ? `${f.vested ?? 'Some'} vested and ${f.unvested} unvested options` : `${f.vested ?? 'Some'} vested options`;
+          const when = f.term ? 'at the end of their ten-year term' : 'when the exercise window closes';
+          // Exercised some and lost the rest in one month, with the rest still worth something: the cash ran out, it was not a choice.
+          const short = exerciseMonths.has(m) && amount ? ' Savings above the emergency fund could not cover the strike and the tax on these.' : '';
+          return void push(m, e.kind, 'Options lapse', `${what} lapse unexercised at ${who} ${ageOf(m)}, ${when}${worth}.${short}`, 3, true);
+        }
+        const rsus = f.rsus ? `${f.rsus} vested RSUs that required staying until the IPO or sale` : null;
+        const unvested = f.unvested ? `${f.unvested} unvested shares or options` : null;
+        const lostUnits = [unvested, rsus].filter((x): x is string => x !== null).join(' and ') || 'what had not vested';
+        if (!f.left) return void push(m, e.kind, 'Unvested equity forfeited', `At ${who} ${ageOf(m)}, ${lostUnits} at ${f.company ?? 'the company'} are forfeited${worth}.`, 3, true);
+        return void push(m, e.kind, rsus && !unvested ? 'Vested RSUs forfeited' : 'Unvested equity forfeited', `Leaving ${f.company ?? 'the company'} at ${who} ${ageOf(m)} forfeits ${lostUnits}${worth}.`, 3, true);
+      }
       default:
         return void push(m, e.kind, label.length <= 24 ? label : label.slice(0, 22) + '…', `${label} at ${who} ${ageOf(m)}${amount ? `: ${amount}` : ''}.`, e.kind === 'child' || e.kind === 'partner_joined' ? 4 : 2);
     }
@@ -312,6 +415,33 @@ function curateEvents(life: Life): { events: LifeEvent[]; smallShocks: { count: 
 
   out.sort((a, b) => a.month - b.month || b.priority - a.priority);
   return { events: out, smallShocks };
+}
+
+/**
+ * The engine's `equity_forfeited` label, read into its parts. The wordings (core
+ * `sim/equity.rs`):
+ *   "Left X: N unvested forfeited"
+ *   "Left X: N unvested forfeited, and M vested RSUs that required staying until the IPO or sale"
+ *   "Left X: M vested RSUs forfeited (they required staying until the IPO or sale)"
+ *   "X: N unvested forfeited"                       (the owner died, or the job never started)
+ *   "N vested X options lapsed unexercised when the exercise window closed"
+ *   "N vested and M unvested X options lapsed unexercised at their ten-year term"
+ */
+export function forfeiture(label: string): { kind: 'lapsed' | 'forfeited'; left: boolean; company: string | null; vested: string | null; unvested: string | null; rsus: string | null; term: boolean } {
+  if (/lapsed unexercised/.test(label)) {
+    const m = /^([\d,]+) vested(?: and ([\d,]+) unvested)? /.exec(label);
+    return { kind: 'lapsed', left: false, company: null, vested: m?.[1] ?? null, unvested: m?.[2] ?? null, rsus: null, term: /ten-year term/.test(label) };
+  }
+  const head = /^(Left )?(.*?): /.exec(label);
+  return {
+    kind: 'forfeited',
+    left: Boolean(head?.[1]),
+    company: head?.[2] ?? null,
+    vested: null,
+    unvested: /([\d,]+) unvested forfeited/.exec(label)?.[1] ?? null,
+    rsus: /([\d,]+) vested RSUs/.exec(label)?.[1] ?? null,
+    term: false,
+  };
 }
 
 // ---- the narrative --------------------------------------------------------------------
@@ -323,6 +453,10 @@ export interface Sentence {
 }
 
 const pct = (v: number, digits = 0) => `${(v * 100).toFixed(digits)}%`;
+
+/** What happens to private-company equity: told wherever it falls in the life, before retirement or after. */
+const EQUITY_KINDS: TraceEventKind[] = ['options_exercised', 'tender_offer', 'company_acquired', 'company_ipo', 'company_failed', 'equity_forfeited', 'lockup_sale'];
+const AFTER_RETIREMENT: TraceEventKind[] = ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock', 'equity_event', ...EQUITY_KINDS];
 
 /** The life in plain sentences, in order. Deterministic: the same trace gives the same words. */
 export function narrative(life: Life, summary: Summary | null): Sentence[] {
@@ -345,7 +479,7 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
   const retired = byKind('retired')[0] ?? (fi?.title.includes('retires') ? fi : undefined);
   const turning = retired?.month ?? fi?.month ?? trace.months;
   // Working years: the things that happened on the way.
-  tell(['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event'], turning);
+  tell(['career_break', 'bought_home', 'sold_home', 'relocated', 'laid_off', 'windfall', 'major_expense', 'child', 'partner_joined', 'equity_event', ...EQUITY_KINDS], turning);
 
   const fiAge = s('fi_age');
   if (fi && fiAge !== null) {
@@ -378,7 +512,7 @@ export function narrative(life: Life, summary: Summary | null): Sentence[] {
 
   // Retirement: what happened after.
   life.events
-    .filter((e) => e.priority > 0 && e.month >= turning && ['laid_off', 'windfall', 'major_expense', 'sold_home', 'bought_home', 'relocated', 'roth_conversion', 'claimed_social_security', 'rmd_started', 'long_term_care', 'depleted', 'recovered', 'expense_shock'].includes(e.kind))
+    .filter((e) => e.priority > 0 && e.month >= turning && (AFTER_RETIREMENT as TraceEventKind[]).includes(e.kind))
     .forEach((e) => out.push({ text: e.detail, year: e.year }));
 
   // The spending rule, in one sentence rather than one per adjustment.
@@ -448,6 +582,9 @@ export function headline(life: Life): string {
 
 export const LEDGER_LABEL: Record<string, string> = {
   income_wages: 'Wages',
+  income_equity: 'Startup equity proceeds',
+  equity_exercise: 'Exercising options',
+  equity_paper_value: 'Startup equity on paper',
   income_self_employment: 'Self-employment',
   income_social_security: 'Social Security',
   income_pensions: 'Pensions and annuities',
@@ -521,11 +658,11 @@ export interface Ledger {
 }
 
 const IN: [string, string[]][] = [
-  ['Income', ['income_wages', 'income_self_employment', 'income_social_security', 'income_pensions', 'income_rental', 'income_other', 'save_employer', 'property_sale']],
+  ['Income', ['income_wages', 'income_equity', 'income_self_employment', 'income_social_security', 'income_pensions', 'income_rental', 'income_other', 'save_employer', 'property_sale']],
   ['Withdrawals', ['withdraw_taxable', 'withdraw_traditional', 'withdraw_roth', 'withdraw_hsa', 'withdraw_cash']],
 ];
 const OUT: [string, string[]][] = [
-  ['Spending', ['spend_essential', 'spend_housing', 'spend_children', 'spend_healthcare', 'spend_long_term_care', 'spend_discretionary', 'spend_debt', 'spend_one_off', 'property_purchase']],
+  ['Spending', ['spend_essential', 'spend_housing', 'spend_children', 'spend_healthcare', 'spend_long_term_care', 'spend_discretionary', 'spend_debt', 'spend_one_off', 'property_purchase', 'equity_exercise']],
   ['Taxes', ['tax_federal', 'tax_state', 'tax_payroll', 'tax_penalties']],
   ['Saving', ['save_taxable', 'save_traditional', 'save_roth', 'save_hsa', 'save_employer', 'save_cash']],
 ];
@@ -549,7 +686,7 @@ export function yearLedger(life: Life, y: number): Ledger {
     moneyOut,
     totalIn: moneyIn.reduce((t, s) => t + (s.total ?? 0), 0),
     totalOut: moneyOut.reduce((t, s) => t + (s.total ?? 0), 0),
-    memo: lines(['spend_planned', 'roth_conversion', 'investment_return', 'investment_income']),
+    memo: lines(['spend_planned', 'roth_conversion', 'investment_return', 'investment_income', 'equity_paper_value']),
     balances: [...lines(['balance_cash', 'balance_taxable', 'balance_traditional', 'balance_roth', 'balance_hsa', 'property_value']), ...lines(['mortgage', 'debt']).map((l) => ({ ...l, amount: -l.amount })), ...lines(['net_worth'], true)],
   };
 }
@@ -618,6 +755,8 @@ export interface LifeChoice {
   key: string;
   pathIndex: number;
   why: 'p10' | 'median' | 'p90' | 'median_fi' | 'failing' | 'scatter';
+  /** Why this life is shown, as the end of "Shown because ...", when `why` does not say it. */
+  because?: string;
   title: string;
   /** The stated rule by which this life was picked. */
   rule: string;
@@ -653,15 +792,27 @@ export function lifeChoices(summary: Summary): LifeChoice[] {
   };
   const pick = (label: string) => summary.picks.find((p) => p.label === label);
   const out: LifeChoice[] = [];
-  const add = (key: string, why: LifeChoice['why'], path: number | undefined, title: string, rule: string) => {
+  const add = (key: string, why: LifeChoice['why'], path: number | undefined, title: string, rule: string, because?: string) => {
     if (path === undefined || out.some((c) => c.pathIndex === path)) return;
-    out.push({ key, why, pathIndex: path, title, rule, describes: describe(path) });
+    out.push({ key, why, pathIndex: path, title, rule, describes: describe(path), because });
   };
   add('p10', 'p10', pick('p10')?.path_index, 'An unlucky life', 'Ranked 10th of 100 by wealth at the end');
   add('median', 'median', pick('median')?.path_index, 'A middling life', 'Ranked 50th of 100 by wealth at the end');
   add('p90', 'p90', pick('p90')?.path_index, 'A lucky life', 'Ranked 90th of 100 by wealth at the end');
   add('median_fi', 'median_fi', pick('median_fi')?.path_index, 'A typical path to optional work', 'Work becomes optional at the median age, among lives where it does');
   if (summary.failure.depleted > 0 || summary.failure.failed > 0) add('failing', 'failing', pick('failing')?.path_index, 'A life that ran short', 'The typical age of running short, among lives that do');
+
+  // A plan with private-company equity: one life for each way it can go.
+  if (summary.equity) {
+    const company = summary.equity.company || 'the company';
+    const proceeds = (label: string) => {
+      const v = pick(label)?.value;
+      return v === null || v === undefined ? '' : ` (${v < 0 ? '−' : ''}${moneyCompact(Math.abs(v))} after cost and tax)`;
+    };
+    add('equity_failed', 'scatter', pick('equity_failed')?.path_index, `${company} fails`, `Ranked 50th of 100 by wealth at the end, among lives where ${company} fails`, `${company} fails in it, and it is the middle such life by wealth at the end`);
+    add('equity_paid_median', 'scatter', pick('equity_paid_median')?.path_index, 'A middling payout', `The median net proceeds${proceeds('equity_paid_median')}, among lives where the equity pays`, 'the equity pays the middle amount in it, among lives where it pays anything');
+    add('equity_paid_p90', 'scatter', pick('equity_paid_p90')?.path_index, 'A large payout', `Ranked 90th of 100 by net proceeds${proceeds('equity_paid_p90')}, among lives where the equity pays`, 'the equity pays more in it than in 9 of 10 lives where it pays anything');
+  }
 
   let earliest = -1;
   let latest = -1;
@@ -672,7 +823,7 @@ export function lifeChoices(summary: Summary): LifeChoice[] {
   });
   const sample = summary.scatter.paths.length;
   const among = `among ${sample.toLocaleString('en-US')} lives`;
-  if (earliest >= 0) add('earliest', 'scatter', summary.scatter.paths[earliest], 'Work optional earliest', `The lowest age at which work became optional, ${among}`);
-  if (latest >= 0 && latest !== earliest) add('latest', 'scatter', summary.scatter.paths[latest], 'Work optional latest', `The highest age at which work became optional, ${among}`);
+  if (earliest >= 0) add('earliest', 'scatter', summary.scatter.paths[earliest], 'Work optional earliest', `The lowest age at which work became optional, ${among}`, 'work becomes optional in it sooner than in any other life sampled');
+  if (latest >= 0 && latest !== earliest) add('latest', 'scatter', summary.scatter.paths[latest], 'Work optional latest', `The highest age at which work became optional, ${among}`, 'work becomes optional in it later than in any other life sampled');
   return out;
 }

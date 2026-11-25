@@ -209,6 +209,8 @@ export interface QuantileDotsProps {
   axis: { kind: 'age'; time: TimeAxis; years?: boolean } | { kind: 'value'; format: XFormat; title?: string; ticks?: number[] };
   /** What the quantity is, for assistive technology: "net worth at the end of life". */
   noun: string;
+  /** What one dot stands for, plural and lower case, in the tooltip and for assistive technology. Default "lives". */
+  unit?: string;
   /** A short label set at the top left of the plot, when several dot plots share an axis. */
   rowLabel?: string;
   color?: string;
@@ -232,7 +234,7 @@ export function QuantileDots(props: QuantileDotsProps) {
       <ChartFrame
         height={props.height ?? 170 + axisBand + intervalBand}
         margin={{ top: props.rowLabel ? 20 : 8, right: 8, bottom: axisBand + intervalBand + 4, left: 8 }}
-        aria-label={`${props.noun}: one dot for each of ${props.dots.length} equally likely simulated lives`}
+        aria-label={`${props.noun}: one dot for each of ${props.dots.length} equally likely simulated ${props.unit ?? 'lives'}`}
       >
         <Body {...props} axisBand={axisBand} />
       </ChartFrame>
@@ -240,7 +242,7 @@ export function QuantileDots(props: QuantileDotsProps) {
   );
 }
 
-function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, formatRange, axis, noun, rowLabel, color, interval, intervalText, note, groupWidth, axisBand }: QuantileDotsProps & { axisBand: number }) {
+function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, formatRange, axis, noun, unit = 'lives', rowLabel, color, interval, intervalText, note, groupWidth, axisBand }: QuantileDotsProps & { axisBand: number }) {
   const { plot, theme } = useFrame();
   const layout = layoutDots({ dots, groupOf, groups, scale, steps, domain, width: plot.width, height: plot.height, groupWidth });
   const { diameter, bins, total } = layout;
@@ -250,6 +252,7 @@ function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, 
   const r = diameter / 2 - 0.75;
   const base = plot.bottom - 1;
   const fill = color ?? theme.baseline.line;
+  const unitTitle = unit.charAt(0).toUpperCase() + unit.slice(1);
   const range = formatRange ?? ((lo: number, hi: number) => `${format(lo)} to ${format(hi)}`);
 
   // Cursor positions: left groups, bins, right groups, in reading order.
@@ -264,8 +267,8 @@ function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, 
   const describe = (i: number) => {
     const s = stops[i];
     if (!s) return '';
-    if (s.kind === 'group') return `${s.group.group.label}: ${s.group.count} of ${total} lives.${s.group.group.note ? ` ${s.group.group.note}` : ''}`;
-    return `${range(s.bin.lo, s.bin.hi)}: ${s.bin.count} of ${total} lives. This or less: ${s.bin.cumulative} of ${total}.`;
+    if (s.kind === 'group') return `${s.group.group.label}: ${s.group.count} of ${total} ${unit}.${s.group.group.note ? ` ${s.group.group.note}` : ''}`;
+    return `${range(s.bin.lo, s.bin.hi)}: ${s.bin.count} of ${total} ${unit}. This or less: ${s.bin.cumulative} of ${total}.`;
   };
   const isFocused = (c: (typeof layout.circles)[number], s: Stop) => (s.kind === 'group' ? c.group === s.group.group.key : c.bin === s.index);
 
@@ -319,7 +322,7 @@ function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, 
       <Cursor
         count={stops.length}
         xOf={(i) => stops[i]?.x ?? 0}
-        label={`${noun}, ${total} simulated lives`}
+        label={`${noun}, ${total} simulated ${unit}`}
         describe={describe}
         crosshair={false}
         marks={(i) => {
@@ -338,14 +341,14 @@ function Body({ dots, groupOf, groups, scale = 'linear', steps, domain, format, 
             return (
               <>
                 <TipTitle>{s.group.group.label}</TipTitle>
-                <TipRow label="Lives" value={`${s.group.count} of ${total}`} strong />
+                <TipRow label={unitTitle} value={`${s.group.count} of ${total}`} strong />
                 {s.group.group.note && <TipNote>{s.group.group.note}</TipNote>}
               </>
             );
           return (
             <>
               <TipTitle>{range(s.bin.lo, s.bin.hi)}</TipTitle>
-              <TipRow color={fill} swatch="box" label="Lives here" value={`${s.bin.count} of ${total}`} />
+              <TipRow color={fill} swatch="box" label={`${unitTitle} here`} value={`${s.bin.count} of ${total}`} />
               <TipRow label="This or less" value={`${s.bin.cumulative} of ${total}`} strong />
               {note && <TipNote>{note(s.bin)}</TipNote>}
             </>

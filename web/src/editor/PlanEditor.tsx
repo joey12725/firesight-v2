@@ -7,6 +7,7 @@ import { PlanCheck, sectionForPath } from './PlanCheck';
 import { Section } from './Section';
 import { AccountsSection } from './sections/Accounts';
 import { AssumptionsSection } from './sections/Assumptions';
+import { EquitySection } from './sections/Equity';
 import { EventsSection } from './sections/Events';
 import { HouseholdSection } from './sections/Household';
 import { IncomeSection } from './sections/Income';
@@ -28,6 +29,7 @@ interface SectionDef {
 export const SECTIONS: SectionDef[] = [
   { id: 'household', icon: 'users', title: 'Household', paths: ['/household', '/name'], summary: summary.householdSummary, Body: HouseholdSection },
   { id: 'income', icon: 'briefcase', title: 'Income', paths: ['/incomes'], summary: summary.incomeSummary, Body: IncomeSection },
+  { id: 'equity', icon: 'rocket', title: 'Startup equity', paths: ['/private_equity'], summary: summary.equitySummary, Body: EquitySection },
   { id: 'spending', icon: 'creditCard', title: 'Spending', paths: ['/spending'], summary: summary.spendingSummary, Body: SpendingSection },
   { id: 'accounts', icon: 'landmark', title: 'Savings and accounts', paths: ['/accounts', '/portfolio'], summary: summary.accountsSummary, Body: AccountsSection },
   { id: 'property', icon: 'home', title: 'Property and debts', paths: ['/properties', '/debts', '/debt_policy'], summary: summary.propertySummary, Body: PropertySection },

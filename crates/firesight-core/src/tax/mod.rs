@@ -4,7 +4,10 @@
 //! long-term gains stacked on top, NIIT, FICA and self-employment tax, state income
 //! tax, credits, taxation of Social Security benefits, standard versus itemised
 //! deduction, the ACA premium tax credit, IRMAA surcharges and the early-withdrawal
-//! penalty. AMT is ignored. Also RMD divisors and contribution limits.
+//! penalty. AMT is computed when `TaxInputs.amt_applies` is set (households with
+//! private-company equity): the exemption and its phase-out, the 26% and 28% rates,
+//! gains at their own rates, the incentive-option adjustment and the minimum tax
+//! credit. State AMT is not modelled. Also RMD divisors and contribution limits.
 //!
 //! Contract:
 //!
@@ -481,6 +484,26 @@ pub struct FederalYear {
     pub irmaa: [IrmaaTable; FilingStatus::COUNT],
     /// Retirement and HSA limits.
     pub limits: ContributionLimits,
+    /// AMT exemption by filing status.
+    pub amt_exemption: [f64; FilingStatus::COUNT],
+    /// AMT taxable income above which the exemption phases out, by filing status.
+    pub amt_phaseout_start: [f64; FilingStatus::COUNT],
+    /// Exemption lost per dollar of AMT taxable income above the threshold (0.5).
+    pub amt_phaseout_rate: f64,
+    /// AMT taxable excess up to which the lower AMT rate applies.
+    pub amt_rate_break: f64,
+    /// The two AMT rates (0.26, 0.28).
+    pub amt_rates: [f64; 2],
+    /// Flat federal withholding rate on supplemental wages.
+    pub supplemental_rate: f64,
+    /// Rate on supplemental wages above `supplemental_threshold` in a year.
+    pub supplemental_rate_high: f64,
+    /// Supplemental wages in a calendar year above which the higher rate applies.
+    pub supplemental_threshold: f64,
+    /// Section 1202 per-issuer cap on excluded gain, stock acquired after July 4, 2025.
+    pub qsbs_cap: f64,
+    /// The same for stock acquired on or before July 4, 2025.
+    pub qsbs_cap_old: f64,
 }
 
 /// State income tax parameters for one state and year.
@@ -782,7 +805,8 @@ pub struct TaxInputs {
     pub other_dependents: u32,
     /// State of residence; must equal `params.state.code`.
     pub state: StateCode,
-    /// Gross wages per person, including bonuses, vested RSUs and option spread,
+    /// Gross wages per person, including bonuses, vested RSUs, the spread on
+    /// non-qualified options and cash-outs of options and RSUs at a liquidity event,
     /// before pre-tax deferrals.
     pub wages: [f64; MAX_PEOPLE],
     /// Net self-employment profit per person.
@@ -852,6 +876,28 @@ pub struct TaxInputs {
     /// Suspended passive rental losses released by the sale of the property: an
     /// ordinary deduction in the year of sale (IRC 469(g)).
     pub passive_loss_released: f64,
+    /// Compensation per person that is income but not wages for payroll tax: the
+    /// ordinary income from selling incentive-option shares before the holding
+    /// periods are met (IRC 421(b), 3121(a)(22)).
+    pub wages_no_fica: [f64; MAX_PEOPLE],
+    /// Whether to compute the alternative minimum tax. Off by default: the engine
+    /// switches it on for households that hold private-company equity.
+    pub amt_applies: bool,
+    /// AMT adjustment to ordinary income for incentive stock options: the spread
+    /// on options exercised and still held at year end, less the spread reported
+    /// in an earlier year on shares sold this year in a disqualifying sale
+    /// (limited to the gain). May be negative.
+    pub amt_iso_adjustment: f64,
+    /// AMT adjustment to long-term gains (never positive): the spread reported in
+    /// an earlier year on incentive-option shares sold this year in a qualifying
+    /// sale, limited to the gain. The AMT gain is the regular gain plus this
+    /// (Form 6251 Part III works from the AMT basis).
+    pub amt_gain_adjustment: f64,
+    /// Minimum tax credit carried in from earlier years (never negative).
+    pub amt_credit_carryforward: f64,
+    /// Gain on qualified small business stock excluded from federal income
+    /// (IRC 1202). Not in `long_term_gains`. State tax still applies to it.
+    pub qsbs_excluded_gain: f64,
 }
 
 /// Highest federal rate on unrecaptured section 1250 gain (IRC 1(h)(1)(E)): 25%.
@@ -894,7 +940,8 @@ pub struct TaxResult {
     /// Foreign income tax when the household lives abroad.
     pub foreign: f64,
     /// Everything owed for the year: federal after credits, NIIT, FICA, SE tax, state,
-    /// penalties, foreign. Can be negative when refundable credits exceed the rest.
+    /// penalties, foreign, plus `amt` less `amt_credit_used`. Can be negative when
+    /// refundable credits exceed the rest.
     pub total: f64,
     /// Federal bracket rate on one more dollar of ordinary income (0 while deductions
     /// exceed income). See [`effective_marginal_rate`] for the all-in rate.
@@ -921,6 +968,17 @@ pub struct TaxResult {
     /// Rental loss not allowed this year under the passive-loss limit (positive).
     /// Carry it into next year's `rental_net` as a negative amount.
     pub rental_loss_suspended: f64,
+    /// Tentative minimum tax (0 when the AMT is not computed).
+    pub tentative_minimum_tax: f64,
+    /// Alternative minimum tax owed on top of the regular tax (in `total`).
+    pub amt: f64,
+    /// Minimum tax credit used against this year's regular tax (already subtracted
+    /// from `total`).
+    pub amt_credit_used: f64,
+    /// Credit to carry into next year's `amt_credit_carryforward`: what came in,
+    /// less what was used, plus the part of this year's AMT caused by the
+    /// incentive-option adjustment.
+    pub amt_credit_carryforward: f64,
 }
 
 /// A line-by-line explanation of a return for the UI ("explain my tax") and for

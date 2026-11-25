@@ -74,6 +74,13 @@ export function homeSaleNote(summary: Summary | null | undefined): string | null
   return `a home is sold as a last resort in ${n.n} of ${n.of}`;
 }
 
+/**
+ * The card about private-company equity under the headline: what the plan does if the
+ * company fails, if it is sold or listed, and how often the equity pays nothing. Null
+ * when the plan has no company. `counted` is false when every company is left out.
+ */
+export { equityCardSentence as equitySentence } from '../equity/text';
+
 /** The sampling interval and sample size, as the small print under the sentence. */
 export function samplingNote(summary: Summary): string {
   const s = summary.headline.success_rate;

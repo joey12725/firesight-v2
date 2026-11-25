@@ -7,11 +7,12 @@ import { rerun, useRunStore, type RunState } from '@/state/run-store';
 import { useUi } from '@/state/ui-store';
 import { Button, EmptyState, Icon, Skeleton, TabPanel, Tabs, count, cx, moneyCompact } from '@/ui';
 import { AnimatedNumber, age, ofHundred } from '@/ui/charts';
-import { VIEWS } from '@/views/registry';
+import { editorMessage } from '@/editor/issue-words';
+import { equityCounted, primaryCounted } from '@/views/equity/model';
+import { equityHeadlineNote } from '@/views/equity/text';
+import { DEFAULT_VIEW, viewsFor } from '@/views/registry';
 import { pinnedHeight } from './scroll';
 import type { ScenarioComparison, ViewProps } from '@/views/types';
-
-const TABS = VIEWS.map((v) => ({ id: v.id, label: v.label }));
 
 function statusLine(run: RunState): string {
   const speed = run.pathsPerSecond > 0 ? ` · ${count(Math.round(run.pathsPerSecond / 100) * 100)} lives a second` : '';
@@ -54,7 +55,7 @@ function Lives({ share, paths }: { share: number; paths: number }) {
 }
 
 /** The four figures every view answers to, tweened as the run refines. */
-function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean }) {
+function HeadlineFigures({ summary, stale, equityNote }: { summary: Summary; stale: boolean; equityNote: string | null }) {
   const h = summary.headline;
   const fi = h.fi_age;
   const sp = summary.spending;
@@ -86,10 +87,15 @@ function HeadlineFigures({ summary, stale }: { summary: Summary; stale: boolean 
         testId="headline-success"
         label="The plan holds in"
         note={
-          homeSold >= 0.005 ? (
-            // Success counts a last-resort home sale as holding, so the two are never shown apart.
-            <span title={interval} data-testid="headline-home-sale">
-              but in {ofHundred(homeSold).text} a home is sold as a last resort
+          homeSold >= 0.005 || equityNote ? (
+            <span title={interval}>
+              {homeSold >= 0.005 && (
+                // Success counts a last-resort home sale as holding, so the two are never shown apart.
+                <span data-testid="headline-home-sale">but in {ofHundred(homeSold).text} a home is sold as a last resort</span>
+              )}
+              {homeSold >= 0.005 && equityNote ? '; ' : ''}
+              {/* What the plan does if the company goes to zero, on every view. */}
+              {equityNote && <span data-testid="headline-equity">{equityNote}</span>}
             </span>
           ) : (
             interval
@@ -137,6 +143,8 @@ function HeadlineStrip({ run }: { run: RunState }) {
   const name = useProfileStore((s) => s.profile?.name);
   const description = useProfileStore((s) => s.profile?.description);
   const scenarioCount = useProfileStore((s) => s.scenarios.filter((x) => x.enabled).length);
+  // The note is about the company the outcomes describe, so that company itself must be counted.
+  const counted = useProfileStore((s) => (s.profile ? equityCounted(s.profile) && primaryCounted(s.profile) : false));
   const fraction = run.total > 0 ? run.done / run.total : 0;
   const busy = run.status === 'running' || run.status === 'queued';
   return (
@@ -153,7 +161,7 @@ function HeadlineStrip({ run }: { run: RunState }) {
         </p>
       </div>
       {description && <p className="mt-1 hidden max-w-2xl text-sm text-pretty text-ink-2 @2xl:block">{description}</p>}
-      {run.summary && <HeadlineFigures summary={run.summary} stale={run.stale} />}
+      {run.summary && <HeadlineFigures summary={run.summary} stale={run.stale} equityNote={equityHeadlineNote(run.summary, counted)} />}
       {run.preview && <PlanFacts preview={run.preview} />}
       <div aria-hidden className="absolute inset-x-0 bottom-0 h-px overflow-hidden bg-line">
         {busy && run.done === 0 ? (
@@ -176,7 +184,8 @@ function RunNotice({ run }: { run: RunState }) {
   if (run.status === 'blocked') {
     return (
       <Notice tone="bad" icon="alertCircle" title={`Fix ${errorCount} ${errorCount === 1 ? 'problem' : 'problems'} in the plan to simulate it`}>
-        <p>{first?.message}</p>
+        {/* Worded as the editor's Plan check words it: percent for a fraction, no ids the household never saw. */}
+        <p>{first ? editorMessage(first) : null}</p>
         {first && (
           <Button size="sm" className="mt-3" onClick={() => useUi.getState().setFocusPath(first.path)}>
             Show me where
@@ -237,7 +246,10 @@ export function ResultsWorkspace() {
   const run = useRunStore();
   const active = useActiveView();
   const pane = useRef<HTMLElement>(null);
-  const view = VIEWS.find((v) => v.id === active) ?? VIEWS[0];
+  // A view the plan has no use for (Equity without a company) is not a tab; its address shows the first view.
+  const views = useMemo(() => viewsFor(profile), [profile]);
+  const tabs = useMemo(() => views.map((v) => ({ id: v.id, label: v.label })), [views]);
+  const view = views.find((v) => v.id === active) ?? views.find((v) => v.id === DEFAULT_VIEW) ?? views[0];
 
   const comparison = useMemo<ScenarioComparison[]>(
     () => run.scenarios.map((s) => ({ id: s.id, name: s.name, profile: s.profile, summary: s.summary, paired: s.paired })),
@@ -284,7 +296,7 @@ export function ResultsWorkspace() {
           <HeadlineStrip run={run} />
         </div>
         <div data-results-tabs className="sticky top-0 z-20 bg-surface-0">
-          <Tabs tabs={TABS} active={view.id} onChange={navigateToView} idBase="view" aria-label="Results" className="px-5 lg:px-8" />
+          <Tabs tabs={tabs} active={view.id} onChange={navigateToView} idBase="view" aria-label="Results" className="px-5 lg:px-8" />
         </div>
       </div>
       {/* At least a pane tall, so the scroll position that hides the figures survives a change of view. */}

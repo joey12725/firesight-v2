@@ -1,4 +1,4 @@
-// The Scenarios view's transforms and words, on real engine output: the three demo
+// The Scenarios view's transforms and words, on real engine output: the four demo
 // households, a few hundred lives each, compared with real what-ifs.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -10,7 +10,8 @@ import type { PatchOp, Profile } from '@/engine/types';
 import { describePatch, describeValue, fieldLabel, lineText, pathPattern } from './describe';
 import { metricRows, metricTableData, metricTakeaway } from './MetricTable';
 import { METRICS, binDeltas, chooseLives, deltaQuantile, homeSaleOf, divergence, flipCounts, flipsOf, formatDelta, rankRows, scalarOf, stageDiffs, type Flips } from './model';
-import { quickScenarios, samePatch, stockShare } from './quick';
+import { exerciseCostVested } from '@/engine/equity-math';
+import { QUICK_GROUPS, equityDecisions, quickScenarios, samePatch, stockShare } from './quick';
 import { deltaTakeaway, fanTakeaway, flipNote, flipSentence, plain, provisionalSentence, rankTakeaway, stageTakeaway } from './text';
 
 // Real simulations on a machine that may be busy with other work.
@@ -340,5 +341,119 @@ describe('over a lifetime and life by life', () => {
     expect(divergence([0, 0, 500], [0, 0, 900])).toBeNull();
     expect(divergence([0, null, 5000], [0, 7000, 9000])).toBe(2);
     expect(divergence([1, 2, 3], [1, 2])).toBe(1);
+  });
+});
+
+describe('startup equity what-ifs', () => {
+  const EQUITY_KEYS = ['equity_zero', 'equity_exercise_now', 'equity_tender_max', 'equity_leave'];
+  const equity = (profile: Profile) => quickScenarios(profile, null).filter((q) => q.group === 'Startup equity');
+  const ownOdds = (profile: Profile) =>
+    applyPatch(profile, [
+      {
+        op: 'set',
+        path: '/private_equity/@northwind/outcomes',
+        value: [
+          { id: 'fails', kind: 'fails', probability: 0.6, years_from: 1, years_to: 6, multiple_low: 1, multiple_high: 1 },
+          { id: 'ipo', kind: 'ipo', probability: 0.4, years_from: 2, years_to: 8, multiple_low: 1, multiple_high: 5 },
+        ],
+      },
+    ]).profile;
+
+  it('are offered on the startup demo and on no other, after the income what-ifs', () => {
+    expect(QUICK_GROUPS.indexOf('Startup equity')).toBe(QUICK_GROUPS.indexOf('Income') + 1);
+    expect(equity(demo('startup-employee')).map((q) => q.key)).toEqual(EQUITY_KEYS);
+    for (const slug of ['dual-income-family', 'early-career-saver', 'side-hustle-landlord']) {
+      expect(equity(demo(slug)), slug).toEqual([]);
+      expect(equityDecisions(demo(slug)), slug).toEqual([]);
+    }
+    // Typical odds are only a change for a plan that has its own.
+    expect(equity(ownOdds(demo('startup-employee'))).map((q) => q.key)).toEqual([...EQUITY_KEYS, 'equity_typical_odds']);
+  });
+
+  it('each applies, validates and changes the plan it is offered on', () => {
+    for (const profile of [demo('startup-employee'), ownOdds(demo('startup-employee'))]) {
+      for (const q of [...equity(profile), ...equityDecisions(profile)]) {
+        const r = applyPatch(profile, q.patch);
+        expect(r.errors, q.key).toEqual([]);
+        expect(JSON.stringify(r.profile), q.key).not.toBe(JSON.stringify(profile));
+        expect(q.label.length, q.key).toBeLessThanOrEqual(48);
+        expect(q.hint, q.key).not.toMatch(/undefined|NaN|null|—/);
+        // Paths go by id, so the patch survives a reordering of the list.
+        for (const op of q.patch) expect(op.path).toMatch(/^\/private_equity\/@northwind\//);
+        // Applied, the what-if has nothing left to offer.
+        const again = [...equity(r.profile), ...equityDecisions(r.profile)].find((x) => x.key === q.key);
+        expect(again, `${q.key} after itself`).toBeUndefined();
+      }
+    }
+  });
+
+  it('states the figures a reader needs before pressing', () => {
+    const profile = demo('startup-employee');
+    const by = (key: string) => equity(profile).find((q) => q.key === key);
+    const company = profile.private_equity[0] as Profile['private_equity'][number];
+    // 50,000 options at $1.50 and 8,000 at $4.00.
+    expect(exerciseCostVested(company)).toBe(107_000);
+    // The figure is what every vested option would cost, and the hint says the plan may exercise fewer.
+    expect(by('equity_exercise_now')?.hint).toContain('Every one of them would cost $107k before tax; the plan exercises only what savings above the emergency fund can pay');
+    expect(by('equity_exercise_now')?.hint).toContain('Options it cannot pay for are not exercised later.');
+    expect(by('equity_zero')?.name).toBe('Equity left out');
+    expect(by('equity_tender_max')?.hint).toBe('Sells everything each tender offer allows (up to 20% of vested holdings each time) instead of 50% of that.');
+    expect(by('equity_leave')?.name).toBe('Leave Northwind Robotics in a year');
+    expect(by('equity_leave')?.hint).toContain('starts the 3-month exercise window');
+    expect(by('equity_zero')?.hint).toContain('in Northwind Robotics were worth nothing');
+    expect(equity(ownOdds(profile)).find((q) => q.key === 'equity_typical_odds')?.hint).toBe('Replaces your own odds for Northwind Robotics with the typical ones for a Series C company.');
+  });
+
+  it('describes each patch in words', () => {
+    const profile = demo('startup-employee');
+    const text = (key: string, p = profile) => describePatch(p, [...equity(p), ...equityDecisions(p)].find((q) => q.key === key)?.patch ?? [], null).map(lineText);
+    expect(text('equity_zero')).toEqual(['Northwind Robotics: counted in the plan: yes → no']);
+    expect(text('equity_exercise_now')).toEqual(['Northwind Robotics: when options are exercised: only at a sale or IPO → vested options now; later ones wait for a sale or IPO']);
+    // "The rest as they vest" is the other setting, not this one.
+    const vesting = applyPatch(profile, [{ op: 'set', path: '/private_equity/0/policy/exercise', value: 'as_they_vest' }]);
+    expect(describePatch(profile, [{ op: 'set', path: '/private_equity/@northwind/policy/exercise', value: 'as_they_vest' }], null).map(lineText)).toEqual(['Northwind Robotics: when options are exercised: only at a sale or IPO → vested options now, the rest as they vest']);
+    expect(vesting.errors).toEqual([]);
+    expect(text('equity_tender_max')).toEqual(['Northwind Robotics: share sold in tenders: 50% → 100%']);
+    expect(text('equity_tender_none')).toEqual(['Northwind Robotics: share sold in tenders: 50% → 0%']);
+    expect(text('equity_lapse')).toEqual(['Northwind Robotics: when options would lapse: exercise them if affordable → let them lapse']);
+    expect(text('equity_leave')).toEqual(['Northwind Robotics: leaves the company after: stays → 12 months']);
+    expect(text('equity_typical_odds', ownOdds(profile))).toEqual(['Northwind Robotics: what might happen: your own odds (2 outcomes) → typical odds for the stage']);
+  });
+
+  it('prints prices per share with their cents, and names holdings and outcomes', () => {
+    const profile = demo('startup-employee');
+    const one = (op: PatchOp) => describePatch(profile, [op], null).map(lineText);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/preferred_price', value: 1.2 })).toEqual(['Northwind Robotics: latest price per share: $14.00 → $1.20']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/holdings/@new_hire_iso/kind/strike', value: 0.85 })[0]).toMatch(/^New-hire grant: .*: \$1\.50 → \$0\.85$/);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/fmv_409a', value: 5.25 })).toEqual(['Northwind Robotics: 409A value per share: $5.00 → $5.25']);
+    expect(describeValue(1.2, '/private_equity/*/holdings/*/kind/basis_per_share', profile)).toBe('$1.20');
+    expect(describeValue(4, '/private_equity/*/holdings/*/kind/fmv_at_exercise', profile)).toBe('$4.00');
+    expect(one({ op: 'set', path: '/private_equity/@northwind/preference_overhang', value: 0.4 })).toEqual(['Northwind Robotics: preference overhang: typical for the stage → 40%']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/tenders/annual_probability', value: 0.2 })).toEqual(['Northwind Robotics: chance of a tender offer each year: typical for the stage → 20%']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/tenders/max_fraction', value: 0.25 })).toEqual(['Northwind Robotics: most that can be sold in one tender: 20% → 25%']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/tenders/next_in_months', value: 6 })).toEqual(['Northwind Robotics: planned tender in: none → 6 months']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/policy/sell_down', value: { type: 'hold' } })).toEqual(['Northwind Robotics: after the lockup: sell over 2 years → keep the shares']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/outlook', value: 'pessimistic' })).toEqual(['Northwind Robotics: outlook: typical → failure 10 points more likely']);
+    expect(one({ op: 'set', path: '/private_equity/@northwind/stage', value: 'late' })).toEqual(['Northwind Robotics: stage: Series C → late stage']);
+    expect(one({ op: 'remove', path: '/private_equity/@northwind/holdings/@retention_rsu' })).toEqual(['Holding “Retention RSUs”: removed']);
+    expect(one({ op: 'remove', path: '/private_equity/@northwind' })).toEqual(['Company “Northwind Robotics”: removed']);
+    expect(pathPattern('/private_equity/@northwind/outcomes/@ipo/probability')).toBe('/private_equity/*/outcomes/*/probability');
+    expect(describeValue(0.35, '/private_equity/*/outcomes/*/probability', profile)).toBe('35%');
+    expect(fieldLabel(profile, '/private_equity/@northwind/outcomes/@ipo/probability')).toBe('chance');
+  });
+
+  it('a comparison on the startup demo carries the change by outcome, and on the others it does not', () => {
+    const profile = demo('startup-employee');
+    const zero = equity(profile).find((q) => q.key === 'equity_zero');
+    const { c } = paired(profile, zero?.patch ?? []);
+    expect(c.by_equity_outcome?.map((r) => r.outcome)).toEqual(['failed', 'still_private', 'acquired', 'ipo']);
+    expect(c.by_equity_outcome?.reduce((t, r) => t + r.paths, 0)).toBe(c.paths);
+    // With the equity at zero the lives where it would have gone public are poorer, and the ones where it fails are not.
+    const median = (o: string) => deltaQuantile(c.quantile_levels, c.by_equity_outcome?.find((r) => r.outcome === o)?.terminal_net_worth as never, 0.5) as number;
+    expect(median('ipo')).toBeLessThan(0);
+    expect(Math.abs(median('failed'))).toBeLessThan(Math.abs(median('ipo')));
+    const family = demo('dual-income-family');
+    const other = paired(family, quickScenarios(family, null).find((q) => q.key === 'save_more')?.patch ?? []);
+    expect(other.c.by_equity_outcome).toBeUndefined();
   });
 });

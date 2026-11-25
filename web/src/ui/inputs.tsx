@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes } from 'react';
+import { useRef, useState, type InputHTMLAttributes, type ReactNode, type Ref, type SelectHTMLAttributes } from 'react';
 import { cx } from './cx';
 import { formatForInput, parseNumber, type NumberKind } from './format';
 import { Icon } from './icons';
@@ -51,14 +51,33 @@ export interface NumberInputProps {
   className?: string;
   'aria-label'?: string;
   'aria-describedby'?: string;
+  /**
+   * When typed text is handed to `onChange`. By default every valid keystroke is. With
+   * "blur" only the finished entry is (on leaving the field or pressing Enter), so a
+   * prefix typed on the way to a value ("7" on the way to "70") is never written. Arrow
+   * keys write at once either way. Use it where a half-typed figure would be accepted
+   * and change other values.
+   */
+  commit?: 'change' | 'blur';
 }
 
-const DEFAULT_STEP: Record<NumberKind, number> = { money: 100, percent: 0.0025, years: 1, months: 1, number: 1, integer: 1 };
+const DEFAULT_STEP: Record<NumberKind, number> = { money: 100, percent: 0.0025, years: 1, months: 1, number: 1, integer: 1, count: 1 };
+
+/**
+ * What a finished entry hands to `onChange` in `commit="blur"` mode: the parsed number,
+ * null for a cleared nullable field, or `undefined` for nothing (unparseable text, an
+ * empty field that may not be empty, or the value the field already holds).
+ */
+export function finishedEntry(text: string, kind: NumberKind, value: number | null, nullable = false): number | null | undefined {
+  if (text.trim() === '') return nullable && value !== null ? null : undefined;
+  const parsed = parseNumber(text, kind);
+  return parsed === null || parsed === value ? undefined : parsed;
+}
 
 /**
  * A text field for a figure. Accepts shorthand ("85k", "1.2m", "4%"), commits every
- * valid keystroke, and tidies the text on blur. Typing never fights the user: while the
- * field has focus its text is theirs.
+ * valid keystroke (or, with `commit="blur"`, the finished entry), and tidies the text on
+ * blur. Typing never fights the user: while the field has focus its text is theirs.
  */
 export function NumberInput({
   value,
@@ -74,6 +93,7 @@ export function NumberInput({
   disabled,
   id,
   className,
+  commit: commitOn = 'change',
   ...aria
 }: NumberInputProps) {
   const shown = value === null || value === undefined ? '' : formatForInput(value, kind);
@@ -82,6 +102,8 @@ export function NumberInput({
   const [draft, setDraft] = useState({ text: shown, committed: value });
   const [focused, setFocused] = useState(false);
   const [rejected, setRejected] = useState(false);
+  // In `commit="blur"` mode: whether the text has been typed over since focus (or the last arrow key).
+  const typed = useRef(false);
   if (draft.committed !== value) {
     setDraft({ text: shown, committed: value });
     setRejected(false);
@@ -90,6 +112,13 @@ export function NumberInput({
   const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
 
   const commit = (raw: string) => {
+    if (commitOn === 'blur') {
+      // The text is kept; nothing is written until the entry is finished.
+      typed.current = true;
+      setRejected(raw.trim() === '' ? !nullable : parseNumber(raw, kind) === null);
+      setDraft({ text: raw, committed: value });
+      return;
+    }
     if (raw.trim() === '') {
       setRejected(!nullable);
       setDraft({ text: raw, committed: nullable ? null : draft.committed });
@@ -110,6 +139,7 @@ export function NumberInput({
   const nudge = (direction: 1 | -1, large: boolean) => {
     const s = (step ?? DEFAULT_STEP[kind]) * (large ? 10 : 1);
     const next = Number(clamp(Math.round(((value ?? 0) + direction * s) / s) * s).toPrecision(12));
+    typed.current = false;
     setRejected(false);
     setDraft({ text: formatForInput(next, kind), committed: next });
     if (next !== value) onChange(next);
@@ -142,12 +172,18 @@ export function NumberInput({
         {...aria}
         onFocus={(e) => {
           setFocused(true);
+          typed.current = false;
           setDraft({ text: shown, committed: value });
           e.target.select();
         }}
         onBlur={() => {
           setFocused(false);
           setRejected(false);
+          if (commitOn === 'blur' && typed.current) {
+            typed.current = false;
+            const entry = finishedEntry(draft.text, kind, value, nullable);
+            if (entry !== undefined) onChange(entry);
+          }
         }}
         onChange={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
@@ -268,6 +304,7 @@ export function Slider({ value, onChange, min, max, step, kind = 'number', suffi
         value={Math.max(min, Math.min(max, value))}
         onChange={(e) => onChange(Number(e.target.value))}
         aria-label={aria['aria-label']}
+        aria-valuetext={`${formatForInput(value, kind)}${kind === 'percent' ? '%' : typeof suffix === 'string' ? ` ${suffix}` : ''}`}
         tabIndex={-1}
         style={{ '--fill': `${fraction * 100}%` } as React.CSSProperties}
         className="slider h-8 w-0 min-w-0 flex-1"

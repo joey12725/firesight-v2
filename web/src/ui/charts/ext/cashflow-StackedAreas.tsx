@@ -49,10 +49,14 @@ export interface StackSeries {
 export interface StackLine {
   key: string;
   label: string;
+  /** Short name for the label at the line's end, when the full label would not fit in the margin. */
+  end?: string;
   color: string;
   /** By year index, signed, on the same scale as the stack. Null breaks the line. */
   values: readonly (number | null)[];
   strong?: boolean;
+  /** Dashed: a notional amount that is not part of the stack (paper value outside net worth). */
+  dash?: boolean;
 }
 
 export interface StackStrip {
@@ -109,7 +113,7 @@ export function StackLegend({ series, lines, className }: { series: StackSeries[
       <Legend
         className={className}
         items={[
-          ...(lines ?? []).map((l) => ({ key: l.key, label: l.label, color: l.color, swatch: 'line' as const })),
+          ...(lines ?? []).map((l) => ({ key: l.key, label: l.label, color: l.color, swatch: l.dash ? ('dash' as const) : ('line' as const) })),
           ...[...up, ...down].map((s) => ({ key: s.key, label: s.label, color: s.color })),
         ]}
       />
@@ -242,7 +246,7 @@ export function StackedAreas({ time, series, lines = [], from = 0, to, format = 
         const endLabels: EndLabel[] = lines.flatMap((l) => {
           for (let j = index.length - 1; j >= 0; j--) {
             const v = l.values[index[j] as number];
-            if (v !== null && v !== undefined) return [{ key: l.key, y: Math.min(plot.bottom, Math.max(plot.y, y(v))), text: l.label, color: l.color, strong: l.strong }];
+            if (v !== null && v !== undefined) return [{ key: l.key, y: Math.min(plot.bottom, Math.max(plot.y, y(v))), text: l.end ?? l.label, color: l.color, strong: l.strong }];
           }
           return [];
         });
@@ -269,7 +273,7 @@ export function StackedAreas({ time, series, lines = [], from = 0, to, format = 
                 {lines.map((l) => (
                   <g key={l.key}>
                     <path d={linePath(l.values)} fill="none" stroke={theme.surface} strokeWidth={l.strong ? 5 : 4} strokeLinejoin="round" strokeLinecap="round" />
-                    <path d={linePath(l.values)} fill="none" stroke={l.color} strokeWidth={l.strong ? 2 : 1.5} strokeLinejoin="round" strokeLinecap="round" />
+                    <path d={linePath(l.values)} fill="none" stroke={l.color} strokeWidth={l.strong ? 2 : 1.5} strokeDasharray={l.dash ? '5 4' : undefined} strokeLinejoin="round" strokeLinecap="round" />
                   </g>
                 ))}
               </PlotClip>

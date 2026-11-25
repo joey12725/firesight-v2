@@ -23,13 +23,14 @@ export function currentPlanView(ctx: ToolContext) {
     schema: ctx.engine.schema() as SchemaNode,
     today: ctx.today(),
     preview,
+    equityPreview: (company) => ctx.engine.equityPreview(company),
   });
 }
 
 export const getPlan: ToolSpec<Record<string, never>> = {
   name: 'get_plan',
   description:
-    "Read the user's current plan: every non-default field with the ids that patches address, the engine's plan preview (what the plan implies before any simulation: annual_spending now and annual_spending_retired, each the whole cost of living including housing, modelled healthcare, children and debt payments; annual_income; annual_tax; savings_rate; investable; funded_requirement, the wealth at which the retirement trigger's funded test is met today, with funded_ratio; life expectancy; left out while the plan has errors), balances by account kind, the validation report (errors block simulation; warnings are worth raising), the saved scenarios and the run settings. The plan is also attached to the user's message whenever it has changed, so call this only when you need to re-read it after edits made during this turn.",
+    "Read the user's current plan: every non-default field with the ids that patches address, the engine's plan preview (what the plan implies before any simulation: annual_spending now and annual_spending_retired, each the whole cost of living including housing, modelled healthcare, children and debt payments; annual_income; annual_tax; savings_rate; investable; funded_requirement, the wealth at which the retirement trigger's funded test is met today, with funded_ratio; life expectancy; left out while the plan has errors), balances by account kind, for each private company under derived.private_equity its paper value, exercise cost and the odds in force (odds_in_force and typical_odds in futures of 100 over the next ten years, the implied multiples, nothing_share and the 409A fraction), the validation report (errors block simulation; warnings are worth raising), the saved scenarios and the run settings. The plan is also attached to the user's message whenever it has changed, so call this only when you need to re-read it after edits made during this turn.",
   input_schema: { type: 'object', properties: {}, additionalProperties: false },
   pending: () => 'Reading the plan',
   async run(_input, ctx) {
@@ -42,7 +43,8 @@ export const getPlan: ToolSpec<Record<string, never>> = {
 export const SCHEMA_TYPES = [
   'Profile', 'Household', 'Person', 'Sex', 'HealthStatus', 'SocialSecurity', 'SocialSecurityBasis', 'Child', 'ChildCosts', 'College', 'Location',
   'Income', 'IncomeKind', 'WageGrowth', 'LifecycleProfile', 'CareerRisk', 'RiskLevel', 'Bonus', 'Commission', 'EquityGrant', 'EquityKind',
-  'EquityCompany', 'EmployerPlan', 'Cola', 'When', 'Spending', 'BudgetItem', 'Category', 'Frequency', 'RetirementChange', 'ShockLevel',
+  'EquityCompany', 'EmployerPlan', 'Cola', 'When', 'PrivateCompany', 'CompanyStage', 'Outlook', 'OutcomeRow', 'OutcomeKind', 'TenderOffers',
+  'EquityHolding', 'HoldingKind', 'EquityPolicy', 'ExerciseTiming', 'DeadlinePolicy', 'SellDown', 'Spending', 'BudgetItem', 'Category', 'Frequency', 'RetirementChange', 'ShockLevel',
   'Healthcare', 'HealthcareMode', 'EarlyRetirementCoverage', 'PlanTier', 'Account', 'AccountKind', 'CashYield', 'Allocation', 'PortfolioPolicy',
   'GlidePath', 'GlidePoint', 'Rebalance', 'AssetLocation', 'CustomAsset', 'SingleStock', 'Property', 'PropertyUse', 'Mortgage', 'Debt',
   'DebtKind', 'DebtPolicy', 'DebtStrategy', 'LifeEvent', 'EventKind', 'CostOfLivingChange', 'Financing', 'IncomeChangeKind', 'SpendingTarget',

@@ -16,7 +16,7 @@ tools/               python3 stdlib scripts that rebuild data/ from public sourc
 web/                 Vite + React + TypeScript UI; engine runs in a Web Worker pool
 api/                 one Vercel function: optional streaming proxy to the Claude API
 docs/                methodology, v1 review, research notes
-examples/            demo households (v2 schema) and the three v1 profiles for migration tests
+examples/            the four demo households (v2 schema) and the three v1 profiles for migration tests
 ```
 
 The browser does all simulation. There is no backend state: profiles live in the
@@ -30,10 +30,17 @@ the optional LLM proxy.
 * Every random subsystem draws from its own named stream:
   `Rng::stream(seed, path_index, Stream::X)`, with `Stream` in
   `{Market, Inflation, Career(person), EquityComp, Health(person), Longevity(person),
-  Shocks, Housing(property), Events}`. Changing a decision in a scenario must not
-  shift the random numbers of any unrelated subsystem. This is what makes scenario
-  comparison a paired experiment (common random numbers), and it is the v1 idea we keep
-  and make exact.
+  Shocks, Housing(property), Events, PrivateCompany(company)}`. Changing a decision in
+  a scenario must not shift the random numbers of any unrelated subsystem. This is what
+  makes scenario comparison a paired experiment (common random numbers), and it is the
+  v1 idea we keep and make exact.
+* `PrivateCompany(i)` is the stream of the `i`-th entry of `private_equity`. It gives
+  exactly four words at path start (the company's fate: which outcome, when, at what
+  price, and the price after the lockup) and exactly one word every month (whether a
+  tender offer arrives), drawn whether or not it is used. No other stream is read for a
+  company and a company reads no other stream, so adding one, counting it at zero or
+  changing any decision about it leaves every other draw of the path where it was, and
+  the company's own fate too.
 * Path `i` can be re-simulated alone at any time with a full ledger (`trace_path`).
   The aggregate run therefore never stores per-path time series.
 
@@ -62,6 +69,7 @@ Profile {
   schema_version: 2, name, start: Option<YearMonth>,
   household:  Household,
   incomes:    Vec<Income>,
+  private_equity: Vec<PrivateCompany> (0..=4),
   spending:   Spending,
   accounts:   Vec<Account>,
   portfolio:  PortfolioPolicy,
@@ -111,6 +119,35 @@ EquityGrant { id, kind: Rsu | Option{ strike_fraction },     // strike as fracti
               unvested_value, vest_months_remaining, cliff_months,
               refresh_annual_value,                // new grants each year while employed
               sell_on_vest: bool }
+// Job.equity keeps the older single-event model for a private employer. A position
+// worth modelling in detail goes in private_equity instead:
+
+PrivateCompany { id, name, owner: usize, job: Option<income id>,   // the job that vests it; None = former employer or investment
+                 included: bool (true),               // false: counted at zero; the fate is still simulated
+                 stage: Seed|SeriesA|SeriesB|SeriesC|Late|Unicorn,  // preset odds, timing, prices, tender rate
+                 preferred_price,                     // latest round, nominal $ per share; every outcome price is a multiple of it
+                 fmv_409a: Option<f64>,               // value an exercise is taxed on; default a stage fraction of the price
+                 preference_overhang: Option<f64>,    // money raised / post-money; common gets nothing at or below it
+                 outlook: Pessimistic|Typical|Optimistic,           // failure 10 points more or (up to) less likely
+                 outcomes: Vec<OutcomeRow>,           // the user's own table; empty = the stage preset
+                 tenders: TenderOffers, lockup_months (6), exercise_window_months (3),
+                 company_failure_ends_job: bool (true), qsbs: bool (false),
+                 amt_credit_carryforward: f64,        // Form 8801 credit from earlier years
+                 holdings: Vec<EquityHolding> (0..=8), policy: EquityPolicy }
+OutcomeRow   { id, kind: Fails|Acquired|Ipo|StillPrivate, probability,     // rows are exclusive and sum to 1
+               years_from, years_to,                  // uniform date in the range
+               multiple_low, multiple_high }          // 10th and 90th percentile, x the last round (whole company for an acquisition)
+TenderOffers { annual_probability: Option<f64> (stage default), next_in_months: Option<u32>,
+               max_fraction (0.2), price_fraction (1.0), former_employees: bool }
+EquityHolding { id, name, kind, shares, vested, vest_months_left, cliff_months }
+HoldingKind  = Iso{ strike, granted_months_ago } | Nso{ strike, granted_months_ago }
+             | Rsu{ must_be_employed_at_event }
+             | Shares{ basis_per_share, months_held, from_iso, fmv_at_exercise }
+EquityPolicy { exercise: AtLiquidity | VestedNow | AsTheyVest,
+               at_deadline: Exercise (if affordable) | Forfeit,     // when options would lapse
+               tender_sell_fraction (0.5),
+               sell_down: AllAtLockupEnd | OverYears{years} | Hold,
+               leave_after_months: Option<u32> }       // leave the company, keep the salary
 
 Spending { items: Vec<BudgetItem>,
            lifestyle_creep: f64,                   // share of REAL income growth that becomes spending (0..1). Not a perpetual rate.
@@ -205,7 +242,13 @@ schema, with a list of the assumptions it had to make.
 `core::validate` returns hard errors (cannot simulate) and warnings (plausibility lints:
 spending above income with no assets, no healthcare line and healthcare `InBudget`,
 allocation with more than 20% crypto, retirement spending below 50% of current, and so
-on). The UI shows them; the AI reads them.
+on). The UI shows them; the AI reads them. For `private_equity` the errors cover the
+references (owner, linked job, one company per job), the bounds on prices, shares and
+dates, an outcome table that does not sum to 1, and holdings that cannot exist (unvested
+units with no job to vest them); the warnings cover a position many times the
+household's savings (`equity_dominant`), an incentive grant over the $100,000 a year
+limit, an exercise the savings cannot pay for, a table more optimistic than the stage's
+typical odds, and several companies (the outcome statistics describe the largest).
 
 `core::patch` applies a list of operations to a profile JSON value:
 `{op: "set"|"remove"|"append", path, value}` where `path` is a JSON pointer in which an
@@ -230,6 +273,16 @@ for each month t:
   2. events due this month
   3. career: wage shock (annual), layoff / re-employment hazard (depends on recession flag),
      bonus month, vesting, liquidity events
+  3a. private-company equity (only when the plan has any), per company, after one
+     word is drawn for each: link to the job (start, or sever on a layoff, a planned
+     departure, retirement or death, which forfeits what is unvested and starts the
+     exercise window); death of the owner (basis stepped up, passed to the survivor);
+     vesting; exercise now (`vested_now`, `as_they_vest`); the terminal event in its
+     fate month (failure: everything worthless and the basis a capital loss, the linked
+     job lost; acquisition: everything paid in cash; IPO: lockup starts); a tender
+     offer; lockup end (options and RSUs settled for cash, shares sold, scheduled or
+     moved to the single-stock sleeve); option deadlines (exercise what is affordable
+     or lapse); scheduled sales after the lockup; write-off after thirty years
   4. income: wages, self-employment, pensions, Social Security (claim, COLA, earnings test),
      rental net operating income
   5. payroll: FICA, withholding at the year's planned rate, 401(k)/HSA deferrals + match
@@ -248,6 +301,28 @@ for each month t:
      sources; estimate tax for withholding; RMDs; glide path target; rebalance.
   each April: settle last year's actual tax against what was withheld/estimated.
 ```
+
+Private-company equity and the tax year. `equity::CompanyModel::step` returns the
+month's cash and tax amounts and draws nothing; `sim/equity.rs` books them. Pay-type
+income (non-qualified spreads, RSUs, cashed-out options) bears FICA and federal
+supplemental withholding (22%, 37% above $1,000,000 in the year) in the event month.
+The month after any event that moved money or tax, the year is planned again, as it is
+each January, so that the rest of the tax (state, the federal shortfall, the net
+investment income tax, the AMT) is paid in level instalments over the months left; an
+event in December is settled in April. Cash owed is not swept into investments and does
+not count toward the retirement test: the event month holds back the estimated tax, the
+re-plan holds back the instalments still to pay, and the test subtracts both and the
+April balance of a year with an equity event. An exercise is paid from cash and taxable
+savings above the emergency fund (the retirement cash reserve once retired) and above
+tax owed, with the tax it causes counted in its cost, and never from a retirement
+account.
+
+The one-off rule for a first year that starts part-way through: regular income is taxed
+at its annual rate and scaled back to the months simulated, as before, but an equity
+amount is an event, not a rate, so it is not multiplied up. The year's return is computed
+without the one-off amounts (annualised, scaled back) and with them added unscaled; the
+tax is the first plus the whole of the difference. The same pair of returns gives the
+tax the equity caused, which is what `equity_net_proceeds` subtracts.
 
 ### What "financially independent", "retired" and "success" mean
 
@@ -274,9 +349,10 @@ for each month t:
 | `rng` | SplitMix64 seeding, xoshiro256++, normal / student-t / lognormal / exponential / poisson, named streams |
 | `data` | Embedded datasets parsed once: `data/history/monthly.csv`, `data/tax/*.json`, `data/actuarial/*` |
 | `economy` | Joint scenario generator: stationary bootstrap, regime-switching, lognormal, historical cohorts, stress overlays; derived asset classes (intl, REIT, gold, crypto, single stock, custom) from factor exposures + idiosyncratic noise |
-| `tax` | Federal (ordinary, LTCG stacking, NIIT, AMT ignored), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
+| `tax` | Federal (ordinary, LTCG stacking, NIIT; the AMT with its credit carryforward, computed only for plans with `private_equity`; incentive-option income without FICA; the QSBS exclusion), FICA and SE tax, state, credits, Social Security benefit taxation, standard vs itemised, ACA premium credit, IRMAA, early-withdrawal penalty, RMD; all thresholds indexable by a CPI factor |
 | `benefits` | Social Security: indexed earnings record -> AIME -> PIA -> claim adjustment, spousal and survivor, trust-fund haircut |
 | `career` | Lifecycle wage curve, persistent/transitory shocks, layoff and re-employment, bonus, commission, equity compensation |
+| `equity` | Private-company positions: the outcome table in force (stage preset or custom), the fate draw, the price and 409A paths, tender offers and the IPO window, vesting, exercise, lots with holding periods and incentive-option status, sales, QSBS, and the standalone preview. Contract: `CompanyModel` and `CompanyState` are fixed-size and `Copy` (at most 4 companies, 8 holdings, 16 lots, 8 events a month); every draw happens before the month's `EquityClimate` is built, so `step` takes no `Rng`; nothing in the month loop allocates; exercise decisions see the last round's price, never the fate |
 | `health` | Premiums by phase (employer, ACA, Medicare), out-of-pocket, long-term care, mortality draws |
 | `housing` | Properties, mortgages, PMI, purchase and sale, rentals, depreciation |
 | `accounts` | Buckets (cash, taxable with basis, traditional, Roth with basis and conversion tranches, HSA) x asset classes; contributions waterfall; withdrawals; rebalancing; glide path |
@@ -300,16 +376,21 @@ order. It holds:
 * **Status counts per year**: working, retired with surplus, retired and on plan,
   retired and cutting spending, depleted; dead is derived. (The "rich, broke or dead"
   view.)
-* **Per-year sums** of the 43 `YearSeries`: balances by bucket kind, property value,
+* **Per-year sums** of the 46 `YearSeries`: balances by bucket kind, property value,
   mortgages, debts; flows by kind (wages, Social Security, pensions, rental,
   withdrawals by account kind, taxes by kind, spending by group, savings by
-  destination).
-* **Per-path scalars**, 27 columns of `f32`: FI age, Coast-FI age, retirement age,
+  destination), and for private-company equity the proceeds (`income_equity`), the
+  cash paid to exercise (`equity_exercise`) and the paper value of what is still held
+  (`equity_paper_value`, a memo: it is in no balance and not in net worth).
+* **Per-path scalars**, 42 columns of `f32`: FI age, Coast-FI age, retirement age,
   depletion age, death ages, investable at retirement, funded ratio, real portfolio
   return in the first 10 retirement years, worst drawdown, months unemployed,
   long-term-care cost, inflation, failure cause, success, and the derived ones
   (terminal and peak net worth, minimum investable, lifetime tax and spending,
-  delivered/planned spending ratios, years retired, cut and depleted). These feed
+  delivered/planned spending ratios, years retired, cut and depleted), and six for
+  private-company equity: the outcome of the main company (failed, still private,
+  acquired, IPO), the age at that event, gross proceeds, exercise cost, tender
+  proceeds, and net proceeds after cost and the tax the equity caused. These feed
   distributions, scatterplots and failure attribution, and let the UI pick "the path
   at the 10th percentile" and ask for its trace.
 * **Sample paths**: annual net worth, investable and spending for the first 96 paths.
@@ -317,8 +398,16 @@ order. It holds:
 `Summary::from(&Accumulator)` produces the JSON the UI and the AI consume: headline
 metrics with standard errors, quantile curves, FI-by-age cumulative curve, survival
 curves, attribution of failures (first cause: market sequence, job loss, health/LTC,
-longevity, overspending, inflation, other), and compact tables. `docs/engine-output.md`
-is the field-by-field reference.
+longevity, overspending, inflation, other), and compact tables. For a plan with
+private-company equity it adds `Summary.equity`: the share of lives with each outcome,
+how often the equity pays nothing or costs more than it returns, the spread of
+proceeds, and the plan's headline results among the lives with each outcome. It is
+computed from the scalars alone, so it merges exactly like everything else.
+`docs/engine-output.md` is the field-by-field reference.
+
+The serialised accumulator carries a layout version (`Accumulator::VERSION`, now 6:
+six scalars and three series were appended for private-company equity). Bytes of
+another version are refused on decode and on merge, never reinterpreted.
 
 `trace_path(i) -> PathTrace`: monthly ledger of every balance and flow, the annual tax
 return lines, and an event log ("laid off", "bought home", "Roth conversion $38k",
@@ -355,6 +444,7 @@ function schema(): string
 function defaultProfile(): string
 function exampleProfiles(): string
 function taxDetail(profileJson: string, year: number, inputsJson: string): string // explain a tax computation
+function equityPreview(companyJson: string, draws: number): string // EquityPreview JSON for one element of private_equity; no household simulated; draws 0 = default
 ```
 
 A profile with no `start` starts in the current month of the caller's clock.
@@ -376,7 +466,7 @@ counts.
 * `firesight bench [profile] [--paths N] [--repeat R]` reports paths/sec and
   month-steps/sec on one thread and paths/sec on all threads, each the best of `R`
   runs, and prints a one-line JSON summary last (`... | tail -1`).
-* Regression check: `tools/bench-check.sh` runs the bench on the three shipped
+* Regression check: `tools/bench-check.sh` runs the bench on the four shipped
   examples and fails if any is more than 25% below `tools/bench-baseline.json`.
   What is compared is a score, single-thread paths/sec divided by the speed of a
   calibration kernel timed in the same process, so that a slower, faster or busy
@@ -435,7 +525,22 @@ instructions per simulated life.
   balances), no NaN, results independent of chunking and merge order, identical seeds
   give identical bytes, stream isolation (changing spending does not change market
   draws).
-* Golden tests: the demo profiles' `Summary` at a fixed seed.
+* Golden tests: the four demo profiles' `SummaryDigest` at a fixed seed
+  (`tests/golden/`). The three older ones did not change when private-company equity
+  was added, which is the proof that a profile without it is simulated bit for bit as
+  before.
+* Private-company equity. Unit tests of the mechanics (`equity/tests.rs`): outcome
+  frequencies, dates and multiples against the table with stated sample sizes and
+  four-standard-error bounds computed from the parameters; the overhang rule; vesting,
+  exercise, lots, incentive-option holding periods, QSBS tiers; shares conserved over
+  random policies and fates. Integration tests (`tests/`): every forced outcome crossed
+  with every exercise timing, sell-down policy and market model conserves money every
+  month; adding an empty company moves nothing under a flat tax and only AMT years
+  under current law; a policy change keeps every fate; counting a company at zero keeps
+  its fate and removes its money; paper value is in no balance and no test; a payout is
+  taxed before it is invested; the equity scalars reconcile with the ledger; the demo's
+  outcome shares match the lifetime odds; the preview and the simulation agree on how
+  often the equity pays nothing; the month loop of the demo allocates nothing.
 * Economy calibration tests: simulated moments within tolerance of
   `data/history/calibration.json`.
 

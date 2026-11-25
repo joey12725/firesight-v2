@@ -2,7 +2,7 @@
 
 You don't need to know any personal finance to use FIRESight or read its code. This page covers the ideas it is built on, in about ten minutes. It starts with the movement the name comes from, explains why a single forecast misleads, shows how to read FIRESight's answers, and ends with a [glossary](#glossary) of every term the app and the docs use.
 
-**Contents:** [What FIRE is](#what-fire-is) · [The arithmetic](#the-arithmetic-the-4-rule) · [Why one forecast is not enough](#why-one-forecast-is-not-enough) · [Monte Carlo, simply](#monte-carlo-simply) · [Reading FIRESight's answer](#reading-firesights-answer) · [The seven views](#the-seven-views) · [Glossary](#glossary)
+**Contents:** [What FIRE is](#what-fire-is) · [The arithmetic](#the-arithmetic-the-4-rule) · [Why one forecast is not enough](#why-one-forecast-is-not-enough) · [Monte Carlo, simply](#monte-carlo-simply) · [Reading FIRESight's answer](#reading-firesights-answer) · [The eight views](#the-eight-views) · [Glossary](#glossary)
 
 ## What FIRE is
 
@@ -71,13 +71,14 @@ Below that, every chart has a plain sentence above it saying what it shows ("Med
 
 Most charts are **dot plots of 100 dots**, each dot one equally likely life. You can read a probability by counting dots, with no statistics needed.
 
-## The seven views
+## The eight views
 
 | View | The question it answers |
 |---|---|
 | **Overview** | When does work become optional, and how sure is that? |
 | **Outcomes** | How wide is the range of lives, and what separates the good ones from the bad? |
 | **Cash flow** | Where does the money come from and go, at every age? |
+| **Equity** | What could my startup stock and options pay, and does the plan hold if they pay nothing? Shown only when the plan holds private-company equity. |
 | **What matters** | Which decisions move my result most, and which risks are out of my hands? |
 | **Scenarios** | If I change one thing, what difference does it make on the same set of futures? |
 | **Life stories** | What does one of these lives actually look like, year by year? |
@@ -140,6 +141,21 @@ Terms are grouped by topic. Where FIRESight uses a word in a specific sense, tha
 - **SALT cap.** The limit on deducting state and local taxes from federal income.
 - **Tax torpedo.** A band of income in which each extra dollar also makes more of your Social Security taxable, so the effective marginal rate jumps.
 - **Child tax credit.** A per-child reduction in federal tax.
+
+### Startup equity
+
+- **Private company.** A company whose shares are not traded on a stock exchange. Its shares can usually be sold only when it is acquired, goes public, or runs a tender offer.
+- **Stock option / strike.** The right to buy a share at a fixed price, the strike. *Exercising* is paying the strike to get the share. An option is worth something only if a share ends up worth more than the strike.
+- **ISO and NSO.** The two tax kinds of option. Exercising a *non-qualified* option (NSO) is taxed as pay on the spread between the share's value and the strike. Exercising an *incentive* option (ISO) is not, but the spread can trigger the AMT.
+- **RSU.** A promise of a share. In a private company it usually pays only once the company is sold or listed.
+- **Vesting / cliff.** Equity is earned month by month while you work there. A cliff is a first stretch, often a year, before anything is earned.
+- **Preferred price and 409A value.** The preferred price is what investors paid per share in the latest funding round. The 409A value is a formal, lower appraisal of an employee's common share, used for tax when options are exercised.
+- **Paper value.** What a position would be worth at the latest price. FIRESight reports it but never counts it as money until it has been sold.
+- **Liquidation preference.** Investors are usually paid back first when a company is sold, so a sale below the last valuation can leave employees' shares with little or nothing.
+- **Tender offer.** An occasion, arranged by the company, on which employees may sell some of their shares while it is still private.
+- **IPO and lockup.** An IPO lists the company on a stock exchange. Employees usually cannot sell for about six months afterwards, the lockup.
+- **AMT (alternative minimum tax).** A second way of computing federal tax that counts the spread on exercised incentive options as income. What it charges for that becomes a credit against later years' tax. The credit comes back quickly if the shares are later sold at a gain, and only slowly, possibly never in full within a lifetime, if the company fails or the shares lose value.
+- **Counted at zero.** FIRESight's standing comparison for startup equity: the same simulated futures with the stock and options worth nothing, so you can see whether the plan depends on them.
 
 ### Health and old age
 

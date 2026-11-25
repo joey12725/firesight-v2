@@ -1,12 +1,16 @@
+import type { SummaryDigest } from '@/engine/output-types';
 import type { PatchOp } from '@/engine/types';
 import { digestComparison, digestRun } from './digest';
 import { asOps, count, explainEngineError, fullPaths, PATCH_OP_SCHEMA, PATHS_SCHEMA, requireRunnable, variant } from './shared';
 import { ToolError, type ToolSpec } from './types';
 
+/** The equity block of core's digest, present only for a plan with private-company equity. */
+const equityOf = (digest: SummaryDigest): Pick<SummaryDigest, 'equity'> => (digest.equity ? { equity: digest.equity } : {});
+
 export const runSimulation: ToolSpec<{ paths?: number }> = {
   name: 'run_simulation',
   description:
-    "Simulate the user's current plan and get the engine's digest of the run: success, fi and depletion as {p, lo, hi} (a probability with its 95% interval); fi_age, retirement_age and terminal_net_worth as {p10, p50, p90}; fi_by_age and depletion_by_age (the cumulative share of all lives, p, by each age in ages); by_age (the share of households alive and the p10, p50 and p90 of net worth and of spending at six ages); spending_delivery (delivered_ratio: retirement spending delivered over planned; paths_below_90 and paths_below_75: the share of retired lives with at least one year below 90% or 75% of planned spending; years_below_90: the share of retirement years below 90%; worst_cut_p90: the single-year cut, as a fraction of plan, that 90% of retired lives never exceed); failure_causes (the top first causes as {cause, share}, share of the failed lives); trace_paths (path ids of representative lives for inspect_life); and notes, which states the units and definitions. Uses the session's fixed seed, so results are reproducible and comparable with every other run in this conversation. Identical inputs are served from memory.",
+    "Simulate the user's current plan and get the engine's digest of the run: success, fi and depletion as {p, lo, hi} (a probability with its 95% interval); fi_age, retirement_age and terminal_net_worth as {p10, p50, p90}; fi_by_age and depletion_by_age (the cumulative share of all lives, p, by each age in ages); by_age (the share of households alive and the p10, p50 and p90 of net worth and of spending at six ages); spending_delivery (delivered_ratio: retirement spending delivered over planned; paths_below_90 and paths_below_75: the share of retired lives with at least one year below 90% or 75% of planned spending; years_below_90: the share of retirement years below 90%; worst_cut_p90: the single-year cut, as a fraction of plan, that 90% of retired lives never exceed); failure_causes (the top first causes as {cause, share}, share of the failed lives); trace_paths (path ids of representative lives for inspect_life); for a plan with private_equity an equity block (company; failed, still_private, acquired and ipo as shares of lives; nothing {p, lo, hi}: the equity pays nothing at all; loss: more went in through exercise cost and tax than came back; net_proceeds {p10, p50, p90} over all lives with net_proceeds_mean and its standard error; success_by_outcome in that outcome order, null under 30 lives); and notes, which states the units and definitions. Uses the session's fixed seed, so results are reproducible and comparable with every other run in this conversation. Identical inputs are served from memory.",
   input_schema: { type: 'object', properties: { paths: PATHS_SCHEMA("the plan's setting, at most 10,000") }, additionalProperties: false },
   pending: (input) => `Simulating ${input.paths ? `${count(input.paths)} lives` : 'the plan'}`,
   async run(input, ctx, call) {
@@ -37,7 +41,7 @@ interface TryScenarioInput {
 export const tryScenario: ToolSpec<TryScenarioInput> = {
   name: 'try_scenario',
   description:
-    "Answer a what-if without touching the user's plan: apply edits to a copy, simulate the plan and the copy on identical futures (same seed, same lives), and get the engine's paired comparison. The comparison reports B (the scenario) minus A (the plan): for success and for depleted, the change (delta) with its paired standard error and 95% interval, and how many lives are rescued (fail or deplete under the plan only) and how many harmed; under scalars, the per-life change in FI age, retirement age, terminal net worth, lifetime tax and lifetime spending over the n lives that have a value in both runs (mean_delta with its interval, delta_p10/p50/p90, and b_higher and a_higher, the shares of those lives where the scenario or the plan is higher); and the headline figures side by side. scenario_detail and base_detail carry the same fields as a run_simulation digest. within_noise: true means the difference cannot be told from zero at this number of lives. Set keep to save it as a named scenario the user can see in the Scenarios view (do this when they ask to keep or compare it, not for every probe).",
+    "Answer a what-if without touching the user's plan: apply edits to a copy, simulate the plan and the copy on identical futures (same seed, same lives), and get the engine's paired comparison. The comparison reports B (the scenario) minus A (the plan): for success and for depleted, the change (delta) with its paired standard error and 95% interval, and how many lives are rescued (fail or deplete under the plan only) and how many harmed; under scalars, the per-life change in FI age, retirement age, terminal net worth, lifetime tax and lifetime spending over the n lives that have a value in both runs (mean_delta with its interval, delta_p10/p50/p90, and b_higher and a_higher, the shares of those lives where the scenario or the plan is higher); and the headline figures side by side; when the plan has private_equity, by_equity_outcome gives the change in success and the median change in terminal net worth among the lives in which the company failed, stayed private, was acquired or went public (check paths before quoting a small class). scenario_detail and base_detail carry the same fields as a run_simulation digest. within_noise: true means the difference cannot be told from zero at this number of lives. Set keep to save it as a named scenario the user can see in the Scenarios view (do this when they ask to keep or compare it, not for every probe).",
   input_schema: {
     type: 'object',
     properties: {
@@ -94,8 +98,8 @@ export const tryScenario: ToolSpec<TryScenarioInput> = {
         base_run_id: base.id,
         scenario_run_id: changed.id,
         comparison,
-        scenario_detail: { fi_age: b.fi_age, retirement_age: b.retirement_age, terminal_net_worth: b.terminal_net_worth, spending_delivery: b.spending_delivery, failure_causes: b.failure_causes, trace_paths: b.trace_paths },
-        base_detail: { fi_age: a.fi_age, retirement_age: a.retirement_age, terminal_net_worth: a.terminal_net_worth, spending_delivery: a.spending_delivery },
+        scenario_detail: { fi_age: b.fi_age, retirement_age: b.retirement_age, terminal_net_worth: b.terminal_net_worth, spending_delivery: b.spending_delivery, failure_causes: b.failure_causes, trace_paths: b.trace_paths, ...equityOf(b) },
+        base_detail: { fi_age: a.fi_age, retirement_age: a.retirement_age, terminal_net_worth: a.terminal_net_worth, spending_delivery: a.spending_delivery, ...equityOf(a) },
         ...(saved ? { saved_scenario: saved } : {}),
       },
       view: {

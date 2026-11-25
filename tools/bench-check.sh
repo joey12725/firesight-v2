@@ -4,7 +4,7 @@
 #   tools/bench-check.sh            # compare with tools/bench-baseline.json; exit 1 on a regression
 #   tools/bench-check.sh --record   # re-record the baseline on this machine
 #
-# Builds the release CLI and runs `firesight bench` on the three shipped examples.
+# Builds the release CLI and runs `firesight bench` on the four shipped examples.
 # Each run prints its one-line JSON summary last. The check compares a score that
 # is normalised by a calibration kernel timed in the same process (see
 # crates/firesight-cli/src/bench.rs), so it follows the code, not the machine, and
@@ -17,7 +17,7 @@
 # clock speed and load, not differences between CPU families). After an
 # intended change in speed, or on a new runner class, run with --record and
 # commit tools/bench-baseline.json. BENCH_PATHS and BENCH_REPEAT change the sample
-# (defaults 8000 and 5: about 10 seconds in all).
+# (defaults 8000 and 5: about 15 seconds in all).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,7 +33,7 @@ cargo build --release -p firesight-cli
 machine="$(uname -sm), $(getconf _NPROCESSORS_ONLN 2>/dev/null || echo '?') cores"
 
 status=0
-for example in examples/dual-income-family.json examples/early-career-saver.json examples/side-hustle-landlord.json; do
+for example in examples/dual-income-family.json examples/early-career-saver.json examples/side-hustle-landlord.json examples/startup-employee.json; do
   echo "== $example"
   if [ "$mode" = "record" ]; then
     target/release/firesight bench "$example" --paths "$paths" --repeat "$repeat" \

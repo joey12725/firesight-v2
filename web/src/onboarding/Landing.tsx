@@ -74,8 +74,8 @@ export function Landing() {
           <h2 id="demo-title" className="eyebrow">
             Explore a demo household
           </h2>
-          <p className="mt-1 text-sm text-ink-2">Three made-up households with real detail. Open one to see every view on a finished plan, then change anything: it re-runs as you type.</p>
-          <ul className="mt-3 grid gap-3 md:grid-cols-3">
+          <p className="mt-1 text-sm text-ink-2">Four made-up households with real detail. Open one to see every view on a finished plan, then change anything: it re-runs as you type.</p>
+          <ul className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {examples.map((ex) => (
               <li key={ex.slug}>
                 <button

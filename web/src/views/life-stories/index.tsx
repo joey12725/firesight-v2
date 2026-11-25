@@ -11,7 +11,7 @@ import { navigateToLife, useSelectedLife, type LifePick } from '@/state/route';
 import { Button, EmptyState, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, type TimeRangePreset } from '@/ui/charts';
 import type { ViewProps } from '../types';
-import { AccountLane, AccountLaneLegend, FlowLane, FlowLaneLegend, MarketLane, MarketLaneLegend, TaxLane, TaxLaneLegend, accountLaneTable, flowLaneTable, marketLaneTable, taxLaneTable } from './Lanes';
+import { AccountLane, AccountLaneLegend, FlowLane, FlowLaneLegend, MarketLane, MarketLaneLegend, TaxLane, TaxLaneLegend, accountLaneTable, flowLaneTable, marketLaneTable, paperValueLine, taxLaneTable } from './Lanes';
 import { Picker } from './Picker';
 import { Timeline, TimelineLegend, crowdFor, timelineTable, yearEnds } from './Timeline';
 import { YearInspector } from './YearInspector';
@@ -43,7 +43,7 @@ const WHY: Record<LifePick, string> = {
 };
 
 function whyText(choice: LifeChoice | undefined, why: LifePick): string {
-  if (choice && choice.why === 'scatter') return choice.key === 'earliest' ? 'work becomes optional in it sooner than in any other life sampled' : 'work becomes optional in it later than in any other life sampled';
+  if (choice?.because) return choice.because;
   return WHY[choice?.why ?? why] ?? WHY.sample;
 }
 
@@ -159,7 +159,7 @@ function Story({ life, summary, selected, onSelect, why, dimmed }: { life: Life;
           <TaxLane life={life} selected={selected} onSelect={onSelect} />
         </ChartCard>
 
-        <ChartCard title="Where the money sat" takeaway={accountTakeaway(life)} caption="Year-end balances by tax treatment, property at market value, debts below the line; the dark line is net worth." table={() => accountLaneTable(life)} filename={`life-${id}-accounts`}>
+        <ChartCard title="Where the money sat" takeaway={accountTakeaway(life)} caption={`Year-end balances by tax treatment, property at market value, debts below the line; the dark line is net worth.${paperValueLine(life) ? ' The dashed line is what vested startup holdings are worth on paper at the company’s share price that year, options at the price less the strike: it is not part of net worth until it turns into cash.' : ''}`} table={() => accountLaneTable(life)} filename={`life-${id}-accounts`}>
           <AccountLaneLegend life={life} />
           <AccountLane life={life} selected={selected} onSelect={onSelect} />
         </ChartCard>

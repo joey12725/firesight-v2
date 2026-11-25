@@ -329,6 +329,8 @@ pub enum EquityCompany {
         beta: f64,
     },
     /// A private company: shares are worth nothing spendable until an IPO or sale.
+    /// For a private-company position with options, tender offers or an exercise
+    /// decision use the plan's `private_equity` instead.
     Private {
         /// Chance per year that the company has its outcome (an IPO, a sale or a
         /// shutdown), as a decimal. 0.12 means about eight years on average.

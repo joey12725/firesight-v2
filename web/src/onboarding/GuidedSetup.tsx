@@ -176,7 +176,7 @@ export function GuidedSetup() {
         )}
         {step === 2 && (
           <>
-            {money('salary', a.partner ? 'Your pay before tax' : 'Pay before tax', '/yr', 'Salary only. Bonuses, equity and side income can be added later.')}
+            {money('salary', a.partner ? 'Your pay before tax' : 'Pay before tax', '/yr', 'Salary only. Bonuses, equity and side income can be added later; startup stock and options go under Startup equity.')}
             {a.partner && money('partnerSalary', "Your partner's pay before tax", '/yr')}
           </>
         )}

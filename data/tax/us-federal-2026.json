@@ -2891,7 +2891,30 @@
       ]
     }
   },
+  "supplemental_wage_withholding": {
+    "source": "irs_pub_15_2026",
+    "rate": 0.22,
+    "rate_above_threshold": 0.37,
+    "threshold": 1000000,
+    "indexing": "none",
+    "note": "Flat federal income tax withholding on supplemental wages; 37% is mandatory on the part of a calendar year's supplemental wages above $1,000,000. Pub. 15 (2026): 'The withholding rate on supplemental wages remains 22% (37% if supplemental wages paid to an employee during the calendar year exceed $1 million).'"
+  },
+  "qualified_small_business_stock": {
+    "source": "irc_1202",
+    "per_issuer_cap": 15000000,
+    "per_issuer_cap_stock_acquired_before_2025_07_05": 10000000,
+    "indexing": "none",
+    "note": "IRC 1202(b)(1), (b)(4): gain excluded per issuer is capped at the greater of the dollar amount (less gain excluded in earlier years) or ten times basis; the engine applies the dollar amount only. The $15,000,000 is indexed from 2027 (1202(b)(5)); the engine holds it fixed, which understates the cap slightly in later years. Holding-period tiers (50% at 3 years, 75% at 4, 100% at 5 for stock acquired after July 4, 2025; 100% after 5 years for earlier stock) are constants in the code citing 1202(a)."
+  },
   "sources": {
+    "irs_pub_15_2026": {
+      "title": "IRS Publication 15 (2026), Employer's Tax Guide",
+      "url": "https://www.irs.gov/publications/p15"
+    },
+    "irc_1202": {
+      "title": "26 U.S. Code 1202 (as amended by P.L. 119-21)",
+      "url": "https://www.law.cornell.edu/uscode/text/26/1202"
+    },
     "irs_rp_2025_32": {
       "title": "IRS Rev. Proc. 2025-32 (2026 inflation adjustments incl. OBBBA amendments)",
       "url": "https://www.irs.gov/pub/irs-drop/rp-25-32.pdf"

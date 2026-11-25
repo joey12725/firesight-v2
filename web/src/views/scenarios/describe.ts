@@ -6,7 +6,7 @@ import { annualAmount, annualInRetirement, ASSETS } from '@/editor/labels';
 import { describe as schemaDescription } from '@/editor/schema';
 import type { PatchOp, Profile } from '@/engine/types';
 import { canonicalPath, getAt, parsePointer } from '@/state/pointer';
-import { moneyCompact, yearMonth } from '@/ui';
+import { moneyCompact, moneyPrice, yearMonth } from '@/ui';
 
 export interface ChangeLine {
   key: string;
@@ -76,6 +76,28 @@ const LABELS: Record<string, string> = {
   '/assumptions/career_risk': 'Job loss and pay shocks',
   '/assumptions/health_risk': 'Medical cost and care shocks',
   '/household/location': 'Where you live',
+  '/private_equity': 'New company',
+  '/private_equity/*': 'Company',
+  '/private_equity/*/included': 'counted in the plan',
+  '/private_equity/*/stage': 'stage',
+  '/private_equity/*/outlook': 'outlook',
+  '/private_equity/*/preferred_price': 'latest price per share',
+  '/private_equity/*/fmv_409a': '409A value per share',
+  '/private_equity/*/preference_overhang': 'preference overhang',
+  '/private_equity/*/outcomes': 'what might happen',
+  '/private_equity/*/outcomes/*/probability': 'chance',
+  '/private_equity/*/tenders/annual_probability': 'chance of a tender offer each year',
+  '/private_equity/*/tenders/max_fraction': 'most that can be sold in one tender',
+  '/private_equity/*/tenders/next_in_months': 'planned tender in',
+  '/private_equity/*/policy/exercise': 'when options are exercised',
+  '/private_equity/*/policy/at_deadline': 'when options would lapse',
+  '/private_equity/*/policy/tender_sell_fraction': 'share sold in tenders',
+  '/private_equity/*/policy/sell_down': 'after the lockup',
+  '/private_equity/*/policy/leave_after_months': 'leaves the company after',
+  '/private_equity/*/holdings': 'New holding',
+  '/private_equity/*/holdings/*': 'Holding',
+  '/private_equity/*/holdings/*/shares': 'number of shares or options',
+  '/private_equity/*/holdings/*/vested': 'vested today',
   '/simulation/end_age': 'Simulation ends at age',
 };
 
@@ -90,6 +112,17 @@ const LISTS: Record<string, string> = {
   '/debts': 'Debt',
   '/events': 'Event',
   '/assumptions/market/stress': 'Stress test',
+  '/private_equity': 'Company',
+  '/private_equity/*/holdings': 'Holding',
+  '/private_equity/*/outcomes': 'Outcome',
+};
+
+/** Enumerated equity settings in words, by the field's name. */
+const EQUITY_WORDS: Record<string, Record<string, string>> = {
+  exercise: { at_liquidity: 'only at a sale or IPO', vested_now: 'vested options now; later ones wait for a sale or IPO', as_they_vest: 'vested options now, the rest as they vest' },
+  at_deadline: { exercise: 'exercise them if affordable', forfeit: 'let them lapse' },
+  outlook: { pessimistic: 'failure 10 points more likely', typical: 'typical', optimistic: 'failure up to 10 points less likely' },
+  stage: { seed: 'seed', series_a: 'Series A', series_b: 'Series B', series_c: 'Series C', late: 'late stage', unicorn: 'unicorn' },
 };
 
 const isIndex = (segment: string) => /^(\d+|@.*)$/.test(segment);
@@ -109,7 +142,8 @@ function entityOf(profile: unknown, path: string): { list: string; path: string;
   const segments = parsePointer(path);
   for (let i = segments.length - 1; i >= 1; i--) {
     if (!isIndex(segments[i] as string)) continue;
-    const list = '/' + segments.slice(0, i).join('/');
+    // Lists inside a list element (a company's holdings) are known by their pattern.
+    const list = pathPattern('/' + segments.slice(0, i).join('/'));
     if (!(list in LISTS)) continue;
     const own = '/' + segments.slice(0, i + 1).join('/');
     const element = getAt(profile, own);
@@ -177,6 +211,16 @@ function tagged(v: Obj, pattern: string, profile: Profile): string | null {
     if (type === 'lost_decade') return isObj(v.start) ? `ten years of flat stocks, ${when(v.start, profile)}` : 'ten years of flat stocks';
     if (type === 'stagflation') return `${plural(Number(v.years ?? 0), 'year')} of ${pct(Number(v.inflation ?? 0), 0)} inflation${isObj(v.start) ? `, ${when(v.start, profile)}` : ''}`;
   }
+  if (pattern === '/private_equity/*/policy/sell_down') {
+    if (type === 'all_at_lockup_end') return 'sell when the lockup ends';
+    if (type === 'over_years') return `sell over ${plural(Number(v.years ?? 1), 'year')}`;
+    if (type === 'hold') return 'keep the shares';
+  }
+  if (pattern === '/private_equity/*/holdings' || pattern === '/private_equity/*/holdings/*') {
+    const kind = isObj(v.kind) ? String(v.kind.type ?? '') : '';
+    const what = kind === 'iso' ? 'incentive options' : kind === 'nso' ? 'non-qualified options' : kind === 'rsu' ? 'RSUs' : 'shares';
+    return `${typeof v.name === 'string' && v.name ? `${v.name}, ` : ''}${Math.round(Number(v.shares ?? 0)).toLocaleString('en-US')} ${what}`;
+  }
   if (pattern === '/portfolio/target') return allocation(v);
   if (pattern === '/incomes' || pattern === '/incomes/*') {
     const kind = isObj(v.kind) ? v.kind : {};
@@ -189,15 +233,24 @@ function tagged(v: Obj, pattern: string, profile: Profile): string | null {
   return type ? words(type) : null;
 }
 
-const RATE = /(rate|fraction|adjustment|ratio|fee|probability|drawdown|inflation|raise|growth|creep|volatility|match_up_to|width)$/;
+const RATE = /(rate|fraction|adjustment|ratio|fee|probability|drawdown|inflation|raise|growth|creep|volatility|match_up_to|width|overhang)$/;
+// A price per share keeps its cents: `moneyCompact` would print a $1.20 strike as "$1".
+const PRICE = /(preferred_price|fmv_409a|strike|basis_per_share|fmv_at_exercise)$/;
 const MONEY = /(salary|amount|price|annual|target|balance|cost|contribution|employer|monthly|value|principal|payment)$/;
 
 /** A value at a path, in words. */
 export function describeValue(value: unknown, pattern: string, profile: Profile): string {
   const key = pattern.split('/').pop() ?? '';
-  if (value === null || value === undefined) return pattern === '/assumptions/taxes/social_security_haircut' ? 'paid in full' : 'none';
+  const equity = pattern.startsWith('/private_equity/');
+  if (value === null || value === undefined) {
+    if (pattern === '/assumptions/taxes/social_security_haircut') return 'paid in full';
+    if (equity && key === 'leave_after_months') return 'stays';
+    if (equity && (key === 'annual_probability' || key === 'preference_overhang' || key === 'fmv_409a')) return 'typical for the stage';
+    return 'none';
+  }
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
   if (typeof value === 'number') {
+    if (PRICE.test(key)) return moneyPrice(value);
     if (key === 'factor') return pct(value, 0);
     if (key === 'equity_premium_adjustment' || key === 'inflation_adjustment') return value === 0 ? 'as in history' : `${Math.abs(Math.round(value * 1000) / 10)} points a year ${value < 0 ? 'lower' : 'higher'}`;
     if (key === 'partner_offset_years') return value === 0 ? 'no longer than the first' : `${plural(Math.abs(value), 'year')} ${value < 0 ? 'less' : 'longer'}`;
@@ -208,8 +261,11 @@ export function describeValue(value: unknown, pattern: string, profile: Profile)
     if (MONEY.test(key)) return moneyCompact(value);
     return String(value);
   }
-  if (typeof value === 'string') return /^\d{4}-\d{2}$/.test(value) ? yearMonth(value) : words(value);
-  if (Array.isArray(value)) return value.length === 0 ? 'none' : plural(value.length, 'item');
+  if (typeof value === 'string') return /^\d{4}-\d{2}$/.test(value) ? yearMonth(value) : ((equity ? EQUITY_WORDS[key]?.[value] : undefined) ?? words(value));
+  if (Array.isArray(value)) {
+    if (pattern === '/private_equity/*/outcomes') return value.length === 0 ? 'typical odds for the stage' : `your own odds (${plural(value.length, 'outcome')})`;
+    return value.length === 0 ? 'none' : plural(value.length, 'item');
+  }
   if (isObj(value)) return tagged(value, pattern, profile) ?? 'changed';
   return String(value as string);
 }
@@ -268,13 +324,15 @@ export function describePatch(base: Profile, patch: PatchOp[], after: Profile | 
     if (op.op === 'remove') {
       const kind = entity && entity.rest === '' ? (LISTS[entity.list] ?? 'Item') : null;
       const existing = getAt(base, path);
+      // Removing a company's own odds puts the stage's typical ones back: say that, and for which company.
+      const odds = pattern === '/private_equity/*/outcomes';
       raws.push({
         index,
         pattern: `remove:${pattern}`,
-        entity: null,
+        entity: odds ? (entity?.name ?? null) : null,
         label: kind ? `${kind}${entity?.name ? ` “${entity.name}”` : ''}` : fieldLabel(base, path),
         before: kind ? null : describeValue(existing, pattern, base),
-        after: 'removed',
+        after: odds ? describeValue([], pattern, base) : 'removed',
       });
       return;
     }

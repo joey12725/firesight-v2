@@ -69,6 +69,9 @@ pub enum Stream {
     Housing(usize),
     /// Whether and when probabilistic life events occur.
     Events,
+    /// Fate and tender offers of one private company (index into
+    /// `profile.private_equity`).
+    PrivateCompany(usize),
 }
 
 impl Stream {
@@ -85,6 +88,7 @@ impl Stream {
             Stream::Health(i) => 0x0200_0000 + i as u64,
             Stream::Longevity(i) => 0x0300_0000 + i as u64,
             Stream::Housing(i) => 0x0400_0000 + i as u64,
+            Stream::PrivateCompany(i) => 0x0500_0000 + i as u64,
         }
     }
 }
@@ -454,10 +458,47 @@ mod tests {
         let mut again = Rng::stream(1, 0, Stream::Market);
         assert_eq!(first, [again.next_u64(), again.next_u64()]);
         assert_eq!(first, GOLDEN_STREAM_1_0_MARKET);
+        // The private-company streams: every stored fate depends on them.
+        for (index, golden) in [
+            (0, GOLDEN_STREAM_1_0_COMPANY_0),
+            (3, GOLDEN_STREAM_1_0_COMPANY_3),
+        ] {
+            let mut r = Rng::stream(1, 0, Stream::PrivateCompany(index));
+            assert_eq!([r.next_u64(), r.next_u64()], golden, "company {index}");
+        }
     }
 
     const GOLDEN_STREAM_1_0_MARKET: [u64; 2] =
         [13_782_392_658_221_407_413, 12_316_620_447_257_498_702];
+    const GOLDEN_STREAM_1_0_COMPANY_0: [u64; 2] =
+        [18_035_812_154_191_333_663, 12_953_161_216_265_865_844];
+    const GOLDEN_STREAM_1_0_COMPANY_3: [u64; 2] =
+        [7_822_913_739_963_532_540, 15_934_662_990_601_319_813];
+
+    #[test]
+    fn stream_ids_are_distinct() {
+        let mut ids = vec![
+            Stream::Market.id(),
+            Stream::Inflation.id(),
+            Stream::EquityComp.id(),
+            Stream::Shocks.id(),
+            Stream::Events.id(),
+        ];
+        for i in 0..16 {
+            ids.extend([
+                Stream::Career(i).id(),
+                Stream::Health(i).id(),
+                Stream::Longevity(i).id(),
+                Stream::Housing(i).id(),
+                Stream::PrivateCompany(i).id(),
+            ]);
+        }
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total);
+        assert_eq!(Stream::PrivateCompany(2).id(), 0x0500_0002);
+    }
 
     #[test]
     fn different_streams_paths_and_seeds_differ() {
@@ -475,6 +516,8 @@ mod tests {
             Stream::Housing(0),
             Stream::Housing(1),
             Stream::Events,
+            Stream::PrivateCompany(0),
+            Stream::PrivateCompany(1),
         ];
         let mut firsts = Vec::new();
         for seed in [0u64, 1, 2] {

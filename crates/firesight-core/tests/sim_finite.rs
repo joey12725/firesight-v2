@@ -16,6 +16,11 @@ struct Checked {
     inner: Accumulator,
     path: u64,
     months: u64,
+    /// No amount may be this large (a sanity bound, well above any demo).
+    limit: f64,
+    /// Extra dollars the year's cash-flow residual may be off by: zero for the
+    /// demos, something for amounts so large that a double cannot hold their cents.
+    slack: f64,
 }
 
 impl Recorder for Checked {
@@ -40,9 +45,12 @@ impl Recorder for Checked {
                 self.path,
                 s.key()
             );
-            assert!(v.abs() < 1e13, "path {} {} = {v}", self.path, s.key());
+            assert!(v.abs() < self.limit, "path {} {} = {v}", self.path, s.key());
         }
-        assert!(record.cash_flow_residual().abs() < 1.0 + 1e-9 * record.gross_income().abs());
+        assert!(
+            record.cash_flow_residual().abs()
+                < 1.0 + 1e-9 * record.gross_income().abs() + self.slack
+        );
         self.inner.record_year(year_index, record);
     }
 
@@ -101,6 +109,8 @@ impl Recorder for Checked {
 
 #[test]
 fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
+    const LIMIT: f64 = 1e13;
+    const SLACK: f64 = 0.0;
     for example in Profile::examples(START) {
         for kind in MARKETS {
             let plan = compile(&with_market(example.profile.clone(), kind));
@@ -109,6 +119,8 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
                 inner: plan.new_accumulator(),
                 path: 0,
                 months: 0,
+                limit: LIMIT,
+                slack: SLACK,
             };
             for i in 0..2000 {
                 sim::run_path(&plan, 17, i, &mut ws, &mut rec);
@@ -136,6 +148,8 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
                 inner: plan.new_accumulator(),
                 path: 0,
                 months: 1,
+                limit: LIMIT,
+                slack: SLACK,
             };
             for i in 0..25 {
                 sim::run_path(&plan, 17, i, &mut ws, &mut detail);
@@ -145,6 +159,92 @@ fn two_thousand_paths_of_every_demo_under_every_market_model_are_finite() {
             let json = serde_json::to_string(&trace).unwrap();
             assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
             assert!(trace.tax_returns.len() >= 2);
+        }
+    }
+}
+
+/// Private-company equity at the edge of what validation allows: a holding of ten
+/// billion shares at $100 and an outcome table that spans a millionfold range of
+/// prices. Every number handed to a recorder is still finite.
+#[test]
+fn an_extreme_equity_position_stays_finite() {
+    use firesight_core::model::*;
+    // A trillion dollars at the last round, times up to a thousand, then held as
+    // single stock for decades: large, and finite.
+    const LIMIT: f64 = 1e24;
+    // A double carries sixteen digits: at these sizes a year's flows cannot add up
+    // to the dollar. A billionth of the bound is allowed.
+    const SLACK: f64 = 1e-9 * LIMIT;
+    let mut extreme = startup_employee();
+    {
+        let co = &mut extreme.private_equity[0];
+        co.preferred_price = 100.0;
+        co.fmv_409a = Some(40.0);
+        co.holdings = vec![EquityHolding {
+            id: "huge".into(),
+            kind: HoldingKind::Nso {
+                strike: 1.0,
+                granted_months_ago: 12,
+            },
+            shares: 1e10,
+            vested: 1e10,
+            ..EquityHolding::default()
+        }];
+        co.outcomes = vec![
+            OutcomeRow {
+                id: "sale".into(),
+                kind: OutcomeKind::Acquired,
+                probability: 0.5,
+                years_from: 0.5,
+                years_to: 6.0,
+                multiple_low: 0.001,
+                multiple_high: 1000.0,
+            },
+            OutcomeRow {
+                id: "listing".into(),
+                kind: OutcomeKind::Ipo,
+                probability: 0.5,
+                years_from: 0.5,
+                years_to: 6.0,
+                multiple_low: 0.001,
+                multiple_high: 1000.0,
+            },
+        ];
+        co.tenders.annual_probability = Some(1.0);
+        co.policy.sell_down = SellDown::Hold;
+    }
+    for profile in [startup_employee(), extreme] {
+        for kind in MARKETS {
+            let plan = compile(&with_market(profile.clone(), kind));
+            let mut ws = Workspace::new(&plan);
+            let mut rec = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 0,
+                limit: LIMIT,
+                slack: SLACK,
+            };
+            for i in 0..600 {
+                sim::run_path(&plan, 17, i, &mut ws, &mut rec);
+            }
+            let summary = plan.summarize(&rec.inner);
+            assert_eq!(summary.paths, 600);
+            let json = serde_json::to_string(&summary).unwrap();
+            assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
+            let mut detail = Checked {
+                inner: plan.new_accumulator(),
+                path: 0,
+                months: 1,
+                limit: LIMIT,
+                slack: SLACK,
+            };
+            for i in 0..25 {
+                sim::run_path(&plan, 17, i, &mut ws, &mut detail);
+            }
+            assert!(detail.months > 25 * 12);
+            let trace = sim::trace_path(&plan, 17, 3);
+            let json = serde_json::to_string(&trace).unwrap();
+            assert!(!json.contains("NaN") && !json.contains("Infinity") && !json.contains(":inf"));
         }
     }
 }

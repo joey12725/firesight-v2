@@ -45,7 +45,7 @@ FIRESight answers the third question. It simulates your whole household month by
 
 ## Try it in a minute
 
-1. Open **[firesight-v2.vercel.app](https://firesight-v2.vercel.app)** and pick one of the three demo households, all made up but realistic.
+1. Open **[firesight-v2.vercel.app](https://firesight-v2.vercel.app)** and pick one of the four demo households, all made up but realistic.
 2. Read the four numbers at the top: the age work becomes optional, how many lives in 100 the plan holds, how many run short, and how much of the planned spending was actually delivered.
 3. Change something in the plan editor on the left. Everything re-runs as you type.
 
@@ -63,17 +63,20 @@ To try your own numbers, use the seven-question guided setup or describe your si
 
 <p align="center"><img src="docs/images/hero-overview.png" alt="FIRESight overview: in 92 of 100 simulated lives the plan holds; a dot plot of the age work becomes optional; a density fan of net worth across a lifetime" width="100%"></p>
 
-**Seven views**, each built around one question, with a plain-English sentence above every chart:
+**Eight views**, each built around one question, with a plain-English sentence above every chart:
 
 | View | Question |
 |---|---|
 | Overview | When does work become optional, and how sure is that? |
 | Outcomes | How wide is the range of lives, and what separates the good from the bad? |
 | Cash flow | Where does the money come from and go, at every age? |
+| Equity | What could my startup stock and options pay, and does the plan hold if they pay nothing? |
 | What matters | Which of my decisions move the result, and which risks are out of my hands? |
 | Scenarios | What does one change do, on exactly the same set of futures? |
 | Life stories | What does one of these lives actually look like? |
 | Assumptions | What does the model believe about the world? |
+
+**Startup equity.** The plan editor has a section for stock, options and RSUs in private companies. You enter what your grant letter and equity portal say, plus how far along the company is, and a preview shows 100 equally likely futures for the position: how many pay nothing, and how wide the rest are. The Equity view, which appears for a plan with such holdings, shows what the position does to the plan. Results are given as modelled and with the equity counted at zero on the same simulated lives, and split by whether the company fails, is acquired or goes public. Paper value is reported and never counted as money.
 
 <details>
 <summary><strong>See the views</strong> (screenshots)</summary>
@@ -108,6 +111,7 @@ Terms in this section are explained in the [primer's glossary](docs/primer.md#gl
 - **An economy that hangs together.** Stocks, bonds, cash, inflation, mortgage rates, home prices and recessions are resampled jointly from 1,200 months of US history (1926 to 2026). A 1970s-style stagflation therefore hits your bonds, your raise and your grocery bill at once. Three other market models are one click away, including a straight replay of every historical start date.
 - **Real tax law.** The model covers federal brackets, capital gains, the Social Security "tax torpedo", payroll tax, the child credit, the SALT cap, 51 state systems and the big city taxes, all indexed to simulated inflation. Early retirees get the ACA health-insurance subsidy, and the withdrawal planner steers around the income level where the subsidy stops.
 - **Retirement as people actually do it.** It includes Roth conversion ladders, 72(t) payments, required distributions and tax-aware withdrawal ordering. Six spending rules from the research literature are built in, among them constant real, Guyton-Klinger guardrails, Vanguard dynamic and VPW.
+- **Startup equity.** Options, RSUs and shares in private companies with uncertain outcomes: the company fails, is acquired, goes public, or stays private for years. The model covers exercise cost, the alternative minimum tax and its credit, tender offers and IPO lockups.
 - **Risks that aren't the market.** Job loss clusters in recessions. The model also covers health costs and a possible long-term-care episode late in life, and it draws each lifespan from actuarial tables instead of assuming everyone lives to 95.
 - **Paired experiments.** Change one decision and the same 100,000 futures are lived again with only that difference. The comparison measures your decision, not luck.
 - **A grounded Claude assistant.** It can build your plan from a description or a pay stub and run the simulator to answer what-if questions. It cannot quote a number it didn't get from the engine.
@@ -129,6 +133,7 @@ It was built to be checked. Some of what has been checked:
 - **A closed-form check.** A riskless saver matches a spreadsheet calculation to within $2 over ten years.
 - **Scenarios are paired exactly.** Changing your spending leaves every market return, layoff and death date bit-identical, and tests check this.
 - **Seven independent audits.** Tax, the ledger, retirement decisions, the economy, people and careers, housing, and performance were each reviewed by a separate auditor required to reproduce every claim. They found 3 critical and 20 major defects. All 23 were fixed, nearly all with a regression test.
+- **What the audits did not cover.** Startup equity, the alternative minimum tax and its credit, and the small-business stock exclusion were added after these audits. They are covered by their own tests and hand-checked tax examples ([methodology](docs/methodology.md) sections 5 and 6.1), not by the audits.
 
 **[docs/methodology.md](docs/methodology.md)** explains the model relationship by relationship. It gives the equations and the measured return distributions, and lists without softening what the model leaves out.
 
@@ -213,7 +218,7 @@ failed paths, first cause: Health 89.3%, MarketSequence 6.1%, JobLoss 1.9%, Over
 | `firesight migrate examples/v1/early-career-saver.json` | Convert a FIRESight v1 profile |
 | `firesight schema` | Print the JSON Schema of the profile format |
 
-A plan is one JSON file; see [`examples/`](examples/) for three complete ones. A scenario is a small patch against a plan: `[{"op": "set", "path": "/incomes/@priya_job/kind/salary", "value": 165000}]`.
+A plan is one JSON file; see [`examples/`](examples/) for four complete ones. A scenario is a small patch against a plan: `[{"op": "set", "path": "/incomes/@priya_job/kind/salary", "value": 165000}]`.
 
 ## How it fits together
 
@@ -224,7 +229,7 @@ flowchart LR
     store --> pool[Worker pool]
     pool --> w1[wasm engine] & w2[wasm engine] & w3[wasm engine ...]
     w1 & w2 & w3 --> coord[Coordinator worker<br/>merge + summarise]
-    coord --> views[Seven views]
+    coord --> views[Eight views]
     assistant[Claude assistant] -- tools --> pool
     assistant -- proposes patches --> store
   end
@@ -243,7 +248,7 @@ web/                React + TypeScript app; charts hand-drawn on canvas and SVG
 api/chat.ts         the only server code: an optional streaming proxy to Claude
 data/               sourced parameters: 2026 tax law, market history, life tables, city costs
 tools/              scripts that rebuild data/ from public sources, benchmarks, figures
-examples/           three demo households as plan files
+examples/           four demo households as plan files
 docs/               methodology, architecture, primer, assistant design
 ```
 
@@ -259,18 +264,18 @@ The design contract is in [docs/architecture.md](docs/architecture.md), and the 
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --release          # 423 tests: unit, conservation, determinism, golden results, audits
+cargo test --workspace --release          # 586 tests: unit, conservation, determinism, golden results, audits
 
 cd web
 npm run typecheck && npm run lint
-npm run test                              # 282 tests, most against the real wasm engine
+npm run test                              # 436 tests, most against the real wasm engine
 npm run build
 npm run smoke                             # Playwright against a running preview
 
 tools/bench-check.sh                      # fails on a throughput regression over 25%
 ```
 
-A change to the model that moves results has to update the golden results on purpose: `FIRESIGHT_UPDATE_GOLDEN=1 cargo test -p firesight-core --test sim_golden`. [CONTRIBUTING.md](CONTRIBUTING.md) covers the workflow, where things live, and how to regenerate the screenshots and animations in this README.
+A change to the model that moves results has to update the golden results of the four demo households on purpose: `FIRESIGHT_UPDATE_GOLDEN=1 cargo test -p firesight-core --test sim_golden`. [CONTRIBUTING.md](CONTRIBUTING.md) covers the workflow, where things live, and how to regenerate the screenshots and animations in this README.
 
 ## Deploying your own
 
@@ -300,7 +305,14 @@ Put a spend limit on the key. The proxy's checks deter casual abuse but won't st
 
 ## What it doesn't know
 
-FIRESight covers US households only. It has no divorce, no disability, no 529 plans, no AMT, no municipal bonds, no decision about buying an annuity, and no state estate taxes. A move abroad is modelled as a flat tax rate and a cost-of-living factor. The market history comes from one country, which happened to do well. [Section 17 of the methodology](docs/methodology.md#17-known-limitations-and-deliberate-omissions) has the full list, with how much each omission matters.
+FIRESight covers US households only. It has no divorce, no disability, no 529 plans, no municipal bonds, no decision about buying an annuity, and no state estate taxes. The alternative minimum tax is computed only for plans with private-company equity, and never for a state. A move abroad is modelled as a flat tax rate and a cost-of-living factor. The market history comes from one country, which happened to do well. [Section 17 of the methodology](docs/methodology.md#17-known-limitations-and-deliberate-omissions) has the full list, with how much each omission matters.
+
+Startup equity is modelled without knowing anything about your company. The four largest gaps:
+
+- The odds are typical ones for a company at its stage, or your own. Nothing in the model judges this company's prospects, which is why every result is also shown with the equity counted at zero.
+- There is no cap table. One number stands in for every liquidation preference, and dilution by later rounds is folded into the price multiples.
+- There is no path of funding rounds between now and the outcome. The share price moves in a straight line to the outcome that was drawn.
+- No data says what happens to a company still private after ten years. The model applies the same ten-year odds again, and writes the position off after thirty.
 
 FIRESight is a planning tool. It isn't financial advice, and the author isn't your adviser.
 

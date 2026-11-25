@@ -65,7 +65,7 @@ export const readLevels = (h: Headline): Levels => Object.fromEntries(METRIC_IDS
 
 // ---- paired effects -----------------------------------------------------------------
 
-/** The parts of a `Comparison` this view reads (a full one carries 36 scalars of 100 dots each). */
+/** The parts of a `Comparison` this view reads (a full one carries 42 scalars of 100 dots each). */
 export interface PairedLite {
   paths: number;
   outcomes: OutcomeComparison[];
@@ -174,7 +174,8 @@ export interface LeverDef {
 }
 
 /** Engine levers that are assumptions about the world, not decisions. */
-const WORLD = new Set(['stock_returns', 'inflation', 'social_security', 'longevity', 'healthcare_inflation', 'long_term_care', 'job_loss']);
+// `equity_outlook` is how the company's odds turn out; when to exercise, how much to sell in tenders and what to do after an IPO are the household's own.
+const WORLD = new Set(['stock_returns', 'inflation', 'social_security', 'longevity', 'healthcare_inflation', 'long_term_care', 'job_loss', 'equity_outlook']);
 
 export const groupOf = (leverId: string): LeverGroup => (WORLD.has(leverId) ? 'world' : 'control');
 

@@ -5,17 +5,18 @@
 import { useMemo, useState } from 'react';
 import type { Summary } from '@/engine/output-types';
 import type { Profile } from '@/engine/types';
-import { navigateToLife } from '@/state/route';
+import { navigateToLife, navigateToView } from '@/state/route';
 import type { RunState } from '@/state/run-store';
 import { Icon, SegmentedControl, Skeleton, Tag, count } from '@/ui';
 import { ChartCard, ChartSyncProvider, TimeRangeControl, summaryTime, type TimeRangePreset } from '@/ui/charts';
+import { equityCounted, hasEquity, primaryCounted } from '../equity/model';
 import type { ViewProps } from '../types';
 import { FiAgeChart, fiAgeTable, type FiAgeMode } from './FiAgeChart';
 import { FAN_SERIES_LABEL, NetWorthFan, defaultFanScale, fanTable, namedLives, type FanScale, type FanSeries, type NamedLife } from './NetWorthFan';
 import { SpendingChart, SpendingLegend, spendingTable } from './SpendingChart';
 import { StatusLegend, StatusStack, statusTable } from './StatusStack';
 import { WhatCouldGoWrong, failureTable } from './WhatCouldGoWrong';
-import { failureTakeaway, fanTakeaway, fiTakeaway, homeSaleSentence, outcomeSentence, samplingNote, spendingTakeaway, statusTakeaway } from './text';
+import { equitySentence, failureTakeaway, fanTakeaway, fiTakeaway, homeSaleSentence, outcomeSentence, samplingNote, spendingTakeaway, statusTakeaway } from './text';
 
 function OverviewSkeleton() {
   return (
@@ -44,6 +45,8 @@ function Hero({ summary, profile, run }: { summary: Summary; profile: Profile; r
   const [mode, setMode] = useState<FiAgeMode>('dots');
   const sentence = useMemo(() => outcomeSentence(summary), [summary]);
   const homeSale = useMemo(() => homeSaleSentence(summary), [summary]);
+  // Only for a plan the Equity tab is shown for: a company with nothing in it yet has no view to open and nothing to count.
+  const equity = useMemo(() => (hasEquity(profile) ? equitySentence(summary, equityCounted(profile), primaryCounted(profile)) : null), [summary, profile]);
   const who = profile.household.people[0]?.name;
   return (
     <div className="grid grid-cols-1 items-start gap-x-12 gap-y-8 @4xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -69,6 +72,24 @@ function Hero({ summary, profile, run }: { summary: Summary; profile: Profile; r
           <p data-testid="home-sale-sentence" className="mt-3 max-w-[34rem] text-base leading-relaxed text-pretty text-ink-2">
             {homeSale.map((seg, i) => (seg.strong ? <b key={i} className="font-semibold text-ink-1">{seg.text}</b> : <span key={i}>{seg.text}</span>))}
           </p>
+        )}
+        {equity && (
+          // One card, no side run: the Equity view holds the comparison with the equity at zero.
+          <button
+            type="button"
+            data-testid="overview-equity"
+            onClick={() => navigateToView('equity')}
+            className="group mt-4 block w-full max-w-[34rem] rounded-md border border-line bg-surface-1 px-4 py-3 text-left transition-colors duration-[var(--duration-fast)] hover:border-line-strong hover:bg-surface-2"
+          >
+            <span className="flex items-center justify-between gap-3 text-xs font-medium text-ink-2">
+              Startup equity
+              <span className="inline-flex items-center gap-1 text-accent-ink">
+                Open the Equity view
+                <Icon name="arrowRight" size={12} className="transition-transform duration-[var(--duration-base)] group-hover:translate-x-0.5" />
+              </span>
+            </span>
+            <span className="mt-1 block text-sm leading-relaxed text-pretty text-ink-1">{equity}</span>
+          </button>
         )}
         <p className="mt-3 max-w-[34rem] text-xs leading-relaxed text-pretty text-ink-3">{samplingNote(summary)}</p>
       </div>

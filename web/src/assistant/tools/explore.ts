@@ -6,7 +6,7 @@ import { digestComparison, METRICS, METRIC_UNIT, readMetric, roundMetric, type C
 import type { RunRecord } from './runs';
 import { asOps, clampPaths, count, explainEngineError, PATCH_OP_SCHEMA, PATHS_SCHEMA, REDUCED_PATHS, requireRunnable, SWEEP_PATHS } from './shared';
 import { ToolError, type ToolCallInfo, type ToolContext, type ToolSpec } from './types';
-import { resolveVariable, roundValue, VARIABLE_SCHEMA_PROPERTIES, type Variable, type VariableInput } from './variables';
+import { dollarsPerShare, resolveVariable, roundValue, VARIABLE_SCHEMA_PROPERTIES, type Variable, type VariableInput } from './variables';
 
 const METRIC_SCHEMA = {
   type: 'string',
@@ -78,7 +78,7 @@ interface RankInput {
 export const rankLevers: ToolSpec<RankInput> = {
   name: 'rank_levers',
   description:
-    "Find what moves the result. Runs the engine's standard sensitivity levers (each a low and a high setting of one decision or assumption: spending, salaries, withdrawal rate target, stock returns, inflation, Social Security, fees) plus any levers you add as patches, all on the same simulated lives as the plan, and returns them ranked by the size of their effect on one metric. Each effect is the paired change against the plan. Add custom levers for the concrete options the user is weighing (retire two years later, a half-time job from 50, moving). Runs at a reduced number of lives, so treat small effects as indistinguishable and confirm the ones you rely on with try_scenario.",
+    "Find what moves the result. Runs the engine's standard sensitivity levers (each a low and a high setting of one decision or assumption: spending, salaries, withdrawal rate target, stock returns, inflation, Social Security, fees, and with private-company equity the startup outcome, exercising options, selling in tender offers and selling after an IPO) plus any levers you add as patches, all on the same simulated lives as the plan, and returns them ranked by the size of their effect on one metric. Each effect is the paired change against the plan. Add custom levers for the concrete options the user is weighing (retire two years later, a half-time job from 50, moving). Runs at a reduced number of lives, so treat small effects as indistinguishable and confirm the ones you rely on with try_scenario.",
   input_schema: {
     type: 'object',
     properties: {
@@ -180,14 +180,14 @@ const MAX_EVALUATIONS = 9;
 export const solve: ToolSpec<SolveInput> = {
   name: 'solve',
   description:
-    'Goal seek: find the value of one quantity at which a metric reaches a target, by bisection on the same simulated lives. For "what spending gives 90% success" use variable annual_spending, target_metric success_rate, target_value 0.9. For "earliest retirement age with at most 5% depletion risk" use variable retirement_age, target_metric depletion_rate, target_value 0.05. Assumes the metric moves in one direction as the quantity grows, which holds for these questions. Returns the solution, the two evaluations that bracket it (so you can state the safe side), every evaluation made, and out_of_range with the closest end when the target is not reached anywhere between the bounds. Runs at a reduced number of lives: quote the answer with the tolerance given, and confirm with try_scenario before the user relies on it.',
+    'Goal seek: find the value of one quantity at which a metric reaches a target, by bisection on the same simulated lives. For "what spending gives 90% success" use variable annual_spending, target_metric success_rate, target_value 0.9. For "earliest retirement age with at most 5% depletion risk" use variable retirement_age, target_metric depletion_rate, target_value 0.05. For "what exit do I need" use variable exit_price_multiple with the target the user cares about. Assumes the metric moves in one direction as the quantity grows, which holds for these questions. Returns the solution, the two evaluations that bracket it (so you can state the safe side), every evaluation made, and out_of_range with the closest end when the target is not reached anywhere between the bounds. Runs at a reduced number of lives: quote the answer with the tolerance given, and confirm with try_scenario before the user relies on it.',
   input_schema: {
     type: 'object',
     properties: {
       ...VARIABLE_SCHEMA_PROPERTIES,
       target_metric: METRIC_SCHEMA,
       target_value: { type: 'number', description: 'The value the metric should reach, in its own unit (0.9 for 90%).' },
-      lo: { type: 'number', description: 'Lower end of the search. Omit for a sensible default (half of current spending, age 40 or next year, 2% rate, half salary). Required with path if the default of plus or minus 50% does not suit.' },
+      lo: { type: 'number', description: 'Lower end of the search. Omit for a sensible default (half of current spending, age 40 or next year, 2% rate, half salary, a quarter of the last round\'s price). Required with path if the default of plus or minus 50% does not suit.' },
       hi: { type: 'number', description: 'Upper end of the search. Omit for a sensible default.' },
       paths: PATHS_SCHEMA(`${count(REDUCED_PATHS)}`),
     },
@@ -197,7 +197,7 @@ export const solve: ToolSpec<SolveInput> = {
   pending: () => 'Searching for the value that meets the target',
   async run(input, ctx, call) {
     const profile = requireRunnable(ctx);
-    const variable = resolveVariable(profile, input, previewOf(ctx, profile));
+    const variable = resolveVariable(profile, input, previewOf(ctx, profile), ctx.engine.equityPreview);
     let lo = input.lo ?? variable.bounds[0];
     let hi = input.hi ?? variable.bounds[1];
     if (!(lo < hi)) throw new ToolError(`lo (${lo}) must be below hi (${hi}).`);
@@ -224,13 +224,18 @@ export const solve: ToolSpec<SolveInput> = {
     let fHi = await evaluate(hi);
     const base = { variable: variable.label, ...(variable.note ? { variable_note: variable.note } : {}), unit: variable.unit, current_value: variable.current, target_metric: input.target_metric, target_value: target, paths, seed, paired: true };
     const view = (title: string) => ({ title, meta: { paths, seed, paired: true, runs: evaluations.length } });
+    // A multiple of a share price also reads in dollars per share, so the answer can be quoted from the result.
+    const point = (value: number, metric: number) => {
+      const dollars = dollarsPerShare(variable, roundValue(variable, value));
+      return { value: roundValue(variable, value), ...(dollars === null ? {} : { dollars_per_share: dollars }), metric: roundMetric(input.target_metric, metric) };
+    };
     if ((fLo - target) * (fHi - target) > 0) {
       const closest = Math.abs(fLo - target) <= Math.abs(fHi - target) ? { value: lo, metric: fLo } : { value: hi, metric: fHi };
       return {
         result: {
           ...base,
           status: 'out_of_range',
-          closest: { value: roundValue(variable, closest.value), metric: roundMetric(input.target_metric, closest.metric) },
+          closest: point(closest.value, closest.metric),
           searched: [roundValue(variable, lo), roundValue(variable, hi)],
           evaluations,
           note: 'The metric does not cross the target anywhere between the bounds. Report the range it does cover, or search again with wider bounds if that makes sense for the user.',
@@ -255,11 +260,9 @@ export const solve: ToolSpec<SolveInput> = {
         ...base,
         status: 'converged',
         value,
+        ...(dollarsPerShare(variable, value) === null ? {} : { value_dollars_per_share: dollarsPerShare(variable, value) }),
         tolerance: roundValue(variable, Math.max(variable.tolerance, (hi - lo) / 2)),
-        bracket: {
-          below: { value: roundValue(variable, lo), metric: roundMetric(input.target_metric, fLo) },
-          above: { value: roundValue(variable, hi), metric: roundMetric(input.target_metric, fHi) },
-        },
+        bracket: { below: point(lo, fLo), above: point(hi, fHi) },
         metric_direction: fHi > fLo ? 'rises as the quantity grows' : 'falls as the quantity grows',
         evaluations,
         note: 'The target is met between the two bracket values; pick the side that satisfies the user\'s condition. On a fixed set of lives the metric moves in small steps, so the answer is good to the tolerance, not beyond.',
@@ -270,6 +273,11 @@ export const solve: ToolSpec<SolveInput> = {
 };
 
 // ---- sweep --------------------------------------------------------------------------
+
+/** For an axis that is a multiple of a share price: its values in dollars per share, in the same order. */
+function perShare(variable: Variable, values: number[]): { values_dollars_per_share?: (number | null)[] } {
+  return variable.per_share_dollars === undefined ? {} : { values_dollars_per_share: values.map((v) => dollarsPerShare(variable, v)) };
+}
 
 interface AxisInput extends VariableInput {
   values?: number[];
@@ -325,8 +333,8 @@ export const sweep: ToolSpec<{ x: AxisInput; y?: AxisInput; metric: Metric; path
   async run(input, ctx, call) {
     const profile = requireRunnable(ctx);
     const preview = previewOf(ctx, profile);
-    const x = resolveVariable(profile, input.x, preview);
-    const y = input.y ? resolveVariable(profile, input.y, preview) : null;
+    const x = resolveVariable(profile, input.x, preview, ctx.engine.equityPreview);
+    const y = input.y ? resolveVariable(profile, input.y, preview, ctx.engine.equityPreview) : null;
     const xs = axisValues(x, input.x);
     const ys = y && input.y ? axisValues(y, input.y) : [null];
     const paths = clampPaths(input.paths, SWEEP_PATHS);
@@ -362,8 +370,8 @@ export const sweep: ToolSpec<{ x: AxisInput; y?: AxisInput; metric: Metric; path
         grid_id: gridId,
         metric: input.metric,
         unit: METRIC_UNIT[input.metric],
-        x: { ...grid.x, current: x.current },
-        ...(grid.y ? { y: { ...grid.y, current: y?.current ?? null } } : {}),
+        x: { ...grid.x, current: x.current, ...perShare(x, grid.x.values) },
+        ...(grid.y && y ? { y: { ...grid.y, current: y.current, ...perShare(y, grid.y.values) } } : {}),
         cells,
         cells_layout: grid.y ? 'cells[y index][x index]' : 'cells[0][x index]',
         paired: true,

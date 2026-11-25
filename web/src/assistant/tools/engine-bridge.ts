@@ -1,6 +1,6 @@
 // The real engine behind the tools: the worker pool for simulation and paired
 // comparison, and the wasm module's main-thread calls for everything else.
-import { applyPatch, digest, engineInput, getPool, levers, planPreview, schema, type RunResult } from '@/engine';
+import { applyPatch, digest, engineInput, equityPreview, getPool, levers, planPreview, schema, type RunResult } from '@/engine';
 import type { RunRecord } from './runs';
 import type { EngineBridge } from './types';
 
@@ -18,6 +18,7 @@ export function realEngine(): EngineBridge {
     levers,
     schema: () => (cachedSchema ??= schema()),
     planPreview,
+    equityPreview: (company) => equityPreview(company),
     // About 10 ms at 10,000 lives; the accumulator is already on this thread.
     digest: (run) => digest(run.acc, engineInput(run.profile, run.seed).json),
     // Off the main thread: decoding two accumulators is the expensive part.

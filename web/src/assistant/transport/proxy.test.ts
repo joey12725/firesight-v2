@@ -58,6 +58,7 @@ const errorType = async (response: Response) => ((await response.json()) as { er
 describe('shared constants', () => {
   it('match between the proxy and the app', () => {
     expect(PROXY_MARKER).toBe(PROMPT_MARKER);
+    expect(PROXY_MARKER).toBe('[FIRESight planning assistant, prompt v3]');
     expect(SYSTEM_PROMPT.startsWith(PROMPT_MARKER)).toBe(true);
     expect(PROXY_TOOLS).toEqual([...TOOL_NAMES].sort());
     expect(MODELS).toEqual(ASSISTANT_MODELS.map((m) => m.id));

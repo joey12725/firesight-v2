@@ -17,6 +17,7 @@
 mod accounts;
 mod assumptions;
 mod debt;
+mod equity;
 mod events;
 mod examples;
 mod household;
@@ -31,6 +32,7 @@ mod time;
 pub use accounts::*;
 pub use assumptions::*;
 pub use debt::*;
+pub use equity::*;
 pub use events::*;
 pub use examples::{Example, EXAMPLE_START};
 pub use household::*;

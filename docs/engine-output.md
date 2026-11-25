@@ -63,11 +63,11 @@ investable_at_retirement)` so every caller applies the same thresholds.
 | `net_worth` | accounts + `property_value` - `mortgage` - `debt`, year end |
 | `investable` | cash + taxable + traditional + Roth + HSA, year end |
 | `spending` | sum of the eight `spend_*` groups (not `spend_planned`); annualised |
-| `gross_income` | sum of the six `income_*` series; annualised |
+| `gross_income` | sum of the seven `income_*` series (`income_equity` included); annualised |
 | `total_tax` | sum of the four `tax_*` series; annualised |
 | `spend_planned` | the `spend_planned` series (planned spending, same scope as `spending`); annualised. Sixth entry, appended |
 
-### `YearSeries` (43; summed per year, recorded monthly in a trace)
+### `YearSeries` (46; summed per year, recorded monthly in a trace)
 
 Balances and liabilities are period-end, everything else is the period's total. All
 non-negative except `investment_return`. `kind` is in the output next to each series.
@@ -76,13 +76,13 @@ non-negative except `investment_return`. `kind` is in the output next to each se
 |---|---|
 | `balance` | `balance_cash`, `balance_taxable`, `balance_traditional`, `balance_roth`, `balance_hsa`, `property_value` (market value of all properties) |
 | `liability` | `mortgage` (principal on all properties), `debt` (non-mortgage) |
-| `income` | `income_wages` (incl. bonus, commission, vested equity), `income_self_employment`, `income_social_security`, `income_pensions` (incl. annuities), `income_rental` (net operating income, before the rental's mortgage), `income_other` (incl. windfalls) |
+| `income` | `income_wages` (incl. bonus, commission, vested equity from a job's own grants), `income_self_employment`, `income_social_security`, `income_pensions` (incl. annuities), `income_rental` (net operating income, before the rental's mortgage), `income_other` (incl. windfalls), `income_equity` (cash from `private_equity` before tax: sales of shares in tender offers, acquisitions and after an IPO, cash-outs of options net of the strike and of RSUs, and the value of shares moved to the taxable account when a lockup ends). Index 43, appended |
 | `withdrawal` | `withdraw_cash`, `withdraw_taxable`, `withdraw_traditional` (incl. RMDs, excl. conversions), `withdraw_roth`, `withdraw_hsa` |
 | `tax` | `tax_federal` (income, capital gains, NIIT), `tax_state` (or foreign income tax), `tax_payroll` (FICA and SE tax), `tax_penalties`. Cash basis: withholding, estimates and the April settlement in the year paid |
 | `spending` | `spend_essential` (incl. rent), `spend_discretionary`, `spend_housing` (owned property: P&I, property tax, insurance, upkeep, HOA, PMI), `spend_healthcare`, `spend_long_term_care`, `spend_children`, `spend_debt` (non-mortgage payments), `spend_one_off` (shocks, event expenses, closing costs) |
 | `saving` | `save_cash`, `save_taxable`, `save_traditional`, `save_roth`, `save_hsa` (employee money), `save_employer` (401(k) match and employer HSA) |
-| `transfer` | `roth_conversion`, `property_purchase` (cash into property at purchase), `property_sale` (net cash out of a sale) |
-| `memo` | `spend_planned`, `investment_income` (interest and dividends inside accounts), `investment_return` (balance change not explained by flows; may be negative) |
+| `transfer` | `roth_conversion`, `property_purchase` (cash into property at purchase), `property_sale` (net cash out of a sale), `equity_exercise` (cash paid to exercise options: the strike. The shares bought are outside net worth until sold). Index 44, appended |
+| `memo` | `spend_planned`, `investment_income` (interest and dividends inside accounts), `investment_return` (balance change not explained by flows; may be negative), `equity_paper_value` (period-end value of vested private-company holdings at the company's current share price, before tax, options at price less strike. **Not part of net worth** or of any balance; a stock, so its yearly mean is not annualised). Index 45, appended |
 
 `spend_planned` is what total spending would have been with no spending-rule cut and
 no depletion shortfall, in the same scope as `spending`; it equals actual spending
@@ -92,10 +92,14 @@ Cash-flow identity per period (`YearRecord::cash_flow_residual()` is zero):
 
 ```
 income + withdrawals + property_sale + save_employer
-    = taxes + spending + saving + property_purchase
+    = taxes + spending + saving + property_purchase + equity_exercise
 ```
 
-### `PathScalar` (36; one `f32` per path, `null`/NaN = did not happen)
+`income` here includes `income_equity`. Shares kept as single stock when a lockup ends
+are booked as `income_equity` and `save_taxable` of the same amount in that month, so
+they enter net worth through the taxable balance like any other saving.
+
+### `PathScalar` (42; one `f32` per path, `null`/NaN = did not happen)
 
 Supplied by the simulation in `PathEnd`:
 
@@ -121,6 +125,12 @@ Supplied by the simulation in `PathEnd`:
 | `social_security_claim_age_0`, `_1` | age | Each person's **own** age when their benefit is first paid (the profile's claim age if it was already in payment at the start). Indices 31, 32 |
 | `person_retirement_age_0`, `_1` | age | Each person's **own** age when they stop working (person 1: the retirement date plus `partner_offset_years`). Indices 33, 34 |
 | `mortgage_payoff_age` | age | First person's age in the month the household's last mortgage is paid off (by schedule or sale) with none taken out afterwards; null if it never had one or still owes at the end. Index 35 |
+| `equity_outcome` | index | What happened to the household's main private company, as an `EquityOutcome` index; null if the plan has no `private_equity`. With several companies it is the one with the largest position at the start (at the latest preferred price, vested and unvested, counted or not). Index 36 |
+| `equity_event_age` | age | First person's age when that company failed, was acquired or went public; null if none of those happened within the life (a write-off after thirty years is not one) or there is no company. Index 37 |
+| `equity_gross_proceeds` | dollars | Cash from private-company equity over the life, before tax: the sum of `income_equity`, every counted company. Shares kept as single stock after a lockup are in it at their value on the day they move. 0 when nothing was received; null if the plan has no private company. Index 38 |
+| `equity_exercise_cost` | dollars | Cash paid to exercise options over the life: the sum of `equity_exercise`. Index 39 |
+| `equity_tender_proceeds` | dollars | The part of the gross proceeds that came from tender offers. Index 40 |
+| `equity_net_proceeds` | dollars | Gross proceeds less exercise cost less the tax the equity caused: each year's return with the equity amounts less the same return without them (AMT and the later use of its credit included), in today's dollars of the month the year is closed. For shares kept as single stock, which are not taxed when they move, the tax counted is an estimate: what their gain would add to that year's return if sold as a long-term gain. The tax actually paid when the single stock is sold later is not attributed to the equity. Negative when more was paid in than came back; slightly positive with nothing received when shares bought earlier become a deductible loss. Index 41 |
 
 Derived by the recorder from the year records (anything the simulation puts there is
 overwritten):
@@ -162,6 +172,16 @@ overwritten):
    had raised spending above the plan;
 7. `other`.
 
+### `EquityOutcome`
+
+`failed` (shares and options became worthless), `still_private` (no sale, listing or
+failure within the life: the event was dated after the life ended, or the company was
+written off after thirty years), `acquired` (for cash, including a sale that pays
+common stock nothing), `ipo`. In this order everywhere an array is "by outcome". The
+outcome is the company's fate, drawn at path start on its own random stream: it is the
+same on a path whatever the household decides, and the same when the company is
+counted at zero (`included: false`).
+
 ### `TraceEventKind`
 
 `financially_independent`, `retired`, `laid_off`, `rehired`, `career_break`,
@@ -169,7 +189,32 @@ overwritten):
 `expense_shock`, `roth_conversion`, `spending_cut`, `spending_raise`, `depleted`,
 `recovered`, `claimed_social_security`, `health_coverage`, `long_term_care`,
 `rmd_started`, `debt_paid_off`, `child`, `partner_joined`, `died`, `market`,
-`life_event`, `other`.
+`life_event`, `other`, and seven for `private_equity` (appended): `options_exercised`
+("Exercised 50,000 Northwind Robotics options for $75,000"; amount: the cost),
+`tender_offer` ("... tender offer at $17.30 a share: sold 6,000 for $98,000 in today's
+dollars", or "sold nothing"; amount: the cash), `company_acquired` ("... acquired at
+$21.40 a share: $1,200,000 paid out in today's dollars", or "common stock gets
+nothing"), `company_ipo` ("... goes public
+at $30.10 a share; shares locked up for 6 months"; no amount), `company_failed` ("...
+shuts down: its shares and options are worth nothing", or "... is written off after 30
+years without a sale or listing", with "($15,000 paid for its shares is lost)" when
+shares were held; amount: the cost lost), `equity_forfeited` (amount: the paper value
+given up; four wordings: "Left ...: 30,000 unvested forfeited", with ", and 10,000
+vested RSUs that required staying until the IPO or sale" when the plan says vested
+RSUs are lost on leaving a company that is still private, or "Left ...: 10,000 vested
+RSUs forfeited (they required staying until the IPO or sale)" when nothing was
+unvested; the lead is the company's name alone, without "Left", when the owner died
+or the job never started; "8,000 vested ... options lapsed unexercised when the
+exercise window closed"; and "8,000 vested and 2,000 unvested ... options lapsed
+unexercised at their ten-year term", either part alone when the other is nil) and
+`lockup_sale` ("... lockup ends: sold 2,000 shares at $50.00 for $80,000 in today's
+dollars"; shares sold or kept when a lockup ends, and each scheduled sale after it).
+Share prices in labels are nominal dollars; amounts are today's dollars like every
+other event, and a label that shows both says so. A re-hire after leaving a job that
+grants private-company equity reads "Back at work at a new employer (was <job name>)":
+the link to the company is cut for good and the income stands for the next job. Monthly vest payouts after an acquisition or IPO are
+not logged. `equity_event` remains the kind for a job's own grants (`Job.equity`),
+now also logged when a private grant pays out or its company fails.
 
 ## Recorder contract (what the simulation calls)
 
@@ -190,16 +235,18 @@ Per path: `begin_path(i)`; one `record_year(y, ..)` per calendar year, in order 
 year of the household's last death or the horizon; `end_path(..)`. Nothing after
 everyone has died.
 
-`YearRecord { status, retired, months, values: [f64; 43] }`: `values` indexed by
+`YearRecord { status, retired, months, values: [f64; 46] }`: `values` indexed by
 `YearSeries::index()` in today's dollars; `months` is how many months of the calendar
 year the record covers (1..=12); `retired` is true once the retirement date has
 passed; `status` from `Status::classify`. The histogram quantities are computed from
 `values`, so there is nothing else to fill.
 
-`PathEnd { scalars: [f32; 36] }`: defaults to all NaN; set the supplied
-scalars with `set(scalar, value)` and `set_outcome(None | Some(cause))`.
+`PathEnd { scalars: [f32; 42] }`: defaults to all NaN; set the supplied
+scalars with `set(scalar, value)`, `set_outcome(None | Some(cause))` and, for a plan
+with private-company equity, `set_equity_outcome(None | Some(outcome))` (`None` is
+`still_private`; leave it unset when there is no company).
 
-`MonthRecord { month, price_level, status, retired, values: [f64; 43],
+`MonthRecord { month, price_level, status, retired, values: [f64; 46],
 portfolio_return, asset_returns: [f64; 9] }`: month-end balances and the month's flows
 in today's dollars; returns are nominal monthly rates. One call per simulated month,
 in order.
@@ -229,15 +276,16 @@ Summary {
   density:    [ { series, edges[], starts[year], counts[year][], zeros[year] } ]
   status:     { statuses[6], shares[status][year] },
   survival:   { household[year], people[person][year] },
-  composition:[ { series, kind, values[year] } ]                     // all 43 YearSeries
+  composition:[ { series, kind, values[year] } ]                     // all 46 YearSeries
   fi, retirement, depletion: AgeCurve,
-  distributions: [ ScalarDistribution ]                              // all 36 PathScalars
+  distributions: [ ScalarDistribution ]                              // all 42 PathScalars
   scatter:    { paths[], columns: [ { scalar, values[] } ] },
   failure:    FailureAttribution,
   picks:      [ { label, scalar, path_index, value } ],
   samples:    [ { path_index, net_worth[], investable[], spending[] } ],
   pick_paths: [ { path_index, net_worth[], investable[], spending[] } ],   // added
   plan_moments: PlanMoments,                                               // added
+  equity:     EquitySummary,                  // only for a plan with private_equity; the key is absent otherwise
 }
 ```
 
@@ -322,6 +370,13 @@ percentile of all paths; factors are `poor_early_returns`, `deep_drawdown`, `job
 among failed paths, else the first failed path). `Summary::path_at_quantile(acc,
 scalar, q)` finds the path at any quantile of any scalar.
 
+With private-company equity there are three more picks: `equity_failed` (the path at
+the median terminal net worth among paths on which the company failed) and
+`equity_paid_median`, `equity_paid_p90` (the paths at those quantiles of
+`equity_net_proceeds` among paths with gross proceeds above 0). A pick is left out when
+its class is empty. `failure.contrasts` covers every scalar except `success` and the two
+index scalars (`failure_cause`, `equity_outcome`).
+
 **`samples`**: the first 96 paths' annual net worth, investable assets and spending
 (whole dollars; shorter than the horizon when the household dies sooner).
 
@@ -342,7 +397,44 @@ mortgage), the `*_share` fields are the share of all paths on which it happens,
 `mortgage_payoff_year` is the same median as a calendar year. `null` where it never
 happens.
 
-## `SummaryDigest` (`Summary::digest()`, about 1.7 KB)
+**`equity`** (`EquitySummary`; present only when some path has an `equity_outcome`).
+Money in today's dollars. Everything is computed from the six equity scalars and the
+existing ones, so it is exact under any chunking and merge order.
+
+```
+equity: {
+  company,                                  // name of the company the outcomes describe (its id if unnamed)
+  paths,                                    // paths with an outcome: all of them
+  outcomes: [ { outcome, count, share: Estimate } ],    // 4, in EquityOutcome order; Wilson interval
+  nothing_rate:   Estimate,                 // gross proceeds exactly 0
+  loss_rate:      Estimate,                 // net proceeds below 0: more went in (exercise cost and tax) than came back
+  exercised_rate: Estimate,                 // options were exercised for cash
+  tender_rate:    Estimate,                 // proceeds from a tender offer
+  gross_proceeds: Spread,                   // all paths, zeros included
+  net_proceeds:   Spread,                   // all paths
+  net_proceeds_mean: Estimate,              // carried by the few best outcomes: read it with its interval
+  net_proceeds_mean_half_from,              // fewest paths that carry half of all positive net proceeds; under about 100 the interval is too narrow and sits low
+  net_proceeds_if_paid: Spread,             // among paths with gross proceeds above 0
+  exercise_cost:   Spread,                  // among paths that paid any
+  tender_proceeds: Spread,                  // among paths that had any
+  liquidity_by_age: AgeCurve,               // acquired or public by each age, over all paths
+  failed_by_age:    AgeCurve,               // failed by each age, over all paths
+  by_outcome: [ { outcome, paths, enough,   // 4, in EquityOutcome order
+                  success_rate: Estimate, fi_rate: Estimate,
+                  fi_age: Spread, retirement_age: Spread,       // censored within the class
+                  terminal_net_worth: Spread, net_proceeds: Spread } ] }
+```
+
+`by_outcome[i]` is the plan's headline among the paths with that outcome. `enough` is
+false when the class has fewer than 30 paths (`MIN_PATHS_PER_OUTCOME`): its four
+spreads are then all null with `count` 0, and its two rates are still given but have
+very wide intervals (null when the class is empty). The two age curves end at the
+class's share of paths, not at 1: their `never` is everyone else. The outcome shares
+are a property of the odds entered, not a result: they differ from the ten-year table
+because a company still private after ten years faces the same odds twice more, and
+because some lives end first.
+
+## `SummaryDigest` (`Summary::digest()`, about 1.7 KB, about 2.2 KB with equity)
 
 ```
 { notes, paths, start_year, end_year, start_age,
@@ -355,11 +447,20 @@ happens.
   spending_delivery: { delivered_ratio, extra_ratio, paths_below_90, paths_below_75,
                        years_below_90, worst_cut_p90 },   // extra_ratio added
   failure_causes: [ {cause, share} ]   // top 3, share of failed paths
-  trace_paths: { p10, median, p90, failing } }
+  trace_paths: { p10, median, p90, failing },
+  equity: { company,                    // only for a plan with private_equity; absent otherwise
+            failed, still_private, acquired, ipo,       // shares of lives
+            nothing: {p, lo, hi},       // the equity pays nothing at all
+            loss,                       // more went in than came back
+            net_proceeds: {p10, p50, p90},              // after exercise cost and tax, all lives
+            net_proceeds_mean, net_proceeds_mean_se,
+            success_by_outcome[4] } }   // failed, still_private, acquired, ipo; null under 30 lives
 ```
 
 Dollars are rounded to `$1,000`, probabilities to 3 decimals. `notes` states the
 units and the definition of success so the numbers cannot be misread out of context.
+`notes` is the same text with and without `equity`, and a digest without equity is
+byte for byte what it was before the block existed.
 
 ## `Comparison` (`compare(a, b)`; B minus A)
 
@@ -375,7 +476,10 @@ Both runs must use the same seed; paths are matched by index and the rest ignore
                 mean_a, mean_b, mean_delta: Estimate,
                 quantiles[9], dots[100], b_higher, a_higher, equal, within_noise } ],
   quantile_levels: [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99],   // added: the levels of scalars[].quantiles
-  headline: [ { metric, a, b, delta } ] }
+  headline: [ { metric, a, b, delta } ],
+  by_equity_outcome: [ { outcome, paths,          // 4, in EquityOutcome order; absent when run A has no private_equity
+                         success: PairedOutcome,              // the `outcomes[]` shape, among these pairs
+                         terminal_net_worth: PairedScalar } ] }   // the `scalars[]` shape, B minus A
 ```
 
 For `success`, `b_only` is "rescued by the change", `a_only` "harmed", the rest
@@ -388,6 +492,14 @@ when the 95% interval contains zero. `headline` metrics: `success_rate`, `fi_rat
 `median_terminal_net_worth`, `p10_terminal_net_worth`, `median_lifetime_tax`,
 `median_lifetime_spending`, `delivered_spending_ratio`.
 
+`by_equity_outcome` splits the pairs by the equity outcome of the path **in run A** and
+repeats the success and terminal-net-worth comparison within each class; the class
+sizes sum to `paths`. The outcome is a fate, identical in A and B unless the scenario
+edits the outcome table, so this answers "what does this decision do in the lives where
+the company fails, and in those where it lists". A class with few pairs has a wide
+interval; check `paths` before quoting it. The five equity dollar and age scalars are
+in `scalars[]` like any other; `equity_outcome`, an index, is not.
+
 ## `PathTrace` (one life)
 
 ```
@@ -397,7 +509,7 @@ when the 95% interval contains zero. `headline` metrics: `success_rate`, `fi_rat
   annual:  { years[], months[], status[], columns: [ { key, unit, values[year] } ] },
   tax_returns: [ { year, price_level, result: {..TaxResult}, lines: [ {key, label, amount, note} ] } ],
   events:  [ { month: "YYYY-MM", kind, label, amount } ],
-  scalars: [ { scalar, value } ] }            // all 36, same as the aggregate row
+  scalars: [ { scalar, value } ] }            // all 42, same as the aggregate row
 ```
 
 Monthly column keys: `net_worth`, `investable`, every `YearSeries` key that is not
@@ -439,6 +551,32 @@ year; divide by that return's `price_level` for today's dollars.
   and HSA contributions made outside payroll, negative) and `passive_loss_released`;
   `other_income` no longer nets them. `local_income_tax` notes name the base used
   (state adjusted income, wages and business profit, or the city's schedule).
+* **Private-company equity** (`private_equity`). Paper value, vested or not, locked up
+  or scheduled for sale, is in no balance: not in `net_worth`, `investable`,
+  `terminal_net_worth`, the bequest test, the funded test or the retirement trigger. It
+  is reported as the `equity_paper_value` memo series (vested holdings only) and
+  nowhere else. Cash received counts everywhere from the month it arrives, as
+  `income_equity` and in the `gross_income` histogram of that year; the funded test and
+  the trigger count it less the tax still owed on it (the event-month hold, the
+  instalments still to pay, and the April balance of a year with an equity event).
+  Shares kept as single stock after a lockup count from the month they move to the
+  taxable account. Pay-type equity income has FICA (with the 0.9% Additional Medicare
+  tax on the part over $200,000 of the person's wages for the year) and federal
+  supplemental withholding taken in the event month (`tax_payroll`, `tax_federal`); the rest of its
+  tax follows in level instalments through the year, which is why `tax_federal` and
+  `tax_state` stay raised for the months after an event. The cost of an exercise is
+  `equity_exercise` (never negative income), and the taxable savings sold to pay for
+  it show as `withdraw_taxable` in the same month. A company counted at zero
+  (`included: false`) records no money and no paper value; its fate is still simulated,
+  the `equity_outcome` and `equity_event_age` scalars are filled, the four dollar
+  scalars are 0, and its failure can still end the linked job. `failure_cause` has no
+  equity cause: a life that fails because the equity paid nothing is attributed as
+  before, and `equity.by_outcome` is where the difference shows.
+* **The alternative minimum tax** is computed only for plans with `private_equity`;
+  traced returns then carry the lines `amt` and `amt_credit` (negative) when either is
+  non-zero, and `qsbs_excluded_gain` (informational). For a first year that starts
+  part-way through, the one-off equity amounts are added to the annualised return
+  unscaled (see `docs/architecture.md` section 3).
 * **Home equity**: with `retirement.home_equity: last_resort` (the default) property
   is sold before essentials are cut; the household is then not `depleted`. The year
   is recorded with the sale in `property_sale`.
@@ -456,15 +594,82 @@ Deterministic, no simulation, today's dollars:
   horizon_years, life_expectancy[], expected_age_at_death[] }
 ```
 
+## `EquityPreview` (`equity::preview`, wasm `equityPreview(companyJson, draws)`)
+
+What one company's holdings could pay, before tax, with no household simulated: the
+holder never exercises early and sells everything at the outcome (after the lockup for
+an IPO), and stays in the linked job until then unless `policy.leave_after_months` says
+otherwise; tender offers before the outcome are left out of the amounts. Option
+deadlines are applied as the simulation applies them: the exercise window (from today
+for a company with no `job`, from the planned departure otherwise) and each grant's
+ten-year term. Options whose deadline comes before the outcome pay nothing under
+`at_deadline: forfeit`; under `exercise` they pay the outcome price less the strike on
+what had vested by the deadline, the exercise being taken as affordable, and a draw is
+never counted below zero (strike lost when the company then fails is not a payout).
+Vested RSUs that require employment are lost by a planned departure in or before the
+outcome's month. Today's dollars at a fixed 2.9% inflation, the rate that reproduces the
+simulation's median price level after ten years. The simulation's own results are lower
+where the job ends before the outcome or savings cannot pay for a deadline exercise. `companyJson` is one element of
+`profile.private_equity`; `draws` 0 means the default (4,000), anything else is held
+between 100 and 50,000. The draws use a fixed seed, so the same company gives the same
+bytes, and the fate of each draw is drawn by the function the simulation uses. A
+company that does not parse throws a message with the path of the offending field
+(`holdings[0].kind: unknown variant ...`), and so does one the simulation would refuse
+(`validate::validate_company`: every company check that needs nothing else from the
+profile), as `<path>: <message>` with the path relative to the company
+(`holdings/@grant/kind/strike: Strike is -4; ...`). A bare company (a stage and a
+price, no holdings) is valid. `included` is ignored. CLI:
+`firesight equity-preview <profile> [--company ID] [--draws N] [--json]`.
+
+```
+{ draws,
+  table:   [ OutcomeRow ],                  // the odds in force for the next ten years: preset with outlook, or the
+                                            // custom table normalised; exact probabilities; for a preset the years
+                                            // are the 10th and 90th percentiles of its timing
+  typical: [ OutcomeRow ],                  // the stage preset at a typical outlook, for comparison
+  fmv_409a, preference_overhang, tender_annual_probability,   // values in force after defaults
+  paper_value_vested, paper_value_total,    // today, at the preferred price; options at price less strike
+  exercise_cost_vested, exercise_cost_total,                  // strike only
+  spread_iso_vested, spread_nso_vested,     // vested options at the 409A value: counted for AMT / taxed as pay if exercised now
+  nothing_share,                            // share of draws that pay nothing at the outcome
+  outcome_shares[4],                        // what finally happens over every round: fails, written off after
+                                            // thirty years, acquired, ipo (note: not the EquityOutcome order)
+  acquisition_zero_share,                   // among acquisitions: common stock gets nothing
+  ipo_below_last_round_share,               // among IPOs: priced below today's preferred price
+  tender_before_share,                      // at least one tender offer expected before the outcome
+  option_deadline_months,                   // months to the first option deadline (window end or ten-year term);
+                                            // null with no options; 0 = this month
+  option_deadline_cost,                     // strike (before tax) to exercise the vested options due then; 0 when
+                                            // the policy lets them lapse or their strike is at or above the price
+  deadline_before_outcome_share,            // share of draws in which an option deadline comes before the outcome
+  dots[100],                                // equally likely payoffs, ascending, zeros included
+  quantiles[5],                             // p10, p25, p50, p75, p90 over all draws
+  if_paid[3],                               // p10, p50, p90 among draws that pay; null when none does
+  years_to_payout_p50,                      // median wait among draws that pay; null when none does
+  implied_multiple, typical_implied_multiple }   // mean common price at the outcome over the preferred price
+                                                 // (0 where nothing is paid), by quadrature: it does not move with draws
+```
+
+No mean payoff is reported: it would rest on a handful of draws.
+
 ## wasm API
 
 As in `docs/architecture.md` section 6. Beyond the original list: `Engine.warnings()`,
 `class Merger { add(bytes), paths(), summarize(profileJson), digest(profileJson),
 bytes() }`, `compare(aBytes, bBytes, baselineProfileJson)` (the `Comparison` JSON, B
 minus A), `digest(accBytes, profileJson)`, `planPreview(profileJson)` and
-`exampleProfiles()`. Every function returning a document returns a JSON string.
-`Accumulator::VERSION` is 5 (nine more scalars, a sixth histogram series and the
-per-year shortfall sums); bytes from an older build do not decode.
+`exampleProfiles()` (four demo households), and `equityPreview(companyJson, draws)`
+(the `EquityPreview` above). `levers(profileJson)` returns up to four more levers for a
+profile with counted, non-empty `private_equity`: `equity_outlook` (pessimistic against
+optimistic odds), `equity_exercise` (only at a sale or IPO against vested options
+now), `equity_tender` (sell nothing against the maximum) and `equity_sell_down` (keep
+the shares against sell when the lockup ends), each present only when it would change
+something. Every function returning a document returns a JSON string.
+`Accumulator::VERSION` is 6 (six scalars and three series appended for
+private-company equity; 5 added nine scalars, a sixth histogram series and the
+per-year shortfall sums); bytes from an older build do not decode: `Merger.add`,
+`mergeChunks`, `summarize`, `digest` and `compare` throw "version 5 is not supported
+(expected 6)", so chunks cached by an older build must be discarded, not merged.
 
 ## Sizes and timings
 
@@ -473,12 +678,12 @@ Measured natively on one Apple M-series core, 60-year horizon, synthetic lives.
 | Item | Result |
 |---|---|
 | `record_year` | about 21 ns |
-| 500-path chunk, serialised | 111 KB (161 KB for the first chunk, which carries the 96 sample paths); 52 KB of it is the scalar table |
+| 500-path chunk, serialised | 152 KB (201 KB for the first chunk, which carries the 96 sample paths); 84 KB of it is the scalar table (168 bytes per path) |
 | 500-path chunk: encode / decode / merge | 0.8 ms / 0.4 ms / 0.2 ms |
-| 100,000-path accumulator, serialised | about 14.6 MB: histograms 0.2 MB, scalars 14.4 MB (36 x 4 bytes x paths) |
+| 100,000-path accumulator, serialised | about 17.0 MB: histograms 0.2 MB, scalars 16.8 MB (42 x 4 bytes x paths, 168 bytes per path) |
 | `Summary::from_accumulator`, 100,000 paths | about 51 ms |
-| `Summary` JSON, 100,000 paths | 530 KB |
-| `SummaryDigest` JSON | about 1.7 KB |
+| `Summary` JSON, 100,000 paths | 554 KB |
+| `SummaryDigest` JSON | about 1.7 KB (about 2.2 KB with private-company equity) |
 | `PathTrace` JSON, 60 years, 30 active series | about 180 KB |
 
 ## Additions made by the engine audit (for consumers with a strict shape check)
@@ -510,6 +715,43 @@ Every change to the JSON documents, in one place. Nothing was removed or renamed
 
 `PathTrace`: `scalars[]` has 36 entries; tax-return `lines[]` may contain the keys
 `adjustments` and `passive_loss_released`.
+
+## Additions made for private-company equity
+
+Again nothing was removed or renamed. For a profile without `private_equity` the
+`SummaryDigest` and the `Comparison` are byte for byte what they were, and the
+`Summary` differs only by the longer per-scalar and per-series lists below.
+
+`Summary`
+* `equity` (`EquitySummary`), absent without private equity.
+* `composition[]`: three more entries (46 series), appended: `income_equity`,
+  `equity_exercise`, `equity_paper_value`. All zero without private equity.
+* `distributions[]`: six more entries (42 scalars), appended: `equity_outcome`,
+  `equity_event_age`, `equity_gross_proceeds`, `equity_exercise_cost`,
+  `equity_tender_proceeds`, `equity_net_proceeds`. Empty (`count` 0) without private
+  equity.
+* `failure.contrasts[]`: five more entries (the new scalars except `equity_outcome`).
+* `picks[]`: up to three more labels, `equity_failed`, `equity_paid_median`,
+  `equity_paid_p90`, with `pick_paths[]` following.
+* `quantiles[]` and `density[]` for `gross_income` now include `income_equity`.
+
+`SummaryDigest`: `equity`, absent without private equity.
+
+`Comparison`: `by_equity_outcome[]`, absent when run A has no private equity;
+`scalars[]` has five more entries.
+
+`PathTrace`: `scalars[]` has 42 entries; `columns[]` may contain `income_equity`,
+`equity_exercise` and `equity_paper_value`; `events[].kind` may be one of the seven new
+kinds; tax-return `result` has `tentative_minimum_tax`, `amt`, `amt_credit_used` and
+`amt_credit_carryforward`, and `lines[]` may contain `amt`, `amt_credit` and
+`qsbs_excluded_gain`.
+
+New document: `EquityPreview`. New wasm function: `equityPreview`. `exampleProfiles()`
+returns four households; `levers()` may return four more levers.
+
+Profile schema (inputs): `private_equity` (a list of `PrivateCompany`, default empty),
+described in `docs/architecture.md` section 2. New validation codes all start with
+`equity_` or name the field; the fourth demo carries one warning, `equity_dominant`.
 
 Profile schema (inputs): `retirement.home_equity` (`"never"` | `"last_resort"`,
 default `last_resort`); `debt_policy.refinance_mortgages` (boolean, default true);

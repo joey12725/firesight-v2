@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useUi } from '@/state/ui-store';
 import { Icon, cx } from '@/ui';
 import { useAllIssues, type PlacedIssue } from './hooks';
+import { editorMessage } from './issue-words';
 
 /** The editor section an issue path belongs to. */
 export function sectionForPath(path: string): string {
@@ -11,6 +12,7 @@ export function sectionForPath(path: string): string {
     name: 'household',
     household: 'household',
     incomes: 'income',
+    private_equity: 'equity',
     spending: 'spending',
     accounts: 'accounts',
     portfolio: 'accounts',
@@ -38,7 +40,7 @@ function Row({ issue }: { issue: PlacedIssue }) {
         <Icon name={error ? 'alertCircle' : 'alertTriangle'} size={13} className={cx('mt-0.5', error ? 'text-bad' : 'text-warn')} />
         <span className="min-w-0 flex-1 text-xs leading-snug text-ink-1">
           <span className="sr-only">{error ? 'Error: ' : 'Warning: '}</span>
-          {issue.message}
+          {editorMessage(issue)}
         </span>
         <Icon name="arrowRight" size={12} className="mt-0.5 text-ink-3" />
       </button>

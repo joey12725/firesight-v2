@@ -22,6 +22,9 @@ SSA pages reject plain scripted requests (HTTP 403); they were fetched with full
 | Mortgage interest $750,000 / $1,000,000 grandfathered | IRS Pub. 936 | https://www.irs.gov/publications/p936 |
 | Home sale exclusion $250k / $500k, 2-of-5-year tests | IRS Topic 701 | https://www.irs.gov/taxtopics/tc701 |
 | Capital loss limit $3,000 / $1,500; 28% collectibles, 25% unrecaptured 1250 | IRS Topic 409 | https://www.irs.gov/taxtopics/tc409 |
+| Supplemental wage withholding: 22% flat, 37% on the part of a calendar year's supplemental wages above $1,000,000 (`supplemental_wage_withholding`; fetched 2026-11-18, read on IRS.gov) | IRS Publication 15 (2026) | https://www.irs.gov/publications/p15 |
+| Qualified small business stock: per-issuer cap on excluded gain of $15,000,000 for stock acquired after July 4, 2025 and $10,000,000 for earlier stock; exclusion of 50% at 3 years, 75% at 4 and 100% at 5 for the newer stock, 100% after 5 years for the earlier stock (`qualified_small_business_stock`; fetched 2026-11-18, read on Cornell LII) | 26 USC 1202 as amended by P.L. 119-21 | https://www.law.cornell.edu/uscode/text/26/1202 |
+| Alternative minimum tax as the engine uses it: the `income_tax.alternative_minimum_tax` block (exemption, phase-out threshold and 50% rate, 26% and 28% rates, 28% breakpoint) is now read by the engine, for households with private-company equity. The amounts are the Rev. Proc. 2025-32 figures already listed above; the credit limit (regular tax less tentative minimum tax, no expiry) is IRC 53 (fetched 2026-11-18, read on Cornell LII) | IRS Rev. Proc. 2025-32; 26 USC 53, 55 | https://www.irs.gov/pub/irs-drop/rp-25-32.pdf ; https://www.law.cornell.edu/uscode/text/26/53 |
 
 ## Retirement accounts
 
@@ -99,6 +102,9 @@ These values are in the JSON but were recalled or derived rather than read from 
 - **RMD age for people born in 1959**: encoded as 73. The final regulations reserve this birth year.
 - **Medicaid expansion threshold (138% FPL), CSR eligibility ceiling (250% FPL), metal-tier actuarial values, three-child rating cap, medical expense 7.5% floor, step-up in basis, Roth first-home $10,000 limit, AIME mechanics (35 years, index to age 60, 40 credits)**: standard rules recalled, not re-fetched.
 - **`claiming_factor_examples_fra_67`**: computed from the fetched reduction and credit formulas.
+- **AMT indexing**: AMT amounts are indexed by the chained-CPI factor without the statutory rounding (the increment was not re-fetched); the difference is under $100.
+- **Section 1202 gain at three and four years**: the 28% rate on the non-excluded part of section 1202 gain at three and four years is not modelled (secondary sources only).
+- **AMT rates of 26% and 28%**: IRC 55(b)(1), recalled; the rate structure was confirmed in the Form 6251 instructions, not re-read in the statute.
 - **Indexing flags** (which CPI measure each parameter follows): assigned from knowledge of the statutes; the "not indexed" flags for NIIT, additional Medicare tax, Social Security benefit taxation thresholds, CTC phase-out, home sale exclusion, capital loss limit, senior deduction and mortgage limit reflect the absence of those items from the annual Rev. Procs.
 
 ## Independent verification pass (2026-11-17)

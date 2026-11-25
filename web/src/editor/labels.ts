@@ -1,5 +1,5 @@
 // Display names for schema enums, and small derived figures used in summaries.
-import type { AccountKind, AssetClass, BudgetItem, Category, Frequency, Profile } from '@/engine/types';
+import type { AccountKind, AssetClass, BudgetItem, Category, CompanyStage, Frequency, HoldingKind, OutcomeKind, PrivateCompany, Profile } from '@/engine/types';
 
 export const US_STATES: { value: string; label: string }[] = (
   'AL:Alabama,AK:Alaska,AZ:Arizona,AR:Arkansas,CA:California,CO:Colorado,CT:Connecticut,DE:Delaware,DC:District of Columbia,' +
@@ -110,3 +110,38 @@ export function annualIncome(profile: Profile): number {
     }
   }, 0);
 }
+
+// ---- Startup equity ---------------------------------------------------------------
+
+export const COMPANY_STAGES: { value: CompanyStage; label: string }[] = [
+  { value: 'seed', label: 'Seed' },
+  { value: 'series_a', label: 'Series A' },
+  { value: 'series_b', label: 'Series B' },
+  { value: 'series_c', label: 'Series C' },
+  { value: 'late', label: 'Series D or later' },
+  { value: 'unicorn', label: '$1B+ or pre-IPO' },
+];
+
+export const stageLabel = (s: CompanyStage) => COMPANY_STAGES.find((x) => x.value === s)?.label ?? s;
+
+/** The lean on a stage's typical odds, in the editor's words. */
+export const OUTLOOKS: { value: PrivateCompany['outlook']; label: string }[] = [
+  { value: 'pessimistic', label: 'Cautious' },
+  { value: 'typical', label: 'Typical' },
+  { value: 'optimistic', label: 'Hopeful' },
+];
+
+/** What can happen to a private company, as a sentence about the company. */
+export const OUTCOME_LABEL: Record<OutcomeKind, string> = {
+  fails: 'Shuts down',
+  acquired: 'Is acquired',
+  ipo: 'Goes public',
+  still_private: 'Still private after ten years',
+};
+
+export const HOLDING_KINDS: { value: HoldingKind['type']; label: string; menu: string; note: string }[] = [
+  { value: 'iso', label: 'ISO', menu: 'Incentive options (ISO)', note: 'Counts toward the alternative minimum tax when exercised' },
+  { value: 'nso', label: 'NSO', menu: 'Non-qualified options (NSO)', note: 'The spread is taxed as pay when exercised' },
+  { value: 'rsu', label: 'RSUs', menu: 'RSUs', note: 'Pay out at an IPO or sale' },
+  { value: 'shares', label: 'Shares I own', menu: 'Shares I own', note: 'Exercised earlier or bought' },
+];
