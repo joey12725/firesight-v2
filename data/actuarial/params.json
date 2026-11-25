@@ -2562,7 +2562,7 @@
     "monthly_lumpiness": {
       "summary": "monthly_lumpiness is the coefficient of variation of an independent monthly factor with mean exactly 1: a lognormal limited to max_month_as_multiple_of_average times its mean and rescaled to mean 1.",
       "max_month_as_multiple_of_average": 12.0,
-      "reasoning": "The lognormal is the shape the engine already uses for commission and bonus noise. The limit of twelve average months in one month (a year's expected profit in one invoice) keeps a large entered figure bounded; it binds in fewer than one month in 3,000 at a lumpiness of 1.0.",
+      "reasoning": "The lognormal is the shape the engine already uses for commission and bonus noise. The limit of twelve average months in one month (a year's expected profit in one invoice) keeps a large entered figure bounded; it binds in about one month in 3,000 at a lumpiness of 1.0.",
       "confidence": "low; a judgement on shape. The user enters the size."
     },
     "employer_stock_layoff_link": {
